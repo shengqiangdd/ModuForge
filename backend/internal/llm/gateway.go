@@ -2,12 +2,14 @@ package llm
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"regexp"
 	"strings"
+	"time"
 )
 
 // Message LLM 对话消息
@@ -32,36 +34,73 @@ type ChatResponse struct {
 
 // Gateway LLM 网关，统一 OpenAI/Claude/其他
 type Gateway struct {
+	provider *Provider
+	modelID  string
 	apiKey   string
 	endpoint string
-	model    string
 	client   *http.Client
 }
 
+// NewGateway 创建 Gateway（legacy 兼容：直接指定 apiKey/endpoint/model）
 func NewGateway(apiKey, endpoint, model string) *Gateway {
 	return &Gateway{
+		provider: nil,
+		modelID:  model,
+		apiKey:   apiKey,
+		endpoint: endpoint + "/chat/completions",
+		client:   &http.Client{Timeout: 120 * time.Second},
+	}
+}
+
+// NewGatewayFromProvider 根据提供商和模型创建 Gateway
+func NewGatewayFromProvider(providerID, modelID, apiKey string) (*Gateway, error) {
+	provider := FindProvider(providerID)
+	if provider == nil {
+		return nil, fmt.Errorf("unknown provider: %s", providerID)
+	}
+
+	if provider.RequiresKey && apiKey == "" {
+		return nil, fmt.Errorf("API key required for provider: %s", provider.Name)
+	}
+
+	endpoint := provider.Endpoint
+
+	// Google 使用不同的 API 格式
+	if providerID == "google" {
+		endpoint = fmt.Sprintf("%s/%s:generateContent?key=%s", provider.Endpoint, modelID, apiKey)
+	}
+
+	return &Gateway{
+		provider: provider,
+		modelID:  modelID,
 		apiKey:   apiKey,
 		endpoint: endpoint,
-		model:    model,
-		client:   &http.Client{},
-	}
+		client:   &http.Client{Timeout: 120 * time.Second},
+	}, nil
+}
+
+// Model 返回当前模型 ID
+func (g *Gateway) Model() string {
+	return g.modelID
 }
 
 // Chat 非流式对话
 func (g *Gateway) Chat(messages []Message) (string, error) {
 	req := ChatRequest{
-		Model:    g.model,
+		Model:    g.modelID,
 		Messages: messages,
 		Stream:   false,
 	}
 	body, _ := json.Marshal(req)
 
-	httpReq, err := http.NewRequest("POST", g.endpoint+"/chat/completions", bytes.NewReader(body))
+	httpReq, err := http.NewRequest("POST", g.endpoint, bytes.NewReader(body))
 	if err != nil {
 		return "", err
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Authorization", "Bearer "+g.apiKey)
+	if g.apiKey != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+g.apiKey)
+	}
 
 	resp, err := g.client.Do(httpReq)
 	if err != nil {
@@ -80,6 +119,52 @@ func (g *Gateway) Chat(messages []Message) (string, error) {
 	}
 
 	return chatResp.Choices[0].Message.Content, nil
+}
+
+// StreamChat 流式对话（SSE），逐条返回原始 SSE data 行
+func (g *Gateway) StreamChat(ctx context.Context, messages []Message) (<-chan string, error) {
+	req := ChatRequest{
+		Model:    g.modelID,
+		Messages: messages,
+		Stream:   true,
+	}
+	body, _ := json.Marshal(req)
+
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", g.endpoint, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	if g.apiKey != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+g.apiKey)
+	}
+
+	resp, err := g.client.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("llm stream request: %w", err)
+	}
+
+	ch := make(chan string, 100)
+	go func() {
+		defer close(ch)
+		defer resp.Body.Close()
+
+		buf := make([]byte, 4096)
+		for {
+			n, readErr := resp.Body.Read(buf)
+			if n > 0 {
+				ch <- string(buf[:n])
+			}
+			if readErr == io.EOF {
+				break
+			}
+			if readErr != nil {
+				break
+			}
+		}
+	}()
+
+	return ch, nil
 }
 
 // FileSpec 模块文件规格

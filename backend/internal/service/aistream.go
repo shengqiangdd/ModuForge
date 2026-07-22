@@ -2,20 +2,32 @@ package service
 
 import (
 	"bufio"
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/moduforge/backend/internal/config"
 )
 
 type AIStreamService struct {
+	cfg    *config.Config
 	client *http.Client
 }
 
 func NewAIStreamService() *AIStreamService {
 	return &AIStreamService{
+		client: &http.Client{Timeout: 120 * time.Second},
+	}
+}
+
+func NewAIStreamServiceWithConfig(cfg *config.Config) *AIStreamService {
+	return &AIStreamService{
+		cfg:    cfg,
 		client: &http.Client{Timeout: 120 * time.Second},
 	}
 }
@@ -27,12 +39,92 @@ type AIStreamEvent struct {
 
 // StreamCompletion 流式调用 LLM 并返回事件 channel
 func (s *AIStreamService) StreamCompletion(ctx context.Context, messages []map[string]string) (<-chan AIStreamEvent, error) {
+	// 如果配置了多提供商，使用 Gateway 流式调用
+	if s.cfg != nil && s.cfg.LLMProvider != "" {
+		return s.streamWithProvider(ctx, messages)
+	}
+	// 回退到 mock
+	return s.streamMock(ctx, messages)
+}
+
+// streamWithProvider 使用配置的 LLM 提供商进行流式调用
+func (s *AIStreamService) streamWithProvider(ctx context.Context, messages []map[string]string) (<-chan AIStreamEvent, error) {
+	apiKey := s.cfg.EffectiveLLMKey()
+	endpoint := s.cfg.LLMEndpoint
+	model := s.cfg.LLMModel
+
+	if endpoint == "" {
+		return nil, fmt.Errorf("LLM endpoint not configured")
+	}
+
+	// 构建请求
+	body := map[string]interface{}{
+		"model":    model,
+		"messages": messages,
+		"stream":   true,
+	}
+	bodyBytes, _ := json.Marshal(body)
+
+	req, err := http.NewRequestWithContext(ctx, "POST", endpoint+"/chat/completions", bytes.NewReader(bodyBytes))
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+	}
+	req.Header.Set("Accept", "text/event-stream")
+
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("SSE request: %w", err)
+	}
+
+	ch := make(chan AIStreamEvent, 100)
+	go func() {
+		defer close(ch)
+		defer resp.Body.Close()
+
+		scanner := bufio.NewScanner(resp.Body)
+		for scanner.Scan() {
+			line := scanner.Text()
+			if !strings.HasPrefix(line, "data: ") {
+				continue
+			}
+			data := strings.TrimPrefix(line, "data: ")
+			if data == "[DONE]" {
+				ch <- AIStreamEvent{Type: "done"}
+				return
+			}
+			// 尝试解析 delta 内容
+			var parsed struct {
+				Choices []struct {
+					Delta struct {
+						Content string `json:"content"`
+					} `json:"delta"`
+				} `json:"choices"`
+			}
+			if err := json.Unmarshal([]byte(data), &parsed); err == nil && len(parsed.Choices) > 0 {
+				if content := parsed.Choices[0].Delta.Content; content != "" {
+					ch <- AIStreamEvent{Type: "delta", Content: content}
+					continue
+				}
+			}
+			// 回退：原始数据
+			ch <- AIStreamEvent{Type: "delta", Content: data}
+		}
+	}()
+
+	return ch, nil
+}
+
+// streamMock mock 流式响应
+func (s *AIStreamService) streamMock(ctx context.Context, messages []map[string]string) (<-chan AIStreamEvent, error) {
 	ch := make(chan AIStreamEvent, 50)
 
 	go func() {
 		defer close(ch)
 
-		// 发送 mock SSE 事件（实际对接时替换为真实 LLM API）
 		fullResponse := s.mockGenerateResponse(messages)
 
 		for _, char := range fullResponse {
@@ -44,7 +136,7 @@ func (s *AIStreamService) StreamCompletion(ctx context.Context, messages []map[s
 					Type:    "delta",
 					Content: string(char),
 				}
-				time.Sleep(10 * time.Millisecond) // simulate streaming
+				time.Sleep(10 * time.Millisecond)
 			}
 		}
 		ch <- AIStreamEvent{Type: "done", Content: ""}

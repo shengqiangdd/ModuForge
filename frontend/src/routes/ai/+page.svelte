@@ -1,9 +1,56 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { streamRequest } from '../../lib/api/client';
+  import { client, streamRequest } from '../../lib/api/client';
 
   type Mode = 'generate' | 'chat' | 'repair';
 
+  // --- Provider/Model Selection ---
+  interface Model {
+    id: string;
+    name: string;
+    provider: string;
+    max_tokens: number;
+    supports_stream: boolean;
+    price_input_per_m: number;
+    price_output_per_m: number;
+  }
+  interface Provider {
+    name: string;
+    id: string;
+    endpoint: string;
+    models: Model[];
+    requires_key: boolean;
+    is_free: boolean;
+    tier: string;
+  }
+
+  let providers = $state<Provider[]>([]);
+  let selectedProviderID = $state('');
+  let selectedModelID = $state('');
+  let apiKeyInput = $state('');
+  let configLoaded = $state(false);
+
+  let availableModels = $derived(
+    providers.find(x => x.id === selectedProviderID)?.models || []
+  );
+
+  let selectedModel = $derived(
+    availableModels.find(m => m.id === selectedModelID) || null
+  );
+
+  let needsKey = $derived(
+    providers.find(x => x.id === selectedProviderID)?.requires_key || false
+  );
+
+  let tierLabel = $derived.by(() => {
+    const p = providers.find(x => x.id === selectedProviderID);
+    if (!p) return '';
+    if (p.is_free) return '🆓 免费';
+    if (p.tier === 'subscription') return '💳 订阅制';
+    return '💰 按量付费';
+  });
+
+  // --- Chat State ---
   let mode = $state<Mode>('generate');
   let input = $state('');
   let messages = $state<{role: string; content: string}[]>([]);
@@ -19,14 +66,66 @@
     { value: 'repair' as const, label: '修复构建', icon: 'build_circle' },
   ];
 
-  onMount(() => {
+  onMount(async () => {
     window.addEventListener('ai-stream', onStreamData);
     window.addEventListener('ai-stream-done', onStreamDone);
-    return () => {
-      window.removeEventListener('ai-stream', onStreamData);
-      window.removeEventListener('ai-stream-done', onStreamDone);
-    };
+    await loadProviders();
   });
+
+  onDestroy(() => {
+    window.removeEventListener('ai-stream', onStreamData);
+    window.removeEventListener('ai-stream-done', onStreamDone);
+  });
+
+  async function loadProviders() {
+    try {
+      const res = await fetch('/api/v1/llm/providers');
+      const data = await res.json();
+      providers = data.providers || [];
+
+      // Load current config
+      try {
+        const cfgRes = await fetch('/api/v1/llm/config', {
+          headers: { 'Authorization': `Bearer ${localStorage.getItem('moduforge_token') || ''}` }
+        });
+        if (cfgRes.ok) {
+          const cfg = await cfgRes.json();
+          if (cfg.provider) selectedProviderID = cfg.provider;
+          if (cfg.model_id) selectedModelID = cfg.model_id;
+        }
+      } catch { /* config not available */ }
+
+      // Defaults
+      if (!selectedProviderID && providers.length > 0) {
+        selectedProviderID = providers[0].id;
+        if (providers[0].models.length > 0) {
+          selectedModelID = providers[0].models[0].id;
+        }
+      }
+      configLoaded = true;
+    } catch {
+      configLoaded = true;
+    }
+  }
+
+  function onProviderChange() {
+    const models = availableModels;
+    if (models.length > 0) {
+      selectedModelID = models[0].id;
+    }
+  }
+
+  async function saveConfig() {
+    const token = localStorage.getItem('moduforge_token');
+    if (!token) return;
+    try {
+      await fetch('/api/v1/llm/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ provider: selectedProviderID, model_id: selectedModelID })
+      });
+    } catch { /* silent */ }
+  }
 
   function onStreamData(e: Event) {
     const detail = (e as CustomEvent).detail as string;
@@ -38,16 +137,14 @@
         try {
           const parsed = JSON.parse(data);
           if (parsed.content) {
-            // Append to last assistant message or create new
             if (messages.length > 0 && messages[messages.length - 1].role === 'assistant') {
               messages[messages.length - 1].content += parsed.content;
-              messages = messages; // trigger reactivity
+              messages = messages;
             } else {
               messages = [...messages, { role: 'assistant', content: parsed.content }];
             }
           }
         } catch {
-          // Not JSON, append raw
           if (messages.length > 0 && messages[messages.length - 1].role === 'assistant') {
             messages[messages.length - 1].content += data;
             messages = messages;
@@ -70,6 +167,8 @@
     input = '';
     messages = [...messages, { role: 'user', content: text }];
     streaming = true;
+
+    await saveConfig();
 
     let body: unknown;
     let path: string;
@@ -95,6 +194,55 @@
 </script>
 
 <div class="flex flex-col h-screen">
+  <!-- Provider/Model Selection Bar -->
+  {#if configLoaded && providers.length > 0}
+    <div class="flex items-center gap-3 px-4 py-2 border-b border-outline-variant bg-surface-container-low text-xs">
+      <!-- Provider -->
+      <div class="flex items-center gap-1.5">
+        <span class="text-on-surface-variant font-medium">提供商:</span>
+        <select
+          class="px-2 py-1 rounded border border-outline-variant bg-surface text-on-surface cursor-pointer"
+          bind:value={selectedProviderID}
+          onchange={onProviderChange}
+        >
+          {#each providers as p}
+            <option value={p.id}>{p.name} {p.is_free ? '(免费)' : ''}</option>
+          {/each}
+        </select>
+      </div>
+
+      <!-- Model -->
+      <div class="flex items-center gap-1.5">
+        <span class="text-on-surface-variant font-medium">模型:</span>
+        <select
+          class="px-2 py-1 rounded border border-outline-variant bg-surface text-on-surface cursor-pointer"
+          bind:value={selectedModelID}
+        >
+          {#each availableModels as m}
+            <option value={m.id}>{m.name}</option>
+          {/each}
+        </select>
+      </div>
+
+      <!-- Tier badge -->
+      <span class="px-1.5 py-0.5 rounded text-[10px] bg-surface-container-high text-on-surface-variant">
+        {tierLabel}
+      </span>
+
+      <!-- Pricing info -->
+      {#if selectedModel}
+        {@const model = selectedModel}
+        {#if model.price_input_per_m > 0 || model.price_output_per_m > 0}
+          <span class="text-on-surface-variant">
+            💲 {model.price_input_per_m}/M in · {model.price_output_per_m}/M out
+          </span>
+        {:else}
+          <span class="text-green-600 font-medium">免费</span>
+        {/if}
+      {/if}
+    </div>
+  {/if}
+
   <!-- 标签栏 -->
   <div class="flex items-center gap-1 px-4 py-2 border-b border-outline-variant bg-surface-container-high">
     {#each modes as m}

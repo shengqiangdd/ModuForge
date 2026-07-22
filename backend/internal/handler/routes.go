@@ -23,7 +23,7 @@ func RegisterRoutes(api fiber.Router, db *database.DB, cfg *config.Config) {
 	authH := NewAuthHandler(authSvc)
 	projectH := NewProjectHandler(projectSvc)
 	buildH := NewBuildHandler(buildSvc)
-	aiH := NewAIHandler(aiSvc)
+	aiH := NewAIHandler(aiSvc, cfg)
 	repoH := NewRepoHandler(repoSvc)
 	templateH := NewTemplateHandler(templateSvc)
 	translateH := NewTranslateHandler(translateSvc)
@@ -43,6 +43,9 @@ func RegisterRoutes(api fiber.Router, db *database.DB, cfg *config.Config) {
 	api.Post("/ai/chat", aiH.Chat)
 	api.Post("/ai/repair", aiH.RepairBuild)
 	api.Post("/ai/stream", aiStreamH.StreamChat)
+
+	// LLM Provider routes
+	api.Get("/llm/providers", aiH.ListProviders)
 
 	// Repo tracking (public)
 	api.Post("/repo/fetch", repoH.Fetch)
@@ -125,6 +128,10 @@ func RegisterRoutes(api fiber.Router, db *database.DB, cfg *config.Config) {
 	// ===== Protected routes (JWT required) =====
 	protected := api.Group("")
 	protected.Use(AuthMiddleware(cfg.JWTSecret))
+
+	// LLM config (protected)
+	protected.Post("/llm/config", aiH.UpdateLLMConfig)
+	protected.Get("/llm/config", aiH.GetLLMConfig)
 
 	// Projects (CRUD)
 	protected.Get("/projects", projectH.List)
