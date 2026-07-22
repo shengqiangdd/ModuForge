@@ -12,7 +12,7 @@ import (
 	"github.com/gofiber/fiber/v3/middleware/cors"
 	"github.com/gofiber/fiber/v3/middleware/logger"
 	"github.com/gofiber/fiber/v3/middleware/recover"
-	fiberws "github.com/gofiber/websocket/v2"
+	fiberws "github.com/gofiber/contrib/v3/websocket"
 
 	"github.com/moduforge/backend/internal/config"
 	"github.com/moduforge/backend/internal/database"
@@ -76,7 +76,10 @@ func main() {
 	})
 
 	// Serve frontend static files from /app/dist (Docker) or ./dist (local)
-	distDir := "/app/dist"
+	distDir := os.Getenv("DIST_DIR")
+	if distDir == "" {
+		distDir = "/app/dist"
+	}
 	if _, err := os.Stat(distDir); os.IsNotExist(err) {
 		distDir = "../frontend/dist"
 	}

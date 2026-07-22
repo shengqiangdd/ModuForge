@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"log"
 	"sync"
+
+	"github.com/gofiber/contrib/v3/websocket"
 )
 
 type WSMessage struct {
@@ -12,7 +14,7 @@ type WSMessage struct {
 }
 
 type WSClient struct {
-	Conn      interface{}
+	Conn      *websocket.Conn
 	Send      chan []byte
 	ID        string
 	ProjectID string
