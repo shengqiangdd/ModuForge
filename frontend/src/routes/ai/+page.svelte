@@ -27,12 +27,17 @@
   let providers = $state<Provider[]>([]);
   let selectedProviderID = $state('');
   let selectedModelID = $state('');
-  let apiKeyInput = $state('');
   let configLoaded = $state(false);
+  let refreshing = $state(false);
+  let refreshResult = $state<{added: string[]; removed: string[]; total_remote: number; total_local: number} | null>(null);
 
   let availableModels = $derived(
     providers.find(x => x.id === selectedProviderID)?.models || []
   );
+
+  // 分离免费和付费模型
+  let freeModels = $derived(availableModels.filter(m => m.price_input_per_m === 0 && m.price_output_per_m === 0));
+  let paidModels = $derived(availableModels.filter(m => m.price_input_per_m > 0 || m.price_output_per_m > 0));
 
   let selectedModel = $derived(
     availableModels.find(m => m.id === selectedModelID) || null
@@ -127,6 +132,27 @@
     } catch { /* silent */ }
   }
 
+  async function refreshModels() {
+    refreshing = true;
+    refreshResult = null;
+    try {
+      const res = await fetch('/api/v1/llm/refresh');
+      const data = await res.json();
+      refreshResult = {
+        added: data.added || [],
+        removed: data.removed || [],
+        total_remote: data.total_remote || 0,
+        total_local: data.total_local || 0,
+      };
+      // 自动重新加载提供商列表以获取最新模型
+      await loadProviders();
+    } catch {
+      refreshResult = { added: [], removed: [], total_remote: 0, total_local: 0 };
+    } finally {
+      refreshing = false;
+    }
+  }
+
   function onStreamData(e: Event) {
     const detail = (e as CustomEvent).detail as string;
     const lines = detail.split('\n');
@@ -191,12 +217,18 @@
     streamCtrl?.close();
     streaming = false;
   }
+
+  function modelDisplayName(m: Model): string {
+    const price = m.price_input_per_m === 0 && m.price_output_per_m === 0;
+    const suffix = price ? ' 🆓' : ` $${m.price_input_per_m}/M`;
+    return `${m.name}${suffix}`;
+  }
 </script>
 
 <div class="flex flex-col h-screen">
   <!-- Provider/Model Selection Bar -->
   {#if configLoaded && providers.length > 0}
-    <div class="flex items-center gap-3 px-4 py-2 border-b border-outline-variant bg-surface-container-low text-xs">
+    <div class="flex items-center gap-3 px-4 py-2 border-b border-outline-variant bg-surface-container-low text-xs flex-wrap">
       <!-- Provider -->
       <div class="flex items-center gap-1.5">
         <span class="text-on-surface-variant font-medium">提供商:</span>
@@ -206,7 +238,7 @@
           onchange={onProviderChange}
         >
           {#each providers as p}
-            <option value={p.id}>{p.name} {p.is_free ? '(免费)' : ''}</option>
+            <option value={p.id}>{p.name} {p.is_free ? '(免费)' : p.tier === 'subscription' ? '(订阅)' : ''}</option>
           {/each}
         </select>
       </div>
@@ -218,9 +250,20 @@
           class="px-2 py-1 rounded border border-outline-variant bg-surface text-on-surface cursor-pointer"
           bind:value={selectedModelID}
         >
-          {#each availableModels as m}
-            <option value={m.id}>{m.name}</option>
-          {/each}
+          {#if freeModels.length > 0}
+            <optgroup label="🆓 免费模型">
+              {#each freeModels as m}
+                <option value={m.id}>{m.name}</option>
+              {/each}
+            </optgroup>
+          {/if}
+          {#if paidModels.length > 0}
+            <optgroup label="💰 付费模型">
+              {#each paidModels as m}
+                <option value={m.id}>{m.name} (${m.price_input_per_m}/{m.price_output_per_m} per M)</option>
+              {/each}
+            </optgroup>
+          {/if}
         </select>
       </div>
 
@@ -239,6 +282,33 @@
         {:else}
           <span class="text-green-600 font-medium">免费</span>
         {/if}
+      {/if}
+
+      <!-- 模型总数 -->
+      <span class="text-on-surface-variant">
+        {availableModels.length} 个模型
+      </span>
+
+      <!-- 刷新按钮 -->
+      <button
+        class="px-2 py-1 rounded text-xs bg-primary-container text-on-primary-container cursor-pointer flex items-center gap-1 hover:opacity-80 transition-opacity"
+        onclick={refreshModels}
+        disabled={refreshing}
+      >
+        <md-icon class="text-sm">{refreshing ? 'sync' : 'refresh'}</md-icon>
+        {refreshing ? '刷新中...' : '刷新模型'}
+      </button>
+
+      {#if refreshResult}
+        <span class="text-[10px] text-on-surface-variant">
+          远程 {refreshResult.total_remote} · 本地 {refreshResult.total_local}
+          {#if refreshResult.added.length > 0}
+            · <span class="text-green-600">+{refreshResult.added.length} 新增</span>
+          {/if}
+          {#if refreshResult.removed.length > 0}
+            · <span class="text-orange-600">-{refreshResult.removed.length} 移除</span>
+          {/if}
+        </span>
       {/if}
     </div>
   {/if}

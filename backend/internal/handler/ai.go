@@ -78,6 +78,55 @@ func (h *AIHandler) ListProviders(c fiber.Ctx) error {
 	return c.JSON(fiber.Map{"providers": providers})
 }
 
+// RefreshModels 从远程 API 刷新模型列表，返回与本地配置的 diff
+func (h *AIHandler) RefreshModels(c fiber.Ctx) error {
+	remoteModels, err := llm.FetchRemoteModels()
+	if err != nil {
+		return c.Status(502).JSON(fiber.Map{"error": "failed to fetch remote models: " + err.Error()})
+	}
+
+	// Build set of locally known model IDs under opencode-zen
+	providers := llm.GetProviders()
+	localIDs := make(map[string]bool)
+	for _, p := range providers {
+		for _, m := range p.Models {
+			if m.Provider == "opencode-zen" {
+				localIDs[m.ID] = true
+			}
+		}
+	}
+
+	// Build set of remote model IDs
+	remoteIDs := make(map[string]bool)
+	var remoteList []string
+	for _, rm := range remoteModels {
+		remoteIDs[rm.ID] = true
+		remoteList = append(remoteList, rm.ID)
+	}
+
+	// Diff: new models (in remote but not local) and removed (in local but not remote)
+	var added, removed []string
+	for id := range remoteIDs {
+		if !localIDs[id] {
+			added = append(added, id)
+		}
+	}
+	for id := range localIDs {
+		if !remoteIDs[id] {
+			removed = append(removed, id)
+		}
+	}
+
+	return c.JSON(fiber.Map{
+		"status":      "ok",
+		"total_remote": len(remoteModels),
+		"total_local":  len(localIDs),
+		"added":       added,
+		"removed":     removed,
+		"models":      remoteList,
+	})
+}
+
 // GetLLMConfig 返回当前 LLM 配置
 func (h *AIHandler) GetLLMConfig(c fiber.Ctx) error {
 	effectiveKey := h.cfg.EffectiveLLMKey()

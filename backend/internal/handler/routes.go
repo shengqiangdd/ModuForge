@@ -46,6 +46,7 @@ func RegisterRoutes(api fiber.Router, db *database.DB, cfg *config.Config) {
 
 	// LLM Provider routes
 	api.Get("/llm/providers", aiH.ListProviders)
+	api.Get("/llm/refresh", aiH.RefreshModels)
 
 	// Repo tracking (public)
 	api.Post("/repo/fetch", repoH.Fetch)

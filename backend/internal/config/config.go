@@ -21,6 +21,7 @@ type Config struct {
 	DeepSeekApiKey  string // DeepSeek API key
 	QwenApiKey      string // 通义千问 API key
 	OpenCodeApiKey  string // OpenCode Zen 和 Go 共用
+	XAIApiKey       string // xAI / Grok API key
 	OllamaEndpoint  string // Ollama 本地端点
 	DockerEndpoint  string // Docker 端点（空 = 不启用 Docker 构建）
 }
@@ -42,6 +43,7 @@ func Load() *Config {
 		DeepSeekApiKey:  getEnv("DEEPSEEK_API_KEY", ""),
 		QwenApiKey:      getEnv("QWEN_API_KEY", ""),
 		OpenCodeApiKey:  getEnv("OPENCODE_API_KEY", ""),
+		XAIApiKey:       getEnv("XAI_API_KEY", ""),
 		OllamaEndpoint:  getEnv("OLLAMA_ENDPOINT", "http://localhost:11434"),
 		DockerEndpoint:  getEnv("DOCKER_ENDPOINT", ""),
 	}
@@ -63,6 +65,8 @@ func (c *Config) EffectiveLLMKey() string {
 			return c.QwenApiKey
 		case "opencode-zen", "opencode-zen-paid", "opencode-go":
 			return c.OpenCodeApiKey
+		case "xai":
+			return c.XAIApiKey
 		case "ollama":
 			return "" // Ollama 不需要 key
 		}
