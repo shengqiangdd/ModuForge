@@ -1,9 +1,11 @@
 package main
 
 import (
+	"io/fs"
 	"log"
 	"os"
 	"os/signal"
+	"strings"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/compress"
@@ -73,6 +75,21 @@ func main() {
 		})
 	})
 
+	// Serve frontend static files from /app/dist (Docker) or ./dist (local)
+	distDir := "/app/dist"
+	if _, err := os.Stat(distDir); os.IsNotExist(err) {
+		distDir = "../frontend/dist"
+	}
+	if _, err := os.Stat(distDir); err == nil {
+		frontendFS, err := fs.Sub(os.DirFS(distDir), ".")
+		if err == nil {
+			serveFrontend(app, frontendFS)
+			log.Printf("Frontend served from %s", distDir)
+		}
+	} else {
+		log.Printf("Warning: no frontend dist found, serving API only")
+	}
+
 	// Graceful shutdown
 	go func() {
 		sig := make(chan os.Signal, 1)
@@ -81,8 +98,68 @@ func main() {
 		app.Shutdown()
 	}()
 
-	log.Printf("ModuForge Lite starting on %s", cfg.Port)
+	log.Printf("ModuForge starting on %s", cfg.Port)
 	if err := app.Listen(cfg.Port); err != nil {
 		log.Fatalf("listen: %v", err)
 	}
+}
+
+// serveFrontend 注册 SPA 静态文件路由
+func serveFrontend(app *fiber.App, fsys fs.FS) {
+	// Content type map
+	ctMap := map[string]string{
+		".js":   "application/javascript",
+		".mjs":  "application/javascript",
+		".css":  "text/css",
+		".html": "text/html; charset=utf-8",
+		".json": "application/json",
+		".svg":  "image/svg+xml",
+		".png":  "image/png",
+		".jpg":  "image/jpeg",
+		".jpeg": "image/jpeg",
+		".gif":  "image/gif",
+		".ico":  "image/x-icon",
+		".woff": "font/woff",
+		".woff2": "font/woff2",
+		".ttf":  "font/ttf",
+		".map":  "application/json",
+	}
+
+	app.Get("/*", func(c fiber.Ctx) error {
+		path := c.Path()
+
+		// Skip API and WebSocket routes
+		if strings.HasPrefix(path, "/api/") || strings.HasPrefix(path, "/ws") || path == "/health" {
+			return c.Next()
+		}
+
+		// Clean the path
+		relPath := strings.TrimPrefix(path, "/")
+		if relPath == "" {
+			relPath = "index.html"
+		}
+
+		// Try to open the file
+		f, err := fsys.Open(relPath)
+		if err == nil {
+			defer f.Close()
+			stat, _ := f.Stat()
+			if stat != nil && !stat.IsDir() {
+				ext := relPath[strings.LastIndex(relPath, "."):]
+				if ct, ok := ctMap[ext]; ok {
+					c.Set("Content-Type", ct)
+				}
+				data, _ := fs.ReadFile(fsys, relPath)
+				return c.Send(data)
+			}
+		}
+
+		// SPA fallback: serve index.html
+		data, err := fs.ReadFile(fsys, "index.html")
+		if err != nil {
+			return c.Status(404).JSON(fiber.Map{"error": "not found"})
+		}
+		c.Set("Content-Type", "text/html; charset=utf-8")
+		return c.Send(data)
+	})
 }
