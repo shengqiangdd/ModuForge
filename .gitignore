@@ -1,0 +1,9 @@
+ModuForge/
+.mimocode/
+data/
+backend/data/
+node_modules/
+dist/
+*.db
+*.db-wal
+*.db-shm
