@@ -1,135 +1,157 @@
 <script lang="ts">
-  let mode = $state<'login' | 'register'>('login');
+  import { t } from '$lib/i18n';
+  import { client } from '../../lib/api/client';
+
+  let { onAuth }: { onAuth: (token: string) => void } = $props();
+
+  let isLogin = $state(true);
   let username = $state('');
   let email = $state('');
   let password = $state('');
   let loading = $state(false);
   let error = $state('');
+  let mounted = $state(false);
 
-  const onAuth = $props<{ onAuth: (token: string) => void }>();
+  $effect(() => {
+    setTimeout(() => mounted = true, 50);
+  });
 
-  async function submit() {
-    error = '';
+  async function handleSubmit() {
     loading = true;
+    error = '';
     try {
-      const body = mode === 'login'
-        ? { username, password }
-        : { username, email, password };
-
-      const res = await fetch(`/api/v1/auth/${mode}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-
-      const data = await res.json();
-      if (!res.ok) {
-        error = data.error || 'Request failed';
-        return;
+      if (isLogin) {
+        const res = await client.post<{ token: string }>('/auth/login', { username, password });
+        onAuth(res.token);
+      } else {
+        await client.post('/auth/register', { username, email, password });
+        const res = await client.post<{ token: string }>('/auth/login', { username, password });
+        onAuth(res.token);
       }
-
-      localStorage.setItem('moduforge_token', data.token);
-      onAuth(data.token);
-    } catch {
-      error = 'Network error, please try again';
+    } catch (e: any) {
+      error = e.message || 'Authentication failed';
     } finally {
       loading = false;
     }
   }
-
-  function handleKeydown(e: KeyboardEvent) {
-    if (e.key === 'Enter') submit();
-  }
 </script>
 
-<div class="min-h-screen flex items-center justify-center bg-surface-container">
-  <div class="w-full max-w-md bg-surface rounded-2xl shadow-xl p-8">
+<div class="min-h-screen flex items-center justify-center bg-gradient-mesh relative overflow-hidden">
+  <!-- Decorative elements -->
+  <div class="absolute inset-0 overflow-hidden pointer-events-none">
+    <div class="absolute -top-40 -right-40 w-80 h-80 bg-primary-500/10 rounded-full blur-3xl"></div>
+    <div class="absolute -bottom-40 -left-40 w-80 h-80 bg-primary-300/10 rounded-full blur-3xl"></div>
+    <div class="absolute top-1/3 left-1/4 w-64 h-64 bg-primary-200/5 rounded-full blur-3xl"></div>
+  </div>
+
+  <!-- Login Card -->
+  <div class="relative w-full max-w-md mx-4 transition-all duration-500 ease-out {mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}">
+    <!-- Logo -->
     <div class="text-center mb-8">
-      <h1 class="text-3xl font-bold text-on-surface">ModuForge</h1>
-      <p class="text-on-surface-variant mt-1">Magisk/KSU 模块开发平台</p>
+      <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-primary-500 to-primary-700 flex items-center justify-center mx-auto mb-4 shadow-glow">
+        <span class="material-symbols-outlined text-white text-2xl">extension</span>
+      </div>
+      <h1 class="text-2xl font-bold text-[var(--color-text)] tracking-tight">ModuForge</h1>
+      <p class="text-sm text-[var(--color-text-secondary)] mt-1">Magisk Module Builder & Marketplace</p>
     </div>
 
-    <!-- Mode toggle -->
-    <div class="flex bg-surface-container rounded-lg p-1 mb-6">
-      <button
-        class="flex-1 py-2 rounded-md text-body-medium transition-colors"
-        class:bg-primary={mode === 'login'}
-        class:text-on-primary={mode === 'login'}
-        class:text-on-surface-variant={mode !== 'login'}
-        onclick={() => { mode = 'login'; error = ''; }}
-      >
-        登录
-      </button>
-      <button
-        class="flex-1 py-2 rounded-md text-body-medium transition-colors"
-        class:bg-primary={mode === 'register'}
-        class:text-on-primary={mode === 'register'}
-        class:text-on-surface-variant={mode !== 'register'}
-        onclick={() => { mode = 'register'; error = ''; }}
-      >
-        注册
-      </button>
-    </div>
-
-    {#if error}
-      <div class="mb-4 p-3 bg-error-container text-on-error-container rounded-lg text-body-small flex items-center gap-2">
-        <span class="material-symbols-outlined text-sm">error</span>
-        {error}
-      </div>
-    {/if}
-
-    <div class="space-y-4">
-      <div>
-        <label class="block text-label-medium text-on-surface-variant mb-1" for="username">用户名</label>
-        <input
-          id="username"
-          type="text"
-          class="w-full px-4 py-3 border border-outline rounded-lg bg-surface text-on-surface focus:border-primary focus:outline-none transition-colors"
-          placeholder="输入用户名"
-          bind:value={username}
-          onkeydown={handleKeydown}
-          disabled={loading}
-        />
+    <!-- Card -->
+    <div class="bg-[var(--color-bg-elevated)] rounded-2xl shadow-elevated-lg p-8 border border-[var(--color-border)]">
+      <!-- Tab switcher -->
+      <div class="flex bg-[var(--color-surface)] rounded-xl p-1 mb-6">
+        <button
+          class="flex-1 py-2.5 text-sm font-medium rounded-lg transition-all duration-200 {isLogin ? 'bg-[var(--color-bg-elevated)] shadow-sm text-[var(--color-text)]' : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text)]'}"
+          onclick={() => { isLogin = true; error = ''; }}
+        >
+          {$t('nav.login')}
+        </button>
+        <button
+          class="flex-1 py-2.5 text-sm font-medium rounded-lg transition-all duration-200 {!isLogin ? 'bg-[var(--color-bg-elevated)] shadow-sm text-[var(--color-text)]' : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text)]'}"
+          onclick={() => { isLogin = false; error = ''; }}
+        >
+          {$t('nav.register')}
+        </button>
       </div>
 
-      {#if mode === 'register'}
-        <div>
-          <label class="block text-label-medium text-on-surface-variant mb-1" for="email">邮箱</label>
-          <input
-            id="email"
-            type="email"
-            class="w-full px-4 py-3 border border-outline rounded-lg bg-surface text-on-surface focus:border-primary focus:outline-none transition-colors"
-            placeholder="输入邮箱"
-            bind:value={email}
-            onkeydown={handleKeydown}
-            disabled={loading}
-          />
+      <!-- Error -->
+      {#if error}
+        <div class="mb-4 px-4 py-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm flex items-center gap-2">
+          <span class="material-symbols-outlined text-[18px]">error</span>
+          {error}
         </div>
       {/if}
 
-      <div>
-        <label class="block text-label-medium text-on-surface-variant mb-1" for="password">密码</label>
-        <input
-          id="password"
-          type="password"
-          class="w-full px-4 py-3 border border-outline rounded-lg bg-surface text-on-surface focus:border-primary focus:outline-none transition-colors"
-          placeholder="输入密码"
-          bind:value={password}
-          onkeydown={handleKeydown}
-          disabled={loading}
-        />
-      </div>
+      <!-- Form -->
+      <form onsubmit={(e) => { e.preventDefault(); handleSubmit(); }} class="space-y-4">
+        <div>
+          <label class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1.5">{$t('auth.username')}</label>
+          <div class="relative">
+            <span class="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-400 text-[18px]">person</span>
+            <input
+              type="text"
+              bind:value={username}
+              class="input-field pl-10"
+              placeholder="your_username"
+              required
+            />
+          </div>
+        </div>
 
-      <md-filled-button
-        class="w-full"
-        onclick={submit}
-        disabled={loading || !username || !password || (mode === 'register' && !email)}
-      >
-        {#if loading}
-          <md-circular-progress indeterminate class="w-5 h-5 mr-2"></md-circular-progress>
+        {#if !isLogin}
+          <div>
+            <label class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1.5">{$t('auth.email')}</label>
+            <div class="relative">
+              <span class="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-400 text-[18px]">mail</span>
+              <input
+                type="email"
+                bind:value={email}
+                class="input-field pl-10"
+                placeholder="you@example.com"
+                required={!isLogin}
+              />
+            </div>
+          </div>
         {/if}
-        {loading ? '处理中...' : mode === 'login' ? '登录' : '注册'}
-      </md-filled-button>
+
+        <div>
+          <label class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1.5">{$t('auth.password')}</label>
+          <div class="relative">
+            <span class="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-400 text-[18px]">lock</span>
+            <input
+              type="password"
+              bind:value={password}
+              class="input-field pl-10"
+              placeholder="••••••••"
+              required
+            />
+          </div>
+        </div>
+
+        <button
+          type="submit"
+          disabled={loading}
+          class="w-full py-3 rounded-xl font-semibold text-sm text-white transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed
+            bg-gradient-to-r from-primary-600 to-primary-700 hover:from-primary-700 hover:to-primary-800 active:scale-[0.98] shadow-sm hover:shadow-glow"
+        >
+          {#if loading}
+            <span class="inline-flex items-center gap-2">
+              <svg class="animate-spin h-4 w-4" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+              {isLogin ? $t('nav.login') : $t('nav.register')}...
+            </span>
+          {:else}
+            {isLogin ? $t('auth.login_btn') : $t('auth.register_btn')}
+          {/if}
+        </button>
+      </form>
+
+      <p class="text-center text-sm text-[var(--color-text-muted)] mt-6">
+        {isLogin ? $t('auth.switch_to_register') : $t('auth.switch_to_login')}
+      </p>
     </div>
+
+    <!-- Footer -->
+    <p class="text-center text-xs text-[var(--color-text-muted)] mt-6">
+      ModuForge v1.0 — Built for the Android modding community
+    </p>
   </div>
 </div>

@@ -987,89 +987,86 @@
 
 <div class="flex h-screen">
   <!-- 文件树 -->
-  <aside class="w-64 bg-surface-container-high border-r border-outline-variant flex flex-col">
-    <div class="p-4 border-b border-outline-variant">
-      <h2 class="text-title-medium text-on-surface truncate">{project?.name || '加载中...'}</h2>
+  <aside class="w-64 bg-[var(--color-bg-elevated)] border-r border-[var(--color-border)] flex flex-col">
+    <div class="p-4 border-b border-[var(--color-border)]">
+      <h2 class="text-base font-semibold text-[var(--color-text)] truncate">{project?.name || '加载中...'}</h2>
     </div>
 
     <div class="flex-1 overflow-auto p-2">
       {#if loading}
-        <div class="flex justify-center p-4"><md-circular-progress indeterminate /></div>
+        <div class="flex justify-center p-4"><div class="animate-spin h-5 w-5 border-2 border-primary-500 border-t-transparent rounded-full"></div></div>
       {:else if files.length === 0}
-        <p class="text-body-small text-on-surface-variant p-4">暂无文件</p>
+        <p class="text-xs text-[var(--color-text-secondary)] p-4">暂无文件</p>
       {:else}
-        <md-list>
+        <div class="space-y-1">
           {#each files as file}
-            <md-list-item
-              class="cursor-pointer"
-              class:bg-primary-container={selectedFile === file.path}
-              onclick={() => selectFile(file.path)}
+            <div class="flex items-center gap-2 p-2 rounded-xl hover:bg-neutral-50 cursor-pointer transition-colors cursor-pointer" class:bg-primary-600-50={selectedFile === file.path} onclick={() => selectFile(file.path)}
             >
-              <span slot="start" class="text-lg mr-2">{getFileIcon(file.path)}</span>
+              <span class="text-lg mr-2">{getFileIcon(file.path)}</span>
               <span>{file.path}</span>
-            </md-list-item>
+            </div>
           {/each}
-        </md-list>
+        </div>
       {/if}
     </div>
 
-    <div class="p-3 border-t border-outline-variant space-y-2">
-      <md-filled-button class="w-full" onclick={() => { showRepoDialog = true; }}>
-        <md-icon slot="start">link</md-icon>
+    <div class="p-3 border-t border-[var(--color-border)] space-y-2">
+      <button class="btn-primary w-full" onclick={() => { showRepoDialog = true; }}>
+        <span class="material-symbols-outlined" slot="start">link</span>
         导入 GitHub 仓库
-      </md-filled-button>
-      <md-filled-button class="w-full" onclick={() => { showTemplatePanel = true; loadTemplates(); }}>
-        <md-icon slot="start">description</md-icon>
+      </button>
+      <button class="btn-primary w-full" onclick={() => { showTemplatePanel = true; loadTemplates(); }}>
+        <span class="material-symbols-outlined" slot="start">description</span>
         模板推荐
-      </md-filled-button>
-      <md-filled-button class="w-full" onclick={() => showBuildLog = true}>
-        <md-icon slot="start">terminal</md-icon>
+      </button>
+      <button class="btn-primary w-full" onclick={() => showBuildLog = true}>
+        <span class="material-symbols-outlined" slot="start">terminal</span>
         构建日志
-      </md-filled-button>
-      <md-filled-button class="w-full" href="/projects/{id}/build">
-        <md-icon slot="start">build</md-icon>
+      </button>
+      <button class="btn-primary w-full" href="/projects/{id}/build">
+        <span class="material-symbols-outlined" slot="start">build</span>
         构建模块
-      </md-filled-button>
-      <md-filled-button class="w-full" onclick={exportZip} disabled={exporting}>
-        <md-icon slot="start">archive</md-icon>
+      </button>
+      <button class="btn-primary w-full" onclick={exportZip} disabled={exporting}>
+        <span class="material-symbols-outlined" slot="start">archive</span>
         {exporting ? '打包中...' : '导出模块 ZIP'}
-      </md-filled-button>
-      <md-filled-button class="w-full" onclick={signModule} disabled={signing}>
-        <md-icon slot="start">verified</md-icon>
+      </button>
+      <button class="btn-primary w-full" onclick={signModule} disabled={signing}>
+        <span class="material-symbols-outlined" slot="start">verified</span>
         {signing ? '签名中...' : '签名模块'}
-      </md-filled-button>
-      <md-filled-button class="w-full" onclick={() => { showGitPanel = !showGitPanel; if (showGitPanel) loadGitCommits(); }}>
-        <md-icon slot="start">history</md-icon>
+      </button>
+      <button class="btn-primary w-full" onclick={() => { showGitPanel = !showGitPanel; if (showGitPanel) loadGitCommits(); }}>
+        <span class="material-symbols-outlined" slot="start">history</span>
         版本历史 ⏱
-      </md-filled-button>
-      <md-filled-button class="w-full" onclick={() => { showADBPanels = !showADBPanels; if (showADBPanels && adbAvailable === null) checkADB(); }}>
-        <md-icon slot="start">phone_android</md-icon>
+      </button>
+      <button class="btn-primary w-full" onclick={() => { showADBPanels = !showADBPanels; if (showADBPanels && adbAvailable === null) checkADB(); }}>
+        <span class="material-symbols-outlined" slot="start">phone_android</span>
         设备
-      </md-filled-button>
-      <md-filled-button class="w-full" onclick={() => { showScreenshotPanel = !showScreenshotPanel; if (showScreenshotPanel && adbDevices.length === 0) checkADB(); }}>
-        <md-icon slot="start">photo_camera</md-icon>
+      </button>
+      <button class="btn-primary w-full" onclick={() => { showScreenshotPanel = !showScreenshotPanel; if (showScreenshotPanel && adbDevices.length === 0) checkADB(); }}>
+        <span class="material-symbols-outlined" slot="start">photo_camera</span>
         真机截图
-      </md-filled-button>
-      <md-filled-button class="w-full" onclick={() => { showMirrorPanel = !showMirrorPanel; if (showMirrorPanel && adbDevices.length === 0) checkADB(); }}>
-        <md-icon slot="start">screen_share</md-icon>
+      </button>
+      <button class="btn-primary w-full" onclick={() => { showMirrorPanel = !showMirrorPanel; if (showMirrorPanel && adbDevices.length === 0) checkADB(); }}>
+        <span class="material-symbols-outlined" slot="start">screen_share</span>
         真机投屏
-      </md-filled-button>
-      <md-filled-button class="w-full" onclick={() => showUpdatePanel = !showUpdatePanel}>
-        <md-icon slot="start">system_update</md-icon>
+      </button>
+      <button class="btn-primary w-full" onclick={() => showUpdatePanel = !showUpdatePanel}>
+        <span class="material-symbols-outlined" slot="start">system_update</span>
         检查更新
-      </md-filled-button>
-      <md-filled-button class="w-full" onclick={() => { showBenchmarkPanel = !showBenchmarkPanel; if (showBenchmarkPanel && adbDevices.length === 0) { checkADB(); loadBenchmarkHistory(); } }}>
-        <md-icon slot="start">speed</md-icon>
+      </button>
+      <button class="btn-primary w-full" onclick={() => { showBenchmarkPanel = !showBenchmarkPanel; if (showBenchmarkPanel && adbDevices.length === 0) { checkADB(); loadBenchmarkHistory(); } }}>
+        <span class="material-symbols-outlined" slot="start">speed</span>
         性能测试
-      </md-filled-button>
-      <md-filled-button class="w-full" onclick={openCollabPanel}>
-        <md-icon slot="start">group</md-icon>
+      </button>
+      <button class="btn-primary w-full" onclick={openCollabPanel}>
+        <span class="material-symbols-outlined" slot="start">group</span>
         协作 👥
-      </md-filled-button>
-      <md-filled-button class="w-full" onclick={() => showPluginPanel = !showPluginPanel}>
-        <md-icon slot="start">extension</md-icon>
+      </button>
+      <button class="btn-primary w-full" onclick={() => showPluginPanel = !showPluginPanel}>
+        <span class="material-symbols-outlined" slot="start">extension</span>
         插件
-      </md-filled-button>
+      </button>
     </div>
   </aside>
 
@@ -1077,12 +1074,12 @@
   <main class="flex-1 flex flex-col">
     {#if selectedFile}
       <!-- 标签页 -->
-      <div class="flex items-center justify-between px-4 py-2 border-b border-outline-variant bg-surface">
+      <div class="flex items-center justify-between px-4 py-2 border-b border-[var(--color-border)] bg-[var(--color-bg)]">
         <div class="flex items-center gap-4">
           <button
-            class="px-3 py-1 text-body-medium transition-colors"
+            class="px-3 py-1 text-sm transition-colors"
             class:text-primary={activeTab === 'editor'}
-            class:text-on-surface-variant={activeTab !== 'editor'}
+            class:text-[var(--color-text-secondary)]={activeTab !== 'editor'}
             class:border-b-2={activeTab === 'editor'}
             class:border-primary={activeTab === 'editor'}
             onclick={() => activeTab = 'editor'}
@@ -1090,9 +1087,9 @@
             编辑
           </button>
           <button
-            class="px-3 py-1 text-body-medium transition-colors"
+            class="px-3 py-1 text-sm transition-colors"
             class:text-primary={activeTab === 'preview'}
-            class:text-on-surface-variant={activeTab !== 'preview'}
+            class:text-[var(--color-text-secondary)]={activeTab !== 'preview'}
             class:border-b-2={activeTab === 'preview'}
             class:border-primary={activeTab === 'preview'}
             onclick={() => activeTab = 'preview'}
@@ -1101,11 +1098,11 @@
           </button>
         </div>
         <div class="flex items-center gap-2">
-          <span class="text-body-medium text-on-surface font-mono">{selectedFile}</span>
+          <span class="text-sm text-[var(--color-text)] font-mono">{selectedFile}</span>
 
           {#if selectedFile?.endsWith('.prop')}
             <select
-              class="px-2 py-1 border border-outline rounded bg-surface text-on-surface text-sm"
+              class="px-2 py-1 border border-[var(--color-border)] rounded bg-[var(--color-bg)] text-[var(--color-text)] text-sm"
               bind:value={translateLang}
             >
               <option value="en">English</option>
@@ -1113,19 +1110,19 @@
               <option value="ja">日本語</option>
               <option value="ko">한국어</option>
             </select>
-            <md-filled-tonal-button size="small" onclick={translateDescription} disabled={translating}>
-              <md-icon slot="start">translate</md-icon>
+            <button class="btn-ghost border border-[var(--color-border)] text-xs px-3 py-1" onclick={translateDescription} disabled={translating}>
+              <span class="material-symbols-outlined" slot="start">translate</span>
               {translating ? '翻译中...' : '翻译'}
-            </md-filled-tonal-button>
+            </button>
           {/if}
 
-          <md-filled-tonal-button size="small" onclick={saveFile} disabled={saving}>
+          <button class="btn-ghost border border-[var(--color-border)] text-xs px-3 py-1" onclick={saveFile} disabled={saving}>
             {saving ? '保存中...' : '保存'}
-          </md-filled-tonal-button>
-          <md-filled-tonal-button size="small" onclick={validateCurrentFile} disabled={validating}>
-            <md-icon slot="start">check_circle</md-icon>
+          </button>
+          <button class="btn-ghost border border-[var(--color-border)] text-xs px-3 py-1" onclick={validateCurrentFile} disabled={validating}>
+            <span class="material-symbols-outlined" slot="start">check_circle</span>
             {validating ? '校验中...' : '校验'}
-          </md-filled-tonal-button>
+          </button>
         </div>
       </div>
 
@@ -1153,37 +1150,37 @@
       </div>
 
       {#if translatedDesc && selectedFile?.endsWith('.prop')}
-        <div class="p-3 border-t border-outline-variant bg-surface-container">
+        <div class="p-3 border-t border-[var(--color-border)] bg-[var(--color-surface)]">
           <div class="flex items-center gap-2 mb-2">
-            <md-icon class="text-sm">translate</md-icon>
-            <span class="text-label-medium">翻译结果</span>
+            <span class="material-symbols-outlined text-sm">translate</span>
+            <span class="text-xs font-medium">翻译结果</span>
           </div>
           <div class="grid grid-cols-2 gap-4">
-            <div class="p-3 bg-surface rounded-lg border border-outline">
-              <p class="text-label-small text-on-surface-variant mb-1">原文</p>
-              <p class="text-body-small">{originalDesc}</p>
+            <div class="p-3 bg-[var(--color-bg)] rounded-lg border border-[var(--color-border)]">
+              <p class="text-[11px] font-medium text-[var(--color-text-secondary)] mb-1">原文</p>
+              <p class="text-xs">{originalDesc}</p>
             </div>
-            <div class="p-3 bg-surface rounded-lg border border-outline">
-              <p class="text-label-small text-on-surface-variant mb-1">译文 ({translateLang})</p>
-              <p class="text-body-small">{translatedDesc}</p>
+            <div class="p-3 bg-[var(--color-bg)] rounded-lg border border-[var(--color-border)]">
+              <p class="text-[11px] font-medium text-[var(--color-text-secondary)] mb-1">译文 ({translateLang})</p>
+              <p class="text-xs">{translatedDesc}</p>
             </div>
           </div>
         </div>
       {/if}
 
       {#if showValidation && validationResults.length > 0}
-        <div class="border-t border-outline-variant bg-surface-container">
+        <div class="border-t border-[var(--color-border)] bg-[var(--color-surface)]">
           <div class="flex items-center justify-between px-4 py-2">
             <div class="flex items-center gap-2">
-              <md-icon class="text-sm">check_circle</md-icon>
-              <span class="text-label-medium">语法校验结果</span>
+              <span class="material-symbols-outlined text-sm">check_circle</span>
+              <span class="text-xs font-medium">语法校验结果</span>
             </div>
             <div class="flex items-center gap-2">
-              <md-filled-tonal-button size="small" onclick={validateAllFiles} disabled={validating}>
+              <button class="btn-ghost border border-[var(--color-border)] text-xs px-3 py-1" onclick={validateAllFiles} disabled={validating}>
                 校验全部文件
-              </md-filled-tonal-button>
+              </button>
               <button onclick={() => showValidation = false}>
-                <md-icon class="text-sm">close</md-icon>
+                <span class="material-symbols-outlined text-sm">close</span>
               </button>
             </div>
           </div>
@@ -1194,16 +1191,16 @@
                   <md-icon class="text-sm {vr.valid ? 'text-green-600' : 'text-red-600'}">
                     {vr.valid ? 'check_circle' : 'error'}
                   </md-icon>
-                  <span class="text-body-small font-medium">{vr.file}</span>
+                  <span class="text-xs font-medium">{vr.file}</span>
                   {#if vr.valid}
-                    <span class="text-body-small text-green-600">通过</span>
+                    <span class="text-xs text-green-600">通过</span>
                   {/if}
                 </div>
                 {#each vr.errors as err}
-                  <p class="text-body-small text-red-600 ml-6">{err}</p>
+                  <p class="text-xs text-red-600 ml-6">{err}</p>
                 {/each}
                 {#each vr.warnings as warn}
-                  <p class="text-body-small text-amber-600 ml-6">{warn}</p>
+                  <p class="text-xs text-amber-600 ml-6">{warn}</p>
                 {/each}
               </div>
             {/each}
@@ -1211,10 +1208,10 @@
         </div>
       {/if}
     {:else}
-      <div class="flex-1 flex items-center justify-center text-on-surface-variant">
+      <div class="flex-1 flex items-center justify-center text-[var(--color-text-secondary)]">
         <div class="text-center">
-          <md-icon class="text-5xl mb-2">edit_document</md-icon>
-          <p class="text-body-large">选择一个文件开始编辑</p>
+          <span class="material-symbols-outlined text-5xl mb-2">edit_document</span>
+          <p class="text-base">选择一个文件开始编辑</p>
         </div>
       </div>
     {/if}
@@ -1224,11 +1221,11 @@
 <!-- Repo Dialog -->
 {#if showRepoDialog}
   <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-    <div class="bg-surface rounded-2xl p-6 max-w-2xl w-full mx-4 max-h-[80vh] overflow-auto">
+    <div class="bg-[var(--color-bg)] rounded-2xl p-6 max-w-2xl w-full mx-4 max-h-[80vh] overflow-auto">
       <div class="flex items-center justify-between mb-4">
-        <h2 class="text-headline-small">导入 GitHub 仓库</h2>
+        <h2 class="text-lg font-semibold">导入 GitHub 仓库</h2>
         <button onclick={() => showRepoDialog = false}>
-          <md-icon>close</md-icon>
+          <span class="material-symbols-outlined">close</span>
         </button>
       </div>
 
@@ -1236,28 +1233,28 @@
         <input
           type="text"
           placeholder="https://github.com/user/repo"
-          class="flex-1 px-4 py-2 border border-outline rounded-lg bg-surface text-on-surface"
+          class="flex-1 px-4 py-2 border border-[var(--color-border)] rounded-lg bg-[var(--color-bg)] text-[var(--color-text)]"
           bind:value={repoUrl}
         />
-        <md-filled-button onclick={fetchRepoInfo} disabled={repoLoading}>
+        <button class="btn-primary" onclick={fetchRepoInfo} disabled={repoLoading}>
           {repoLoading ? '获取中...' : '获取'}
-        </md-filled-button>
+        </button>
       </div>
 
       {#if repoInfo}
-        <div class="border border-outline rounded-xl p-4 mb-4">
+        <div class="border border-[var(--color-border)] rounded-xl p-4 mb-4">
           <div class="flex items-center gap-2 mb-2">
-            <md-icon>folder</md-icon>
-            <span class="text-title-medium">{repoInfo.owner}/{repoInfo.name}</span>
+            <span class="material-symbols-outlined">folder</span>
+            <span class="text-base font-semibold">{repoInfo.owner}/{repoInfo.name}</span>
           </div>
-          <div class="flex gap-4 text-body-small text-on-surface-variant">
+          <div class="flex gap-4 text-xs text-[var(--color-text-secondary)]">
             <span>⭐ {repoInfo.stars}</span>
             <span>📄 {repoInfo.license || 'N/A'}</span>
           </div>
           {#if repoInfo.topics?.length}
             <div class="flex flex-wrap gap-2 mt-2">
               {#each repoInfo.topics as topic}
-                <span class="px-2 py-1 bg-primary-container text-on-primary-container rounded-full text-xs">{topic}</span>
+                <span class="px-2 py-1 bg-primary-600-50 text-primary-700 rounded-full text-xs">{topic}</span>
               {/each}
             </div>
           {/if}
@@ -1265,16 +1262,16 @@
       {/if}
 
       {#if repoFiles.length}
-        <div class="border border-outline rounded-xl p-4">
-          <h3 class="text-title-small mb-2">仓库文件</h3>
-          <md-list>
+        <div class="border border-[var(--color-border)] rounded-xl p-4">
+          <h3 class="text-sm font-semibold mb-2">仓库文件</h3>
+          <div class="space-y-1">
             {#each repoFiles as file}
-              <md-list-item>
-                <md-icon slot="start">{file.type === 'dir' ? 'folder' : 'description'}</md-icon>
+              <div class="flex items-center gap-2 p-2 rounded-xl hover:bg-neutral-50 cursor-pointer transition-colors">
+                <span class="material-symbols-outlined" slot="start">{file.type === 'dir' ? 'folder' : 'description'}</span>
                 <span>{file.name}</span>
-              </md-list-item>
+              </div>
             {/each}
-          </md-list>
+          </div>
         </div>
       {/if}
     </div>
@@ -1284,32 +1281,32 @@
 <!-- Template Panel -->
 {#if showTemplatePanel}
   <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-    <div class="bg-surface rounded-2xl p-6 max-w-2xl w-full mx-4 max-h-[80vh] overflow-auto">
+    <div class="bg-[var(--color-bg)] rounded-2xl p-6 max-w-2xl w-full mx-4 max-h-[80vh] overflow-auto">
       <div class="flex items-center justify-between mb-4">
-        <h2 class="text-headline-small">模板推荐</h2>
+        <h2 class="text-lg font-semibold">模板推荐</h2>
         <button onclick={() => showTemplatePanel = false}>
-          <md-icon>close</md-icon>
+          <span class="material-symbols-outlined">close</span>
         </button>
       </div>
 
       <input
         type="text"
         placeholder="输入描述搜索模板..."
-        class="w-full px-4 py-2 border border-outline rounded-lg bg-surface text-on-surface mb-4"
+        class="w-full px-4 py-2 border border-[var(--color-border)] rounded-lg bg-[var(--color-bg)] text-[var(--color-text)] mb-4"
         bind:value={templateSearch}
       />
 
       <div class="grid grid-cols-1 gap-3">
         {#each templates.filter(t => !templateSearch || t.description?.toLowerCase().includes(templateSearch.toLowerCase())) as tmpl}
           <button
-            class="p-4 border border-outline rounded-xl text-left hover:bg-surface-container transition-colors"
+            class="p-4 border border-[var(--color-border)] rounded-xl text-left hover:bg-[var(--color-surface)] transition-colors"
             onclick={() => applyTemplate(tmpl)}
           >
             <div class="flex items-center gap-2 mb-1">
-              <md-icon>{tmpl.category === 'system' ? 'settings' : tmpl.category === 'ui' ? 'palette' : 'extension'}</md-icon>
-              <span class="text-title-small">{tmpl.name}</span>
+              <span class="material-symbols-outlined">{tmpl.category === 'system' ? 'settings' : tmpl.category === 'ui' ? 'palette' : 'extension'}</span>
+              <span class="text-sm font-semibold">{tmpl.name}</span>
             </div>
-            <p class="text-body-small text-on-surface-variant">{tmpl.description}</p>
+            <p class="text-xs text-[var(--color-text-secondary)]">{tmpl.description}</p>
           </button>
         {/each}
       </div>
@@ -1319,53 +1316,53 @@
 
 <!-- AI Chat Bubble -->
 <button
-  class="fixed bottom-6 right-6 w-14 h-14 bg-primary text-on-primary rounded-full shadow-lg flex items-center justify-center hover:bg-primary/90 transition-colors z-40"
+  class="fixed bottom-6 right-6 w-14 h-14 bg-primary-600 text-white rounded-full shadow-lg flex items-center justify-center hover:bg-primary-600/90 transition-colors z-40"
   onclick={() => chatOpen = !chatOpen}
 >
   <span class="text-2xl">{chatOpen ? '✕' : '💬'}</span>
 </button>
 
 {#if chatOpen}
-  <div class="fixed bottom-24 right-6 w-96 h-[500px] bg-surface rounded-2xl shadow-2xl flex flex-col z-50 border border-outline">
-    <div class="p-4 border-b border-outline-variant flex items-center justify-between">
+  <div class="fixed bottom-24 right-6 w-96 h-[500px] bg-[var(--color-bg)] rounded-2xl shadow-2xl flex flex-col z-50 border border-[var(--color-border)]">
+    <div class="p-4 border-b border-[var(--color-border)] flex items-center justify-between">
       <div class="flex items-center gap-2">
         <span class="text-lg">🤖</span>
-        <span class="text-title-medium">AI 助手</span>
+        <span class="text-base font-semibold">AI 助手</span>
       </div>
       <button onclick={() => chatOpen = false}>
-        <md-icon>close</md-icon>
+        <span class="material-symbols-outlined">close</span>
       </button>
     </div>
 
     <div class="flex-1 overflow-auto p-4 space-y-4">
       {#if chatMessages.length === 0}
-        <div class="text-center text-on-surface-variant py-8">
-          <p class="text-body-large mb-2">👋 你好！</p>
-          <p class="text-body-small">我是 Magisk/KSU 模块开发助手，有什么可以帮你的？</p>
+        <div class="text-center text-[var(--color-text-secondary)] py-8">
+          <p class="text-base mb-2">👋 你好！</p>
+          <p class="text-xs">我是 Magisk/KSU 模块开发助手，有什么可以帮你的？</p>
         </div>
       {/if}
       {#each chatMessages as msg}
         <div class="flex {msg.role === 'user' ? 'justify-end' : 'justify-start'}">
-          <div class="max-w-[80%] {msg.role === 'user' ? 'bg-primary text-on-primary' : 'bg-surface-container text-on-surface'} rounded-2xl px-4 py-2">
-            <p class="text-body-small whitespace-pre-wrap">{msg.content}{chatStreaming && msg.role === 'assistant' && msg === chatMessages[chatMessages.length - 1] ? '▊' : ''}</p>
+          <div class="max-w-[80%] {msg.role === 'user' ? 'bg-primary-600 text-white' : 'bg-[var(--color-surface)] text-[var(--color-text)]'} rounded-2xl px-4 py-2">
+            <p class="text-xs whitespace-pre-wrap">{msg.content}{chatStreaming && msg.role === 'assistant' && msg === chatMessages[chatMessages.length - 1] ? '▊' : ''}</p>
           </div>
         </div>
       {/each}
     </div>
 
-    <div class="p-4 border-t border-outline-variant">
+    <div class="p-4 border-t border-[var(--color-border)]">
       <div class="flex gap-2">
         <input
           type="text"
           placeholder="输入消息..."
-          class="flex-1 px-4 py-2 border border-outline rounded-lg bg-surface text-on-surface"
+          class="flex-1 px-4 py-2 border border-[var(--color-border)] rounded-lg bg-[var(--color-bg)] text-[var(--color-text)]"
           bind:value={chatInput}
           onkeydown={handleChatKeydown}
           disabled={chatStreaming}
         />
-        <md-filled-button onclick={sendChatMessage} disabled={chatStreaming || !chatInput.trim()}>
-          <md-icon slot="start">send</md-icon>
-        </md-filled-button>
+        <button class="btn-primary" onclick={sendChatMessage} disabled={chatStreaming || !chatInput.trim()}>
+          <span class="material-symbols-outlined" slot="start">send</span>
+        </button>
       </div>
     </div>
   </div>
@@ -1374,11 +1371,11 @@
 <!-- Build Log Panel -->
 {#if showBuildLog}
   <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-    <div class="bg-surface rounded-2xl p-6 max-w-3xl w-full mx-4 max-h-[80vh] flex flex-col">
+    <div class="bg-[var(--color-bg)] rounded-2xl p-6 max-w-3xl w-full mx-4 max-h-[80vh] flex flex-col">
       <div class="flex items-center justify-between mb-4">
-        <h2 class="text-headline-small">构建日志</h2>
+        <h2 class="text-lg font-semibold">构建日志</h2>
         <button onclick={() => showBuildLog = false}>
-          <md-icon>close</md-icon>
+          <span class="material-symbols-outlined">close</span>
         </button>
       </div>
 
@@ -1386,27 +1383,27 @@
         <input
           type="text"
           placeholder="输入构建 ID..."
-          class="flex-1 px-4 py-2 border border-outline rounded-lg bg-surface text-on-surface"
+          class="flex-1 px-4 py-2 border border-[var(--color-border)] rounded-lg bg-[var(--color-bg)] text-[var(--color-text)]"
           bind:value={buildId}
         />
-        <md-filled-button onclick={loadBuildLogs}>
-          <md-icon slot="start">refresh</md-icon>
+        <button class="btn-primary" onclick={loadBuildLogs}>
+          <span class="material-symbols-outlined" slot="start">refresh</span>
           加载日志
-        </md-filled-button>
+        </button>
       </div>
 
-      <div class="flex-1 overflow-auto bg-surface-container rounded-xl p-4 font-mono text-sm">
+      <div class="flex-1 overflow-auto bg-[var(--color-surface)] rounded-xl p-4 font-mono text-sm">
         {#if buildLogs.length === 0}
-          <p class="text-on-surface-variant">暂无日志</p>
+          <p class="text-[var(--color-text-secondary)]">暂无日志</p>
         {:else}
           {#each buildLogs as log}
             <div class="mb-1 {
               log.level === 'ERROR' ? 'text-error' :
               log.level === 'WARN' ? 'text-yellow' :
               log.level === 'SUCCESS' ? 'text-green' :
-              'text-on-surface'
+              'text-[var(--color-text)]'
             }">
-              <span class="text-on-surface-variant">[{log.timestamp}]</span>
+              <span class="text-[var(--color-text-secondary)]">[{log.timestamp}]</span>
               <span class="font-bold">[{log.level}]</span>
               {log.message}
             </div>
@@ -1420,36 +1417,36 @@
 <!-- Git Version History Panel -->
 {#if showGitPanel}
   <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-    <div class="bg-surface rounded-2xl p-6 max-w-3xl w-full mx-4 max-h-[80vh] flex flex-col">
+    <div class="bg-[var(--color-bg)] rounded-2xl p-6 max-w-3xl w-full mx-4 max-h-[80vh] flex flex-col">
       <div class="flex items-center justify-between mb-4">
-        <h2 class="text-headline-small">版本历史</h2>
+        <h2 class="text-lg font-semibold">版本历史</h2>
         <button onclick={() => showGitPanel = false}>
-          <md-icon>close</md-icon>
+          <span class="material-symbols-outlined">close</span>
         </button>
       </div>
 
       <div class="flex-1 overflow-auto mb-4">
         {#if gitLoading}
-          <div class="flex justify-center p-4"><md-circular-progress indeterminate /></div>
+          <div class="flex justify-center p-4"><div class="animate-spin h-5 w-5 border-2 border-primary-500 border-t-transparent rounded-full"></div></div>
         {:else if gitCommits.length === 0}
-          <p class="text-on-surface-variant text-center py-8">暂无提交历史</p>
+          <p class="text-[var(--color-text-secondary)] text-center py-8">暂无提交历史</p>
         {:else}
           <div class="space-y-2">
             {#each gitCommits as commit}
-              <div class="p-3 rounded-xl border {commit.hash === gitHeadHash ? 'border-primary bg-primary-container' : 'border-outline'}">
+              <div class="p-3 rounded-xl border {commit.hash === gitHeadHash ? 'border-primary bg-primary-600-50' : 'border-[var(--color-border)]'}">
                 <div class="flex items-center justify-between">
                   <div class="flex items-center gap-2">
                     <span class="font-mono text-sm font-bold">{commit.hash.substring(0, 8)}</span>
-                    <span class="text-body-small">{commit.message}</span>
+                    <span class="text-xs">{commit.message}</span>
                     {#if commit.hash === gitHeadHash}
-                      <span class="px-2 py-0.5 bg-primary text-on-primary rounded-full text-xs">HEAD</span>
+                      <span class="px-2 py-0.5 bg-primary-600 text-white rounded-full text-xs">HEAD</span>
                     {/if}
                   </div>
                   <div class="flex items-center gap-2">
-                    <span class="text-body-small text-on-surface-variant">{commit.author}</span>
-                    <span class="text-body-small text-on-surface-variant">{new Date(commit.timestamp).toLocaleString('zh-CN')}</span>
+                    <span class="text-xs text-[var(--color-text-secondary)]">{commit.author}</span>
+                    <span class="text-xs text-[var(--color-text-secondary)]">{new Date(commit.timestamp).toLocaleString('zh-CN')}</span>
                     {#if commit.hash !== gitHeadHash}
-                      <md-filled-tonal-button size="small" onclick={() => gitCheckout(commit.hash)}>恢复</md-filled-tonal-button>
+                      <button class="btn-ghost border border-[var(--color-border)] text-xs px-3 py-1" onclick={() => gitCheckout(commit.hash)}>恢复</button>
                     {/if}
                   </div>
                 </div>
@@ -1459,19 +1456,19 @@
         {/if}
       </div>
 
-      <div class="border-t border-outline-variant pt-4">
+      <div class="border-t border-[var(--color-border)] pt-4">
         <div class="flex gap-2">
           <input
             type="text"
             placeholder="输入版本描述..."
-            class="flex-1 px-4 py-2 border border-outline rounded-lg bg-surface text-on-surface"
+            class="flex-1 px-4 py-2 border border-[var(--color-border)] rounded-lg bg-[var(--color-bg)] text-[var(--color-text)]"
             bind:value={gitMessage}
             onkeydown={(e) => { if (e.key === 'Enter') saveGitCommit(); }}
           />
-          <md-filled-button onclick={saveGitCommit} disabled={gitLoading || !gitMessage.trim()}>
-            <md-icon slot="start">save</md-icon>
+          <button class="btn-primary" onclick={saveGitCommit} disabled={gitLoading || !gitMessage.trim()}>
+            <span class="material-symbols-outlined" slot="start">save</span>
             保存版本
-          </md-filled-button>
+          </button>
         </div>
       </div>
     </div>
@@ -1481,22 +1478,22 @@
 <!-- ADB Device Panel -->
 {#if showADBPanels}
   <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-    <div class="bg-surface rounded-2xl p-6 max-w-3xl w-full mx-4 max-h-[80vh] flex flex-col">
+    <div class="bg-[var(--color-bg)] rounded-2xl p-6 max-w-3xl w-full mx-4 max-h-[80vh] flex flex-col">
       <div class="flex items-center justify-between mb-4">
-        <h2 class="text-headline-small">ADB 设备管理</h2>
+        <h2 class="text-lg font-semibold">ADB 设备管理</h2>
         <button onclick={() => showADBPanels = false}>
-          <md-icon>close</md-icon>
+          <span class="material-symbols-outlined">close</span>
         </button>
       </div>
 
       <div class="flex gap-2 mb-4">
-        <md-filled-button onclick={checkADB} disabled={adbChecking}>
-          <md-icon slot="start">search</md-icon>
+        <button class="btn-primary" onclick={checkADB} disabled={adbChecking}>
+          <span class="material-symbols-outlined" slot="start">search</span>
           {adbChecking ? '检测中...' : '检测 ADB'}
-        </md-filled-button>
+        </button>
         {#if adbAvailable === false}
           <span class="text-error flex items-center gap-1">
-            <md-icon class="text-sm">error</md-icon>
+            <span class="material-symbols-outlined text-sm">error</span>
             ADB 未检测到
           </span>
         {/if}
@@ -1505,17 +1502,17 @@
       {#if adbAvailable === true}
         <div class="flex-1 overflow-auto mb-4">
           {#if adbLoadingDevices}
-            <div class="flex justify-center p-4"><md-circular-progress indeterminate /></div>
+            <div class="flex justify-center p-4"><div class="animate-spin h-5 w-5 border-2 border-primary-500 border-t-transparent rounded-full"></div></div>
           {:else if adbDevices.length === 0}
-            <p class="text-on-surface-variant text-center py-8">未发现设备</p>
+            <p class="text-[var(--color-text-secondary)] text-center py-8">未发现设备</p>
           {:else}
             <div class="space-y-2">
               {#each adbDevices as dev}
-                <div class="p-3 rounded-xl border border-outline">
+                <div class="p-3 rounded-xl border border-[var(--color-border)]">
                   <div class="flex items-center justify-between">
                     <div class="flex items-center gap-3">
                       <span class="font-mono text-sm font-bold">{dev.serial}</span>
-                      <span class="text-body-small">{dev.model || 'Unknown'}</span>
+                      <span class="text-xs">{dev.model || 'Unknown'}</span>
                       <span class="px-2 py-0.5 rounded-full text-xs {
                         dev.state === 'device' ? 'bg-green-100 text-green-800' :
                         dev.state === 'offline' ? 'bg-red-100 text-red-800' :
@@ -1524,15 +1521,15 @@
                     </div>
                     <div class="flex gap-2">
                       {#if dev.state === 'device'}
-                        <md-filled-tonal-button size="small" onclick={() => installModule(dev.serial)}>
-                          <md-icon slot="start">download</md-icon>
+                        <button class="btn-ghost border border-[var(--color-border)] text-xs px-3 py-1" onclick={() => installModule(dev.serial)}>
+                          <span class="material-symbols-outlined" slot="start">download</span>
                           安装模块
-                        </md-filled-tonal-button>
+                        </button>
                       {/if}
-                      <md-filled-tonal-button size="small" onclick={() => rebootDevice(dev.serial)}>
-                        <md-icon slot="start">refresh</md-icon>
+                      <button class="btn-ghost border border-[var(--color-border)] text-xs px-3 py-1" onclick={() => rebootDevice(dev.serial)}>
+                        <span class="material-symbols-outlined" slot="start">refresh</span>
                         重启
-                      </md-filled-tonal-button>
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -1543,8 +1540,8 @@
       {/if}
 
       {#if adbOutput}
-        <div class="border-t border-outline-variant pt-4">
-          <div class="bg-surface-container rounded-xl p-4 font-mono text-sm max-h-32 overflow-auto">
+        <div class="border-t border-[var(--color-border)] pt-4">
+          <div class="bg-[var(--color-surface)] rounded-xl p-4 font-mono text-sm max-h-32 overflow-auto">
             {adbOutput}
           </div>
         </div>
@@ -1556,17 +1553,17 @@
 <!-- Screenshot Panel -->
 {#if showScreenshotPanel}
   <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-    <div class="bg-surface rounded-2xl p-6 max-w-3xl w-full mx-4 max-h-[80vh] flex flex-col">
+    <div class="bg-[var(--color-bg)] rounded-2xl p-6 max-w-3xl w-full mx-4 max-h-[80vh] flex flex-col">
       <div class="flex items-center justify-between mb-4">
-        <h2 class="text-headline-small">真机截图</h2>
+        <h2 class="text-lg font-semibold">真机截图</h2>
         <button onclick={() => showScreenshotPanel = false}>
-          <md-icon>close</md-icon>
+          <span class="material-symbols-outlined">close</span>
         </button>
       </div>
 
       <div class="flex gap-2 mb-4">
         <select
-          class="px-3 py-2 border border-outline rounded-lg bg-surface text-on-surface"
+          class="px-3 py-2 border border-[var(--color-border)] rounded-lg bg-[var(--color-bg)] text-[var(--color-text)]"
           bind:value={screenshotDevice}
         >
           <option value="">选择设备</option>
@@ -1574,27 +1571,27 @@
             <option value={dev.serial}>{dev.serial} ({dev.model || 'Unknown'})</option>
           {/each}
         </select>
-        <md-filled-button onclick={takeScreenshot} disabled={screenshotLoading || !screenshotDevice}>
-          <md-icon slot="start">photo_camera</md-icon>
+        <button class="btn-primary" onclick={takeScreenshot} disabled={screenshotLoading || !screenshotDevice}>
+          <span class="material-symbols-outlined" slot="start">photo_camera</span>
           {screenshotLoading ? '截图中...' : '截图'}
-        </md-filled-button>
-        <md-filled-tonal-button onclick={streamScreenshots} disabled={screenshotStreaming || !screenshotDevice}>
-          <md-icon slot="start">burst_mode</md-icon>
+        </button>
+        <button class="btn-ghost border border-[var(--color-border)]" onclick={streamScreenshots} disabled={screenshotStreaming || !screenshotDevice}>
+          <span class="material-symbols-outlined" slot="start">burst_mode</span>
           {screenshotStreaming ? '连续截图中...' : '连续截图'}
-        </md-filled-tonal-button>
+        </button>
       </div>
 
       <div class="flex-1 overflow-auto">
         {#if screenshotImages.length === 0}
-          <div class="text-center text-on-surface-variant py-12">
-            <md-icon class="text-5xl mb-2">photo_camera</md-icon>
+          <div class="text-center text-[var(--color-text-secondary)] py-12">
+            <span class="material-symbols-outlined text-5xl mb-2">photo_camera</span>
             <p>选择设备后点击截图</p>
           </div>
         {:else}
           <div class="grid grid-cols-2 gap-3">
             {#each screenshotImages as img}
-              <div class="border border-outline rounded-xl overflow-hidden">
-                <div class="bg-surface-container p-2 text-body-small font-mono truncate">{img.filename}</div>
+              <div class="border border-[var(--color-border)] rounded-xl overflow-hidden">
+                <div class="bg-[var(--color-surface)] p-2 text-xs font-mono truncate">{img.filename}</div>
                 <img src="/api/v1/adb/screenshot/file?path={encodeURIComponent(img.path)}" alt={img.filename} class="w-full" />
               </div>
             {/each}
@@ -1607,41 +1604,41 @@
 
 <!-- Signature Panel -->
 {#if signatureInfo}
-  <div class="fixed bottom-24 right-6 w-80 bg-surface rounded-2xl shadow-2xl z-50 border border-outline p-4">
+  <div class="fixed bottom-24 right-6 w-80 bg-[var(--color-bg)] rounded-2xl shadow-2xl z-50 border border-[var(--color-border)] p-4">
     <div class="flex items-center justify-between mb-3">
       <div class="flex items-center gap-2">
-        <md-icon class="text-primary">verified</md-icon>
-        <span class="text-title-medium">模块签名</span>
+        <span class="material-symbols-outlined text-primary">verified</span>
+        <span class="text-base font-semibold">模块签名</span>
       </div>
       <button onclick={() => { signatureInfo = null; verifyResult = null; }}>
-        <md-icon class="text-sm">close</md-icon>
+        <span class="material-symbols-outlined text-sm">close</span>
       </button>
     </div>
 
-    <div class="space-y-2 text-body-small">
+    <div class="space-y-2 text-xs">
       <div class="flex justify-between">
-        <span class="text-on-surface-variant">算法</span>
+        <span class="text-[var(--color-text-secondary)]">算法</span>
         <span class="font-mono">{signatureInfo.algorithm}</span>
       </div>
       <div class="flex justify-between">
-        <span class="text-on-surface-variant">大小</span>
+        <span class="text-[var(--color-text-secondary)]">大小</span>
         <span class="font-mono">{(signatureInfo.size / 1024).toFixed(1)} KB</span>
       </div>
       <div class="flex justify-between">
-        <span class="text-on-surface-variant">签名时间</span>
+        <span class="text-[var(--color-text-secondary)]">签名时间</span>
         <span class="font-mono">{new Date(signatureInfo.signed_at).toLocaleString('zh-CN')}</span>
       </div>
       <div>
-        <span class="text-on-surface-variant">SHA256</span>
-        <p class="font-mono text-xs break-all mt-1 bg-surface-container p-2 rounded">{signatureInfo.hash}</p>
+        <span class="text-[var(--color-text-secondary)]">SHA256</span>
+        <p class="font-mono text-xs break-all mt-1 bg-[var(--color-surface)] p-2 rounded">{signatureInfo.hash}</p>
       </div>
     </div>
 
     <div class="flex gap-2 mt-3">
-      <md-filled-tonal-button size="small" onclick={verifyModule} disabled={verifying}>
-        <md-icon slot="start">check_circle</md-icon>
+      <button class="btn-ghost border border-[var(--color-border)] text-xs px-3 py-1" onclick={verifyModule} disabled={verifying}>
+        <span class="material-symbols-outlined" slot="start">check_circle</span>
         {verifying ? '验证中...' : '验证'}
-      </md-filled-tonal-button>
+      </button>
     </div>
 
     {#if verifyResult}
@@ -1650,7 +1647,7 @@
           <md-icon class="text-sm {verifyResult.valid ? 'text-green-600' : 'text-red-600'}">
             {verifyResult.valid ? 'check_circle' : 'error'}
           </md-icon>
-          <span class="text-body-small">{verifyResult.valid ? '校验通过' : '校验失败'}</span>
+          <span class="text-xs">{verifyResult.valid ? '校验通过' : '校验失败'}</span>
         </div>
       </div>
     {/if}
@@ -1660,19 +1657,19 @@
 <!-- Mirror Panel -->
 {#if showMirrorPanel}
   <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-    <div class="bg-surface rounded-2xl p-6 max-w-4xl w-full mx-4 max-h-[90vh] flex flex-col">
+    <div class="bg-[var(--color-bg)] rounded-2xl p-6 max-w-4xl w-full mx-4 max-h-[90vh] flex flex-col">
       <div class="flex items-center justify-between mb-4">
-        <h2 class="text-headline-small">真机投屏</h2>
+        <h2 class="text-lg font-semibold">真机投屏</h2>
         <button onclick={() => { stopMirror(); showMirrorPanel = false; }}>
-          <md-icon>close</md-icon>
+          <span class="material-symbols-outlined">close</span>
         </button>
       </div>
 
       <div class="flex gap-3 mb-4 flex-wrap items-end">
         <div class="flex flex-col gap-1">
-          <label class="text-label-small text-on-surface-variant">设备</label>
+          <label class="text-[11px] font-medium text-[var(--color-text-secondary)]">设备</label>
           <select
-            class="px-3 py-2 border border-outline rounded-lg bg-surface text-on-surface min-w-[200px]"
+            class="px-3 py-2 border border-[var(--color-border)] rounded-lg bg-[var(--color-bg)] text-[var(--color-text)] min-w-[200px]"
             bind:value={mirrorDevice}
             disabled={mirroring}
           >
@@ -1683,9 +1680,9 @@
           </select>
         </div>
         <div class="flex flex-col gap-1">
-          <label class="text-label-small text-on-surface-variant">帧率</label>
+          <label class="text-[11px] font-medium text-[var(--color-text-secondary)]">帧率</label>
           <select
-            class="px-3 py-2 border border-outline rounded-lg bg-surface text-on-surface"
+            class="px-3 py-2 border border-[var(--color-border)] rounded-lg bg-[var(--color-bg)] text-[var(--color-text)]"
             bind:value={mirrorFPS}
             disabled={mirroring}
           >
@@ -1697,9 +1694,9 @@
           </select>
         </div>
         <div class="flex flex-col gap-1">
-          <label class="text-label-small text-on-surface-variant">画面比例</label>
+          <label class="text-[11px] font-medium text-[var(--color-text-secondary)]">画面比例</label>
           <select
-            class="px-3 py-2 border border-outline rounded-lg bg-surface text-on-surface"
+            class="px-3 py-2 border border-[var(--color-border)] rounded-lg bg-[var(--color-bg)] text-[var(--color-text)]"
             bind:value={mirrorAspect}
           >
             <option value="contain">适应</option>
@@ -1708,19 +1705,19 @@
           </select>
         </div>
         {#if !mirroring}
-          <md-filled-button onclick={startMirror} disabled={!mirrorDevice}>
-            <md-icon slot="start">play_arrow</md-icon>
+          <button class="btn-primary" onclick={startMirror} disabled={!mirrorDevice}>
+            <span class="material-symbols-outlined" slot="start">play_arrow</span>
             开始投屏
-          </md-filled-button>
+          </button>
         {:else}
-          <md-filled-button onclick={stopMirror}>
-            <md-icon slot="start">stop</md-icon>
+          <button class="btn-primary" onclick={stopMirror}>
+            <span class="material-symbols-outlined" slot="start">stop</span>
             停止投屏
-          </md-filled-button>
-          <md-filled-tonal-button onclick={captureMirrorFrame}>
-            <md-icon slot="start">photo_camera</md-icon>
+          </button>
+          <button class="btn-ghost border border-[var(--color-border)]" onclick={captureMirrorFrame}>
+            <span class="material-symbols-outlined" slot="start">photo_camera</span>
             截图
-          </md-filled-tonal-button>
+          </button>
         {/if}
       </div>
 
@@ -1735,8 +1732,8 @@
             />
           </div>
         {:else}
-          <div class="text-center text-on-surface-variant py-12">
-            <md-icon class="text-5xl mb-2">screen_share</md-icon>
+          <div class="text-center text-[var(--color-text-secondary)] py-12">
+            <span class="material-symbols-outlined text-5xl mb-2">screen_share</span>
             <p>选择设备后点击开始投屏</p>
           </div>
         {/if}
@@ -1748,79 +1745,79 @@
 <!-- Update Check Panel -->
 {#if showUpdatePanel}
   <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-    <div class="bg-surface rounded-2xl p-6 max-w-2xl w-full mx-4 max-h-[80vh] flex flex-col">
+    <div class="bg-[var(--color-bg)] rounded-2xl p-6 max-w-2xl w-full mx-4 max-h-[80vh] flex flex-col">
       <div class="flex items-center justify-between mb-4">
-        <h2 class="text-headline-small">检查更新</h2>
+        <h2 class="text-lg font-semibold">检查更新</h2>
         <button onclick={() => showUpdatePanel = false}>
-          <md-icon>close</md-icon>
+          <span class="material-symbols-outlined">close</span>
         </button>
       </div>
 
       <div class="space-y-3 mb-4">
         <div class="flex flex-col gap-1">
-          <label class="text-label-small text-on-surface-variant">当前版本</label>
+          <label class="text-[11px] font-medium text-[var(--color-text-secondary)]">当前版本</label>
           <input
             type="text"
             placeholder="v1.0"
-            class="px-4 py-2 border border-outline rounded-lg bg-surface text-on-surface"
+            class="px-4 py-2 border border-[var(--color-border)] rounded-lg bg-[var(--color-bg)] text-[var(--color-text)]"
             bind:value={updateModuleVersion}
           />
         </div>
         <div class="flex flex-col gap-1">
-          <label class="text-label-small text-on-surface-variant">GitHub 仓库 URL</label>
+          <label class="text-[11px] font-medium text-[var(--color-text-secondary)]">GitHub 仓库 URL</label>
           <input
             type="text"
             placeholder="https://github.com/user/repo"
-            class="px-4 py-2 border border-outline rounded-lg bg-surface text-on-surface"
+            class="px-4 py-2 border border-[var(--color-border)] rounded-lg bg-[var(--color-bg)] text-[var(--color-text)]"
             bind:value={updateModuleRepo}
           />
         </div>
-        <md-filled-button onclick={checkModuleUpdate} disabled={updateChecking || !updateModuleRepo}>
-          <md-icon slot="start">system_update</md-icon>
+        <button class="btn-primary" onclick={checkModuleUpdate} disabled={updateChecking || !updateModuleRepo}>
+          <span class="material-symbols-outlined" slot="start">system_update</span>
           {updateChecking ? '检查中...' : '检查更新'}
-        </md-filled-button>
+        </button>
       </div>
 
       {#if updateResult}
-        <div class="border border-outline rounded-xl p-4">
+        <div class="border border-[var(--color-border)] rounded-xl p-4">
           {#if updateResult.has_update}
             <div class="flex items-center gap-2 mb-3">
-              <md-icon class="text-green-600">arrow_upward</md-icon>
-              <span class="text-title-medium text-green-600">有新版本可用</span>
+              <span class="material-symbols-outlined text-green-600">arrow_upward</span>
+              <span class="text-base font-semibold text-green-600">有新版本可用</span>
             </div>
-            <div class="space-y-2 text-body-small">
+            <div class="space-y-2 text-xs">
               <div class="flex justify-between">
-                <span class="text-on-surface-variant">当前版本</span>
+                <span class="text-[var(--color-text-secondary)]">当前版本</span>
                 <span class="font-mono">{updateResult.current_version}</span>
               </div>
               <div class="flex justify-between">
-                <span class="text-on-surface-variant">最新版本</span>
+                <span class="text-[var(--color-text-secondary)]">最新版本</span>
                 <span class="font-mono font-bold">{updateResult.latest_version}</span>
               </div>
               {#if updateResult.download_url}
                 <div class="mt-3">
                   <a href={updateResult.download_url} target="_blank" rel="noopener">
-                    <md-filled-tonal-button>
-                      <md-icon slot="start">download</md-icon>
+                    <button class="btn-ghost border border-[var(--color-border)]">
+                      <span class="material-symbols-outlined" slot="start">download</span>
                       下载最新版本
-                    </md-filled-tonal-button>
+                    </button>
                   </a>
                 </div>
               {/if}
               {#if updateResult.release_note}
-                <div class="mt-3 p-3 bg-surface-container rounded-lg">
-                  <p class="text-label-small text-on-surface-variant mb-1">Release Notes</p>
-                  <p class="text-body-small whitespace-pre-wrap">{updateResult.release_note}</p>
+                <div class="mt-3 p-3 bg-[var(--color-surface)] rounded-lg">
+                  <p class="text-[11px] font-medium text-[var(--color-text-secondary)] mb-1">Release Notes</p>
+                  <p class="text-xs whitespace-pre-wrap">{updateResult.release_note}</p>
                 </div>
               {/if}
             </div>
           {:else}
             <div class="flex items-center gap-2">
-              <md-icon class="text-green-600">check_circle</md-icon>
-              <span class="text-title-medium text-green-600">已是最新版本</span>
+              <span class="material-symbols-outlined text-green-600">check_circle</span>
+              <span class="text-base font-semibold text-green-600">已是最新版本</span>
             </div>
             {#if updateResult.error}
-              <p class="text-body-small text-on-surface-variant mt-2">{updateResult.error}</p>
+              <p class="text-xs text-[var(--color-text-secondary)] mt-2">{updateResult.error}</p>
             {/if}
           {/if}
         </div>
@@ -1832,19 +1829,19 @@
 <!-- Benchmark Panel -->
 {#if showBenchmarkPanel}
   <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-    <div class="bg-surface rounded-2xl p-6 max-w-3xl w-full mx-4 max-h-[85vh] flex flex-col">
+    <div class="bg-[var(--color-bg)] rounded-2xl p-6 max-w-3xl w-full mx-4 max-h-[85vh] flex flex-col">
       <div class="flex items-center justify-between mb-4">
-        <h2 class="text-headline-small">性能基准测试</h2>
+        <h2 class="text-lg font-semibold">性能基准测试</h2>
         <button onclick={() => showBenchmarkPanel = false}>
-          <md-icon>close</md-icon>
+          <span class="material-symbols-outlined">close</span>
         </button>
       </div>
 
       <div class="flex gap-3 mb-4 items-end">
         <div class="flex flex-col gap-1">
-          <label class="text-label-small text-on-surface-variant">选择设备</label>
+          <label class="text-[11px] font-medium text-[var(--color-text-secondary)]">选择设备</label>
           <select
-            class="px-3 py-2 border border-outline rounded-lg bg-surface text-on-surface min-w-[200px]"
+            class="px-3 py-2 border border-[var(--color-border)] rounded-lg bg-[var(--color-bg)] text-[var(--color-text)] min-w-[200px]"
             bind:value={benchmarkDevice}
           >
             <option value="">选择设备</option>
@@ -1853,53 +1850,53 @@
             {/each}
           </select>
         </div>
-        <md-filled-button onclick={runBenchmark} disabled={benchmarkRunning || !benchmarkDevice}>
-          <md-icon slot="start">speed</md-icon>
+        <button class="btn-primary" onclick={runBenchmark} disabled={benchmarkRunning || !benchmarkDevice}>
+          <span class="material-symbols-outlined" slot="start">speed</span>
           {benchmarkRunning ? '测试中...' : '开始测试'}
-        </md-filled-button>
-        <md-filled-tonal-button onclick={loadBenchmarkHistory}>
-          <md-icon slot="start">history</md-icon>
+        </button>
+        <button class="btn-ghost border border-[var(--color-border)]" onclick={loadBenchmarkHistory}>
+          <span class="material-symbols-outlined" slot="start">history</span>
           历史记录
-        </md-filled-tonal-button>
+        </button>
       </div>
 
       <div class="flex-1 overflow-auto space-y-4">
         {#if benchmarkResult}
-          <div class="border border-outline rounded-xl p-4">
-            <h3 class="text-title-small mb-3 flex items-center gap-2">
-              <md-icon class="text-sm">speed</md-icon>
+          <div class="border border-[var(--color-border)] rounded-xl p-4">
+            <h3 class="text-sm font-semibold mb-3 flex items-center gap-2">
+              <span class="material-symbols-outlined text-sm">speed</span>
               测试结果
             </h3>
             <div class="grid grid-cols-2 gap-3">
               {#each Object.entries(benchmarkResult.before || {}) as [key, value]}
-                <div class="p-3 bg-surface-container rounded-lg">
-                  <p class="text-label-small text-on-surface-variant mb-1">{key}</p>
-                  <p class="text-body-small font-mono">{String(value).substring(0, 120)}</p>
+                <div class="p-3 bg-[var(--color-surface)] rounded-lg">
+                  <p class="text-[11px] font-medium text-[var(--color-text-secondary)] mb-1">{key}</p>
+                  <p class="text-xs font-mono">{String(value).substring(0, 120)}</p>
                 </div>
               {/each}
             </div>
             {#if benchmarkResult.diff?.note}
-              <div class="mt-3 p-3 bg-primary-container rounded-lg">
-                <p class="text-body-small text-on-primary-container">{benchmarkResult.diff.note}</p>
+              <div class="mt-3 p-3 bg-primary-600-50 rounded-lg">
+                <p class="text-xs text-primary-700">{benchmarkResult.diff.note}</p>
               </div>
             {/if}
           </div>
         {/if}
 
         {#if benchmarkHistory.length > 0}
-          <div class="border border-outline rounded-xl p-4">
-            <h3 class="text-title-small mb-3 flex items-center gap-2">
-              <md-icon class="text-sm">history</md-icon>
+          <div class="border border-[var(--color-border)] rounded-xl p-4">
+            <h3 class="text-sm font-semibold mb-3 flex items-center gap-2">
+              <span class="material-symbols-outlined text-sm">history</span>
               历史记录
             </h3>
             <div class="space-y-2">
               {#each benchmarkHistory as bench}
-                <div class="p-3 bg-surface-container rounded-lg">
+                <div class="p-3 bg-[var(--color-surface)] rounded-lg">
                   <div class="flex items-center justify-between mb-1">
-                    <span class="text-body-small font-mono">{bench.id}</span>
-                    <span class="text-body-small text-on-surface-variant">{new Date(bench.created_at).toLocaleString('zh-CN')}</span>
+                    <span class="text-xs font-mono">{bench.id}</span>
+                    <span class="text-xs text-[var(--color-text-secondary)]">{new Date(bench.created_at).toLocaleString('zh-CN')}</span>
                   </div>
-                  <div class="flex gap-4 text-body-small text-on-surface-variant">
+                  <div class="flex gap-4 text-xs text-[var(--color-text-secondary)]">
                     <span>设备: {bench.device_serial}</span>
                     <span>模块: {bench.module_id}</span>
                   </div>
@@ -1910,10 +1907,10 @@
         {/if}
 
         {#if !benchmarkResult && benchmarkHistory.length === 0}
-          <div class="text-center text-on-surface-variant py-12">
-            <md-icon class="text-5xl mb-2">speed</md-icon>
+          <div class="text-center text-[var(--color-text-secondary)] py-12">
+            <span class="material-symbols-outlined text-5xl mb-2">speed</span>
             <p>选择设备后点击开始测试</p>
-            <p class="text-body-small mt-1">测试将采集 CPU、内存、存储等设备性能数据</p>
+            <p class="text-xs mt-1">测试将采集 CPU、内存、存储等设备性能数据</p>
           </div>
         {/if}
       </div>
@@ -1924,15 +1921,15 @@
 <!-- Collaboration Panel -->
 {#if showCollabPanel}
   <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-    <div class="bg-surface rounded-2xl p-6 max-w-3xl w-full mx-4 max-h-[85vh] flex flex-col">
+    <div class="bg-[var(--color-bg)] rounded-2xl p-6 max-w-3xl w-full mx-4 max-h-[85vh] flex flex-col">
       <div class="flex items-center justify-between mb-4">
-        <h2 class="text-headline-small">团队协作</h2>
+        <h2 class="text-lg font-semibold">团队协作</h2>
         <div class="flex items-center gap-3">
-          <span class="text-body-small {collabWsConnected ? 'text-green-600' : 'text-red-600'}">
+          <span class="text-xs {collabWsConnected ? 'text-green-600' : 'text-red-600'}">
             {collabWsConnected ? '● 已连接' : '○ 未连接'}
           </span>
           <button onclick={() => showCollabPanel = false}>
-            <md-icon>close</md-icon>
+            <span class="material-symbols-outlined">close</span>
           </button>
         </div>
       </div>
@@ -1942,115 +1939,115 @@
         <input
           type="text"
           placeholder="你的用户名..."
-          class="px-3 py-2 border border-outline rounded-lg bg-surface text-on-surface flex-1"
+          class="px-3 py-2 border border-[var(--color-border)] rounded-lg bg-[var(--color-bg)] text-[var(--color-text)] flex-1"
           bind:value={collabUsername}
         />
       </div>
 
       <div class="flex-1 overflow-auto space-y-4">
         <!-- Collaborators -->
-        <div class="border border-outline rounded-xl p-4">
-          <h3 class="text-title-small mb-3 flex items-center gap-2">
-            <md-icon class="text-sm">group</md-icon>
+        <div class="border border-[var(--color-border)] rounded-xl p-4">
+          <h3 class="text-sm font-semibold mb-3 flex items-center gap-2">
+            <span class="material-symbols-outlined text-sm">group</span>
             协作者
           </h3>
           {#if collaborators.length > 0}
             <div class="space-y-2 mb-3">
               {#each collaborators as c}
-                <div class="flex items-center justify-between p-2 bg-surface-container rounded-lg">
+                <div class="flex items-center justify-between p-2 bg-[var(--color-surface)] rounded-lg">
                   <div class="flex items-center gap-2">
                     <div class="w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-bold" style="background-color: {COLLAB_COLORS[collaborators.indexOf(c) % COLLAB_COLORS.length]}">
                       {(c.username || c.user_id)[0]?.toUpperCase() || '?'}
                     </div>
                     <div>
-                      <p class="text-body-small font-medium">{c.username || c.user_id}</p>
-                      <p class="text-xs text-on-surface-variant">{c.role}</p>
+                      <p class="text-xs font-medium">{c.username || c.user_id}</p>
+                      <p class="text-xs text-[var(--color-text-secondary)]">{c.role}</p>
                     </div>
                   </div>
-                  <md-icon-button onclick={() => removeCollaborator(c.user_id)}>
-                    <md-icon class="text-sm">close</md-icon>
-                  </md-icon-button>
+                  <button class="p-2 rounded-xl hover:bg-neutral-100 transition-colors" onclick={() => removeCollaborator(c.user_id)}>
+                    <span class="material-symbols-outlined text-sm">close</span>
+                  </button>
                 </div>
               {/each}
             </div>
           {:else}
-            <p class="text-body-small text-on-surface-variant mb-3">暂无协作者</p>
+            <p class="text-xs text-[var(--color-text-secondary)] mb-3">暂无协作者</p>
           {/if}
           <div class="flex gap-2">
             <input
               type="text"
               placeholder="用户名"
-              class="px-3 py-1 border border-outline rounded bg-surface text-on-surface text-sm flex-1"
+              class="px-3 py-1 border border-[var(--color-border)] rounded bg-[var(--color-bg)] text-[var(--color-text)] text-sm flex-1"
               bind:value={collabInviteUser}
             />
-            <select class="px-2 py-1 border border-outline rounded bg-surface text-on-surface text-sm" bind:value={collabInviteRole}>
+            <select class="px-2 py-1 border border-[var(--color-border)] rounded bg-[var(--color-bg)] text-[var(--color-text)] text-sm" bind:value={collabInviteRole}>
               <option value="editor">编辑者</option>
               <option value="viewer">查看者</option>
               <option value="admin">管理员</option>
             </select>
-            <md-filled-tonal-button size="small" onclick={inviteCollaborator}>邀请</md-filled-tonal-button>
+            <button class="btn-ghost border border-[var(--color-border)] text-xs px-3 py-1" onclick={inviteCollaborator}>邀请</button>
           </div>
         </div>
 
         <!-- Active editors -->
-        <div class="border border-outline rounded-xl p-4">
-          <h3 class="text-title-small mb-3 flex items-center gap-2">
-            <md-icon class="text-sm">edit</md-icon>
+        <div class="border border-[var(--color-border)] rounded-xl p-4">
+          <h3 class="text-sm font-semibold mb-3 flex items-center gap-2">
+            <span class="material-symbols-outlined text-sm">edit</span>
             活跃编辑者
           </h3>
           {#if collabSessions.length > 0}
             <div class="space-y-2">
               {#each collabSessions as s}
-                <div class="flex items-center gap-3 p-2 bg-surface-container rounded-lg">
+                <div class="flex items-center gap-3 p-2 bg-[var(--color-surface)] rounded-lg">
                   <div class="w-3 h-3 rounded-full" style="background-color: {s.color}"></div>
                   <div>
-                    <p class="text-body-small font-medium">{s.username || s.user_id}</p>
-                    <p class="text-xs text-on-surface-variant">编辑 {s.file_path} · 行 {s.cursor_line}, 列 {s.cursor_col}</p>
+                    <p class="text-xs font-medium">{s.username || s.user_id}</p>
+                    <p class="text-xs text-[var(--color-text-secondary)]">编辑 {s.file_path} · 行 {s.cursor_line}, 列 {s.cursor_col}</p>
                   </div>
                 </div>
               {/each}
             </div>
           {:else}
-            <p class="text-body-small text-on-surface-variant">无其他编辑者在线</p>
+            <p class="text-xs text-[var(--color-text-secondary)]">无其他编辑者在线</p>
           {/if}
         </div>
 
         <!-- Comments -->
-        <div class="border border-outline rounded-xl p-4">
-          <h3 class="text-title-small mb-3 flex items-center gap-2">
-            <md-icon class="text-sm">comment</md-icon>
+        <div class="border border-[var(--color-border)] rounded-xl p-4">
+          <h3 class="text-sm font-semibold mb-3 flex items-center gap-2">
+            <span class="material-symbols-outlined text-sm">comment</span>
             评论
           </h3>
           {#if collabComments.length > 0}
             <div class="space-y-2 mb-3 max-h-48 overflow-auto">
               {#each collabComments as c}
-                <div class="p-2 rounded-lg {c.resolved ? 'bg-green-50 border border-green-300' : 'bg-surface-container border border-outline'}">
+                <div class="p-2 rounded-lg {c.resolved ? 'bg-green-50 border border-green-300' : 'bg-[var(--color-surface)] border border-[var(--color-border)]'}">
                   <div class="flex items-center justify-between mb-1">
                     <div class="flex items-center gap-2">
-                      <span class="text-body-small font-medium">{c.username}</span>
-                      <span class="text-xs text-on-surface-variant">{c.file_path}:{c.line_number}</span>
+                      <span class="text-xs font-medium">{c.username}</span>
+                      <span class="text-xs text-[var(--color-text-secondary)]">{c.file_path}:{c.line_number}</span>
                     </div>
                     {#if !c.resolved}
-                      <md-filled-tonal-button size="small" onclick={() => resolveComment(c.id)}>解决</md-filled-tonal-button>
+                      <button class="btn-ghost border border-[var(--color-border)] text-xs px-3 py-1" onclick={() => resolveComment(c.id)}>解决</button>
                     {:else}
                       <span class="text-xs text-green-600">已解决</span>
                     {/if}
                   </div>
-                  <p class="text-body-small">{c.content}</p>
+                  <p class="text-xs">{c.content}</p>
                 </div>
               {/each}
             </div>
           {:else}
-            <p class="text-body-small text-on-surface-variant mb-3">暂无评论</p>
+            <p class="text-xs text-[var(--color-text-secondary)] mb-3">暂无评论</p>
           {/if}
           <div class="space-y-2">
             <div class="flex gap-2">
-              <input type="text" placeholder="文件路径" class="px-2 py-1 border border-outline rounded bg-surface text-on-surface text-sm flex-1" bind:value={commentFilePath} />
-              <input type="number" placeholder="行号" class="px-2 py-1 border border-outline rounded bg-surface text-on-surface text-sm w-20" bind:value={commentLineNumber} />
+              <input type="text" placeholder="文件路径" class="px-2 py-1 border border-[var(--color-border)] rounded bg-[var(--color-bg)] text-[var(--color-text)] text-sm flex-1" bind:value={commentFilePath} />
+              <input type="number" placeholder="行号" class="px-2 py-1 border border-[var(--color-border)] rounded bg-[var(--color-bg)] text-[var(--color-text)] text-sm w-20" bind:value={commentLineNumber} />
             </div>
             <div class="flex gap-2">
-              <input type="text" placeholder="评论内容..." class="px-3 py-1 border border-outline rounded bg-surface text-on-surface text-sm flex-1" bind:value={commentContent} />
-              <md-filled-tonal-button size="small" onclick={addCollabComment}>发送</md-filled-tonal-button>
+              <input type="text" placeholder="评论内容..." class="px-3 py-1 border border-[var(--color-border)] rounded bg-[var(--color-bg)] text-[var(--color-text)] text-sm flex-1" bind:value={commentContent} />
+              <button class="btn-ghost border border-[var(--color-border)] text-xs px-3 py-1" onclick={addCollabComment}>发送</button>
             </div>
           </div>
         </div>
@@ -2062,85 +2059,85 @@
 <!-- Plugin Panel -->
 {#if showPluginPanel}
   <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-    <div class="bg-surface rounded-2xl p-6 max-w-2xl w-full mx-4 max-h-[85vh] flex flex-col">
+    <div class="bg-[var(--color-bg)] rounded-2xl p-6 max-w-2xl w-full mx-4 max-h-[85vh] flex flex-col">
       <div class="flex items-center justify-between mb-4">
-        <h2 class="text-headline-small">插件系统</h2>
+        <h2 class="text-lg font-semibold">插件系统</h2>
         <button onclick={() => showPluginPanel = false}>
-          <md-icon>close</md-icon>
+          <span class="material-symbols-outlined">close</span>
         </button>
       </div>
 
       <div class="flex-1 overflow-auto space-y-4">
         <!-- Install Plugin -->
-        <div class="border border-outline rounded-xl p-4">
-          <h3 class="text-title-small mb-3 flex items-center gap-2">
-            <md-icon class="text-sm">add</md-icon>
+        <div class="border border-[var(--color-border)] rounded-xl p-4">
+          <h3 class="text-sm font-semibold mb-3 flex items-center gap-2">
+            <span class="material-symbols-outlined text-sm">add</span>
             安装插件
           </h3>
           <div class="grid grid-cols-2 gap-2 mb-2">
-            <input type="text" placeholder="插件名称" class="px-3 py-2 border border-outline rounded-lg bg-surface text-on-surface" bind:value={pluginInstallName} />
-            <input type="text" placeholder="slug (唯一标识)" class="px-3 py-2 border border-outline rounded-lg bg-surface text-on-surface" bind:value={pluginInstallSlug} />
-            <input type="text" placeholder="描述" class="px-3 py-2 border border-outline rounded-lg bg-surface text-on-surface" bind:value={pluginInstallDesc} />
-            <input type="text" placeholder="作者" class="px-3 py-2 border border-outline rounded-lg bg-surface text-on-surface" bind:value={pluginInstallAuthor} />
+            <input type="text" placeholder="插件名称" class="px-3 py-2 border border-[var(--color-border)] rounded-lg bg-[var(--color-bg)] text-[var(--color-text)]" bind:value={pluginInstallName} />
+            <input type="text" placeholder="slug (唯一标识)" class="px-3 py-2 border border-[var(--color-border)] rounded-lg bg-[var(--color-bg)] text-[var(--color-text)]" bind:value={pluginInstallSlug} />
+            <input type="text" placeholder="描述" class="px-3 py-2 border border-[var(--color-border)] rounded-lg bg-[var(--color-bg)] text-[var(--color-text)]" bind:value={pluginInstallDesc} />
+            <input type="text" placeholder="作者" class="px-3 py-2 border border-[var(--color-border)] rounded-lg bg-[var(--color-bg)] text-[var(--color-text)]" bind:value={pluginInstallAuthor} />
           </div>
-          <md-filled-button onclick={installPlugin} disabled={!pluginInstallName.trim() || !pluginInstallSlug.trim()}>
-            <md-icon slot="start">download</md-icon>
+          <button class="btn-primary" onclick={installPlugin} disabled={!pluginInstallName.trim() || !pluginInstallSlug.trim()}>
+            <span class="material-symbols-outlined" slot="start">download</span>
             安装
-          </md-filled-button>
+          </button>
         </div>
 
         <!-- Plugin List -->
-        <div class="border border-outline rounded-xl p-4">
-          <h3 class="text-title-small mb-3 flex items-center gap-2">
-            <md-icon class="text-sm">extension</md-icon>
+        <div class="border border-[var(--color-border)] rounded-xl p-4">
+          <h3 class="text-sm font-semibold mb-3 flex items-center gap-2">
+            <span class="material-symbols-outlined text-sm">extension</span>
             已安装插件
-            <md-filled-tonal-button size="small" onclick={loadPlugins} class="ml-auto">刷新</md-filled-tonal-button>
+            <button class="btn-ghost border border-[var(--color-border)] ml-auto text-xs px-3 py-1" onclick={loadPlugins}>刷新</button>
           </h3>
           {#if pluginList.length > 0}
             <div class="space-y-2">
               {#each pluginList as p}
-                <div class="p-3 bg-surface-container rounded-lg">
+                <div class="p-3 bg-[var(--color-surface)] rounded-lg">
                   <div class="flex items-center justify-between mb-2">
                     <div>
                       <div class="flex items-center gap-2">
-                        <span class="text-body-small font-medium">{p.name}</span>
-                        <span class="text-xs text-on-surface-variant">v{p.version}</span>
+                        <span class="text-xs font-medium">{p.name}</span>
+                        <span class="text-xs text-[var(--color-text-secondary)]">v{p.version}</span>
                         <span class="px-2 py-0.5 rounded-full text-xs {p.enabled ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}">
                           {p.enabled ? '已启用' : '已禁用'}
                         </span>
                       </div>
-                      <p class="text-xs text-on-surface-variant mt-1">{p.description} · {p.author}</p>
+                      <p class="text-xs text-[var(--color-text-secondary)] mt-1">{p.description} · {p.author}</p>
                     </div>
                     <div class="flex gap-1">
-                      <md-filled-tonal-button size="small" onclick={() => { selectedPluginId = p.id; }}>
+                      <button class="btn-ghost border border-[var(--color-border)] text-xs px-3 py-1" onclick={() => { selectedPluginId = p.id; }}>
                         钩子
-                      </md-filled-tonal-button>
-                      <md-filled-tonal-button size="small" onclick={() => togglePlugin(p.id, !p.enabled)}>
+                      </button>
+                      <button class="btn-ghost border border-[var(--color-border)] text-xs px-3 py-1" onclick={() => togglePlugin(p.id, !p.enabled)}>
                         {p.enabled ? '禁用' : '启用'}
-                      </md-filled-tonal-button>
-                      <md-icon-button onclick={() => uninstallPlugin(p.id)}>
-                        <md-icon class="text-sm">delete</md-icon>
-                      </md-icon-button>
+                      </button>
+                      <button class="p-2 rounded-xl hover:bg-neutral-100 transition-colors" onclick={() => uninstallPlugin(p.id)}>
+                        <span class="material-symbols-outlined text-sm">delete</span>
+                      </button>
                     </div>
                   </div>
                 </div>
               {/each}
             </div>
           {:else}
-            <p class="text-body-small text-on-surface-variant">暂无已安装插件</p>
+            <p class="text-xs text-[var(--color-text-secondary)]">暂无已安装插件</p>
           {/if}
         </div>
 
         <!-- Register Hook -->
         {#if selectedPluginId}
-          <div class="border border-outline rounded-xl p-4">
-            <h3 class="text-title-small mb-3 flex items-center gap-2">
-              <md-icon class="text-sm">webhook</md-icon>
+          <div class="border border-[var(--color-border)] rounded-xl p-4">
+            <h3 class="text-sm font-semibold mb-3 flex items-center gap-2">
+              <span class="material-symbols-outlined text-sm">webhook</span>
               注册钩子
             </h3>
             <div class="grid grid-cols-2 gap-2 mb-2">
-              <input type="text" placeholder="钩子名称 (e.g. pre_save)" class="px-3 py-2 border border-outline rounded-lg bg-surface text-on-surface" bind:value={pluginHookName} />
-              <select class="px-3 py-2 border border-outline rounded-lg bg-surface text-on-surface" bind:value={pluginHookType}>
+              <input type="text" placeholder="钩子名称 (e.g. pre_save)" class="px-3 py-2 border border-[var(--color-border)] rounded-lg bg-[var(--color-bg)] text-[var(--color-text)]" bind:value={pluginHookName} />
+              <select class="px-3 py-2 border border-[var(--color-border)] rounded-lg bg-[var(--color-bg)] text-[var(--color-text)]" bind:value={pluginHookType}>
                 <option value="pre_save">pre_save</option>
                 <option value="post_save">post_save</option>
                 <option value="pre_build">pre_build</option>
@@ -2148,11 +2145,11 @@
                 <option value="on_comment">on_comment</option>
               </select>
             </div>
-            <input type="text" placeholder="入口 (e.g. my-plugin/handler.js)" class="w-full px-3 py-2 border border-outline rounded-lg bg-surface text-on-surface mb-2" bind:value={pluginHookEntry} />
-            <md-filled-tonal-button onclick={registerHook} disabled={!pluginHookName.trim() || !pluginHookEntry.trim()}>
-              <md-icon slot="start">add</md-icon>
+            <input type="text" placeholder="入口 (e.g. my-plugin/handler.js)" class="w-full px-3 py-2 border border-[var(--color-border)] rounded-lg bg-[var(--color-bg)] text-[var(--color-text)] mb-2" bind:value={pluginHookEntry} />
+            <button class="btn-ghost border border-[var(--color-border)]" onclick={registerHook} disabled={!pluginHookName.trim() || !pluginHookEntry.trim()}>
+              <span class="material-symbols-outlined" slot="start">add</span>
               注册钩子
-            </md-filled-tonal-button>
+            </button>
           </div>
         {/if}
       </div>

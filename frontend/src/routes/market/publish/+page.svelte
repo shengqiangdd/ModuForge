@@ -9,19 +9,13 @@
   let published = $state(false);
 
   const categoryOptions = [
-    { value: 'system', label: '系统 (System)' },
-    { value: 'ui', label: '界面 (UI)' },
-    { value: 'audio', label: '音频 (Audio)' },
-    { value: 'display', label: '显示 (Display)' },
-    { value: 'utility', label: '工具 (Utility)' },
+    { value: 'system', label: '系统', icon: 'phone_android' },
+    { value: 'ui', label: '界面', icon: 'palette' },
+    { value: 'audio', label: '音频', icon: 'headphones' },
+    { value: 'display', label: '显示', icon: 'brightness_6' },
+    { value: 'utility', label: '工具', icon: 'build' },
   ];
-
-  const licenseOptions = [
-    { value: 'MIT', label: 'MIT' },
-    { value: 'Apache-2.0', label: 'Apache-2.0' },
-    { value: 'GPL-3.0', label: 'GPL-3.0' },
-    { value: 'CC-BY-4.0', label: 'CC-BY-4.0' },
-  ];
+  const licenseOptions = ['MIT', 'Apache-2.0', 'GPL-3.0', 'CC-BY-4.0'];
 
   async function publish() {
     if (!title.trim() || !description.trim()) return;
@@ -30,120 +24,88 @@
       const res = await fetch('/api/v1/market/publish', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: title.trim(),
-          description: description.trim(),
-          category,
-          tags: tags.trim(),
-          version,
-          license,
-          author: 'Anonymous',
-        }),
+        body: JSON.stringify({ title: title.trim(), description: description.trim(), category, tags: tags.trim(), version, license, author: 'Anonymous' }),
       });
-      if (res.ok) {
-        published = true;
-      }
+      if (res.ok) published = true;
     } catch {}
     publishing = false;
   }
 </script>
 
 <div class="p-6 max-w-2xl mx-auto">
-  <div class="mb-6">
-    <a href="/market" class="text-primary text-body-medium hover:underline flex items-center gap-1">
-      <md-icon class="text-sm">arrow_back</md-icon>
-      返回市场
-    </a>
-  </div>
-
-  <h1 class="text-headline-large text-on-surface mb-6">发布模块</h1>
+  <!-- Back -->
+  <a href="/market" class="inline-flex items-center gap-1.5 text-sm text-[var(--color-text-secondary)] hover:text-primary-600 transition-colors mb-6 no-underline">
+    <span class="material-symbols-outlined text-[16px]">arrow_back</span>
+    返回市场
+  </a>
 
   {#if published}
-    <div class="text-center py-12">
-      <md-icon class="text-6xl text-green-500 mb-4">check_circle</md-icon>
-      <h2 class="text-headline-small text-on-surface mb-2">发布成功！</h2>
-      <p class="text-body-medium text-on-surface-variant mb-6">你的模块已发布到 ModuForge 市场。</p>
-      <md-filled-button href="/market">返回市场</md-filled-button>
+    <div class="text-center py-16 animate-[scaleIn_0.3s_ease-out]">
+      <div class="w-16 h-16 rounded-2xl bg-green-100 flex items-center justify-center mx-auto mb-4">
+        <span class="material-symbols-outlined text-green-600 text-3xl">check_circle</span>
+      </div>
+      <h2 class="text-xl font-bold text-[var(--color-text)] mb-2">发布成功！</h2>
+      <p class="text-sm text-[var(--color-text-secondary)] mb-6">你的模块已发布到 ModuForge 市场。</p>
+      <a href="/market" class="btn-primary inline-flex items-center gap-2 no-underline">返回市场</a>
     </div>
   {:else}
-    <div class="space-y-6">
-      <!-- Title -->
+    <h1 class="text-2xl font-bold text-[var(--color-text)] mb-6">发布模块</h1>
+
+    <div class="space-y-5">
       <div>
-        <label class="block text-label-medium text-on-surface mb-2">标题 *</label>
-        <input
-          type="text"
-          class="w-full px-4 py-3 border border-outline rounded-xl bg-surface text-on-surface text-body-large"
-          placeholder="My Awesome Module"
-          bind:value={title}
-        />
+        <label class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1.5">标题 *</label>
+        <input type="text" class="input-field" placeholder="My Awesome Module" bind:value={title} />
       </div>
 
-      <!-- Description -->
       <div>
-        <label class="block text-label-medium text-on-surface mb-2">描述 *</label>
-        <textarea
-          class="w-full px-4 py-3 border border-outline rounded-xl bg-surface text-on-surface text-body-medium resize-none"
-          rows="4"
-          placeholder="详细描述你的模块功能..."
-          bind:value={description}
-        ></textarea>
+        <label class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1.5">描述 *</label>
+        <textarea class="input-field resize-none" rows="4" placeholder="详细描述你的模块功能..." bind:value={description}></textarea>
       </div>
 
-      <!-- Category -->
       <div>
-        <label class="block text-label-medium text-on-surface mb-2">分类</label>
-        <select
-          class="w-full px-4 py-3 border border-outline rounded-xl bg-surface text-on-surface text-body-medium"
-          bind:value={category}
-        >
+        <label class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1.5">分类</label>
+        <div class="grid grid-cols-5 gap-2">
           {#each categoryOptions as opt}
-            <option value={opt.value}>{opt.label}</option>
+            <button
+              class="flex flex-col items-center gap-1 p-3 rounded-xl border-2 transition-all duration-150 text-center
+                {category === opt.value ? 'border-primary-500 bg-primary-50' : 'border-[var(--color-border)] hover:border-neutral-300'}"
+              onclick={() => category = opt.value}
+            >
+              <span class="material-symbols-outlined text-[18px] {category === opt.value ? 'text-primary-600' : 'text-[var(--color-text-muted)]'}">{opt.icon}</span>
+              <span class="text-xs font-medium {category === opt.value ? 'text-primary-700' : 'text-[var(--color-text-secondary)]'}">{opt.label}</span>
+            </button>
           {/each}
-        </select>
+        </div>
       </div>
 
-      <!-- Tags -->
       <div>
-        <label class="block text-label-medium text-on-surface mb-2">标签</label>
-        <input
-          type="text"
-          class="w-full px-4 py-3 border border-outline rounded-xl bg-surface text-on-surface text-body-medium"
-          placeholder="tag1, tag2, tag3"
-          bind:value={tags}
-        />
-        <p class="text-label-small text-on-surface-variant mt-1">用逗号分隔多个标签</p>
+        <label class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1.5">标签</label>
+        <input type="text" class="input-field" placeholder="tag1, tag2, tag3" bind:value={tags} />
+        <p class="text-xs text-[var(--color-text-muted)] mt-1">用逗号分隔多个标签</p>
       </div>
 
-      <!-- Version & License row -->
       <div class="grid grid-cols-2 gap-4">
         <div>
-          <label class="block text-label-medium text-on-surface mb-2">版本号</label>
-          <input
-            type="text"
-            class="w-full px-4 py-3 border border-outline rounded-xl bg-surface text-on-surface text-body-medium"
-            placeholder="v1.0"
-            bind:value={version}
-          />
+          <label class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1.5">版本号</label>
+          <input type="text" class="input-field" placeholder="v1.0" bind:value={version} />
         </div>
         <div>
-          <label class="block text-label-medium text-on-surface mb-2">License</label>
-          <select
-            class="w-full px-4 py-3 border border-outline rounded-xl bg-surface text-on-surface text-body-medium"
-            bind:value={license}
-          >
-            {#each licenseOptions as opt}
-              <option value={opt.value}>{opt.label}</option>
-            {/each}
+          <label class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1.5">License</label>
+          <select class="input-field" bind:value={license}>
+            {#each licenseOptions as opt}<option value={opt}>{opt}</option>{/each}
           </select>
         </div>
       </div>
 
-      <!-- Submit -->
-      <div class="flex justify-end pt-4">
-        <md-filled-button onclick={publish} disabled={publishing || !title.trim() || !description.trim()}>
-          <md-icon slot="icon">publish</md-icon>
+      <div class="flex justify-end pt-2">
+        <button
+          class="btn-primary flex items-center gap-2 disabled:opacity-50"
+          disabled={publishing || !title.trim() || !description.trim()}
+          onclick={publish}
+        >
+          <span class="material-symbols-outlined text-[18px]">publish</span>
           {publishing ? '发布中...' : '发布模块'}
-        </md-filled-button>
+        </button>
       </div>
     </div>
   {/if}

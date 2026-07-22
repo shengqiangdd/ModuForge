@@ -1,5 +1,93 @@
-import { defineConfig, presetUno } from 'unocss';
+import { defineConfig, presetUno, presetWebFonts } from 'unocss';
 
 export default defineConfig({
-  presets: [presetUno()],
+  presets: [
+    presetUno(),
+    presetWebFonts({
+      fonts: {
+        sans: 'Inter:300,400,500,600,700',
+        mono: 'JetBrains Mono:400,500',
+      },
+    }),
+  ],
+  theme: {
+    colors: {
+      primary: {
+        50: '#f0f4ff',
+        100: '#dbe4ff',
+        200: '#bac8ff',
+        300: '#91a7ff',
+        400: '#748ffc',
+        500: '#5c7cfa',
+        600: '#4c6ef5',
+        700: '#4263eb',
+        800: '#3b5bdb',
+        900: '#364fc7',
+      },
+      neutral: {
+        50: '#fafafa',
+        100: '#f5f5f5',
+        200: '#e5e5e5',
+        300: '#d4d4d4',
+        400: '#a3a3a3',
+        500: '#737373',
+        600: '#525252',
+        700: '#404040',
+        800: '#262626',
+        900: '#171717',
+        950: '#0a0a0a',
+      },
+      success: '#22c55e',
+      warning: '#f59e0b',
+      error: '#ef4444',
+      info: '#3b82f6',
+    },
+    borderRadius: {
+      xl: '0.75rem',
+      '2xl': '1rem',
+      '3xl': '1.5rem',
+    },
+    boxShadow: {
+      'glow': '0 0 20px rgba(92, 124, 250, 0.15)',
+      'glow-lg': '0 0 40px rgba(92, 124, 250, 0.2)',
+      'elevated': '0 4px 24px rgba(0, 0, 0, 0.08)',
+      'elevated-lg': '0 8px 40px rgba(0, 0, 0, 0.12)',
+      'card': '0 1px 3px rgba(0,0,0,0.04), 0 4px 12px rgba(0,0,0,0.06)',
+      'card-hover': '0 4px 16px rgba(0,0,0,0.08), 0 8px 32px rgba(0,0,0,0.1)',
+    },
+    animation: {
+      keyframes: {
+        'slide-in': 'slideIn 0.3s ease-out',
+        'slide-up': 'slideUp 0.3s ease-out',
+        'fade-in': 'fadeIn 0.2s ease-out',
+        'scale-in': 'scaleIn 0.2s ease-out',
+        'pulse-soft': 'pulseSoft 2s infinite',
+        'shimmer': 'shimmer 2s infinite',
+        'float': 'float 3s ease-in-out infinite',
+      },
+      durations: {
+        'slide': '0.3s',
+        'fade': '0.2s',
+      },
+    },
+  },
+  shortcuts: {
+    'glass': 'bg-white/70 backdrop-blur-xl border border-white/20',
+    'glass-dark': 'bg-neutral-900/70 backdrop-blur-xl border border-white/10',
+    'card': 'bg-white rounded-2xl shadow-card transition-all duration-200',
+    'card-hover': 'card hover:shadow-card-hover hover:-translate-y-0.5',
+    'gradient-text': 'bg-gradient-to-r from-primary-500 to-primary-700 bg-clip-text text-transparent',
+    'btn-primary': 'bg-primary-600 text-white rounded-xl px-5 py-2.5 font-medium hover:bg-primary-700 active:bg-primary-800 transition-all duration-150 shadow-sm hover:shadow-glow',
+    'btn-ghost': 'text-neutral-600 rounded-xl px-4 py-2 hover:bg-neutral-100 transition-all duration-150',
+    'input-field': 'w-full px-4 py-3 rounded-xl border border-neutral-200 bg-white text-neutral-900 placeholder-neutral-400 focus:outline-none focus:ring-2 focus:ring-primary-500/30 focus:border-primary-500 transition-all duration-150',
+    'sidebar-item': 'flex items-center gap-3 px-3 py-2.5 rounded-xl text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900 transition-all duration-150 cursor-pointer',
+    'sidebar-item-active': 'sidebar-item bg-primary-50 text-primary-700 font-medium',
+    'page-container': 'p-6 max-w-7xl mx-auto',
+    'section-title': 'text-xl font-semibold text-neutral-900',
+    'badge': 'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium',
+    'badge-primary': 'badge bg-primary-100 text-primary-700',
+    'badge-success': 'badge bg-green-100 text-green-700',
+    'badge-error': 'badge bg-red-100 text-red-700',
+    'skeleton': 'bg-neutral-200 rounded-xl animate-pulse',
+  },
 });

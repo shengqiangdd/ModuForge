@@ -1,43 +1,58 @@
 <script lang="ts">
-  import { currentLocale, locales, type Locale } from '$lib/i18n';
+  import { currentLocale } from '$lib/i18n';
 
+  let { compact = false }: { compact?: boolean } = $props();
   let open = $state(false);
 
-  function select(code: Locale) {
+  const languages = [
+    { code: 'en', label: 'EN', flag: '🇺🇸', name: 'English' },
+    { code: 'zh', label: '中文', flag: '🇨🇳', name: '中文' },
+    { code: 'ja', label: '日本語', flag: '🇯🇵', name: '日本語' },
+    { code: 'ko', label: '한국어', flag: '🇰🇷', name: '한국어' },
+  ];
+
+  let currentLang = $derived(languages.find(l => l.code === $currentLocale) || languages[0]);
+
+  function select(code: string) {
     $currentLocale = code;
     open = false;
   }
 
-  let current = $derived(locales.find((l) => l.code === $currentLocale) || locales[0]);
+  function handleClickOutside(e: Event) {
+    const target = e.target as HTMLElement;
+    if (!target.closest('.locale-switcher')) open = false;
+  }
 </script>
 
-<div class="relative">
+<svelte:window on:click={handleClickOutside} />
+
+<div class="locale-switcher relative">
   <button
-    onclick={() => (open = !open)}
-    class="flex items-center gap-1.5 px-2 py-1 rounded-lg hover:bg-surface-container-highest text-sm transition-colors"
+    class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-sm font-medium text-[var(--color-text-secondary)] hover:bg-neutral-100 transition-all duration-150"
+    onclick={(e) => { e.stopPropagation(); open = !open; }}
   >
-    <span>{current.flag}</span>
-    <span class="hidden sm:inline">{current.code.toUpperCase()}</span>
-    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-    </svg>
+    <span class="text-base">{currentLang.flag}</span>
+    {#if !compact}
+      <span class="text-xs">{currentLang.label}</span>
+    {/if}
+    <span class="material-symbols-outlined text-[14px] transition-transform duration-200 {open ? 'rotate-180' : ''}">expand_more</span>
   </button>
 
   {#if open}
     <div
-      class="absolute right-0 top-full mt-1 bg-surface rounded-lg shadow-xl z-50 min-w-[140px] border border-outline-variant"
+      class="absolute top-full mt-2 right-0 w-44 bg-[var(--color-bg-elevated)] rounded-xl shadow-elevated-lg border border-[var(--color-border)] py-1.5 z-50 animate-[scaleIn_0.15s_ease-out]"
+      onclick={(e) => e.stopPropagation()}
     >
-      {#each locales as locale}
+      {#each languages as lang}
         <button
-          onclick={() => select(locale.code)}
-          class="w-full flex items-center gap-2 px-3 py-2 hover:bg-surface-container text-sm transition-colors first:rounded-t-lg last:rounded-b-lg"
-          class:bg-primary-container={locale.code === $currentLocale}
-          class:text-on-primary-container={locale.code === $currentLocale}
+          class="w-full flex items-center gap-3 px-3 py-2 text-sm transition-colors duration-100
+            {lang.code === $currentLocale ? 'bg-primary-50 text-primary-700 font-medium' : 'text-[var(--color-text-secondary)] hover:bg-neutral-50 hover:text-[var(--color-text)]'}"
+          onclick={() => select(lang.code)}
         >
-          <span>{locale.flag}</span>
-          <span>{locale.name}</span>
-          {#if locale.code === $currentLocale}
-            <span class="ml-auto text-primary">&#10003;</span>
+          <span class="text-base">{lang.flag}</span>
+          <span>{lang.name}</span>
+          {#if lang.code === $currentLocale}
+            <span class="material-symbols-outlined text-[14px] ml-auto text-primary-500">check</span>
           {/if}
         </button>
       {/each}
