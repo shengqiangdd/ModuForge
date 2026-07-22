@@ -125,10 +125,10 @@ func serveFrontend(app *fiber.App, fsys fs.FS) {
 		".map":  "application/json",
 	}
 
-	app.Get("/*", func(c fiber.Ctx) error {
+	app.Use(func(c fiber.Ctx) error {
 		path := c.Path()
 
-		// Skip API and WebSocket routes
+		// Skip API, WebSocket, health routes — let them through
 		if strings.HasPrefix(path, "/api/") || strings.HasPrefix(path, "/ws") || path == "/health" {
 			return c.Next()
 		}
@@ -139,7 +139,7 @@ func serveFrontend(app *fiber.App, fsys fs.FS) {
 			relPath = "index.html"
 		}
 
-		// Try to open the file
+		// Try to serve static file
 		f, err := fsys.Open(relPath)
 		if err == nil {
 			defer f.Close()
@@ -154,10 +154,10 @@ func serveFrontend(app *fiber.App, fsys fs.FS) {
 			}
 		}
 
-		// SPA fallback: serve index.html
+		// SPA fallback: serve index.html for all non-file routes
 		data, err := fs.ReadFile(fsys, "index.html")
 		if err != nil {
-			return c.Status(404).JSON(fiber.Map{"error": "not found"})
+			return c.Next() // no frontend, pass through
 		}
 		c.Set("Content-Type", "text/html; charset=utf-8")
 		return c.Send(data)
