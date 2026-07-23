@@ -40,6 +40,7 @@ func (h *MarketHandler) ListModules(c fiber.Ctx) error {
 		perPage = 20
 	}
 
+	c.Set("Cache-Control", "public, max-age=60")
 	modules, total := h.market.ListModules(query, category, sortBy, page, perPage)
 	return c.JSON(fiber.Map{"modules": modules, "total": total, "page": page, "per_page": perPage})
 }
@@ -51,6 +52,7 @@ func (h *MarketHandler) GetModule(c fiber.Ctx) error {
 	if err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": err.Error()})
 	}
+	c.Set("Cache-Control", "public, max-age=120")
 	return c.JSON(mod)
 }
 
@@ -76,6 +78,12 @@ func (h *MarketHandler) AddReview(c fiber.Ctx) error {
 	if err := c.Bind().JSON(&req); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
 	}
+	if req.Rating < 1 || req.Rating > 5 {
+		return c.Status(422).JSON(fiber.Map{"error": "rating must be between 1 and 5"})
+	}
+	if len(req.Comment) > 1000 {
+		return c.Status(422).JSON(fiber.Map{"error": "comment too long (max 1000)"})
+	}
 	if err := h.market.AddReview(slug, req.UID, req.Username, req.Rating, req.Comment); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
 	}
@@ -95,6 +103,15 @@ func (h *MarketHandler) Publish(c fiber.Ctx) error {
 	if err := c.Bind().JSON(&mod); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
 	}
+	if mod.Title == "" || len(mod.Title) > 100 {
+		return c.Status(422).JSON(fiber.Map{"error": "title required (max 100)"})
+	}
+	if mod.Slug == "" || len(mod.Slug) > 100 {
+		return c.Status(422).JSON(fiber.Map{"error": "slug required (max 100)"})
+	}
+	if len(mod.Description) > 1000 {
+		return c.Status(422).JSON(fiber.Map{"error": "description too long (max 1000)"})
+	}
 	result, err := h.market.PublishModule(&mod)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
@@ -108,11 +125,13 @@ func (h *MarketHandler) Trending(c fiber.Ctx) error {
 	if limit < 1 {
 		limit = 10
 	}
+	c.Set("Cache-Control", "public, max-age=120")
 	modules := h.market.TrendingModules(limit)
 	return c.JSON(fiber.Map{"modules": modules})
 }
 
 // GET /market/categories
 func (h *MarketHandler) Categories(c fiber.Ctx) error {
+	c.Set("Cache-Control", "public, max-age=300")
 	return c.JSON(fiber.Map{"categories": h.market.Categories()})
 }

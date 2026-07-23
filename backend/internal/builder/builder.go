@@ -13,9 +13,10 @@ import (
 
 // targetToImage maps build targets to their container image names.
 var targetToImage = map[string]string{
-	"magisk":  "moduforge/builder-magisk:latest",
-	"ksu":     "moduforge/builder-ksu:latest",
-	"apatch":  "moduforge/builder-apatch:latest",
+	"magisk":   "moduforge/builder-magisk:latest",
+	"ksu":      "moduforge/builder-ksu:latest",
+	"apatch":   "moduforge/builder-apatch:latest",
+	"universal": "moduforge/builder-magisk:latest",
 }
 
 type Builder struct {

@@ -26,10 +26,10 @@
   let project = $state<any>(null);
 
   const statusConfig: Record<string, { color: string; bg: string; icon: string }> = {
-    pending: { color: 'text-amber-600', bg: 'bg-amber-50', icon: 'schedule' },
-    running: { color: 'text-blue-600', bg: 'bg-blue-50', icon: 'sync' },
-    success: { color: 'text-green-600', bg: 'bg-green-50', icon: 'check_circle' },
-    failed: { color: 'text-red-500', bg: 'bg-red-50', icon: 'error' },
+    pending: { color: 'text-[var(--color-warning)]', bg: 'bg-[var(--color-warning-light)]', icon: 'schedule' },
+    running: { color: 'text-[var(--color-info)]', bg: 'bg-[var(--color-info-light)]', icon: 'sync' },
+    success: { color: 'text-[var(--color-success)]', bg: 'bg-[var(--color-success-light)]', icon: 'check_circle' },
+    failed: { color: 'text-[var(--color-error)]', bg: 'bg-[var(--color-error-light)]', icon: 'error' },
   };
 
   onMount(async () => {
@@ -96,6 +96,33 @@
   }
 </script>
 
+<style>
+  .build-log {
+    box-shadow: 0 0 30px rgba(34, 197, 94, 0.1);
+  }
+  .log-line {
+    display: flex;
+    gap: 12px;
+  }
+  .line-number {
+    user-select: none;
+    flex-shrink: 0;
+    width: 24px;
+    text-align: right;
+  }
+  .spinner {
+    width: 24px;
+    height: 24px;
+    border: 2px solid;
+    border-top-color: transparent;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+</style>
+
 <div class="p-6 max-w-3xl mx-auto">
   {#if !projectId}
     <div class="text-center py-16 text-[var(--color-text-secondary)]">
@@ -121,13 +148,14 @@
           <button
             class="relative p-4 rounded-2xl border-2 transition-all duration-200 text-left cursor-pointer
               {selectedTarget === t.value
-                ? 'border-primary-500 bg-primary-50/50 shadow-glow'
-                : 'border-[var(--color-border)] hover:border-neutral-300 hover:bg-[var(--color-surface)]'}"
+                ? 'border-primary-500 shadow-glow'
+                : 'border-[var(--color-border)] hover:border-[var(--color-text-muted)] hover:bg-[var(--color-surface)]'}"
+            style={selectedTarget === t.value ? 'background: color-mix(in srgb, var(--color-primary) 15%, transparent)' : ''}
             onclick={() => selectedTarget = t.value}
             disabled={building}
           >
             {#if selectedTarget === t.value}
-              <div class="absolute top-2 right-2 w-5 h-5 rounded-full bg-primary-500 flex items-center justify-center">
+              <div class="absolute top-2 right-2 w-5 h-5 rounded-full flex items-center justify-center" style="background: var(--color-primary)">
                 <span class="material-symbols-outlined text-white text-[12px]">check</span>
               </div>
             {/if}
@@ -161,7 +189,8 @@
       </button>
       {#if building}
         <button
-          class="px-5 py-3 rounded-xl text-sm font-medium border border-red-300 text-red-600 hover:bg-red-50 transition-colors"
+          class="px-5 py-3 rounded-xl text-sm font-medium transition-colors"
+          style="border: 1px solid var(--color-error); color: var(--color-error); background: transparent"
           onclick={cancelBuild}
         >
           取消
@@ -172,7 +201,7 @@
     <!-- Status -->
     {#if status}
       {@const cfg = statusConfig[status] || statusConfig.pending}
-      <div class="mb-4 p-4 rounded-2xl border {cfg.bg} flex items-center gap-3">
+      <div class="mb-4 p-4 rounded-2xl border {cfg.bg} flex items-center gap-3" style="border-color: var(--color-border)">
         <span class="material-symbols-outlined text-[22px] {cfg.color}">{cfg.icon}</span>
         <span class="text-sm font-semibold {cfg.color} uppercase">{status}</span>
         {#if status === 'running'}
@@ -187,22 +216,34 @@
 
     <!-- Log -->
     {#if logLines.length > 0}
-      <div class="rounded-2xl border border-[var(--color-border)] overflow-hidden">
-        <div class="px-4 py-2.5 bg-[var(--color-surface)] border-b border-[var(--color-border)] flex items-center gap-2">
-          <span class="material-symbols-outlined text-[16px] text-[var(--color-text-muted)]">terminal</span>
-          <span class="text-xs font-medium text-[var(--color-text-secondary)]">构建日志</span>
-          <span class="text-[10px] text-[var(--color-text-muted)] ml-auto">{logLines.length} 行</span>
+      <div class="build-log rounded-2xl border overflow-hidden" style="border-color: rgba(34,197,94,0.2)">
+        <div class="px-4 py-2.5 flex items-center gap-2" style="background: rgba(34,197,94,0.1); border-bottom: 1px solid rgba(34,197,94,0.2)">
+          <span class="material-symbols-outlined text-[16px]" style="color: #4ade80">terminal</span>
+          <span class="text-xs font-medium" style="color: #4ade80">构建日志</span>
+          <div class="ml-auto flex items-center gap-2">
+            <span class="text-[10px]" style="color: rgba(74,222,128,0.6)">{logLines.length} 行</span>
+            <div class="flex gap-1">
+              <div class="w-2.5 h-2.5 rounded-full" style="background: #ef4444"></div>
+              <div class="w-2.5 h-2.5 rounded-full" style="background: #f59e0b"></div>
+              <div class="w-2.5 h-2.5 rounded-full" style="background: #22c55e"></div>
+            </div>
+          </div>
         </div>
-        <pre class="p-4 bg-neutral-950 text-xs font-mono overflow-auto max-h-96 whitespace-pre-wrap leading-relaxed">
-          {#each logLines as line}
-            <span class:text-red-400={line.startsWith('[ERROR]')} class:text-amber-400={line.startsWith('[WARN]')} class:text-green-300={line.startsWith('[SUCCESS]')} class:text-green-400={!line.startsWith('[') || line.startsWith('[INFO]')}>{line}</span>{'\n'}
+        <pre class="p-4 text-xs font-mono overflow-auto max-h-96 whitespace-pre-wrap leading-relaxed" style="background: #0a0a0a; color: #4ade80">
+          {#each logLines as line, i}
+            <div class="log-line">
+              <span class="line-number" style="color: rgba(74,222,128,0.3)">{String(i + 1).padStart(3, ' ')}</span>
+              <span class:text-red-400={line.startsWith('[ERROR]')} class:text-amber-400={line.startsWith('[WARN]')} class:text-green-300={line.startsWith('[SUCCESS]')} class:text-green-400={!line.startsWith('[') || line.startsWith('[INFO]')}>{line}</span>
+            </div>
           {/each}
         </pre>
       </div>
     {:else if building}
-      <div class="rounded-2xl border border-[var(--color-border)] p-8 text-center text-[var(--color-text-muted)]">
-        <span class="material-symbols-outlined text-3xl mb-2">pending</span>
-        <p class="text-sm">等待构建日志...</p>
+      <div class="rounded-2xl border p-8 text-center" style="border-color: var(--color-border); background: var(--color-bg-elevated)">
+        <div class="inline-flex items-center gap-2 mb-3">
+          <div class="spinner" style="border-color: var(--color-border); border-top-color: var(--color-primary)"></div>
+        </div>
+        <p class="text-sm" style="color: var(--color-text-muted)">等待构建日志...</p>
       </div>
     {/if}
 

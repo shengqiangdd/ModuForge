@@ -15,7 +15,9 @@ export async function authFetch(url: string, options: RequestInit = {}): Promise
 
   if (res.status === 401) {
     localStorage.removeItem('moduforge_token');
-    window.location.reload();
+    if (token) {
+      window.location.href = '/';
+    }
     throw new Error('Unauthorized');
   }
 
@@ -37,7 +39,6 @@ async function request<T = unknown>(method: string, path: string, body?: unknown
 
   if (res.status === 401) {
     localStorage.removeItem('moduforge_token');
-    window.location.reload();
     throw new Error('Unauthorized');
   }
 
@@ -59,6 +60,11 @@ export function streamRequest(path: string, body: unknown): EventSource {
   const token = getToken();
   const ctrl = new AbortController();
 
+  const timeoutId = setTimeout(() => {
+    ctrl.abort();
+    window.dispatchEvent(new CustomEvent('ai-stream-timeout'));
+  }, 60000);
+
   fetch(`${BASE}${path}`, {
     method: 'POST',
     headers: {
@@ -68,7 +74,19 @@ export function streamRequest(path: string, body: unknown): EventSource {
     body: JSON.stringify(body),
     signal: ctrl.signal,
   }).then(async (res) => {
-    if (!res.ok || !res.body) { ctrl.abort(); return; }
+    clearTimeout(timeoutId);
+    if (!res.ok || !res.body) {
+      // Try to read error message from response body
+      let errMsg = `HTTP ${res.status}`;
+      try {
+        const errText = await res.text();
+        const errJson = JSON.parse(errText);
+        errMsg = errJson.error || errJson.message || errMsg;
+      } catch {}
+      window.dispatchEvent(new CustomEvent('ai-stream-error', { detail: errMsg }));
+      ctrl.abort();
+      return;
+    }
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     while (true) {
@@ -78,7 +96,11 @@ export function streamRequest(path: string, body: unknown): EventSource {
       window.dispatchEvent(new CustomEvent('ai-stream', { detail: text }));
     }
     window.dispatchEvent(new CustomEvent('ai-stream-done'));
-  }).catch(() => ctrl.abort());
+  }).catch((e) => {
+    clearTimeout(timeoutId);
+    window.dispatchEvent(new CustomEvent('ai-stream-error', { detail: e?.message || '网络连接失败' }));
+    ctrl.abort();
+  });
 
-  return { close: () => ctrl.abort() } as unknown as EventSource;
+  return { close: () => { clearTimeout(timeoutId); ctrl.abort(); } } as unknown as EventSource;
 }

@@ -176,6 +176,107 @@
     validating = false;
   }
 
+  // Module ZIP import
+  interface ModuleInfo {
+    id: string; name: string; version: string; versionCode: string;
+    author: string; description: string;
+    ksu_supported: boolean; apatch_supported: boolean;
+  }
+  interface ZipFileInfo {
+    path: string; size: number; is_dir: boolean;
+  }
+  interface ZipFileContent {
+    path: string; content: string; is_dir: boolean;
+  }
+  let showZipImportDialog = $state(false);
+  let zipImportLoading = $state(false);
+  let parsedModule = $state<ModuleInfo | null>(null);
+  let parsedFiles = $state<ZipFileInfo[]>([]);
+  let zipImporting = $state(false);
+  let zipImportError = $state('');
+  let zipFileRef: HTMLInputElement | undefined = $state();
+  let zipImportFile: File | null = $state(null);
+
+  function handleZipImportFile() {
+    const file = zipFileRef?.files?.[0];
+    if (!file) return;
+    zipImportFile = file;
+    zipImportLoading = true;
+    zipImportError = '';
+    parsedModule = null;
+    parsedFiles = [];
+    const formData = new FormData();
+    formData.append('file', file);
+    fetch('/api/v1/module/parse-zip', {
+      method: 'POST',
+      body: formData,
+    }).then(async res => {
+      if (res.ok) {
+        const data = await res.json();
+        parsedModule = data.module;
+        parsedFiles = data.files || [];
+        showZipImportDialog = true;
+      } else {
+        const err = await res.json().catch(() => ({ error: '解析失败' }));
+        zipImportError = err.error || '解析 ZIP 文件失败';
+      }
+    }).catch(() => {
+      zipImportError = '无法连接到服务器';
+    }).finally(() => {
+      zipImportLoading = false;
+    });
+  }
+
+  async function confirmZipImport() {
+    if (!parsedModule || !parsedModule.id) {
+      zipImportError = '无效的模块文件（缺少 module.prop）';
+      return;
+    }
+    zipImporting = true;
+    zipImportError = '';
+    const file = zipImportFile;
+    if (!file) {
+      zipImportError = '文件已丢失，请重新选择';
+      zipImporting = false;
+      return;
+    }
+    const formData = new FormData();
+    formData.append('file', file);
+    try {
+      const res = await fetch('/api/v1/module/import-zip', {
+        method: 'POST',
+        body: formData,
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const fileContents: ZipFileContent[] = data.files || [];
+        let imported = 0; let failed = 0;
+        for (const fc of fileContents) {
+          if (fc.is_dir) continue;
+          try {
+            const saveRes = await fetch(`/api/v1/projects/${id}/files/${encodeURIComponent(fc.path)}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ content: fc.content }),
+            });
+            if (saveRes.ok) imported++; else failed++;
+          } catch { failed++; }
+        }
+        alert(`导入完成：${imported} 个文件成功，${failed} 个失败`);
+        showZipImportDialog = false;
+        const refreshed = await client.get<{path: string}[]>(`/projects/${id}/files`);
+        files = refreshed.map(f => ({ path: f.path }));
+        if (refreshed.length > 0) selectFile(refreshed[0].path);
+      } else {
+        const err = await res.json().catch(() => ({ error: '导入失败' }));
+        zipImportError = err.error || '导入失败';
+      }
+    } catch {
+      zipImportError = '无法连接到服务器';
+    }
+    zipImporting = false;
+  }
+
   async function exportZip() {
     exporting = true;
     const zipFiles = [];
@@ -350,7 +451,8 @@
     try {
       const response = await fetch('/api/v1/templates/list');
       if (response.ok) {
-        templates = await response.json();
+        const data = await response.json();
+        templates = Array.isArray(data) ? data : [];
       }
     } catch {
       // Use default templates
@@ -879,7 +981,7 @@
           loadEditSessions();
         }
         if (msg.type === 'collab_leave') {
-          collabSessions = collabSessions.filter(s => s.user_id !== msg.payload?.user_id);
+          collabSessions = (collabSessions || []).filter(s => s.user_id !== msg.payload?.user_id);
         }
       } catch { /* ignore */ }
     };
@@ -1000,7 +1102,7 @@
       {:else}
         <div class="space-y-1">
           {#each files as file}
-            <div class="flex items-center gap-2 p-2 rounded-xl hover:bg-neutral-50 cursor-pointer transition-colors cursor-pointer" class:bg-primary-600-50={selectedFile === file.path} onclick={() => selectFile(file.path)}
+            <div class="flex items-center gap-2 p-2 rounded-xl hover:bg-[var(--color-surface)] cursor-pointer transition-colors cursor-pointer" style={selectedFile === file.path ? 'background: color-mix(in srgb, var(--color-primary) 20%, transparent)' : ''} onclick={() => selectFile(file.path)}
             >
               <span class="text-lg mr-2">{getFileIcon(file.path)}</span>
               <span>{file.path}</span>
@@ -1027,6 +1129,11 @@
         <span class="material-symbols-outlined" slot="start">build</span>
         构建模块
       </button>
+      <button class="btn-primary w-full" onclick={() => zipFileRef?.click()} disabled={zipImportLoading}>
+        <span class="material-symbols-outlined" slot="start">file_upload</span>
+        {zipImportLoading ? '解析中...' : '导入模块 ZIP'}
+      </button>
+      <input type="file" accept=".zip" class="hidden" bind:this={zipFileRef} onchange={handleZipImportFile} />
       <button class="btn-primary w-full" onclick={exportZip} disabled={exporting}>
         <span class="material-symbols-outlined" slot="start">archive</span>
         {exporting ? '打包中...' : '导出模块 ZIP'}
@@ -1186,7 +1293,7 @@
           </div>
           <div class="px-4 pb-3 space-y-2 max-h-48 overflow-auto">
             {#each validationResults as vr}
-              <div class="p-2 rounded-lg border {vr.valid ? 'border-green-400 bg-green-50' : 'border-red-400 bg-red-50'}">
+              <div class="p-2 rounded-lg border" style={vr.valid ? 'border-color: var(--color-success); background: var(--color-success-light)' : 'border-color: var(--color-error); background: var(--color-error-light)'}>
                 <div class="flex items-center gap-2 mb-1">
                   <md-icon class="text-sm {vr.valid ? 'text-green-600' : 'text-red-600'}">
                     {vr.valid ? 'check_circle' : 'error'}
@@ -1266,7 +1373,7 @@
           <h3 class="text-sm font-semibold mb-2">仓库文件</h3>
           <div class="space-y-1">
             {#each repoFiles as file}
-              <div class="flex items-center gap-2 p-2 rounded-xl hover:bg-neutral-50 cursor-pointer transition-colors">
+              <div class="flex items-center gap-2 p-2 rounded-xl hover:bg-[var(--color-surface)] cursor-pointer transition-colors">
                 <span class="material-symbols-outlined" slot="start">{file.type === 'dir' ? 'folder' : 'description'}</span>
                 <span>{file.name}</span>
               </div>
@@ -1297,7 +1404,7 @@
       />
 
       <div class="grid grid-cols-1 gap-3">
-        {#each templates.filter(t => !templateSearch || t.description?.toLowerCase().includes(templateSearch.toLowerCase())) as tmpl}
+        {#each (templates || []).filter(t => !templateSearch || t.description?.toLowerCase().includes(templateSearch.toLowerCase())) as tmpl}
           <button
             class="p-4 border border-[var(--color-border)] rounded-xl text-left hover:bg-[var(--color-surface)] transition-colors"
             onclick={() => applyTemplate(tmpl)}
@@ -1513,11 +1620,7 @@
                     <div class="flex items-center gap-3">
                       <span class="font-mono text-sm font-bold">{dev.serial}</span>
                       <span class="text-xs">{dev.model || 'Unknown'}</span>
-                      <span class="px-2 py-0.5 rounded-full text-xs {
-                        dev.state === 'device' ? 'bg-green-100 text-green-800' :
-                        dev.state === 'offline' ? 'bg-red-100 text-red-800' :
-                        'bg-yellow-100 text-yellow-800'
-                      }">{dev.state}</span>
+                      <span class="px-2 py-0.5 rounded-full text-xs" style={dev.state === 'device' ? 'background: var(--color-success-light); color: var(--color-success)' : dev.state === 'offline' ? 'background: var(--color-error-light); color: var(--color-error)' : 'background: var(--color-warning-light); color: var(--color-warning)'}>{dev.state}</span>
                     </div>
                     <div class="flex gap-2">
                       {#if dev.state === 'device'}
@@ -1525,7 +1628,78 @@
                           <span class="material-symbols-outlined" slot="start">download</span>
                           安装模块
                         </button>
-                      {/if}
+{/if}
+
+<!-- ZIP Import Dialog -->
+{#if showZipImportDialog}
+  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onclick={() => showZipImportDialog = false}>
+    <div class="bg-[var(--color-bg)] rounded-2xl shadow-2xl w-full max-w-lg border border-[var(--color-border)]" onclick={(e) => e.stopPropagation()}>
+      <div class="px-6 py-4 border-b border-[var(--color-border)]">
+        <h3 class="text-lg font-semibold text-[var(--color-text)]">确认导入模块</h3>
+      </div>
+      <div class="px-6 py-4 space-y-4">
+        {#if zipImportError}
+          <div class="p-3 rounded-lg text-xs" style="background: color-mix(in srgb, var(--color-error, #ef4444) 8%, var(--color-bg)); border: 1px solid color-mix(in srgb, var(--color-error, #ef4444) 20%, transparent);">
+            <p class="text-[var(--color-error)]">{zipImportError}</p>
+          </div>
+        {/if}
+        {#if parsedModule}
+          <div class="rounded-xl p-4 space-y-2" style="background: var(--color-surface); border: 1px solid var(--color-border);">
+            <div class="flex items-center gap-2 pb-2 border-b border-[var(--color-border)]">
+              <span class="material-symbols-outlined text-primary-500">badge</span>
+              <h4 class="font-semibold text-[var(--color-text)]">{parsedModule.name || '未知模块'}</h4>
+            </div>
+            <div class="grid grid-cols-2 gap-2 text-xs">
+              {#if parsedModule.id}<div><span class="text-[var(--color-text-muted)]">ID：</span><span class="text-[var(--color-text)]">{parsedModule.id}</span></div>{/if}
+              {#if parsedModule.version}<div><span class="text-[var(--color-text-muted)]">版本：</span><span class="text-[var(--color-text)]">{parsedModule.version}</span></div>{/if}
+              {#if parsedModule.versionCode}<div><span class="text-[var(--color-text-muted)]">版本号：</span><span class="text-[var(--color-text)]">{parsedModule.versionCode}</span></div>{/if}
+              {#if parsedModule.author}<div><span class="text-[var(--color-text-muted)]">作者：</span><span class="text-[var(--color-text)]">{parsedModule.author}</span></div>{/if}
+            </div>
+            {#if parsedModule.description}
+              <p class="text-xs text-[var(--color-text-secondary)] pt-1 border-t border-[var(--color-border)]">{parsedModule.description}</p>
+            {/if}
+            {#if parsedModule.ksu_supported || parsedModule.apatch_supported}
+              <div class="flex gap-2 pt-1">
+                {#if parsedModule.ksu_supported}
+                  <span class="inline-flex items-center gap-0.5 px-2 py-0.5 rounded text-[10px] font-medium" style="background: color-mix(in srgb, #22c55e 12%, transparent); color: #22c55e;">
+                    <span class="material-symbols-outlined text-[10px]">check_circle</span> KSU
+                  </span>
+                {/if}
+                {#if parsedModule.apatch_supported}
+                  <span class="inline-flex items-center gap-0.5 px-2 py-0.5 rounded text-[10px] font-medium" style="background: color-mix(in srgb, #8b5cf6 12%, transparent); color: #8b5cf6;">
+                    <span class="material-symbols-outlined text-[10px]">check_circle</span> APatch
+                  </span>
+                {/if}
+              </div>
+            {/if}
+          </div>
+        {:else}
+          <div class="flex items-center justify-center py-6">
+            <span class="material-symbols-outlined animate-spin text-primary-500">progress_activity</span>
+            <span class="ml-2 text-sm text-[var(--color-text-secondary)]">解析模块信息...</span>
+          </div>
+        {/if}
+        <div class="text-xs text-[var(--color-text-muted)]">
+          <span class="material-symbols-outlined text-[12px] align-text-bottom">info</span>
+          将导入 {(parsedFiles || []).filter(f => !f.is_dir).length} 个文件到当前项目
+        </div>
+      </div>
+      <div class="flex justify-end gap-2 px-6 py-4 border-t border-[var(--color-border)]">
+        <button class="px-4 py-2 rounded-xl text-sm text-[var(--color-text-secondary)] hover:bg-[var(--color-surface)] transition-colors" onclick={() => showZipImportDialog = false}>取消</button>
+        <button class="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium bg-primary-600 text-white hover:bg-primary-700 transition-colors disabled:opacity-50" onclick={confirmZipImport} disabled={zipImporting || !parsedModule?.id}>
+          {#if zipImporting}
+            <span class="material-symbols-outlined text-[14px] animate-spin">progress_activity</span>
+            导入中...
+          {:else}
+            <span class="material-symbols-outlined text-[14px]">download</span>
+            确认导入
+          {/if}
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
+
                       <button class="btn-ghost border border-[var(--color-border)] text-xs px-3 py-1" onclick={() => rebootDevice(dev.serial)}>
                         <span class="material-symbols-outlined" slot="start">refresh</span>
                         重启
@@ -1642,7 +1816,7 @@
     </div>
 
     {#if verifyResult}
-      <div class="mt-2 p-2 rounded-lg {verifyResult.valid ? 'bg-green-50 border border-green-400' : 'bg-red-50 border border-red-400'}">
+      <div class="mt-2 p-2 rounded-lg border" style={verifyResult.valid ? 'border-color: var(--color-success); background: var(--color-success-light)' : 'border-color: var(--color-error); background: var(--color-error-light)'}>
         <div class="flex items-center gap-2">
           <md-icon class="text-sm {verifyResult.valid ? 'text-green-600' : 'text-red-600'}">
             {verifyResult.valid ? 'check_circle' : 'error'}
@@ -1964,7 +2138,7 @@
                       <p class="text-xs text-[var(--color-text-secondary)]">{c.role}</p>
                     </div>
                   </div>
-                  <button class="p-2 rounded-xl hover:bg-neutral-100 transition-colors" onclick={() => removeCollaborator(c.user_id)}>
+                  <button class="p-2 rounded-xl hover:bg-[var(--color-surface)] transition-colors" onclick={() => removeCollaborator(c.user_id)}>
                     <span class="material-symbols-outlined text-sm">close</span>
                   </button>
                 </div>
@@ -2021,7 +2195,7 @@
           {#if collabComments.length > 0}
             <div class="space-y-2 mb-3 max-h-48 overflow-auto">
               {#each collabComments as c}
-                <div class="p-2 rounded-lg {c.resolved ? 'bg-green-50 border border-green-300' : 'bg-[var(--color-surface)] border border-[var(--color-border)]'}">
+                <div class="p-2 rounded-lg border" style={c.resolved ? 'border-color: var(--color-success); background: var(--color-success-light)' : 'border-color: var(--color-border); background: var(--color-surface)'}>
                   <div class="flex items-center justify-between mb-1">
                     <div class="flex items-center gap-2">
                       <span class="text-xs font-medium">{c.username}</span>
@@ -2102,7 +2276,7 @@
                       <div class="flex items-center gap-2">
                         <span class="text-xs font-medium">{p.name}</span>
                         <span class="text-xs text-[var(--color-text-secondary)]">v{p.version}</span>
-                        <span class="px-2 py-0.5 rounded-full text-xs {p.enabled ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}">
+                        <span class="px-2 py-0.5 rounded-full text-xs" style={p.enabled ? 'background: var(--color-success-light); color: var(--color-success)' : 'background: var(--color-surface); color: var(--color-text-muted)'}>
                           {p.enabled ? '已启用' : '已禁用'}
                         </span>
                       </div>
@@ -2115,7 +2289,7 @@
                       <button class="btn-ghost border border-[var(--color-border)] text-xs px-3 py-1" onclick={() => togglePlugin(p.id, !p.enabled)}>
                         {p.enabled ? '禁用' : '启用'}
                       </button>
-                      <button class="p-2 rounded-xl hover:bg-neutral-100 transition-colors" onclick={() => uninstallPlugin(p.id)}>
+                      <button class="p-2 rounded-xl hover:bg-[var(--color-surface)] transition-colors" onclick={() => uninstallPlugin(p.id)}>
                         <span class="material-symbols-outlined text-sm">delete</span>
                       </button>
                     </div>

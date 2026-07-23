@@ -21,7 +21,7 @@ func (h *BuildHandler) Create(c fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
 	}
 	if req.Target == "" {
-		req.Target = "magisk"
+		req.Target = "universal"
 	}
 	task, err := h.svc.Create(c.Context(), projectID, req.Target)
 	if err != nil {

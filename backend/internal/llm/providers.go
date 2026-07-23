@@ -43,7 +43,7 @@ func GetProviders() []Provider {
 		{
 			Name: "OpenCode Zen", ID: "opencode-zen",
 			Endpoint: "https://opencode.ai/zen/v1/chat/completions",
-			RequiresKey: true, IsFree: false, Tier: "paid",
+			RequiresKey: false, IsFree: true, Tier: "free",
 			Models: []Model{
 				// — 免费模型 (price=0) —
 				{ID: "big-pickle", Name: "Big Pickle", Provider: "opencode-zen", MaxTokens: 16384, SupportsStream: true, PriceInput: 0, PriceOutput: 0},
@@ -86,7 +86,7 @@ func GetProviders() []Provider {
 		{
 			Name: "OpenCode Go", ID: "opencode-go",
 			Endpoint: "https://opencode.ai/zen/go/v1/chat/completions",
-			RequiresKey: true, IsFree: false, Tier: "subscription",
+			RequiresKey: false, IsFree: false, Tier: "subscription",
 			Models: []Model{
 				{ID: "mimo-v2.5", Name: "MiMo V2.5", Provider: "opencode-go", MaxTokens: 16384, SupportsStream: true, PriceInput: 0, PriceOutput: 0},
 				{ID: "mimo-v2.5-pro", Name: "MiMo V2.5 Pro", Provider: "opencode-go", MaxTokens: 16384, SupportsStream: true, PriceInput: 0, PriceOutput: 0},
@@ -148,18 +148,6 @@ func GetProviders() []Provider {
 				{ID: "deepseek-r1", Name: "DeepSeek R1", Provider: "deepseek", MaxTokens: 64000, SupportsStream: true, PriceInput: 0.55, PriceOutput: 2.19},
 			},
 		},
-		// === 通义千问 (Qwen) ===
-		{
-			Name: "通义千问", ID: "qwen",
-			Endpoint: "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
-			RequiresKey: true, IsFree: false, Tier: "paid",
-			Models: []Model{
-				{ID: "qwen3.5-max", Name: "Qwen3.5 Max", Provider: "qwen", MaxTokens: 131000, SupportsStream: true, PriceInput: 0.60, PriceOutput: 3.60},
-				{ID: "qwen3.5-plus", Name: "Qwen3.5 Plus", Provider: "qwen", MaxTokens: 1000000, SupportsStream: true, PriceInput: 0.40, PriceOutput: 2.40},
-				{ID: "qwen3.5-flash", Name: "Qwen3.5 Flash", Provider: "qwen", MaxTokens: 1000000, SupportsStream: true, PriceInput: 0.10, PriceOutput: 0.40},
-				{ID: "qwen-coder-plus", Name: "Qwen Coder Plus", Provider: "qwen", MaxTokens: 131000, SupportsStream: true, PriceInput: 0.80, PriceOutput: 2.40},
-			},
-		},
 		// === xAI / Grok ===
 		{
 			Name: "xAI (Grok)", ID: "xai",
@@ -182,7 +170,143 @@ func GetProviders() []Provider {
 				{ID: "deepseek-coder:16b", Name: "DeepSeek Coder 16B", Provider: "ollama", MaxTokens: 32000, SupportsStream: true, PriceInput: 0, PriceOutput: 0},
 			},
 		},
+		// === 阿里云百炼 (Aliyun Bailian) ===
+		{
+			Name: "阿里云百炼", ID: "aliyun-bailian",
+			Endpoint: "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
+			RequiresKey: true, IsFree: false, Tier: "paid",
+			Models: []Model{
+				{ID: "qwen-max", Name: "Qwen Max", Provider: "aliyun-bailian", MaxTokens: 32000, SupportsStream: true, PriceInput: 2.0, PriceOutput: 8.0},
+				{ID: "qwen-plus", Name: "Qwen Plus", Provider: "aliyun-bailian", MaxTokens: 32000, SupportsStream: true, PriceInput: 0.80, PriceOutput: 2.0},
+				{ID: "qwen-turbo", Name: "Qwen Turbo", Provider: "aliyun-bailian", MaxTokens: 32000, SupportsStream: true, PriceInput: 0.30, PriceOutput: 0.60},
+			},
+		},
+		// === 阿里云灵积 (Aliyun Lingji) ===
+		{
+			Name: "阿里云灵积", ID: "aliyun-lingji",
+			Endpoint: "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
+			RequiresKey: true, IsFree: false, Tier: "paid",
+			Models: []Model{
+				{ID: "qwen-max", Name: "Qwen Max", Provider: "aliyun-lingji", MaxTokens: 32000, SupportsStream: true, PriceInput: 2.0, PriceOutput: 8.0},
+				{ID: "qwen-plus", Name: "Qwen Plus", Provider: "aliyun-lingji", MaxTokens: 32000, SupportsStream: true, PriceInput: 0.80, PriceOutput: 2.0},
+				{ID: "qwen-turbo", Name: "Qwen Turbo", Provider: "aliyun-lingji", MaxTokens: 32000, SupportsStream: true, PriceInput: 0.30, PriceOutput: 0.60},
+			},
+		},
+		// === 小米 MiMo (Xiaomi MiMo) ===
+		{
+			Name: "小米 MiMo", ID: "xiaomi-mimo",
+			Endpoint: "https://api.mimo.xiaomi.com/v1/chat/completions",
+			RequiresKey: true, IsFree: false, Tier: "paid",
+			Models: []Model{
+				{ID: "MiMo-7B-RL", Name: "MiMo 7B RL", Provider: "xiaomi-mimo", MaxTokens: 16384, SupportsStream: true, PriceInput: 0.50, PriceOutput: 1.50},
+				{ID: "MiMo-7B-SFT", Name: "MiMo 7B SFT", Provider: "xiaomi-mimo", MaxTokens: 16384, SupportsStream: true, PriceInput: 0.30, PriceOutput: 1.0},
+			},
+		},
+		// === 智谱 AI (Zhipu AI) ===
+		{
+			Name: "智谱 AI", ID: "zhipu",
+			Endpoint: "https://open.bigmodel.cn/api/paas/v4/chat/completions",
+			RequiresKey: true, IsFree: false, Tier: "paid",
+			Models: []Model{
+				{ID: "glm-4", Name: "GLM-4", Provider: "zhipu", MaxTokens: 128000, SupportsStream: true, PriceInput: 1.0, PriceOutput: 2.0},
+				{ID: "glm-4-flash", Name: "GLM-4 Flash", Provider: "zhipu", MaxTokens: 128000, SupportsStream: true, PriceInput: 0.10, PriceOutput: 0.20},
+				{ID: "glm-4v", Name: "GLM-4V", Provider: "zhipu", MaxTokens: 32000, SupportsStream: true, PriceInput: 1.0, PriceOutput: 2.0},
+			},
+		},
+		// === 月之暗面 (Moonshot) ===
+		{
+			Name: "月之暗面", ID: "moonshot",
+			Endpoint: "https://api.moonshot.cn/v1/chat/completions",
+			RequiresKey: true, IsFree: false, Tier: "paid",
+			Models: []Model{
+				{ID: "moonshot-v1-8k", Name: "Moonshot V1 8K", Provider: "moonshot", MaxTokens: 8000, SupportsStream: true, PriceInput: 0.50, PriceOutput: 1.50},
+				{ID: "moonshot-v1-32k", Name: "Moonshot V1 32K", Provider: "moonshot", MaxTokens: 32000, SupportsStream: true, PriceInput: 1.0, PriceOutput: 3.0},
+			},
+		},
+		// === 百川智能 (Baichuan) ===
+		{
+			Name: "百川智能", ID: "baichuan",
+			Endpoint: "https://api.baichuan-ai.com/v1/chat/completions",
+			RequiresKey: true, IsFree: false, Tier: "paid",
+			Models: []Model{
+				{ID: "baichuan4", Name: "Baichuan4", Provider: "baichuan", MaxTokens: 32000, SupportsStream: true, PriceInput: 1.0, PriceOutput: 3.0},
+				{ID: "baichuan3-turbo", Name: "Baichuan3 Turbo", Provider: "baichuan", MaxTokens: 32000, SupportsStream: true, PriceInput: 0.50, PriceOutput: 1.50},
+			},
+		},
+		// === 零一万物 (Lingyiwanwu) ===
+		{
+			Name: "零一万物", ID: "lingyiwanwu",
+			Endpoint: "https://api.lingyiwanwu.com/v1/chat/completions",
+			RequiresKey: true, IsFree: false, Tier: "paid",
+			Models: []Model{
+				{ID: "yi-large", Name: "Yi Large", Provider: "lingyiwanwu", MaxTokens: 32000, SupportsStream: true, PriceInput: 1.0, PriceOutput: 3.0},
+				{ID: "yi-medium", Name: "Yi Medium", Provider: "lingyiwanwu", MaxTokens: 32000, SupportsStream: true, PriceInput: 0.50, PriceOutput: 1.50},
+			},
+		},
+		// === 讯飞星火 (iFlytek Spark) ===
+		{
+			Name: "讯飞星火", ID: "xfyun",
+			Endpoint: "https://spark-api-open.xf-yun.com/v1/chat/completions",
+			RequiresKey: true, IsFree: false, Tier: "paid",
+			Models: []Model{
+				{ID: "spark-4.0", Name: "Spark 4.0", Provider: "xfyun", MaxTokens: 32000, SupportsStream: true, PriceInput: 0.50, PriceOutput: 2.0},
+				{ID: "spark-max", Name: "Spark Max", Provider: "xfyun", MaxTokens: 32000, SupportsStream: true, PriceInput: 0.30, PriceOutput: 1.0},
+			},
+		},
+		// === 硅基流动 (SiliconFlow) ===
+		{
+			Name: "硅基流动", ID: "siliconflow",
+			Endpoint: "https://api.siliconflow.cn/v1/chat/completions",
+			RequiresKey: true, IsFree: false, Tier: "paid",
+			Models: []Model{
+				{ID: "Qwen/Qwen3-8B", Name: "Qwen3 8B", Provider: "siliconflow", MaxTokens: 32000, SupportsStream: true, PriceInput: 0.20, PriceOutput: 0.60},
+				{ID: "DeepSeek-V3", Name: "DeepSeek V3", Provider: "siliconflow", MaxTokens: 64000, SupportsStream: true, PriceInput: 0.50, PriceOutput: 1.50},
+			},
+		},
+		// === Groq ===
+		{
+			Name: "Groq", ID: "groq",
+			Endpoint: "https://api.groq.com/openai/v1/chat/completions",
+			RequiresKey: true, IsFree: false, Tier: "paid",
+			Models: []Model{
+				{ID: "llama3-70b", Name: "Llama 3 70B", Provider: "groq", MaxTokens: 32000, SupportsStream: true, PriceInput: 0.50, PriceOutput: 1.0},
+				{ID: "mixtral-8x7b", Name: "Mixtral 8x7B", Provider: "groq", MaxTokens: 32000, SupportsStream: true, PriceInput: 0.30, PriceOutput: 0.60},
+			},
+		},
+		// === Together ===
+		{
+			Name: "Together", ID: "together",
+			Endpoint: "https://api.together.xyz/v1/chat/completions",
+			RequiresKey: true, IsFree: false, Tier: "paid",
+			Models: []Model{
+				{ID: "llama3-70b", Name: "Llama 3 70B", Provider: "together", MaxTokens: 32000, SupportsStream: true, PriceInput: 0.60, PriceOutput: 1.20},
+				{ID: "mixtral-8x7b", Name: "Mixtral 8x7B", Provider: "together", MaxTokens: 32000, SupportsStream: true, PriceInput: 0.40, PriceOutput: 0.80},
+			},
+		},
+		// === OpenRouter ===
+		{
+			Name: "OpenRouter", ID: "openrouter",
+			Endpoint: "https://openrouter.ai/api/v1/chat/completions",
+			RequiresKey: true, IsFree: false, Tier: "paid",
+			Models: []Model{
+				{ID: "auto", Name: "Auto (根据路由选择)", Provider: "openrouter", MaxTokens: 128000, SupportsStream: true, PriceInput: 0, PriceOutput: 0},
+			},
+		},
 	}
+}
+
+// GetMergedProviders 返回所有提供商，合并用户配置（endpoint/api_key 覆盖）并追加自定义提供商
+func GetMergedProviders(userConfigs map[string]struct{ Endpoint, APIKey string }, customProviders []Provider) []Provider {
+	providers := GetProviders()
+	for i := range providers {
+		if cfg, ok := userConfigs[providers[i].ID]; ok {
+			if cfg.Endpoint != "" {
+				providers[i].Endpoint = cfg.Endpoint
+			}
+		}
+	}
+	providers = append(providers, customProviders...)
+	return providers
 }
 
 // FindProvider 根据 ID 查找提供商

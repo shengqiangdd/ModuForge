@@ -10,7 +10,7 @@ import (
 
 // Init 初始化 SQLite 数据库，执行迁移
 func Init(cfg *config.Config) (*sql.DB, error) {
-	db, err := sql.Open("sqlite3", cfg.DatabasePath+"?_journal_mode=WAL&_busy_timeout=5000")
+	db, err := sql.Open("sqlite3", cfg.DatabasePath+"?_journal_mode=WAL&_busy_timeout=5000&_loc=auto")
 	if err != nil {
 		return nil, fmt.Errorf("open: %w", err)
 	}
@@ -35,7 +35,35 @@ func Init(cfg *config.Config) (*sql.DB, error) {
 	return db, nil
 }
 
+func tableExists(db *sql.DB, name string) bool {
+	var cnt int
+	_ = db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?`, name).Scan(&cnt)
+	return cnt > 0
+}
+
+func columnExists(db *sql.DB, table, col string) bool {
+	rows, err := db.Query(fmt.Sprintf(`PRAGMA table_info(%s)`, table))
+	if err != nil {
+		return false
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid int
+		var name, ctype string
+		var notnull int
+		var dfltValue sql.NullString
+		var pk int
+		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dfltValue, &pk); err == nil {
+			if name == col {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func migrate(db *sql.DB) error {
+	// All statements are idempotent — safe to run on every startup.
 	migrations := []string{
 		`CREATE TABLE IF NOT EXISTS users (
 			id            TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
@@ -48,7 +76,7 @@ func migrate(db *sql.DB) error {
 			id          TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
 			user_id     TEXT NOT NULL REFERENCES users(id),
 			name        TEXT NOT NULL,
-			module_type TEXT NOT NULL CHECK(module_type IN ('magisk','ksu','apatch','hybrid')),
+			module_type TEXT NOT NULL DEFAULT 'universal' CHECK(module_type IN ('magisk','ksu','apatch','hybrid','universal')),
 			description TEXT DEFAULT '',
 			created_at  TEXT NOT NULL DEFAULT (datetime('now')),
 			updated_at  TEXT NOT NULL DEFAULT (datetime('now')),
@@ -140,6 +168,37 @@ func migrate(db *sql.DB) error {
 			config TEXT,
 			FOREIGN KEY (plugin_id) REFERENCES plugins(id)
 		)`,
+
+		// Market tables
+		`CREATE TABLE IF NOT EXISTS market_modules (
+			id TEXT PRIMARY KEY,
+			slug TEXT UNIQUE NOT NULL,
+			name TEXT NOT NULL,
+			author TEXT,
+			author_uid TEXT,
+			description TEXT,
+			version TEXT,
+			module_type TEXT,
+			tags TEXT,
+			stars INTEGER DEFAULT 0,
+			downloads INTEGER DEFAULT 0,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_market_modules_stars ON market_modules(stars DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_market_modules_created ON market_modules(created_at)`,
+
+		// AI prompts table
+		`CREATE TABLE IF NOT EXISTS ai_prompts (
+			id         INTEGER PRIMARY KEY AUTOINCREMENT,
+			mode       TEXT NOT NULL,
+			user_id    TEXT NOT NULL DEFAULT '',
+			content    TEXT NOT NULL,
+			updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+			UNIQUE(mode, user_id)
+		)`,
+		`INSERT OR IGNORE INTO ai_prompts (mode, content) VALUES ('generate', '')`,
+		`INSERT OR IGNORE INTO ai_prompts (mode, content) VALUES ('chat', '')`,
+		`INSERT OR IGNORE INTO ai_prompts (mode, content) VALUES ('repair', '')`,
 	}
 
 	for _, m := range migrations {
@@ -147,5 +206,32 @@ func migrate(db *sql.DB) error {
 			return fmt.Errorf("migration: %s: %w", m[:60], err)
 		}
 	}
+
+	// Phase 2: conditional migration — add 'universal' to module_type if not present
+	if tableExists(db, "projects") && !columnExists(db, "projects", "description") {
+		// Old schema without description column — safe to add
+		_, _ = db.Exec(`ALTER TABLE projects ADD COLUMN description TEXT DEFAULT ''`)
+	}
+
+	// Phase 3: add user_id column to ai_prompts for per-user prompts
+	if tableExists(db, "ai_prompts") && !columnExists(db, "ai_prompts", "user_id") {
+		// SQLite can't add UNIQUE constraint after creation, so recreate the table
+		_, _ = db.Exec(`
+			CREATE TABLE IF NOT EXISTS ai_prompts_new (
+				id         INTEGER PRIMARY KEY AUTOINCREMENT,
+				mode       TEXT NOT NULL,
+				user_id    TEXT NOT NULL DEFAULT '',
+				content    TEXT NOT NULL,
+				updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+				UNIQUE(mode, user_id)
+			)
+		`)
+		_, _ = db.Exec(`INSERT OR IGNORE INTO ai_prompts_new (id, mode, content, updated_at) SELECT id, mode, content, updated_at FROM ai_prompts`)
+		_, _ = db.Exec(`DROP TABLE IF EXISTS ai_prompts`)
+		_, _ = db.Exec(`ALTER TABLE ai_prompts_new RENAME TO ai_prompts`)
+	}
+	// Ensure the index exists (idempotent)
+	_, _ = db.Exec(`CREATE INDEX IF NOT EXISTS idx_ai_prompts_user ON ai_prompts(user_id)`)
+
 	return nil
 }

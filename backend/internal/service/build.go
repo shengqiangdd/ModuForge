@@ -79,14 +79,7 @@ func (s *BuildService) runBuild(taskID, projectID string) {
 		`UPDATE build_tasks SET status=?, log=?, updated_at=datetime('now') WHERE id=?`,
 		domain.BuildRunning, "Collecting files...\n", taskID)
 
-	// Get project module type as build target
-	var target string
-	err := s.db.QueryRowContext(ctx,
-		`SELECT module_type FROM projects WHERE id=?`, projectID).Scan(&target)
-	if err != nil {
-		s.failBuild(ctx, taskID, fmt.Sprintf("Error reading project: %v\n", err))
-		return
-	}
+	target := "universal"
 
 	// Collect project files to a temp directory
 	projectDir, err := os.MkdirTemp("", "moduforge-build-*")
@@ -123,6 +116,44 @@ func (s *BuildService) runBuild(taskID, projectID string) {
 	if fileCount == 0 {
 		s.failBuild(ctx, taskID, "No files in project\n")
 		return
+	}
+
+	// Re-read all files into memory for security scan
+	rows2, err := s.db.QueryContext(ctx,
+		`SELECT path, content FROM project_files WHERE project_id=?`, projectID)
+	if err == nil {
+		scanFiles := make(map[string]string)
+		for rows2.Next() {
+			var p, c string
+			if err := rows2.Scan(&p, &c); err != nil {
+				continue
+			}
+			scanFiles[p] = c
+		}
+		rows2.Close()
+
+		scanner := NewSecurityScanner()
+		scanResult := scanner.ScanFiles(scanFiles)
+		if !scanResult.Safe {
+			s.failBuild(ctx, taskID, fmt.Sprintf("Build blocked by security scan:\n%s\n\nIssues:\n", scanResult.Summary))
+			for _, issue := range scanResult.Issues {
+				if issue.Severity == "critical" {
+					s.db.ExecContext(ctx,
+						`UPDATE build_tasks SET log=log || ? WHERE id=?`,
+						fmt.Sprintf("[%s] %s:%d - %s\n", issue.Severity, issue.File, issue.Line, issue.Message),
+						taskID)
+				}
+			}
+			return
+		}
+		for _, issue := range scanResult.Issues {
+			if issue.Severity == "warning" {
+				s.db.ExecContext(ctx,
+					`UPDATE build_tasks SET log=log || ? WHERE id=?`,
+					fmt.Sprintf("[WARN] %s:%d - %s\n", issue.File, issue.Line, issue.Message),
+					taskID)
+			}
+		}
 	}
 
 	s.db.ExecContext(ctx,

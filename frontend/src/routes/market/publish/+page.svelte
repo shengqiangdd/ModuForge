@@ -41,8 +41,8 @@
 
   {#if published}
     <div class="text-center py-16 animate-[scaleIn_0.3s_ease-out]">
-      <div class="w-16 h-16 rounded-2xl bg-green-100 flex items-center justify-center mx-auto mb-4">
-        <span class="material-symbols-outlined text-green-600 text-3xl">check_circle</span>
+      <div class="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4" style="background: var(--color-success-light)">
+        <span class="material-symbols-outlined text-3xl" style="color: var(--color-success)">check_circle</span>
       </div>
       <h2 class="text-xl font-bold text-[var(--color-text)] mb-2">发布成功！</h2>
       <p class="text-sm text-[var(--color-text-secondary)] mb-6">你的模块已发布到 ModuForge 市场。</p>
@@ -68,7 +68,8 @@
           {#each categoryOptions as opt}
             <button
               class="flex flex-col items-center gap-1 p-3 rounded-xl border-2 transition-all duration-150 text-center
-                {category === opt.value ? 'border-primary-500 bg-primary-50' : 'border-[var(--color-border)] hover:border-neutral-300'}"
+                {category === opt.value ? 'border-primary-500' : 'border-[var(--color-border)] hover:border-[var(--color-text-muted)]'}"
+              style={category === opt.value ? 'background: var(--color-primary-light)' : ''}
               onclick={() => category = opt.value}
             >
               <span class="material-symbols-outlined text-[18px] {category === opt.value ? 'text-primary-600' : 'text-[var(--color-text-muted)]'}">{opt.icon}</span>

@@ -1,8 +1,8 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
-  import { client } from '$lib/api/client';
-  import CodeEditor from '$lib/components/CodeEditor.svelte';
-  import { toast } from '$lib/stores/toast.svelte';
+import { onMount } from 'svelte';
+import { client, authFetch } from '$lib/api/client';
+import CodeEditor from '$lib/components/CodeEditor.svelte';
+import { toast } from '$lib/stores/toast.svelte';
 
   let { projectId = '' }: { projectId?: string } = $props();
 
@@ -17,6 +17,62 @@
   let activeTab = $state<string | null>(null);
 
   let sidebarOpen = $state(true);
+
+  // Security scan
+  let securityScanning = $state(false);
+  let securityResult = $state<any>(null);
+  let showSecurityPanel = $state(false);
+
+  interface SecurityIssue {
+    severity: string;
+    file: string;
+    line: number;
+    rule: string;
+    message: string;
+  }
+  interface SecurityScanResult {
+    safe: boolean;
+    issues: SecurityIssue[];
+    score: number;
+    summary: string;
+  }
+
+  async function runSecurityScan() {
+    if (!projectId) return;
+    securityScanning = true;
+    securityResult = null;
+    showSecurityPanel = true;
+    try {
+      const res = await authFetch(`/api/v1/security/scan-project/${projectId}`, { method: 'POST' });
+      if (!res.ok) { throw new Error('scan failed'); }
+      securityResult = await res.json();
+      if (securityResult.safe) {
+        toast('安全扫描通过', 'success');
+      } else {
+        toast(`安全评分: ${securityResult.score}/100`, securityResult.score < 50 ? 'error' : 'warning');
+      }
+    } catch (e: any) {
+      toast(e.message || '安全扫描失败', 'error');
+      securityResult = null;
+    } finally {
+      securityScanning = false;
+    }
+  }
+
+  function getSecurityIcon(): string {
+    if (!securityResult) return 'security';
+    return securityResult.safe ? 'verified' : 'warning';
+  }
+  function getSecurityColor(): string {
+    if (!securityResult) return 'var(--color-text-muted)';
+    return securityResult.safe ? '#22c55e' : '#ef4444';
+  }
+  function getIssueIcon(severity: string): string {
+    return severity === 'critical' ? 'error' : severity === 'warning' ? 'warning' : 'info';
+  }
+  function getIssueColor(severity: string): string {
+    return severity === 'critical' ? '#ef4444' : severity === 'warning' ? '#f59e0b' : '#6b7280';
+  }
 
   onMount(async () => {
     if (!projectId) { loading = false; return; }
@@ -93,10 +149,50 @@
     return map[ext] || 'javascript';
   }
 
+  function getFileIcon(path: string): string {
+    const ext = path.split('.').pop()?.toLowerCase() || '';
+    const iconMap: Record<string, string> = {
+      js: 'javascript', jsx: 'javascript', ts: 'javascript', tsx: 'javascript',
+      py: 'python', html: 'html', htm: 'html', css: 'css', scss: 'css',
+      json: 'data_object', xml: 'code', yaml: 'code', yml: 'code',
+      sh: 'terminal', bash: 'terminal',
+      md: 'description', txt: 'description', log: 'description',
+      png: 'image', jpg: 'image', jpeg: 'image', gif: 'image', svg: 'image',
+      zip: 'folder_zip', tar: 'folder_zip', gz: 'folder_zip',
+      prop: 'settings', mk: 'build',
+    };
+    return iconMap[ext] || 'description';
+  }
+
+  function getFileIconColor(path: string): string {
+    const ext = path.split('.').pop()?.toLowerCase() || '';
+    const colorMap: Record<string, string> = {
+      js: '#f7df1e', jsx: '#61dafb', ts: '#3178c6', tsx: '#61dafb',
+      py: '#3776ab', html: '#e34f26', css: '#1572b6',
+      json: '#292929', sh: '#4eaa25', bash: '#4eaa25',
+      md: '#ffffff', prop: '#8b5cf6',
+    };
+    return colorMap[ext] || 'var(--color-text-muted)';
+  }
+
   function handleEditorChange(val: string) {
     editorContent = val;
   }
 </script>
+
+<style>
+  .file-tree-item {
+    color: var(--color-text-secondary);
+  }
+  .file-tree-item:hover {
+    background: var(--color-surface);
+  }
+  .file-tree-item.active {
+    background: var(--gradient-brand-subtle);
+    color: var(--color-primary);
+    font-weight: 500;
+  }
+</style>
 
 <div class="flex flex-1 h-full overflow-hidden">
   {#if !projectId}
@@ -134,15 +230,21 @@
       <div class="flex-1 overflow-y-auto p-2 space-y-0.5">
         {#each files as file}
           <button
-            class="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors text-left
-              {selectedFile === file.path ? 'bg-primary-50 text-primary-700 font-medium' : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-surface)]'}"
+            class="file-tree-item w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-all duration-200 text-left
+              {selectedFile === file.path ? 'active' : ''}"
             onclick={() => { selectFile(file.path); sidebarOpen = false; }}
           >
-            <span class="material-symbols-outlined text-[16px] flex-shrink-0">{file.path.endsWith('/') ? 'folder' : 'description'}</span>
-            <span class="truncate">{file.path}</span>
+            <span class="material-symbols-outlined text-[16px] flex-shrink-0" style="color: {getFileIconColor(file.path)}">{getFileIcon(file.path)}</span>
+            <span class="truncate">{file.path.split('/').pop()}</span>
+            {#if selectedFile === file.path}
+              <div class="ml-auto w-1.5 h-1.5 rounded-full" style="background: var(--gradient-brand)"></div>
+            {/if}
           </button>
         {:else}
-          <p class="text-xs text-[var(--color-text-muted)] text-center py-8">暂无文件</p>
+          <div class="text-center py-12">
+            <span class="material-symbols-outlined text-4xl mb-2" style="color: var(--color-text-muted)">folder_open</span>
+            <p class="text-xs" style="color: var(--color-text-muted)">暂无文件</p>
+          </div>
         {/each}
       </div>
     </aside>
@@ -157,16 +259,27 @@
       <div class="h-12 flex items-center justify-between px-4 border-b border-[var(--color-border)] bg-[var(--color-bg-elevated)] flex-shrink-0">
         <div class="flex items-center gap-3">
           <span class="text-sm font-medium text-[var(--color-text)] hidden sm:block">{project?.name}</span>
-          <span class="badge-primary text-[10px]">{project?.module_type || 'magisk'}</span>
+          <span class="badge-primary text-[10px]">Universal</span>
         </div>
         <div class="flex items-center gap-2">
-          <a href="/projects/{projectId}/build" class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-[var(--color-surface)] text-[var(--color-text-secondary)] hover:bg-neutral-200 transition-colors no-underline">
+          <button
+            class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
+            style="background: var(--color-surface); color: {getSecurityColor()}"
+            onclick={runSecurityScan}
+            disabled={securityScanning}
+            title="安全扫描"
+          >
+            <span class="material-symbols-outlined text-[14px] {securityScanning ? 'animate-spin' : ''}">{securityScanning ? 'progress_activity' : getSecurityIcon()}</span>
+            <span class="hidden sm:inline">{securityScanning ? '扫描中...' : '安全扫描'}</span>
+          </button>
+          <a href="/projects/{projectId}/build" class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-[var(--color-surface)] text-[var(--color-text-secondary)] hover:bg-[var(--color-border)] transition-colors no-underline">
             <span class="material-symbols-outlined text-[14px]">build</span>
             <span class="hidden sm:inline">构建</span>
           </a>
           <button
             class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors disabled:opacity-50
-              {saving ? 'bg-neutral-100 text-neutral-400' : 'bg-primary-600 text-white hover:bg-primary-700'}"
+              {saving ? 'text-[var(--color-text-muted)]' : 'bg-primary-600 text-white hover:bg-primary-700'}"
+            style={saving ? 'background: var(--color-surface)' : ''}
             onclick={saveFile}
             disabled={saving || !selectedFile}
           >
@@ -209,5 +322,46 @@
         {/if}
       </div>
     </div>
+
+    <!-- Security Scan Panel -->
+    {#if showSecurityPanel}
+      <div class="border-t border-[var(--color-border)] bg-[var(--color-bg-elevated)] flex-shrink-0" style="max-height: 200px; overflow-y: auto;">
+        <div class="flex items-center justify-between px-4 py-2">
+          <div class="flex items-center gap-2">
+            <span class="material-symbols-outlined text-[16px]" style="color: {getSecurityColor()}">{getSecurityIcon()}</span>
+            <span class="text-xs font-semibold text-[var(--color-text)]">安全扫描</span>
+            {#if securityResult}
+              <span class="text-xs" style="color: {getSecurityColor()}">评分：{securityResult.score}/100</span>
+            {/if}
+          </div>
+          <div class="flex items-center gap-2">
+            {#if securityScanning}
+              <span class="text-xs text-[var(--color-text-muted)]">扫描中...</span>
+            {:else if securityResult}
+              <span class="text-xs text-[var(--color-text-secondary)] truncate max-w-64">{securityResult.summary}</span>
+            {/if}
+            <button class="p-1 rounded hover:bg-[var(--color-surface)] transition-colors" onclick={() => showSecurityPanel = false}>
+              <span class="material-symbols-outlined text-[14px]">close</span>
+            </button>
+          </div>
+        </div>
+        {#if securityResult && securityResult.issues.length > 0}
+          <div class="px-4 pb-2 space-y-1 max-h-32 overflow-y-auto">
+            {#each securityResult.issues as issue}
+              <div class="flex items-start gap-1.5 text-xs px-2 py-1 rounded" style="background: color-mix(in srgb, var(--color-surface) 50%, transparent)">
+                <span class="material-symbols-outlined text-[12px] mt-0.5 flex-shrink-0" style="color: {getIssueColor(issue.severity)}">{getIssueIcon(issue.severity)}</span>
+                <span style="color: var(--color-text-secondary)">
+                  <strong>{issue.rule}</strong> @ {issue.file}:{issue.line} — {issue.message}
+                </span>
+              </div>
+            {/each}
+          </div>
+        {:else if securityResult}
+          <div class="px-4 pb-3">
+            <p class="text-xs text-[var(--color-text-secondary)]">未发现安全问题，项目代码安全。</p>
+          </div>
+        {/if}
+      </div>
+    {/if}
   {/if}
 </div>
