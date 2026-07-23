@@ -1,23 +1,22 @@
 import { defineConfig } from 'vite';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import UnoCSS from 'unocss/vite';
-import { resolve } from 'path';
+import path from 'path';
 
 export default defineConfig({
-  plugins: [svelte(), UnoCSS()],
+  plugins: [UnoCSS(), svelte()],
   resolve: {
     alias: {
-      '$lib': resolve('./src/lib'),
+      '$lib': path.resolve('./src/lib'),
+      '$app': path.resolve('./src/app'),
     },
   },
   server: {
-    port: 5173,
+    host: '0.0.0.0',
+    port: 5174,
     proxy: {
-      '/api': 'http://localhost:8080',
+      '/api': 'http://localhost:8090',
+      '/ws': { target: 'ws://localhost:8090', ws: true },
     },
-  },
-  build: {
-    outDir: 'dist',
-    emptyOutDir: true,
   },
 });

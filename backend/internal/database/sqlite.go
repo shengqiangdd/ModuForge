@@ -33,6 +33,14 @@ func NewSQLiteDB(dbPath string) (*DB, error) {
 
 func (db *DB) migrate() error {
 	migrations := []string{
+		`CREATE TABLE IF NOT EXISTS users (
+			id TEXT PRIMARY KEY,
+			username TEXT UNIQUE NOT NULL,
+			email TEXT UNIQUE NOT NULL,
+			password_hash TEXT NOT NULL,
+			role TEXT DEFAULT 'user',
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		)`,
 		`CREATE TABLE IF NOT EXISTS market_modules (
 			id TEXT PRIMARY KEY,
 			title TEXT NOT NULL,
@@ -63,6 +71,27 @@ func (db *DB) migrate() error {
 		`CREATE INDEX IF NOT EXISTS idx_market_modules_category ON market_modules(category)`,
 		`CREATE INDEX IF NOT EXISTS idx_market_modules_slug ON market_modules(slug)`,
 		`CREATE INDEX IF NOT EXISTS idx_market_reviews_module ON market_reviews(module_id)`,
+		`CREATE TABLE IF NOT EXISTS projects (
+			id TEXT PRIMARY KEY,
+			user_id TEXT NOT NULL,
+			name TEXT NOT NULL,
+			module_type TEXT DEFAULT 'magisk',
+			description TEXT,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			deleted_at DATETIME
+		)`,
+		`CREATE TABLE IF NOT EXISTS project_files (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			project_id TEXT NOT NULL,
+			path TEXT NOT NULL,
+			content TEXT,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			FOREIGN KEY (project_id) REFERENCES projects(id),
+			UNIQUE(project_id, path)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_projects_user ON projects(user_id)`,
 		`CREATE TABLE IF NOT EXISTS benchmark_results (
 			id TEXT PRIMARY KEY,
 			module_id TEXT NOT NULL,
@@ -72,6 +101,75 @@ func (db *DB) migrate() error {
 			diff_data TEXT,
 			created_at DATETIME
 		)`,
+		`CREATE TABLE IF NOT EXISTS build_tasks (
+			id TEXT PRIMARY KEY,
+			project_id TEXT NOT NULL,
+			status TEXT DEFAULT 'pending',
+			target TEXT,
+			log TEXT,
+			artifact_path TEXT,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			FOREIGN KEY (project_id) REFERENCES projects(id)
+		)`,
+		`CREATE TABLE IF NOT EXISTS collaborators (
+			id TEXT PRIMARY KEY,
+			project_id TEXT NOT NULL,
+			user_id TEXT NOT NULL,
+			role TEXT DEFAULT 'viewer',
+			invited_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			FOREIGN KEY (project_id) REFERENCES projects(id)
+		)`,
+		`CREATE TABLE IF NOT EXISTS comments (
+			id TEXT PRIMARY KEY,
+			project_id TEXT NOT NULL,
+			user_id TEXT NOT NULL,
+			username TEXT,
+			file_path TEXT,
+			line_number INTEGER,
+			content TEXT,
+			resolved INTEGER DEFAULT 0,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			FOREIGN KEY (project_id) REFERENCES projects(id)
+		)`,
+		`CREATE TABLE IF NOT EXISTS edit_sessions (
+			id TEXT PRIMARY KEY,
+			project_id TEXT NOT NULL,
+			user_id TEXT NOT NULL,
+			username TEXT,
+			file_path TEXT,
+			cursor_line INTEGER DEFAULT 0,
+			cursor_col INTEGER DEFAULT 0,
+			selection_start_line INTEGER DEFAULT 0,
+			selection_start_col INTEGER DEFAULT 0,
+			selection_end_line INTEGER DEFAULT 0,
+			selection_end_col INTEGER DEFAULT 0,
+			color TEXT,
+			connected_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			last_active DATETIME DEFAULT CURRENT_TIMESTAMP,
+			FOREIGN KEY (project_id) REFERENCES projects(id)
+		)`,
+		`CREATE TABLE IF NOT EXISTS plugins (
+			id TEXT PRIMARY KEY,
+			name TEXT NOT NULL,
+			slug TEXT UNIQUE NOT NULL,
+			description TEXT,
+			author TEXT,
+			version TEXT,
+			enabled INTEGER DEFAULT 0,
+			config TEXT,
+			installed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE TABLE IF NOT EXISTS plugin_hooks (
+			id TEXT PRIMARY KEY,
+			plugin_id TEXT NOT NULL,
+			hook_name TEXT NOT NULL,
+			hook_type TEXT,
+			entry_point TEXT,
+			config TEXT,
+			FOREIGN KEY (plugin_id) REFERENCES plugins(id)
+		)`,
 	}
 
 	for _, m := range migrations {
@@ -80,7 +178,18 @@ func (db *DB) migrate() error {
 		}
 	}
 
-	log.Println("[DB] SQLite market migrations complete")
+	// Post-migration: add columns that may not exist in older schemas
+	addColumnIfMissing := []string{
+		"ALTER TABLE comments ADD COLUMN resolved INTEGER DEFAULT 0",
+		"CREATE INDEX IF NOT EXISTS idx_project_files_project ON project_files(project_id)",
+		"CREATE INDEX IF NOT EXISTS idx_build_tasks_project ON build_tasks(project_id)",
+		"CREATE INDEX IF NOT EXISTS idx_build_tasks_status ON build_tasks(status)",
+	}
+	for _, m := range addColumnIfMissing {
+		db.Conn.Exec(m) // ignore errors for ALTER TABLE
+	}
+
+	log.Println("[DB] SQLite migrations complete")
 	return nil
 }
 

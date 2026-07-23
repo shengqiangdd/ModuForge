@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 
+	"github.com/google/uuid"
 	"github.com/moduforge/backend/internal/domain"
 )
 
@@ -40,11 +41,12 @@ func (s *ProjectService) List(ctx context.Context, userID string) ([]domain.Proj
 
 func (s *ProjectService) Create(ctx context.Context, userID string, req *domain.CreateProjectInput) (*domain.Project, error) {
 	var p domain.Project
+	p.ID = uuid.New().String()
 	err := s.db.QueryRowContext(ctx,
-		`INSERT INTO projects (user_id, name, module_type, description)
-		 VALUES (?, ?, ?, ?)
+		`INSERT INTO projects (id, user_id, name, module_type, description)
+		 VALUES (?, ?, ?, ?, ?)
 		 RETURNING id, user_id, name, module_type, description, created_at, updated_at`,
-		userID, req.Name, req.ModuleType, req.Description,
+		p.ID, userID, req.Name, req.ModuleType, req.Description,
 	).Scan(&p.ID, &p.UserID, &p.Name, &p.ModuleType, &p.Description, &p.CreatedAt, &p.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("create project: %w", err)

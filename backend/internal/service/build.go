@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/google/uuid"
 	"github.com/moduforge/backend/internal/builder"
 	"github.com/moduforge/backend/internal/config"
 	"github.com/moduforge/backend/internal/domain"
@@ -31,10 +32,11 @@ func (s *BuildService) Create(ctx context.Context, projectID, target string) (*d
 	}
 
 	var task domain.BuildTask
+	task.ID = uuid.New().String()
 	err = s.db.QueryRowContext(ctx,
-		`INSERT INTO build_tasks (project_id, target) VALUES (?, ?)
+		`INSERT INTO build_tasks (id, project_id, target) VALUES (?, ?, ?)
 		 RETURNING id, project_id, status, target, log, artifact_path, created_at, updated_at`,
-		projectID, target,
+		task.ID, projectID, target,
 	).Scan(&task.ID, &task.ProjectID, &task.Status, &task.Target, &task.Log, &task.ArtifactPath, &task.CreatedAt, &task.UpdatedAt)
 	if err != nil {
 		return nil, err

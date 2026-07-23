@@ -236,6 +236,10 @@
             <span class="material-symbols-outlined text-[18px]">download</span>
             {fmt(selectedModule.installs)} 安装
           </span>
+          <button class="ml-auto flex items-center gap-1.5 px-4 py-1.5 rounded-xl text-sm font-medium bg-primary-600 text-white hover:bg-primary-700 transition-colors" onclick={() => { selectedModule!.installs++; alert('模块下载链接已生成（演示功能）'); }}>
+            <span class="material-symbols-outlined text-[16px]">download</span>
+            安装
+          </button>
         </div>
       </div>
 

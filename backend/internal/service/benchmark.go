@@ -4,8 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"fmt"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 type BenchmarkService struct {
@@ -28,7 +29,7 @@ type BenchmarkResult struct {
 
 // SaveBenchmark saves a benchmark result to the database
 func (s *BenchmarkService) SaveBenchmark(ctx context.Context, result *BenchmarkResult) error {
-	id := fmt.Sprintf("bench_%d", time.Now().UnixMilli())
+	id := uuid.New().String()
 	beforeJSON, _ := json.Marshal(result.Before)
 	afterJSON, _ := json.Marshal(result.After)
 	diffJSON, _ := json.Marshal(result.Diff)

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 
+	"github.com/google/uuid"
 	"github.com/moduforge/backend/internal/config"
 	"github.com/moduforge/backend/internal/domain"
 	"golang.org/x/crypto/bcrypt"
@@ -29,13 +30,14 @@ func (s *AuthService) Register(ctx context.Context, req *domain.RegisterRequest)
 	}
 
 	var user domain.User
+	user.ID = uuid.New().String()
 	err = s.db.QueryRowContext(ctx,
-		`INSERT INTO users (username, email, password_hash) VALUES (?, ?, ?)
+		`INSERT INTO users (id, username, email, password_hash) VALUES (?, ?, ?, ?)
 		 RETURNING id, username, email, created_at`,
-		req.Username, req.Email, string(hash),
+		user.ID, req.Username, req.Email, string(hash),
 	).Scan(&user.ID, &user.Username, &user.Email, &user.CreatedAt)
 	if err != nil {
-		return nil, fmt.Errorf("username or email already exists")
+		return nil, fmt.Errorf("registration failed: %v", err)
 	}
 
 	token, err := GenerateJWT(s.cfg.JWTSecret, user.ID, user.Username, "user")
