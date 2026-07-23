@@ -1,0 +1,6 @@
+id=universal_system_toolbox
+name=系统优化工具箱
+version=v1.0
+versionCode=1
+author=ModuForge
+description=通用系统优化模块 - 自动适配 Magisk/KernelSU/APatch。包含网络优化、内存管理、电池省电、I/O调度和GPU渲染优化，适用于所有Android设备。

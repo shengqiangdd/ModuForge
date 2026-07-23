@@ -1,0 +1,42 @@
+#!/sbin/sh
+
+###############
+# Magisk 兼容安装器
+###############
+
+OUTFD=$2
+ZIPFILE=$3
+
+ui_print() {
+  echo -e "ui_print $1\nui_print" > /proc/self/fd/$OUTFD
+}
+
+ui_print "========================================"
+ui_print "  系统优化工具箱 v1.0"
+ui_print "  Universal System Toolbox"
+ui_print "========================================"
+ui_print ""
+ui_print "- 解压模块文件..."
+
+# 解压模块到临时目录
+mkdir -p /tmp/moduforge_toolbox
+unzip -o "$ZIPFILE" -d /tmp/moduforge_toolbox >/dev/null 2>&1
+
+# 检测 Magisk 版本
+MAGISK_VER=$(magisk -v 2>/dev/null || echo "unknown")
+ui_print "- Magisk 版本: $MAGISK_VER"
+
+# 复制模块文件到 Magisk 模块目录
+MODULE_DIR=/data/adb/modules/universal_system_toolbox
+mkdir -p "$MODULE_DIR"
+cp -rf /tmp/moduforge_toolbox/* "$MODULE_DIR/"
+
+# 清理临时文件
+rm -rf /tmp/moduforge_toolbox
+
+ui_print "- 安装位置: $MODULE_DIR"
+ui_print ""
+ui_print "- 请重启设备以应用优化"
+ui_print "========================================"
+
+exit 0

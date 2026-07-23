@@ -1,0 +1,4 @@
+#! Magisk 模块格式
+# 本模块使用 update-binary 安装
+# 此文件为 Magisk 兼容性保留
+# 实际安装逻辑在 update-binary 和 customize.sh 中
