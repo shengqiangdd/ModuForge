@@ -132,3 +132,63 @@ func (s *ValidatorService) ValidateProject(files map[string]string) []Validation
 	}
 	return results
 }
+
+func (s *ValidatorService) ValidateModuleStructure(files map[string]string) ValidationResult {
+	result := ValidationResult{File: "module-structure", Valid: true}
+
+	requiredFiles := []string{"module.prop"}
+	recommendedFiles := []string{"customize.sh", "uninstall.sh", "META-INF/com/google/android/update-binary", "META-INF/com/google/android/updater-script"}
+
+	for _, rf := range requiredFiles {
+		if _, ok := files[rf]; !ok {
+			result.Valid = false
+			result.Errors = append(result.Errors, "missing required file: "+rf)
+		}
+	}
+
+	for _, rf := range recommendedFiles {
+		if _, ok := files[rf]; !ok {
+			result.Warnings = append(result.Warnings, "recommended file missing: "+rf)
+		}
+	}
+
+	if propContent, ok := files["module.prop"]; ok {
+		requiredFields := []string{"id", "name", "version", "versionCode", "author", "description"}
+		propLines := strings.Split(propContent, "\n")
+		foundFields := make(map[string]bool)
+		for _, line := range propLines {
+			trimmed := strings.TrimSpace(line)
+			if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+				continue
+			}
+			parts := strings.SplitN(trimmed, "=", 2)
+			if len(parts) == 2 {
+				foundFields[strings.TrimSpace(parts[0])] = true
+			}
+		}
+		for _, field := range requiredFields {
+			if !foundFields[field] {
+				result.Valid = false
+				result.Errors = append(result.Errors, "module.prop missing required field: "+field)
+			}
+		}
+	}
+
+	scanner := NewSecurityScanner()
+	for filename, content := range files {
+		if strings.HasSuffix(filename, ".sh") {
+			scanResult := scanner.ScanFile(filename, content)
+			for _, issue := range scanResult.Issues {
+				switch issue.Severity {
+				case "critical":
+					result.Valid = false
+					result.Errors = append(result.Errors, issue.Rule+": "+issue.Message)
+				case "warning":
+					result.Warnings = append(result.Warnings, issue.Rule+": "+issue.Message)
+				}
+			}
+		}
+	}
+
+	return result
+}

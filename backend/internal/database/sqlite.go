@@ -14,7 +14,7 @@ type DB struct {
 }
 
 func NewSQLiteDB(dbPath string) (*DB, error) {
-	conn, err := sql.Open("sqlite3", dbPath+"?_journal_mode=WAL&_busy_timeout=5000&_foreign_keys=ON")
+	conn, err := sql.Open("sqlite3", dbPath+"?_journal_mode=WAL&_busy_timeout=5000&_foreign_keys=ON&_loc=auto")
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite: %w", err)
 	}
@@ -71,6 +71,9 @@ func (db *DB) migrate() error {
 		`CREATE INDEX IF NOT EXISTS idx_market_modules_category ON market_modules(category)`,
 		`CREATE INDEX IF NOT EXISTS idx_market_modules_slug ON market_modules(slug)`,
 		`CREATE INDEX IF NOT EXISTS idx_market_reviews_module ON market_reviews(module_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_market_modules_created ON market_modules(created_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_market_modules_stars ON market_modules(stars DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_market_modules_installs ON market_modules(installs DESC)`,
 		`CREATE TABLE IF NOT EXISTS projects (
 			id TEXT PRIMARY KEY,
 			user_id TEXT NOT NULL,
@@ -170,6 +173,29 @@ func (db *DB) migrate() error {
 			config TEXT,
 			FOREIGN KEY (plugin_id) REFERENCES plugins(id)
 		)`,
+		// Provider configs: per-user overrides for preset providers
+		`CREATE TABLE IF NOT EXISTS provider_configs (
+			id TEXT NOT NULL,
+			user_id TEXT NOT NULL,
+			endpoint TEXT,
+			api_key TEXT,
+			is_active INTEGER DEFAULT 1,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE(id, user_id)
+		)`,
+		// Custom providers: user-defined OpenAI-compatible providers
+		`CREATE TABLE IF NOT EXISTS custom_providers (
+			id TEXT NOT NULL,
+			user_id TEXT NOT NULL,
+			name TEXT NOT NULL,
+			endpoint TEXT NOT NULL,
+			api_key TEXT,
+			models_json TEXT,
+			is_active INTEGER DEFAULT 1,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE(id, user_id)
+		)`,
 	}
 
 	for _, m := range migrations {
@@ -184,6 +210,10 @@ func (db *DB) migrate() error {
 		"CREATE INDEX IF NOT EXISTS idx_project_files_project ON project_files(project_id)",
 		"CREATE INDEX IF NOT EXISTS idx_build_tasks_project ON build_tasks(project_id)",
 		"CREATE INDEX IF NOT EXISTS idx_build_tasks_status ON build_tasks(status)",
+		"CREATE INDEX IF NOT EXISTS idx_comments_project ON comments(project_id)",
+		"CREATE INDEX IF NOT EXISTS idx_edit_sessions_project ON edit_sessions(project_id)",
+		"CREATE INDEX IF NOT EXISTS idx_collaborators_project ON collaborators(project_id)",
+		"CREATE INDEX IF NOT EXISTS idx_collaborators_user ON collaborators(user_id)",
 	}
 	for _, m := range addColumnIfMissing {
 		db.Conn.Exec(m) // ignore errors for ALTER TABLE
@@ -201,6 +231,13 @@ func (db *DB) SeedMarketData() error {
 	var count int
 	db.Conn.QueryRow("SELECT COUNT(*) FROM market_modules").Scan(&count)
 	if count > 0 {
+		now := time.Now()
+		db.Conn.Exec("UPDATE market_modules SET created_at = ?, updated_at = ? WHERE created_at = '0001-01-01 00:00:00' OR created_at IS NULL", now, now)
+		seedStars := map[string]int{"mod_0001": 128, "mod_0002": 89, "mod_0003": 156, "mod_0004": 234, "mod_0005": 312, "mod_0006": 198, "mod_0007": 76, "mod_0008": 456, "mod_0009": 45, "mod_0010": 67}
+		seedInstalls := map[string]int{"mod_0001": 3500, "mod_0002": 2100, "mod_0003": 4200, "mod_0004": 5800, "mod_0005": 7600, "mod_0006": 4500, "mod_0007": 1800, "mod_0008": 12000, "mod_0009": 900, "mod_0010": 2300}
+		for id, stars := range seedStars {
+			db.Conn.Exec("UPDATE market_modules SET stars = ?, installs = ? WHERE id = ? AND stars = 0", stars, seedInstalls[id], id)
+		}
 		return nil
 	}
 

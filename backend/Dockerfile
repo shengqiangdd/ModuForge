@@ -3,11 +3,10 @@ FROM node:22-alpine AS frontend-builder
 
 WORKDIR /app
 
-COPY frontend/package.json frontend/package-lock.json ./
-RUN npm ci --include=dev
-
+# CACHEBUST: 每次值不同就自动使后续层缓存失效
+ARG CACHEBUST=1
 COPY frontend/ .
-RUN npm run build
+RUN npm install && npm run build
 
 # Backend build stage
 FROM golang:1.25-alpine AS backend-builder

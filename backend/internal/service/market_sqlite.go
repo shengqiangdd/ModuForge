@@ -52,7 +52,7 @@ func (s *SQLiteMarketService) ListModules(query, category, sort string, page, pe
 
 	offset := (page - 1) * perPage
 	querySQL := fmt.Sprintf(
-		"SELECT id, title, slug, description, category, tags, version, version_code, author, author_uid, license, stars, installs, created_at, updated_at FROM market_modules %s ORDER BY %s LIMIT ? OFFSET ?",
+		"SELECT id, title, slug, description, category, tags, version, version_code, author, COALESCE(author_uid,''), COALESCE(license,''), stars, installs, created_at, updated_at FROM market_modules %s ORDER BY %s LIMIT ? OFFSET ?",
 		whereClause, orderClause,
 	)
 	args = append(args, perPage, offset)
@@ -74,7 +74,7 @@ func (s *SQLiteMarketService) ListModules(query, category, sort string, page, pe
 
 func (s *SQLiteMarketService) GetModule(slugOrID string) (*domain.MarketModule, error) {
 	row := s.db.Conn.QueryRow(
-		"SELECT id, title, slug, description, category, tags, version, version_code, author, author_uid, license, stars, installs, created_at, updated_at FROM market_modules WHERE slug = ? OR id = ?",
+		"SELECT id, title, slug, description, category, tags, version, version_code, author, COALESCE(author_uid,''), COALESCE(license,''), stars, installs, created_at, updated_at FROM market_modules WHERE slug = ? OR id = ?",
 		slugOrID, slugOrID,
 	)
 	var m domain.MarketModule
@@ -139,7 +139,7 @@ func (s *SQLiteMarketService) PublishModule(mod *domain.MarketModule) (*domain.M
 
 func (s *SQLiteMarketService) TrendingModules(limit int) []*domain.MarketModule {
 	rows, _ := s.db.Conn.Query(
-		"SELECT id, title, slug, description, category, tags, version, version_code, author, author_uid, license, stars, installs, created_at, updated_at FROM market_modules WHERE stars > 100 ORDER BY stars DESC LIMIT ?",
+		"SELECT id, title, slug, description, category, tags, version, version_code, author, COALESCE(author_uid,''), COALESCE(license,''), stars, installs, created_at, updated_at FROM market_modules WHERE stars > 100 ORDER BY stars DESC LIMIT ?",
 		limit,
 	)
 	defer rows.Close()

@@ -46,7 +46,7 @@ func (s *ProjectService) Create(ctx context.Context, userID string, req *domain.
 		`INSERT INTO projects (id, user_id, name, module_type, description)
 		 VALUES (?, ?, ?, ?, ?)
 		 RETURNING id, user_id, name, module_type, description, created_at, updated_at`,
-		p.ID, userID, req.Name, req.ModuleType, req.Description,
+		p.ID, userID, req.Name, "universal", req.Description,
 	).Scan(&p.ID, &p.UserID, &p.Name, &p.ModuleType, &p.Description, &p.CreatedAt, &p.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("create project: %w", err)
@@ -67,35 +67,26 @@ func (s *ProjectService) Get(ctx context.Context, id string) (*domain.Project, e
 }
 
 func (s *ProjectService) Update(ctx context.Context, id string, req *domain.UpdateProjectInput) (*domain.Project, error) {
-	// Build dynamic update — simplified: update all fields if non-nil
 	if req.Name != nil || req.ModuleType != nil || req.Description != nil {
-		name := ""
-		modType := ""
-		desc := ""
-
-		// Read current first
 		p, err := s.Get(ctx, id)
 		if err != nil {
 			return nil, err
 		}
-		name = p.Name
-		modType = string(p.ModuleType)
-		desc = p.Description
+
+		name := p.Name
+		desc := p.Description
 
 		if req.Name != nil {
 			name = *req.Name
-		}
-		if req.ModuleType != nil {
-			modType = string(*req.ModuleType)
 		}
 		if req.Description != nil {
 			desc = *req.Description
 		}
 
 		_, err = s.db.ExecContext(ctx,
-			`UPDATE projects SET name=?, module_type=?, description=?, updated_at=datetime('now')
+			`UPDATE projects SET name=?, module_type='universal', description=?, updated_at=datetime('now')
 			 WHERE id=? AND deleted_at IS NULL`,
-			name, modType, desc, id,
+			name, desc, id,
 		)
 		if err != nil {
 			return nil, err

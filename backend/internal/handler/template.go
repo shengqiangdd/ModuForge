@@ -14,12 +14,14 @@ func NewTemplateHandler(svc *service.TemplateService) *TemplateHandler {
 }
 
 func (h *TemplateHandler) List(c fiber.Ctx) error {
+	c.Set("Cache-Control", "public, max-age=300")
 	templates := h.svc.ListTemplates()
 	return c.JSON(templates)
 }
 
 func (h *TemplateHandler) Get(c fiber.Ctx) error {
 	name := c.Params("name")
+	c.Set("Cache-Control", "public, max-age=300")
 	tmpl, err := h.svc.GetTemplate(name)
 	if err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": err.Error()})

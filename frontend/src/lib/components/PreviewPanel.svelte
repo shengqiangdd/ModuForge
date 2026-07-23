@@ -46,7 +46,7 @@
     </md-filled-tonal-button>
   </div>
 
-  <div class="flex-1 relative bg-white">
+  <div class="flex-1 relative" style="background: var(--color-bg)">
     {#if loading}
       <div class="absolute inset-0 flex items-center justify-center bg-[var(--color-surface)]">
         <md-circular-progress indeterminate />

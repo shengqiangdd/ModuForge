@@ -5,10 +5,11 @@ import "time"
 type ModuleType string
 
 const (
-	ModuleMagisk ModuleType = "magisk"
-	ModuleKSU    ModuleType = "ksu"
-	ModuleAPatch ModuleType = "apatch"
-	ModuleHybrid ModuleType = "hybrid"
+	ModuleMagisk    ModuleType = "magisk"
+	ModuleKSU       ModuleType = "ksu"
+	ModuleAPatch    ModuleType = "apatch"
+	ModuleHybrid    ModuleType = "hybrid"
+	ModuleUniversal ModuleType = "universal"
 )
 
 type User struct {
@@ -125,6 +126,14 @@ type MarketReview struct {
 type ModuleFile struct {
 	Path    string `json:"path"`
 	Content string `json:"content"`
+}
+
+type AIPrompt struct {
+	ID        int64  `json:"id"`
+	Mode      string `json:"mode"` // generate, chat, repair
+	UserID    string `json:"user_id,omitempty"`
+	Content   string `json:"content"`
+	UpdatedAt string `json:"updated_at"`
 }
 
 func Now() string {

@@ -28,7 +28,7 @@
 
 <div class="locale-switcher relative">
   <button
-    class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-sm font-medium text-[var(--color-text-secondary)] hover:bg-neutral-100 transition-all duration-150"
+    class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-sm font-medium text-[var(--color-text-secondary)] hover:bg-[var(--color-surface)] transition-all duration-150"
     onclick={(e) => { e.stopPropagation(); open = !open; }}
   >
     <span class="text-base">{currentLang.flag}</span>
@@ -46,7 +46,8 @@
       {#each languages as lang}
         <button
           class="w-full flex items-center gap-3 px-3 py-2 text-sm transition-colors duration-100
-            {lang.code === $currentLocale ? 'bg-primary-50 text-primary-700 font-medium' : 'text-[var(--color-text-secondary)] hover:bg-neutral-50 hover:text-[var(--color-text)]'}"
+            {lang.code === $currentLocale ? 'text-[var(--color-primary)] font-medium' : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-surface)] hover:text-[var(--color-text)]'}"
+          style={lang.code === $currentLocale ? 'background: var(--color-primary-light)' : ''}
           onclick={() => select(lang.code)}
         >
           <span class="text-base">{lang.flag}</span>

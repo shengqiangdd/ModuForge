@@ -12,7 +12,7 @@ func RegisterRoutes(api fiber.Router, db *database.DB, cfg *config.Config) {
 	authSvc := service.NewAuthService(db.Conn, cfg)
 	projectSvc := service.NewProjectService(db.Conn)
 	buildSvc := service.NewBuildService(db.Conn, cfg)
-	aiSvc := service.NewAIService(cfg)
+	aiSvc := service.NewAIServiceWithDB(cfg, db.Conn)
 	repoSvc := service.NewRepoService()
 	templateSvc := service.NewTemplateService()
 	translateSvc := service.NewTranslateService()
@@ -23,7 +23,7 @@ func RegisterRoutes(api fiber.Router, db *database.DB, cfg *config.Config) {
 	authH := NewAuthHandler(authSvc)
 	projectH := NewProjectHandler(projectSvc)
 	buildH := NewBuildHandler(buildSvc)
-	aiH := NewAIHandler(aiSvc, cfg)
+	aiH := NewAIHandler(aiSvc, cfg, db)
 	repoH := NewRepoHandler(repoSvc)
 	templateH := NewTemplateHandler(templateSvc)
 	translateH := NewTranslateHandler(translateSvc)
@@ -38,14 +38,11 @@ func RegisterRoutes(api fiber.Router, db *database.DB, cfg *config.Config) {
 	api.Get("/templates/:name", templateH.Get)
 	api.Post("/templates/recommend", templateH.Recommend)
 
-	// AI (public for now)
-	api.Post("/ai/generate", aiH.GenerateModule)
-	api.Post("/ai/chat", aiH.Chat)
-	api.Post("/ai/repair", aiH.RepairBuild)
-	api.Post("/ai/stream", aiStreamH.StreamChat)
+	// AI — public GET prompts (with optional auth for user-specific prompts)
+	api.Get("/ai/prompts", OptionalAuth(cfg.JWTSecret), aiH.GetPrompts)
 
 	// LLM Provider routes
-	api.Get("/llm/providers", aiH.ListProviders)
+	api.Get("/llm/providers", OptionalAuth(cfg.JWTSecret), aiH.ListProviders)
 	api.Get("/llm/refresh", aiH.RefreshModels)
 
 	// Repo tracking (public)
@@ -62,11 +59,18 @@ func RegisterRoutes(api fiber.Router, db *database.DB, cfg *config.Config) {
 	api.Post("/validate", validatorH.ValidateFiles)
 	api.Post("/validate/file", validatorH.ValidateFile)
 
+	// Security scanner (moved to protected — will be added in protected group)
+	securitySvc := service.NewSecurityScanner()
+	securityH := NewSecurityHandler(securitySvc, db.Conn)
+
 	// Zipper (public)
 	zipperSvc := service.NewZipperService(cfg.StoragePath + "/downloads")
 	zipperH := NewZipperHandler(zipperSvc)
 	api.Post("/build/zip", zipperH.BuildZip)
 	api.Get("/build/downloads", zipperH.ListDownloads)
+
+	// Module ZIP parse (public — read-only), import moved to protected
+	api.Post("/module/parse-zip", ParseModuleZip)
 
 	// Signer (public)
 	signerSvc := service.NewSignerService("data/keys")
@@ -74,14 +78,10 @@ func RegisterRoutes(api fiber.Router, db *database.DB, cfg *config.Config) {
 	api.Post("/sign", signerH.Sign)
 	api.Post("/verify", signerH.Verify)
 
-	// ADB (public - device management)
+	// ADB (public — read-only / safe)
 	adbSvc := service.NewADBService()
 	adbH := NewADBHandler(adbSvc)
 	api.Get("/adb/devices", adbH.ListDevices)
-	api.Post("/adb/push", adbH.PushFile)
-	api.Post("/adb/install", adbH.InstallModule)
-	api.Post("/adb/shell", adbH.RunShell)
-	api.Post("/adb/reboot", adbH.RebootDevice)
 	api.Get("/adb/check", adbH.CheckADB)
 
 	// ADB benchmark (public)
@@ -105,7 +105,7 @@ func RegisterRoutes(api fiber.Router, db *database.DB, cfg *config.Config) {
 	api.Get("/git/diff", gitH.GetDiff)
 	api.Get("/git/head", gitH.GetCurrentHash)
 
-	// Market browse (public)
+	// Market browse (public — read-only; star moved to protected)
 	marketSvc := service.NewSQLiteMarketService(db)
 	marketH := NewMarketHandler(marketSvc)
 	api.Get("/market/modules", marketH.ListModules)
@@ -113,7 +113,6 @@ func RegisterRoutes(api fiber.Router, db *database.DB, cfg *config.Config) {
 	api.Get("/market/categories", marketH.Categories)
 	api.Get("/market/module/:slug", marketH.GetModule)
 	api.Get("/market/module/:slug/reviews", marketH.GetReviews)
-	api.Post("/market/module/:slug/star", marketH.StarModule)
 
 	// Build log streaming (public)
 	api.Get("/build/log", buildLogH.GetBuildLog)
@@ -133,6 +132,41 @@ func RegisterRoutes(api fiber.Router, db *database.DB, cfg *config.Config) {
 	// LLM config (protected)
 	protected.Post("/llm/config", aiH.UpdateLLMConfig)
 	protected.Get("/llm/config", aiH.GetLLMConfig)
+
+	// Provider config management (protected)
+	protected.Put("/llm/provider-config", aiH.SaveProviderConfig)
+	protected.Get("/llm/provider-configs", aiH.GetProviderConfigs)
+	protected.Delete("/llm/provider-config/:id", aiH.DeleteProviderConfig)
+
+	// Custom provider management (protected)
+	protected.Post("/llm/custom-providers", aiH.CreateCustomProvider)
+	protected.Get("/llm/custom-providers", aiH.GetCustomProviders)
+	protected.Put("/llm/custom-providers/:id", aiH.UpdateCustomProvider)
+	protected.Delete("/llm/custom-providers/:id", aiH.DeleteCustomProvider)
+
+	// AI (protected — consume LLM quota)
+	protected.Post("/ai/generate", aiH.GenerateModule)
+	protected.Post("/ai/chat", aiH.Chat)
+	protected.Post("/ai/repair", aiH.RepairBuild)
+	protected.Post("/ai/stream", aiStreamH.StreamChat)
+	protected.Put("/ai/prompts", aiH.UpdatePrompt)
+	protected.Post("/ai/prompts/:mode/reset", aiH.ResetPrompt)
+
+	// ADB device operations (protected — device security)
+	protected.Post("/adb/push", adbH.PushFile)
+	protected.Post("/adb/install", adbH.InstallModule)
+	protected.Post("/adb/shell", adbH.RunShell)
+	protected.Post("/adb/reboot", adbH.RebootDevice)
+
+	// Security scanner (protected — project owner only)
+	protected.Post("/security/scan", securityH.ScanFiles)
+	protected.Post("/security/scan-project/:id", securityH.ScanProject)
+
+	// Module import (protected)
+	protected.Post("/module/import-zip", ImportModuleZip)
+
+	// Market star (protected — prevent abuse)
+	protected.Post("/market/module/:slug/star", marketH.StarModule)
 
 	// Projects (CRUD)
 	protected.Get("/projects", projectH.List)

@@ -3,9 +3,11 @@ package main
 import (
 	"io/fs"
 	"log"
+	"log/slog"
 	"os"
 	"os/signal"
 	"strings"
+	"time"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/compress"
@@ -17,8 +19,14 @@ import (
 	"github.com/moduforge/backend/internal/config"
 	"github.com/moduforge/backend/internal/database"
 	"github.com/moduforge/backend/internal/handler"
+	"github.com/moduforge/backend/internal/middleware"
 	"github.com/moduforge/backend/internal/service"
 )
+
+type apiError struct {
+	Error string `json:"error"`
+	Code  string `json:"code,omitempty"`
+}
 
 func main() {
 	cfg := config.Load()
@@ -30,13 +38,14 @@ func main() {
 	}
 	db, err := database.NewSQLiteDB(dbPath)
 	if err != nil {
+		slog.Error("Failed to init database", "error", err)
 		log.Fatalf("Failed to init database: %v", err)
 	}
 	defer db.Close()
 
 	// Seed market data
 	if err := db.SeedMarketData(); err != nil {
-		log.Printf("Warning: seed market data failed: %v", err)
+		slog.Warn("Seed market data failed", "error", err)
 	}
 
 	// Init WebSocket service
@@ -46,13 +55,21 @@ func main() {
 	// Fiber app
 	app := fiber.New(fiber.Config{
 		ErrorHandler: func(c fiber.Ctx, err error) error {
-			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+			return c.Status(500).JSON(apiError{Error: err.Error(), Code: "INTERNAL_ERROR"})
 		},
 	})
 
+	// Structured logger
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})))
+
 	// Middleware
+	app.Use(middleware.RequestID())
+	app.Use(middleware.ContentTypeCheck())
 	app.Use(recover.New())
-	app.Use(logger.New())
+	app.Use(logger.New(logger.Config{
+		Format: `{"time":"${time}","method":"${method}","path":"${path}","status":${status},"latency":"${latency}","ip":"${ip}","request_id":"${locals:request_id}"}` + "\n",
+		TimeFormat: time.RFC3339,
+	}))
 	app.Use(cors.New())
 	app.Use(compress.New())
 
@@ -87,10 +104,10 @@ func main() {
 		frontendFS, err := fs.Sub(os.DirFS(distDir), ".")
 		if err == nil {
 			serveFrontend(app, frontendFS)
-			log.Printf("Frontend served from %s", distDir)
+			slog.Info("Frontend served", "dist_dir", distDir)
 		}
 	} else {
-		log.Printf("Warning: no frontend dist found, serving API only")
+		slog.Warn("No frontend dist found, serving API only")
 	}
 
 	// Graceful shutdown
@@ -101,8 +118,9 @@ func main() {
 		app.Shutdown()
 	}()
 
-	log.Printf("ModuForge starting on %s", cfg.Port)
+	slog.Info("Starting server", "port", cfg.Port)
 	if err := app.Listen(cfg.Port); err != nil {
+		slog.Error("Server failed", "error", err)
 		log.Fatalf("listen: %v", err)
 	}
 }

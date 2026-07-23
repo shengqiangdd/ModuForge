@@ -123,10 +123,7 @@ func (h *ProjectHandler) SaveFile(c fiber.Ctx) error {
 
 func (h *ProjectHandler) ListTemplates(c fiber.Ctx) error {
 	templates := []map[string]string{
-		{"name": "Magisk 基础模块", "type": "magisk", "desc": "标准 Magisk 模块骨架"},
-		{"name": "KSU WebUI 模块", "type": "ksu", "desc": "带 WebUI 的 KernelSU 模块"},
-		{"name": "APatch 动作模块", "type": "apatch", "desc": "APatch action.sh 模块"},
-		{"name": "Hybrid 通用模块", "type": "hybrid", "desc": "兼容 Magisk + KSU"},
+		{"name": "通用模块模板", "type": "universal", "desc": "兼容 Magisk / KernelSU / APatch 的通用模块"},
 	}
 	return c.JSON(templates)
 }

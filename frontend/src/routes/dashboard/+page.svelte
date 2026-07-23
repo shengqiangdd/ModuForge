@@ -30,15 +30,15 @@
   let maxTrend = $derived(Math.max(1, ...buildTrends.map((t: any) => t.count || 0)));
 </script>
 
-<div class="p-6 max-w-7xl mx-auto">
+<div class="p-4 md:p-6 max-w-7xl mx-auto">
   <!-- Header -->
   <div class="flex items-center justify-between mb-8">
     <div>
-      <h1 class="text-2xl font-bold text-[var(--color-text)]">{$t('dashboard.title')}</h1>
-      <p class="text-sm text-[var(--color-text-secondary)] mt-0.5">实时监控系统运行状态</p>
+      <h1 class="text-xl md:text-2xl font-bold" style="color: var(--color-text)">{$t('dashboard.title')}</h1>
+      <p class="text-sm mt-0.5" style="color: var(--color-text-secondary)">实时监控系统运行状态</p>
     </div>
     <button class="btn-ghost flex items-center gap-2 text-sm" onclick={loadAll} disabled={loading}>
-      <span class="material-symbols-outlined text-[18px] {loading ? 'animate-spin' : ''}">refresh</span>
+      <span class="material-symbols-outlined text-[18px] {loading ? 'animate-spin' : ''}" style="color: var(--color-text-muted)">refresh</span>
       {$t('dashboard.refresh')}
     </button>
   </div>
@@ -52,22 +52,22 @@
   {:else}
     <!-- Overview Cards -->
     <section class="mb-8">
-      <h2 class="text-sm font-semibold text-[var(--color-text-muted)] uppercase tracking-wider mb-4">{$t('dashboard.system_overview')}</h2>
+      <h2 class="text-[11px] font-semibold uppercase tracking-wider mb-4" style="color: var(--color-text-muted)">{$t('dashboard.system_overview')}</h2>
       <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
         {#each [
-          { icon: 'folder', color: 'from-blue-500 to-blue-600', label: $t('dashboard.projects'), value: systemStats?.projects ?? 0 },
-          { icon: 'group', color: 'from-purple-500 to-purple-600', label: $t('dashboard.users'), value: systemStats?.users ?? 0 },
-          { icon: 'hammer', color: 'from-amber-500 to-amber-600', label: $t('dashboard.total_builds'), value: systemStats?.total_builds ?? 0 },
-          { icon: 'inventory_2', color: 'from-green-500 to-green-600', label: $t('dashboard.total_modules'), value: systemStats?.total_modules ?? 0 },
-        ] as card}
-          <div class="card p-5 group hover:shadow-card-hover transition-all duration-200">
+          { icon: 'folder', label: $t('dashboard.projects'), value: systemStats?.projects ?? 0, color: 'from-violet-500 to-purple-600' },
+          { icon: 'group', label: $t('dashboard.users'), value: systemStats?.users ?? 0, color: 'from-cyan-500 to-blue-600' },
+          { icon: 'build', label: $t('dashboard.total_builds'), value: systemStats?.total_builds ?? 0, color: 'from-emerald-500 to-green-600' },
+          { icon: 'inventory_2', label: $t('dashboard.total_modules'), value: systemStats?.total_modules ?? 0, color: 'from-amber-500 to-orange-600' },
+        ] as card, i}
+          <div class="card p-5 group hover:shadow-lg hover:-translate-y-0.5 transition-all duration-300" style="animation-delay: {i * 100}ms">
             <div class="flex items-center gap-4">
-              <div class="w-11 h-11 rounded-xl bg-gradient-to-br {card.color} flex items-center justify-center shadow-sm group-hover:scale-105 transition-transform">
+              <div class="w-12 h-12 rounded-xl flex items-center justify-center shadow-md group-hover:scale-110 group-hover:rotate-3 transition-all duration-300" style="background: var(--gradient-brand)">
                 <span class="material-symbols-outlined text-white text-xl">{card.icon}</span>
               </div>
               <div>
-                <p class="text-xs text-[var(--color-text-muted)]">{card.label}</p>
-                <p class="text-2xl font-bold text-[var(--color-text)] tabular-nums">{card.value}</p>
+                <p class="text-xs font-medium" style="color: var(--color-text-muted)">{card.label}</p>
+                <p class="text-2xl font-bold tabular-nums count-up" style="color: var(--color-text)">{card.value}</p>
               </div>
             </div>
           </div>
@@ -77,7 +77,7 @@
 
     <!-- Build Stats -->
     <section class="mb-8">
-      <h2 class="text-sm font-semibold text-[var(--color-text-muted)] uppercase tracking-wider mb-4">{$t('dashboard.build_stats')}</h2>
+      <h2 class="text-[11px] font-semibold uppercase tracking-wider mb-4" style="color: var(--color-text-muted)">{$t('dashboard.build_stats')}</h2>
       <div class="card p-5">
         <div class="grid grid-cols-2 md:grid-cols-4 gap-6 mb-5">
           {#each [
@@ -98,8 +98,8 @@
               <span class="text-sm text-[var(--color-text-secondary)]">{$t('dashboard.success_rate')}</span>
               <span class="text-sm font-semibold text-[var(--color-text)]">{(buildStats?.success_rate ?? 0).toFixed(1)}%</span>
             </div>
-            <div class="w-full bg-neutral-100 rounded-full h-2.5">
-              <div class="bg-gradient-to-r from-green-400 to-green-500 rounded-full h-2.5 transition-all duration-700" style="width: {buildStats?.success_rate ?? 0}%"></div>
+            <div class="w-full rounded-full h-2.5" style="background: var(--color-surface)">
+              <div class="rounded-full h-2.5 transition-all duration-700" style="width: {buildStats?.success_rate ?? 0}%; background: var(--gradient-brand)"></div>
             </div>
           </div>
         {/if}
@@ -108,7 +108,7 @@
 
     <!-- Build Trends -->
     <section class="mb-8">
-      <h2 class="text-sm font-semibold text-[var(--color-text-muted)] uppercase tracking-wider mb-4">{$t('dashboard.build_trends')}</h2>
+      <h2 class="text-[11px] font-semibold uppercase tracking-wider mb-4" style="color: var(--color-text-muted)">{$t('dashboard.build_trends')}</h2>
       <div class="card p-5">
         {#if buildTrends.length === 0}
           <p class="text-[var(--color-text-muted)] text-center py-10">{$t('dashboard.no_data')}</p>
@@ -122,8 +122,8 @@
                   <div class="text-red-500">失败: {trend.failed}</div>
                 </div>
                 <div class="w-full flex flex-col justify-end" style="height: 100px;">
-                  <div class="w-full bg-primary-400 rounded-t-sm" style="height: {((trend.success || 0) / maxTrend) * 100}%"></div>
-                  <div class="w-full bg-red-400 rounded-t-sm" style="height: {((trend.failed || 0) / maxTrend) * 100}%"></div>
+                  <div class="w-full rounded-t-sm" style="height: {((trend.success || 0) / maxTrend) * 100}%; background: var(--color-primary)"></div>
+                  <div class="w-full rounded-t-sm" style="height: {((trend.failed || 0) / maxTrend) * 100}%; background: var(--color-error)"></div>
                 </div>
                 <span class="text-[9px] text-[var(--color-text-muted)] truncate w-full text-center">{trend.date?.slice(5)}</span>
               </div>
@@ -136,7 +136,7 @@
     <!-- Market + System -->
     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
       <section>
-        <h2 class="text-sm font-semibold text-[var(--color-text-muted)] uppercase tracking-wider mb-4">{$t('dashboard.market_stats')}</h2>
+        <h2 class="text-[11px] font-semibold uppercase tracking-wider mb-4" style="color: var(--color-text-muted)">{$t('dashboard.market_stats')}</h2>
         <div class="card p-5 space-y-4">
           <div class="grid grid-cols-3 gap-4">
             {#each [
@@ -161,8 +161,8 @@
                       <span class="text-[var(--color-text-secondary)]">{cat.category}</span>
                       <span class="text-[var(--color-text-muted)]">{cat.count}</span>
                     </div>
-                    <div class="w-full bg-neutral-100 rounded-full h-1.5">
-                      <div class="bg-primary-400 rounded-full h-1.5" style="width: {(cat.count / maxC) * 100}%"></div>
+                    <div class="w-full rounded-full h-1.5" style="background: var(--color-surface)">
+                      <div class="rounded-full h-1.5" style="width: {(cat.count / maxC) * 100}%; background: var(--gradient-brand)"></div>
                     </div>
                   </div>
                 {/each}
@@ -173,7 +173,7 @@
       </section>
 
       <section>
-        <h2 class="text-sm font-semibold text-[var(--color-text-muted)] uppercase tracking-wider mb-4">{$t('dashboard.system_info')}</h2>
+        <h2 class="text-[11px] font-semibold uppercase tracking-wider mb-4" style="color: var(--color-text-muted)">{$t('dashboard.system_info')}</h2>
         <div class="card p-5 space-y-0">
           {#each [
             { label: $t('dashboard.uptime'), value: systemStats?.uptime ?? '-' },
