@@ -1,0 +1,7 @@
+id=universal_system_toolbox
+name=系统优化工具箱 (APatch)
+version=v1.0
+versionCode=1
+author=ModuForge
+description=通用系统优化模块 - APatch 兼容版本。网络优化、内存管理、电池省电、I/O调度和GPU渲染优化。
+api=1

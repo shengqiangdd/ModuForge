@@ -26,7 +26,6 @@ sysctl -w net.core.wmem_max=16777216 2>/dev/null
 
 # 优化 ZRAM (如果存在)
 if [ -f /sys/block/zram0/disksize ]; then
-  current_zram=$(cat /sys/block/zram0/disksize 2>/dev/null)
   total_ram=$(awk '/MemTotal/ {print $2}' /proc/meminfo 2>/dev/null)
   zram_size=$(( total_ram * 1024 / 2 ))
   if [ -n "$zram_size" ] && [ "$zram_size" -gt 0 ]; then

@@ -24,6 +24,7 @@ detect_manager() {
 
 MANAGER=$(detect_manager)
 MODDIR=${0%/*}
+MODPATH=$MODDIR
 
 ui_print "- 系统优化工具箱 v1.0"
 ui_print "- 检测到 root 管理器: $MANAGER"
@@ -31,12 +32,12 @@ ui_print "- 正在安装..."
 
 # 设置权限
 set_permissions() {
-  set_perm_recursive $MODPATH 0 0 0755 0644
-  set_perm_recursive $MODPATH/system/etc 0 0 0755 0644
-  set_perm $MODPATH/post-fs-data.sh 0 0 0755
-  set_perm $MODPATH/service.sh 0 0 0755
-  set_perm $MODPATH/uninstall.sh 0 0 0755
-  set_perm $MODPATH/customize.sh 0 0 0755
+  set_perm_recursive "$MODPATH" 0 0 0755 0644
+  set_perm_recursive "$MODPATH/system/etc" 0 0 0755 0644
+  set_perm "$MODPATH/post-fs-data.sh" 0 0 0755
+  set_perm "$MODPATH/service.sh" 0 0 0755
+  set_perm "$MODPATH/uninstall.sh" 0 0 0755
+  set_perm "$MODPATH/customize.sh" 0 0 0755
 }
 
 # 根据管理器执行安装逻辑
@@ -86,4 +87,5 @@ ui_print ""
 set_permissions 2>/dev/null
 
 # KernelSU 和 APatch 需要返回值 0
-return 0 2>/dev/null || true
+return 0 2>/dev/null
+exit 0

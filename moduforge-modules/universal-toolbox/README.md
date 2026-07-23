@@ -26,6 +26,7 @@ universal-toolbox/
 │   ├── update-binary
 │   └── updater-script
 ├── module.prop                    # 模块信息 (Magisk)
+├── apatch_module.prop             # 模块信息 (APatch)
 ├── system.prop                    # 系统属性
 ├── customize.sh                   # 智能安装脚本
 ├── post-fs-data.sh                # 开机脚本
