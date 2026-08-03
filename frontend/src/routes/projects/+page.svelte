@@ -1,14 +1,26 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { client } from '../../lib/api/client';
+  import OnboardingWizard from '$lib/components/OnboardingWizard.svelte';
 
   let projects = $state<any[]>([]);
   let loading = $state(true);
+  let showWizard = $state(false);
 
   onMount(async () => {
-    try { projects = await client.get('/projects'); } catch (e) { console.error(e); } finally { loading = false; }
+    try {
+      projects = await client.get('/projects');
+      // Show wizard if no projects exist and user hasn't completed onboarding
+      if (projects.length === 0 && !localStorage.getItem('moduforge_onboarded')) {
+        showWizard = true;
+      }
+    } catch (e) { console.error(e); } finally { loading = false; }
   });
 </script>
+
+{#if showWizard}
+  <OnboardingWizard onDone={() => { showWizard = false; window.location.reload(); }} />
+{/if}
 
 <div class="p-6 max-w-7xl mx-auto">
   <div class="flex justify-between items-center mb-8">
@@ -16,10 +28,16 @@
       <h1 class="text-2xl font-bold text-[var(--color-text)]">我的项目</h1>
       <p class="text-sm text-[var(--color-text-secondary)] mt-0.5">管理和构建你的 Magisk 模块</p>
     </div>
-    <button class="btn-primary flex items-center gap-2" onclick={() => window.location.href = '/projects/new'}>
-      <span class="material-symbols-outlined text-[18px]">add</span>
-      新建项目
-    </button>
+    <div class="flex gap-2">
+      <button class="btn-ghost flex items-center gap-2" onclick={() => showWizard = true}>
+        <span class="material-symbols-outlined text-[18px]">help</span>
+        引导
+      </button>
+      <button class="btn-primary flex items-center gap-2" onclick={() => window.location.href = '/projects/new'}>
+        <span class="material-symbols-outlined text-[18px]">add</span>
+        新建项目
+      </button>
+    </div>
   </div>
 
   {#if loading}

@@ -1,34 +1,81 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import type { Component } from 'svelte';
   import { t } from '$lib/i18n';
-  import { client } from '$lib/api/client';
+  import { client, getToken, setToken, clearToken, AuthError, hasValidToken, tryRefreshToken } from '$lib/api/client';
+  import { globalLoading } from '$lib/stores/loading.svelte';
+  import { ws } from '$lib/ws';
   import LocaleSwitcher from '$lib/components/LocaleSwitcher.svelte';
-  import MarketPage from './routes/market/+page.svelte';
-  import PublishPage from './routes/market/publish/+page.svelte';
+  import NotificationBell from '$lib/components/NotificationBell.svelte';
+  import Onboarding from '$lib/components/Onboarding.svelte';
+  import SearchPanel from '$lib/components/SearchPanel.svelte';
+  import ShortcutsHelp from '$lib/components/ShortcutsHelp.svelte';
   import AuthPage from './routes/auth/+page.svelte';
-  import DashboardPage from './routes/dashboard/+page.svelte';
-  import EditorWorkspace from '$lib/components/editor/EditorWorkspace.svelte';
-  import BuildWorkspace from '$lib/components/editor/BuildWorkspace.svelte';
-  import SettingsPage from './routes/settings/+page.svelte';
-  import AIPage from './routes/ai/+page.svelte';
   import Toast from '$lib/components/ui/Toast.svelte';
   import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte';
+  import QuickActions from '$lib/components/QuickActions.svelte';
   import { toast } from '$lib/stores/toast.svelte';
+  import { initTheme, getTheme, setTheme } from '$lib/stores/theme';
 
-  type Route = 'auth' | 'projects' | 'editor' | 'builds' | 'settings' | 'market' | 'market-publish' | 'dashboard' | 'ai';
+  // Lazy-loaded route components — only imported when navigated to
+  const lazyRoutes: Record<string, () => Promise<{ default: Component }>> = {
+    'market': () => import('./routes/market/+page.svelte'),
+    'market-publish': () => import('./routes/market/publish/+page.svelte'),
+    'dashboard': () => import('./routes/dashboard/+page.svelte'),
+    'editor': () => import('$lib/components/editor/EditorWorkspace.svelte'),
+    'builds': () => import('$lib/components/editor/BuildWorkspace.svelte'),
+    'tests': () => import('./routes/projects/[id]/tests/+page.svelte'),
+    'settings': () => import('./routes/settings/+page.svelte'),
+    'ai': () => import('./routes/ai/+page.svelte'),
+    'devices': () => import('./routes/devices/+page.svelte'),
+    'glossary': () => import('./routes/glossary/+page.svelte'),
+    'crash': () => import('./routes/crash/+page.svelte'),
+  };
+
+  let routeComponent = $state<Component | null>(null);
+  let routeKey = $state('');
+  let routeLoading = $state(false);
+
+  async function loadRoute(route: string) {
+    if (route === 'auth' || route === 'projects') { routeComponent = null; routeKey = route; return; }
+    const loader = lazyRoutes[route];
+    if (!loader) { routeComponent = null; routeKey = route; return; }
+    if (routeKey === route && routeComponent) return; // already loaded
+    routeLoading = true;
+    try {
+      const mod = await loader();
+      routeComponent = mod.default;
+      routeKey = route;
+    } catch { routeComponent = null; }
+    routeLoading = false;
+  }
+
+  type Route = 'auth' | 'projects' | 'editor' | 'builds' | 'tests' | 'settings' | 'market' | 'market-publish' | 'dashboard' | 'ai' | 'devices' | 'crash' | 'glossary';
 
   let current = $state<Route>('auth');
   let projectId = $state('');
   let token = $state<string | null>(null);
   let sidebarCollapsed = $state(false);
   let mounted = $state(false);
-  let globalLoading = $state(false);
   let mobileMenuOpen = $state(false);
   let offline = $state(false);
   let errorCaught = $state<string | null>(null);
+  let showOnboarding = $state(false);
+
+  // Search panel (Ctrl+K)
+  let showSearch = $state(false);
+  // Shortcuts help (? key)
+  let showShortcuts = $state(false);
+  // Quick actions (Ctrl+Q)
+  let quickActionsOpen = $state(false);
 
   // Theme
-  let theme = $state<'dark' | 'light'>('dark');
+  let themeMode = $state(getTheme());
+  function toggleTheme() {
+    const next = themeMode === 'light' ? 'dark' : themeMode === 'dark' ? 'system' : 'light';
+    themeMode = next;
+    setTheme(next);
+  }
 
   // Confirm dialog
   let confirmOpen = $state(false);
@@ -54,21 +101,32 @@
     current = route;
     mobileMenuOpen = false;
     if (id) projectId = id;
-    if (route === 'market') history.pushState(null, '', '/market');
-    else if (route === 'market-publish') history.pushState(null, '', '/market/publish');
-    else if (route === 'dashboard') history.pushState(null, '', '/dashboard');
-    else if (route === 'projects') history.pushState(null, '', '/projects');
-    else if (route === 'settings') history.pushState(null, '', '/settings');
-    else if (route === 'ai') history.pushState(null, '', '/ai');
+    // Preload the route component
+    loadRoute(route);
+    const paths: Record<string, string> = {
+      'market': '/market', 'market-publish': '/market/publish', 'dashboard': '/dashboard',
+      'projects': '/projects', 'settings': '/settings', 'ai': '/ai',
+      'devices': '/devices', 'glossary': '/glossary',
+    };
+    if (paths[route]) history.pushState(null, '', paths[route]);
     else if (route === 'editor' && id) history.pushState(null, '', `/projects/${id}`);
     else if (route === 'builds' && id) history.pushState(null, '', `/projects/${id}/build`);
+    else if (route === 'tests' && id) history.pushState(null, '', `/projects/${id}/tests`);
   }
 
-  function handleAuth(newToken: string, action: 'login' | 'register' = 'login') {
+  function handleAuth(newToken: string, action: 'login' | 'register' = 'login', user?: {username: string; email: string}, rememberMe = true) {
     token = newToken;
-    localStorage.setItem('moduforge_token', newToken);
+    setToken(newToken, rememberMe);
+    if (user) {
+      localStorage.setItem('moduforge_username', user.username);
+      localStorage.setItem('moduforge_email', user.email);
+    }
+    ws.connect();
     current = 'projects';
     loadProjects();
+    scheduleTokenRefresh();
+    // Preload projects route component
+    loadRoute('projects');
     if (action === 'register') {
       toast('注册成功！正在跳转...', 'success');
     } else {
@@ -76,18 +134,81 @@
     }
   }
 
+  // Auto-refresh JWT before expiry
+  let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function getTokenExpiry(tokenStr: string): number | null {
+    try {
+      const parts = tokenStr.split('.');
+      if (parts.length !== 3) return null;
+      const payload = JSON.parse(atob(parts[1]));
+      return payload.exp ? payload.exp * 1000 : null; // exp is in seconds
+    } catch { return null; }
+  }
+
+  async function scheduleTokenRefresh(_initialToken?: string) {
+    if (refreshTimer) clearTimeout(refreshTimer);
+    
+    // Always read the current token from storage (not the captured closure)
+    const currentToken = getToken();
+    if (!currentToken) return;
+    
+    const exp = getTokenExpiry(currentToken);
+    if (!exp) return;
+
+    const now = Date.now();
+    const msUntilExpiry = exp - now;
+    // Refresh when 5 minutes left (or immediately if already close to expiry)
+    const refreshIn = Math.max(msUntilExpiry - 5 * 60 * 1000, 5000);
+
+    refreshTimer = setTimeout(async () => {
+      try {
+        const latestToken = getToken();
+        if (!latestToken) return;
+        const r = await fetch('/api/v1/auth/refresh', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${latestToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: '{}',
+        });
+        if (r.ok) {
+          const data = await r.json();
+          token = data.token;
+          setToken(data.token, true);
+          scheduleTokenRefresh(); // schedule next refresh with new token
+          // Reconnect WS with fresh token
+          try { ws.disconnect(); ws.connect(); } catch {}
+        }
+      } catch {}
+    }, refreshIn);
+  }
+
   function logout() {
-    localStorage.removeItem('moduforge_token');
+    clearToken();
     token = null;
     current = 'auth';
+    routeComponent = null;
+    routeKey = '';
     projects = [];
+    ws.disconnect();
     toast('已退出登录', 'info');
   }
 
   async function loadProjects() {
     try {
       projects = await client.get<Project[]>('/projects');
-    } catch (e: any) { toast(e.message || '加载项目失败', 'error'); }
+    } catch (e: any) {
+      if (e instanceof AuthError) {
+        // Token expired — go to login but DON'T clear token yet
+        // (user might refresh to get a new token)
+        current = 'auth';
+        toast('登录已过期，请重新登录', 'warning');
+      } else {
+        toast(e.message || '加载项目失败', 'error');
+      }
+    }
   }
 
   async function createProject() {
@@ -121,14 +242,14 @@
   }
 
   async function deleteProject(id: string) {
-    globalLoading = true;
+    globalLoading.inc();
     try {
       await client.del(`/projects/${id}`);
       projects = projects.filter(p => p.id !== id);
       if (projectId === id) { projectId = ''; navigate('projects'); }
       toast('项目已删除', 'success');
     } catch (e: any) { toast(e.message, 'error'); }
-    globalLoading = false;
+    globalLoading.dec();
   }
 
   function confirmLogout() {
@@ -139,39 +260,79 @@
     confirmOpen = true;
   }
 
-  function toggleTheme() {
-    theme = theme === 'dark' ? 'light' : 'dark';
-    document.documentElement.classList.toggle('dark', theme === 'dark');
-    document.documentElement.classList.toggle('light', theme === 'light');
-    localStorage.setItem('moduforge_theme', theme);
+  function handleQuickAction(action: string) {
+    switch (action) {
+      case 'new-project':
+        showCreateModal = true;
+        break;
+      case 'open-project':
+        navigate('projects');
+        break;
+      case 'ai-chat':
+        navigate('ai');
+        break;
+      case 'build':
+        if (projectId) navigate('builds', projectId);
+        else toast('请先选择一个项目', 'info');
+        break;
+      case 'settings':
+        navigate('settings');
+        break;
+      case 'help':
+        showShortcuts = true;
+        break;
+    }
   }
 
-  onMount(() => {
+  onMount(async () => {
     mounted = true;
     offline = !navigator.onLine;
-    const saved = localStorage.getItem('moduforge_token');
-    if (saved) {
+    const saved = getToken();
+    if (saved && hasValidToken()) {
       token = saved;
       current = 'projects';
       loadProjects();
+      scheduleTokenRefresh();
+      // Connect WebSocket if we have a token
+      try { ws.connect(); } catch {}
+    } else if (saved) {
+      // Token exists but expired — try refresh
+      const refreshed = await tryRefreshToken();
+      if (refreshed) {
+        token = getToken();
+        current = 'projects';
+        loadProjects();
+        scheduleTokenRefresh();
+        try { ws.connect(); } catch {}
+      } else {
+        // Refresh failed — clear and show login
+        clearToken();
+      }
     }
 
-    // Apply theme — dark by default
-    const savedTheme = localStorage.getItem('moduforge_theme') as 'dark' | 'light' | null;
-    theme = savedTheme || 'dark';
-    document.documentElement.classList.toggle('dark', theme === 'dark');
-    document.documentElement.classList.toggle('light', theme === 'light');
+    // Show onboarding for first-time users
+    if (token && !localStorage.getItem('moduforge_onboarded')) {
+      showOnboarding = true;
+    }
+
+    // Initialize theme
+    initTheme();
+    themeMode = getTheme();
 
     function handlePopState() {
       const path = window.location.pathname;
-      if (path === '/market/publish') current = 'market-publish';
-      else if (path === '/market') current = 'market';
-      else if (path === '/dashboard') current = 'dashboard';
-      else if (path === '/settings') current = 'settings';
-      else if (path === '/ai') current = 'ai';
-      else if (path === '/projects') current = 'projects';
-      else if (path.startsWith('/projects/') && path.includes('/build')) { current = 'builds'; projectId = path.split('/')[2] || ''; }
-      else if (path.startsWith('/projects/')) { current = 'editor'; projectId = path.split('/')[2] || ''; }
+      if (path === '/market/publish') { current = 'market-publish'; loadRoute('market-publish'); }
+      else if (path === '/market') { current = 'market'; loadRoute('market'); }
+      else if (path === '/dashboard') { current = 'dashboard'; loadRoute('dashboard'); }
+      else if (path === '/settings') { current = 'settings'; loadRoute('settings'); }
+      else if (path === '/ai') { current = 'ai'; loadRoute('ai'); }
+      else if (path === '/devices') { current = 'devices'; loadRoute('devices'); }
+      else if (path === '/glossary') { current = 'glossary'; loadRoute('glossary'); }
+      else if (path === '/crash') { current = 'crash'; loadRoute('crash'); }
+      else if (path === '/projects') { current = 'projects'; routeComponent = null; routeKey = 'projects'; }
+      else if (path.startsWith('/projects/') && path.includes('/build')) { current = 'builds'; projectId = path.split('/')[2] || ''; loadRoute('builds'); }
+      else if (path.startsWith('/projects/') && path.includes('/tests')) { current = 'tests'; projectId = path.split('/')[2] || ''; loadRoute('tests'); }
+      else if (path.startsWith('/projects/')) { current = 'editor'; projectId = path.split('/')[2] || ''; loadRoute('editor'); }
     }
     handlePopState();
     window.addEventListener('popstate', handlePopState);
@@ -187,11 +348,48 @@
     };
     window.addEventListener('error', handleGlobalError);
 
+    const handleRejection = (event: PromiseRejectionEvent) => {
+      errorCaught = event.reason?.message || '未处理的 Promise 异常';
+      event.preventDefault();
+    };
+    window.addEventListener('unhandledrejection', handleRejection);
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault();
+        showSearch = true;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === '/') {
+        e.preventDefault();
+        showShortcuts = true;
+      }
+      if (e.key === 'Escape') {
+        showSearch = false;
+        showShortcuts = false;
+      }
+      if (e.key === '?' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        showShortcuts = true;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === 'q') {
+        e.preventDefault();
+        quickActionsOpen = !quickActionsOpen;
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+
+    // WS notifications
+    const unsubNotif = ws.on('notification', () => {
+      // NotificationBell will poll unread count
+    });
+
     return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      unsubNotif();
       window.removeEventListener('popstate', handlePopState);
       window.removeEventListener('online', goOnline);
       window.removeEventListener('offline', goOffline);
       window.removeEventListener('error', handleGlobalError);
+      window.removeEventListener('unhandledrejection', handleRejection);
     };
   });
 
@@ -201,18 +399,22 @@
     ...(projectId ? [
       { id: 'editor', icon: 'code', label: $t('nav.editor') },
       { id: 'builds', icon: 'build', label: $t('nav.builds') },
+      { id: 'tests', icon: 'bug_report', label: '测试' },
     ] : []),
     { id: 'ai', icon: 'psychology', label: 'AI 助手' },
+    { id: 'glossary', icon: 'menu_book', label: '术语表' },
+    { id: 'devices', icon: 'devices', label: $t('nav.devices') },
     { id: 'market', icon: 'storefront', label: $t('nav.market') },
+    { id: 'crash', icon: 'bug_report', label: '崩溃分析' },
     { id: 'settings', icon: 'settings', label: $t('nav.settings') },
   ]);
 
   const bottomNavItems = $derived([
-    { id: 'dashboard', icon: 'monitoring', label: $t('nav.dashboard') },
-    { id: 'projects', icon: 'folder', label: $t('nav.projects') },
-    ...(projectId ? [{ id: 'editor', icon: 'code', label: $t('nav.editor') }] : []),
+    { id: 'projects', icon: 'folder', label: '项目' },
     { id: 'ai', icon: 'psychology', label: 'AI' },
-    { id: 'market', icon: 'storefront', label: $t('nav.market') },
+    { id: 'devices', icon: 'devices', label: '设备' },
+    { id: 'market', icon: 'storefront', label: '市场' },
+    { id: 'settings', icon: 'settings', label: '设置' },
   ]);
 </script>
 
@@ -263,9 +465,24 @@
 {#if !token}
   <AuthPage onAuth={handleAuth} />
 {:else}
-<div class="flex h-screen overflow-hidden" style="background: var(--color-bg)">
+{#if showOnboarding}
+  <Onboarding onDone={() => showOnboarding = false} />
+{/if}
+
+{#if showSearch}
+<SearchPanel onClose={() => showSearch = false} onNavigate={(route, id) => { showSearch = false; navigate(route as Route, id); }} />
+{/if}
+{#if showShortcuts}
+<ShortcutsHelp onClose={() => showShortcuts = false} />
+{/if}
+
+{#if current !== 'ai'}
+<QuickActions onAction={handleQuickAction} />
+{/if}
+<!-- AI page: fullscreen mode — no sidebar, no header -->
+<div class="flex h-screen overflow-hidden {current === 'ai' ? 'ai-fullscreen' : ''}" style="background: var(--color-bg)">
   <!-- Global Loading Overlay -->
-  {#if globalLoading}
+  {#if globalLoading.value}
     <div class="fixed inset-0 z-50 flex items-center justify-center" style="background: rgba(0,0,0,0.5); backdrop-filter: blur(4px)">
       <div class="flex items-center gap-3 px-6 py-4 rounded-2xl border" style="background: var(--color-bg-elevated); border-color: var(--color-border); box-shadow: var(--shadow-xl)">
         <div class="animate-spin h-5 w-5 rounded-full" style="border: 2px solid var(--color-primary); border-top-color: transparent"></div>
@@ -280,7 +497,7 @@
     style="background: color-mix(in srgb, var(--color-bg-elevated) 92%, rgba(139,92,246,0.06)); border-color: var(--color-border)"
   >
     <!-- Logo -->
-    <div class="flex items-center gap-3 px-5 h-16 border-b cursor-pointer" style="border-color: var(--color-border)" role="button" tabindex="0" onclick={() => navigate('dashboard')} onkeydown={(e) => { if (e.key === 'Enter') navigate('dashboard'); }}>
+    <div class="flex items-center gap-3 px-5 h-16 border-b cursor-pointer" style="border-color: var(--color-border)" role="button" tabindex="0" onclick={() => navigate('projects')} onkeydown={(e) => { if (e.key === 'Enter') navigate('projects'); }}>
       <div class="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0" style="background: var(--gradient-brand); box-shadow: var(--shadow-glow)">
         <span class="material-symbols-outlined text-white text-lg">extension</span>
       </div>
@@ -337,9 +554,22 @@
         style="color: var(--color-text-secondary)"
         onclick={toggleTheme}
       >
-        <span class="material-symbols-outlined text-[20px]" style="color: var(--color-text-muted)">{theme === 'dark' ? 'light_mode' : 'dark_mode'}</span>
+        <span class="material-symbols-outlined text-[20px]" style="color: var(--color-text-muted)">{themeMode === 'dark' ? 'dark_mode' : themeMode === 'light' ? 'light_mode' : 'brightness_auto'}</span>
         {#if !sidebarCollapsed}
-          <span>{theme === 'dark' ? '浅色模式' : '深色模式'}</span>
+          <span>{themeMode === 'dark' ? '浅色模式' : themeMode === 'light' ? '深色模式' : '跟随系统'}</span>
+        {/if}
+      </button>
+      <div class="flex items-center justify-center {sidebarCollapsed ? '' : 'px-3'} py-1">
+        <NotificationBell />
+      </div>
+      <button
+        class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-150 text-[14px] font-medium min-h-[44px] hover:bg-[var(--color-surface)]"
+        style="color: var(--color-text-secondary)"
+        onclick={() => showShortcuts = true}
+      >
+        <span class="material-symbols-outlined text-[20px]" style="color: var(--color-text-muted)">keyboard</span>
+        {#if !sidebarCollapsed}
+          <span>快捷键</span>
         {/if}
       </button>
       <LocaleSwitcher compact={sidebarCollapsed} />
@@ -357,18 +587,20 @@
   </aside>
 
   <!-- ═══ Main Content ═══ -->
-  <main class="flex-1 flex flex-col overflow-hidden pb-16 md:pb-0" style="background: var(--color-bg)">
-    <!-- Mobile Header -->
+  <main class="flex-1 flex flex-col overflow-hidden {current === 'ai' ? '' : 'pb-16 md:pb-0'}" style="background: var(--color-bg)">
+    <!-- Mobile Header (hidden on AI page for fullscreen) -->
+    {#if current !== 'ai'}
     <header class="md:hidden flex items-center justify-between px-4 h-14 border-b flex-shrink-0 glass" style="border-color: var(--color-border)">
-      <div class="flex items-center gap-2.5" onclick={() => navigate('dashboard')}>
+      <div class="flex items-center gap-2.5" onclick={() => navigate('projects')}>
         <div class="w-7 h-7 rounded-lg flex items-center justify-center" style="background: var(--gradient-brand)">
           <span class="material-symbols-outlined text-white text-sm">extension</span>
         </div>
         <span class="text-sm font-bold" style="color: var(--color-text)">ModuForge</span>
       </div>
-      <div class="flex items-center gap-2">
+      <div class="flex items-center gap-1">
+        <NotificationBell />
         <button class="p-2 rounded-lg min-w-[44px] min-h-[44px] flex items-center justify-center" style="color: var(--color-text-muted)" onclick={toggleTheme}>
-          <span class="material-symbols-outlined text-[20px]">{theme === 'dark' ? 'light_mode' : 'dark_mode'}</span>
+          <span class="material-symbols-outlined text-[20px]">{themeMode === 'dark' ? 'dark_mode' : themeMode === 'light' ? 'light_mode' : 'brightness_auto'}</span>
         </button>
         <LocaleSwitcher />
         <button class="p-2 rounded-lg min-w-[44px] min-h-[44px] flex items-center justify-center" style="color: var(--color-text-muted)" onclick={confirmLogout} title="退出登录">
@@ -376,19 +608,10 @@
         </button>
       </div>
     </header>
+    {/if}
 
     <!-- Page Content -->
-    {#if current === 'editor'}
-      <EditorWorkspace {projectId} />
-    {:else if current === 'builds'}
-      <div class="flex-1 overflow-y-auto">
-        <BuildWorkspace {projectId} />
-      </div>
-    {:else if current === 'settings'}
-      <div class="flex-1 overflow-y-auto"><SettingsPage /></div>
-    {:else if current === 'ai'}
-      <div class="flex-1 overflow-hidden"><AIPage /></div>
-    {:else if current === 'projects'}
+    {#if current === 'projects'}
       <div class="flex-1 overflow-y-auto page-enter">
         <div class="p-4 md:p-6 max-w-7xl mx-auto">
           <div class="flex items-center gap-3 mb-4">
@@ -492,16 +715,27 @@
           </div>
         </div>
       {/if}
-    {:else if current === 'market'}
-      <div class="flex-1 overflow-y-auto page-enter"><MarketPage /></div>
-    {:else if current === 'market-publish'}
-      <div class="flex-1 overflow-y-auto page-enter"><PublishPage /></div>
-    {:else if current === 'dashboard'}
-      <div class="flex-1 overflow-y-auto page-enter"><DashboardPage /></div>
+    {:else}
+      <!-- Lazy-loaded route component -->
+      <div class="flex-1 overflow-y-auto overflow-x-hidden flex flex-col min-h-0 {current === 'ai' ? '' : 'page-enter'}">
+        {#if routeLoading}
+          <div class="flex-1 flex items-center justify-center">
+            <div class="animate-spin h-6 w-6 border-2 border-primary-500 border-t-transparent rounded-full"></div>
+          </div>
+        {:else if routeComponent}
+          {#key routeKey}
+            <svelte:component this={routeComponent}
+              {projectId}
+              onNavigate={(route: string, id?: string) => navigate(route as Route, id)}
+            />
+          {/key}
+        {/if}
+      </div>
     {/if}
   </main>
 
-  <!-- ═══ Mobile Bottom Nav ═══ -->
+  <!-- ═══ Mobile Bottom Nav (hidden on AI page) ═══ -->
+  {#if current !== 'ai'}
   <nav class="md:hidden fixed bottom-0 left-0 right-0 h-16 glass flex items-center justify-around px-2 z-40" style="border-top: 1px solid var(--color-border)">
     {#each bottomNavItems as item}
       {@const isActive = current === item.id}
@@ -514,6 +748,37 @@
         <span class="text-[10px] font-medium leading-tight">{item.label}</span>
       </button>
     {/each}
+    <button
+      class="flex flex-col items-center gap-0.5 py-1.5 px-3 rounded-xl transition-all duration-150 min-w-[60px] min-h-[44px]"
+      style={mobileMenuOpen ? 'color: var(--color-primary)' : 'color: var(--color-text-muted)'}
+      onclick={() => mobileMenuOpen = !mobileMenuOpen}
+    >
+      <span class="material-symbols-outlined text-[22px]">{mobileMenuOpen ? 'close' : 'more_horiz'}</span>
+      <span class="text-[10px] font-medium leading-tight">更多</span>
+    </button>
   </nav>
+  {/if}
+
+  {#if mobileMenuOpen && current !== 'ai'}
+    <div class="fixed inset-0 z-50 md:hidden" onclick={() => mobileMenuOpen = false}>
+      <div class="absolute bottom-16 left-2 right-2 rounded-2xl border shadow-2xl p-4 grid grid-cols-3 gap-3"
+           style="background: var(--color-bg-elevated); border-color: var(--color-border)"
+           onclick={(e) => e.stopPropagation()}>
+        {#each [
+          { id: 'dashboard', icon: 'monitoring', label: '仪表盘' },
+          { id: 'glossary', icon: 'menu_book', label: '术语表' },
+          { id: 'crash', icon: 'bug_report', label: '崩溃分析' },
+          { id: 'market-publish', icon: 'publish', label: '发布模块' },
+        ] as item}
+          <button class="flex flex-col items-center gap-1.5 p-3 rounded-xl hover:bg-[var(--color-surface)] transition-colors"
+                  style="color: var(--color-text-secondary)"
+                  onclick={() => { navigate(item.id as Route); mobileMenuOpen = false; }}>
+            <span class="material-symbols-outlined text-[24px]">{item.icon}</span>
+            <span class="text-[11px] font-medium">{item.label}</span>
+          </button>
+        {/each}
+      </div>
+    </div>
+  {/if}
 </div>
 {/if}

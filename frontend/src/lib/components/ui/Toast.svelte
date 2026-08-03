@@ -51,7 +51,7 @@
     border-color: rgba(34, 197, 94, 0.3);
     color: #4ade80;
   }
-  :global(.light) .toast-item.success {
+  :global([data-theme="light"]) .toast-item.success {
     background: rgba(34, 197, 94, 0.1);
     border-color: rgba(34, 197, 94, 0.2);
     color: #16a34a;
@@ -63,7 +63,7 @@
     border-color: rgba(239, 68, 68, 0.3);
     color: #f87171;
   }
-  :global(.light) .toast-item.error {
+  :global([data-theme="light"]) .toast-item.error {
     background: rgba(239, 68, 68, 0.1);
     border-color: rgba(239, 68, 68, 0.2);
     color: #dc2626;
@@ -75,7 +75,7 @@
     border-color: rgba(6, 182, 212, 0.3);
     color: #22d3ee;
   }
-  :global(.light) .toast-item.info {
+  :global([data-theme="light"]) .toast-item.info {
     background: rgba(6, 182, 212, 0.1);
     border-color: rgba(6, 182, 212, 0.2);
     color: #0891b2;
@@ -87,7 +87,7 @@
     border-color: rgba(245, 158, 11, 0.3);
     color: #fbbf24;
   }
-  :global(.light) .toast-item.warning {
+  :global([data-theme="light"]) .toast-item.warning {
     background: rgba(245, 158, 11, 0.1);
     border-color: rgba(245, 158, 11, 0.2);
     color: #d97706;

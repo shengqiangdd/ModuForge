@@ -5,26 +5,19 @@
     onclose?: () => void;
   } = $props();
 
-  let visible = $state(open);
-
-  $effect(() => { visible = open; });
-
   function handleKey(e: KeyboardEvent) {
-    if (e.key === 'Escape' && visible) {
-      visible = false;
+    if (e.key === 'Escape' && open) {
       onclose?.();
     }
   }
 
   function handleBackdrop() {
-    visible = false;
     onclose?.();
   }
 </script>
 
-<svelte:window onkeydown={handleKey} />
-
-{#if visible}
+{#if open}
+  <svelte:window onkeydown={handleKey} />
   <div class="modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4" onclick={handleBackdrop} role="dialog" aria-modal="true" aria-labelledby="modal-title">
     <div class="modal-backdrop absolute inset-0"></div>
     <div class="modal-dialog relative w-full max-w-lg rounded-2xl shadow-2xl border overflow-hidden" onclick={(e) => e.stopPropagation()}>

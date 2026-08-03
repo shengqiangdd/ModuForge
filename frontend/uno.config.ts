@@ -1,16 +1,14 @@
-import { defineConfig, presetUno, presetWebFonts } from 'unocss';
+import { defineConfig, presetUno } from 'unocss';
 
 export default defineConfig({
   presets: [
     presetUno(),
-    presetWebFonts({
-      fonts: {
-        sans: 'Inter:300,400,500,600,700',
-        mono: 'JetBrains Mono:400,500',
-      },
-    }),
   ],
   theme: {
+    fontFamily: {
+      sans: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif',
+      mono: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+    },
     colors: {
       primary: {
         50: '#f0f4ff',

@@ -1,23 +1,128 @@
 <script lang="ts">
-  import { t } from '$lib/i18n';
-  import { client } from '../../lib/api/client';
+import { onMount } from 'svelte';
+import { t } from '$lib/i18n';
+import { toast } from '$lib/stores/toast.svelte';
+import { client } from '../../lib/api/client';
 
-  let { onAuth }: { onAuth: (token: string, action: 'login' | 'register') => void } = $props();
+let { onAuth }: { onAuth: (token: string, action: 'login' | 'register', user?: {username: string; email: string}, rememberMe?: boolean) => void } = $props();
 
-  let isLogin = $state(true);
-  let username = $state('');
-  let email = $state('');
-  let password = $state('');
-  let showPassword = $state(false);
-  let loading = $state(false);
-  let error = $state('');
-  let mounted = $state(false);
-  let usernameTouched = $state(false);
-  let passwordTouched = $state(false);
+let isLogin = $state(true);
+let username = $state('');
+let email = $state('');
+let password = $state('');
+let showPassword = $state(false);
+let loading = $state(false);
+let error = $state('');
+let mounted = $state(false);
+let usernameTouched = $state(false);
+let passwordTouched = $state(false);
+let rememberMe = $state(false);
+
+// 记住我：localStorage keys
+const SAVED_USER_KEY = 'moduforge_saved_user';
+const SAVED_PASS_KEY = 'moduforge_saved_pass';
+
+onMount(() => {
+  // 读取保存的用户名密码
+  const savedUser = localStorage.getItem(SAVED_USER_KEY) || '';
+  const savedPass = localStorage.getItem(SAVED_PASS_KEY) || '';
+  if (savedUser) {
+    username = savedUser;
+    rememberMe = true;
+  }
+  if (savedPass) {
+    try { password = atob(savedPass); } catch {}
+  }
+  mounted = true;
+});
+
+function saveCredentials() {
+  if (rememberMe) {
+    localStorage.setItem(SAVED_USER_KEY, username);
+    localStorage.setItem(SAVED_PASS_KEY, btoa(password));
+  } else {
+    localStorage.removeItem(SAVED_USER_KEY);
+    localStorage.removeItem(SAVED_PASS_KEY);
+  }
+}
+
+function getPasswordStrength(pw: string): { score: number; label: string; color: string } {
+  let score = 0;
+  if (pw.length >= 8) score++;
+  if (pw.length >= 12) score++;
+  if (/[a-z]/.test(pw) && /[A-Z]/.test(pw)) score++;
+  if (/\d/.test(pw)) score++;
+  if (/[^a-zA-Z0-9]/.test(pw)) score++;
+  if (score <= 1) return { score, label: '弱', color: 'var(--color-error)' };
+  if (score <= 2) return { score, label: '中等', color: 'var(--color-warning)' };
+  if (score <= 3) return { score, label: '强', color: 'var(--color-info)' };
+  return { score, label: '很强', color: 'var(--color-success)' };
+}
+let passwordStrength = $derived(getPasswordStrength(password));
+
+  // 2FA flow
+  let show2FA = $state(false);
+  let tempToken = $state('');
+  let totpCode = $state('');
+
+  // Email verification flow
+  let showVerify = $state(false);
+  let verifyCode = $state('');
+  let verifyCooldown = $state(0);
+  let verifyInterval = $state<ReturnType<typeof setInterval> | null>(null);
+  let registeredUser = $state<{ username: string; email: string } | null>(null);
+
+  // Forgot password flow
+  let showForgot = $state(false);
+  let forgotEmail = $state('');
+  let forgotCode = $state('');
+  let forgotNewPassword = $state('');
+  let forgotConfirmPassword = $state('');
+  let forgotStep = $state<'email' | 'code' | 'done'>('email');
+  let forgotCooldown = $state(0);
 
   $effect(() => {
     setTimeout(() => mounted = true, 50);
   });
+
+  function startVerifyCountdown() {
+    verifyCooldown = 60;
+    if (verifyInterval) clearInterval(verifyInterval);
+    verifyInterval = setInterval(() => {
+      verifyCooldown--;
+      if (verifyCooldown <= 0) { if (verifyInterval) clearInterval(verifyInterval); verifyInterval = null; }
+    }, 1000);
+  }
+
+  async function resendVerify() {
+    if (verifyCooldown > 0) return;
+    try {
+      await client.post('/auth/resend-verification', { email: registeredUser?.email });
+      startVerifyCountdown();
+      toast('验证码已重新发送', 'info');
+    } catch { error = '发送失败'; }
+  }
+
+  async function submitVerify() {
+    if (verifyCode.length !== 6) return;
+    loading = true;
+    error = '';
+    try {
+      await client.post('/auth/verify-email', { token: verifyCode });
+      toast('邮箱已验证成功', 'success');
+      if (registeredUser) {
+        const res = await client.post<{ token: string; user: {username: string; email: string} }>('/auth/login', { username: registeredUser.username, password });
+        onAuth(res.token, 'register', res.user);
+        // Award beta_tester badge
+        const token = res.token;
+        fetch('/api/v1/badges/my', { headers: { Authorization: `Bearer ${token}` } });
+      }
+    } catch (e: any) {
+      error = e.message || '验证失败';
+    } finally {
+      loading = false;
+    }
+  }
 
   async function handleSubmit() {
     usernameTouched = true;
@@ -36,18 +141,73 @@
     error = '';
     try {
       if (isLogin) {
-        const res = await client.post<{ token: string }>('/auth/login', { username, password });
-        onAuth(res.token, 'login');
+        const res = await client.post<{ token: string; user: {username: string; email: string}; requires_2fa?: boolean; temp_token?: string }>('/auth/login', { username, password });
+        if (res.requires_2fa) {
+          show2FA = true;
+          tempToken = res.temp_token || '';
+          loading = false;
+          return;
+        }
+        onAuth(res.token, 'login', res.user, rememberMe);
+        saveCredentials();
       } else {
         await client.post('/auth/register', { username, email, password });
-        const res = await client.post<{ token: string }>('/auth/login', { username, password });
-        onAuth(res.token, 'register');
+        registeredUser = { username, email };
+        showVerify = true;
+        startVerifyCountdown();
+        loading = false;
+        error = '';
       }
     } catch (e: any) {
       error = e.message || 'Authentication failed';
     } finally {
+      if (!showVerify) loading = false;
+    }
+  }
+
+  async function submit2FA() {
+    if (totpCode.length !== 6) return;
+    loading = true;
+    error = '';
+    try {
+      const res = await client.post<{ token: string; user: {username: string; email: string} }>('/auth/login', { username, password, totp_code: totpCode });
+      onAuth(res.token, 'login', res.user, rememberMe);
+      saveCredentials();
+    } catch (e: any) {
+      error = e.message || '验证失败';
+    } finally {
       loading = false;
     }
+  }
+
+  async function requestForgotCode() {
+    if (!forgotEmail.trim()) { error = '请输入邮箱'; return; }
+    loading = true; error = '';
+    try {
+      await client.post('/auth/forgot-password', { email: forgotEmail });
+      forgotStep = 'code';
+      forgotCooldown = 60;
+      const interval = setInterval(() => {
+        forgotCooldown--;
+        if (forgotCooldown <= 0) clearInterval(interval);
+      }, 1000);
+      toast('重置码已发送到邮箱', 'info');
+    } catch { error = '发送失败'; }
+    loading = false;
+  }
+
+  async function submitForgotCode() {
+    if (forgotCode.length !== 6) { error = '请输入验证码'; return; }
+    if (!forgotNewPassword) { error = '请输入新密码'; return; }
+    if (forgotNewPassword !== forgotConfirmPassword) { error = '两次密码不一致'; return; }
+    if (forgotNewPassword.length < 6) { error = '密码至少6位'; return; }
+    loading = true; error = '';
+    try {
+      await client.post('/auth/reset-password', { token: forgotCode, password: forgotNewPassword });
+      forgotStep = 'done';
+      toast('密码重置成功', 'success');
+    } catch (e: any) { error = e.message || '重置失败'; }
+    loading = false;
   }
 
   function switchTab(login: boolean) {
@@ -55,6 +215,9 @@
     isLogin = login;
     error = '';
   }
+
+  function switchToForgot() { showForgot = true; show2FA = false; error = ''; }
+  function backToLogin() { showForgot = false; show2FA = false; showVerify = false; error = ''; }
 </script>
 
 <div class="auth-page min-h-screen flex items-center justify-center relative overflow-hidden" style="background: var(--color-bg)">
@@ -114,6 +277,156 @@
         </div>
       {/if}
 
+      {#if showVerify}
+        <div class="space-y-5">
+          <div class="text-center mb-4">
+            <div class="w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-3" style="background: var(--color-success-light)">
+              <span class="material-symbols-outlined text-2xl text-green-500">mail</span>
+            </div>
+            <h3 class="text-base font-semibold" style="color: var(--color-text)">验证邮箱</h3>
+            <p class="text-sm mt-1" style="color: var(--color-text-secondary)">验证码已发送至 {registeredUser?.email || 'your email'}</p>
+          </div>
+          <div>
+            <input
+              type="text"
+              inputmode="numeric"
+              pattern="[0-9]*"
+              maxlength="6"
+              autocomplete="one-time-code"
+              bind:value={verifyCode}
+              placeholder="000000"
+              class="input-field text-center text-2xl tracking-[0.5em] font-mono"
+              onkeydown={(e) => { if (e.key === 'Enter') submitVerify(); }}
+            />
+          </div>
+          <button
+            type="button"
+            class="auth-submit w-full py-3.5 rounded-xl font-semibold text-sm text-white transition-all duration-300 disabled:opacity-50 min-h-[52px]"
+            onclick={submitVerify}
+            disabled={loading || verifyCode.length !== 6}
+          >
+            {#if loading}
+              <span class="inline-flex items-center gap-2.5">
+                <svg class="animate-spin h-4 w-4" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                验证中...
+              </span>
+            {:else}
+              验证邮箱
+            {/if}
+          </button>
+          <button type="button" class="w-full text-center text-sm transition-colors" style="color: var(--color-text-muted)" onclick={resendVerify} disabled={verifyCooldown > 0}>
+            {#if verifyCooldown > 0}
+              重新发送 ({verifyCooldown}s)
+            {:else}
+              重新发送验证码
+            {/if}
+          </button>
+          <button type="button" class="w-full text-center text-sm text-[var(--color-text-muted)] hover:text-[var(--color-primary)] transition-colors" onclick={backToLogin}>
+            返回登录
+          </button>
+        </div>
+      {:else if show2FA}
+        <div class="space-y-5">
+          <div class="text-center mb-4">
+            <div class="w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-3" style="background: var(--color-primary-light)">
+              <span class="material-symbols-outlined text-2xl" style="color: var(--color-primary)">security</span>
+            </div>
+            <h3 class="text-base font-semibold" style="color: var(--color-text)">两步验证</h3>
+            <p class="text-sm mt-1" style="color: var(--color-text-secondary)">请输入 Authenticator App 中的 6 位验证码</p>
+          </div>
+          <div>
+            <input
+              type="text"
+              inputmode="numeric"
+              pattern="[0-9]*"
+              maxlength="6"
+              autocomplete="one-time-code"
+              bind:value={totpCode}
+              placeholder="000000"
+              class="input-field text-center text-2xl tracking-[0.5em] font-mono"
+              onkeydown={(e) => { if (e.key === 'Enter') submit2FA(); }}
+            />
+          </div>
+          <button
+            type="button"
+            class="auth-submit w-full py-3.5 rounded-xl font-semibold text-sm text-white transition-all duration-300 disabled:opacity-50 min-h-[52px]"
+            onclick={submit2FA}
+            disabled={loading || totpCode.length !== 6}
+          >
+            {#if loading}
+              <span class="inline-flex items-center gap-2.5">
+                <svg class="animate-spin h-4 w-4" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                验证中...
+              </span>
+            {:else}
+              验证
+            {/if}
+          </button>
+          <button type="button" class="w-full text-center text-sm text-[var(--color-text-muted)] hover:text-[var(--color-primary)] transition-colors" onclick={() => { show2FA = false; totpCode = ''; }}>
+            返回登录
+          </button>
+        </div>
+      {:else if showForgot}
+        <div class="space-y-5">
+          {#if forgotStep === 'email'}
+            <div class="text-center mb-4">
+              <div class="w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-3" style="background: var(--color-warning-light)">
+                <span class="material-symbols-outlined text-2xl text-amber-500">lock_reset</span>
+              </div>
+              <h3 class="text-base font-semibold" style="color: var(--color-text)">忘记密码</h3>
+              <p class="text-sm mt-1" style="color: var(--color-text-secondary)">输入注册邮箱，我们将发送重置码</p>
+            </div>
+            <div>
+              <label class="block text-sm font-medium mb-1.5" style="color: var(--color-text-secondary)">邮箱</label>
+              <input type="email" class="input-field" placeholder="you@example.com" bind:value={forgotEmail} />
+            </div>
+            <button type="button" class="auth-submit w-full py-3.5 rounded-xl font-semibold text-sm text-white disabled:opacity-50 min-h-[52px]" onclick={requestForgotCode} disabled={loading || !forgotEmail}>
+              {loading ? '发送中...' : '发送重置码'}
+            </button>
+            <button type="button" class="w-full text-center text-sm text-[var(--color-text-muted)] hover:text-[var(--color-primary)] transition-colors" onclick={backToLogin}>返回登录</button>
+          {:else if forgotStep === 'code'}
+            <div class="text-center mb-4">
+              <div class="w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-3" style="background: var(--color-primary-light)">
+                <span class="material-symbols-outlined text-2xl" style="color: var(--color-primary)">password</span>
+              </div>
+              <h3 class="text-base font-semibold" style="color: var(--color-text)">重置密码</h3>
+              <p class="text-sm mt-1" style="color: var(--color-text-secondary)">输入验证码和新密码</p>
+            </div>
+            <div>
+              <label class="block text-sm font-medium mb-1.5" style="color: var(--color-text-secondary)">验证码</label>
+              <input type="text" inputmode="numeric" pattern="[0-9]*" maxlength="6" class="input-field text-center text-xl tracking-[0.5em] font-mono" placeholder="000000" bind:value={forgotCode} />
+            </div>
+            <div>
+              <label class="block text-sm font-medium mb-1.5" style="color: var(--color-text-secondary)">新密码</label>
+              <input type="password" class="input-field" placeholder="至少 6 位" bind:value={forgotNewPassword} />
+            </div>
+            <div>
+              <label class="block text-sm font-medium mb-1.5" style="color: var(--color-text-secondary)">确认密码</label>
+              <input type="password" class="input-field" placeholder="再次输入新密码" bind:value={forgotConfirmPassword} />
+            </div>
+            <button type="button" class="auth-submit w-full py-3.5 rounded-xl font-semibold text-sm text-white disabled:opacity-50 min-h-[52px]" onclick={submitForgotCode} disabled={loading || forgotCode.length !== 6}>
+              {loading ? '重置中...' : '重置密码'}
+            </button>
+            <button type="button" class="w-full text-center text-sm text-[var(--color-text-muted)] transition-colors" disabled={loading}>
+              {#if forgotCooldown > 0}
+                重新发送 ({forgotCooldown}s)
+              {:else}
+                <span class="hover:text-[var(--color-primary)]" onclick={requestForgotCode}>重新发送验证码</span>
+              {/if}
+            </button>
+            <button type="button" class="w-full text-center text-sm text-[var(--color-text-muted)] hover:text-[var(--color-primary)] transition-colors" onclick={backToLogin}>返回登录</button>
+          {:else if forgotStep === 'done'}
+            <div class="text-center py-4">
+              <div class="w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-3" style="background: var(--color-success-light)">
+                <span class="material-symbols-outlined text-2xl text-green-500">check_circle</span>
+              </div>
+              <h3 class="text-base font-semibold" style="color: var(--color-text)">密码已重置</h3>
+              <p class="text-sm mt-1 mb-4" style="color: var(--color-text-secondary)">请使用新密码登录</p>
+              <button type="button" class="auth-submit w-full py-3.5 rounded-xl font-semibold text-sm text-white min-h-[52px]" onclick={backToLogin}>返回登录</button>
+            </div>
+          {/if}
+        </div>
+      {:else}
       <!-- Form -->
       <form onsubmit={(e) => { e.preventDefault(); handleSubmit(); }} class="space-y-5">
         <!-- Username -->
@@ -150,8 +463,16 @@
                 placeholder="you@example.com"
                 required={!isLogin}
               />
-            </div>
           </div>
+          {#if !isLogin && password.length > 0}
+            <div class="flex items-center gap-2 mt-1">
+              <div class="flex-1 h-1.5 rounded-full overflow-hidden" style="background: var(--color-surface)">
+                <div class="h-full rounded-full transition-all duration-300" style="width: {passwordStrength.score * 20}%; background: {passwordStrength.color}"></div>
+              </div>
+              <span class="text-xs" style="color: {passwordStrength.color}">{passwordStrength.label}</span>
+            </div>
+          {/if}
+        </div>
         {/if}
 
         <!-- Password with show/hide toggle -->
@@ -188,6 +509,13 @@
           </div>
         </div>
 
+        {#if isLogin}
+          <div class="flex items-center gap-2">
+            <input type="checkbox" id="remember-me" bind:checked={rememberMe} class="rounded" style="accent-color: var(--color-primary)" />
+            <label for="remember-me" class="text-sm" style="color: var(--color-text-secondary)">记住我</label>
+          </div>
+        {/if}
+
         <!-- Submit Button -->
         <button
           type="submit"
@@ -204,6 +532,9 @@
             {isLogin ? $t('auth.login_btn') : $t('auth.register_btn')}
           {/if}
         </button>
+        {#if isLogin}
+          <button type="button" class="w-full text-center text-sm transition-colors" style="color: var(--color-text-muted)" onclick={switchToForgot}>忘记密码？</button>
+        {/if}
       </form>
 
       <!-- Divider -->
@@ -217,6 +548,7 @@
       <p class="text-center text-sm" style="color: var(--color-text-muted)">
         {isLogin ? $t('auth.switch_to_register') : $t('auth.switch_to_login')}
       </p>
+      {/if}
     </div>
 
     <!-- Footer -->
@@ -234,7 +566,7 @@
       var(--shadow-xl),
       inset 0 1px 0 rgba(139,92,246,0.1);
   }
-  .light .auth-card {
+  [data-theme="light"] .auth-card {
     background: color-mix(in srgb, var(--color-bg-elevated) 90%, transparent);
     box-shadow: 
       var(--shadow-xl),
@@ -246,7 +578,7 @@
     background-image: radial-gradient(circle, rgba(139,92,246,0.15) 1px, transparent 1px);
     background-size: 24px 24px;
   }
-  .light .auth-grid { opacity: 0.3 !important; }
+  [data-theme="light"] .auth-grid { opacity: 0.3 !important; }
 
   /* Floating orbs animation */
   .auth-orb-1 { top: -15%; right: -10%; animation: float1 20s ease-in-out infinite; }

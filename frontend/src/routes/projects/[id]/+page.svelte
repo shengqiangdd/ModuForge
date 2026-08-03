@@ -3,6 +3,8 @@
   import { client } from '../../../lib/api/client';
   import CodeEditor from '../../../lib/components/CodeEditor.svelte';
   import PreviewPanel from '../../../lib/components/PreviewPanel.svelte';
+  import TeamManager from '../../../lib/components/TeamManager.svelte';
+  import MemoryPanel from '../../../lib/components/MemoryPanel.svelte';
 
   const id = window.location.pathname.split('/').filter(Boolean).pop() || '';
 
@@ -12,7 +14,7 @@
   let loading = $state(true);
   let saving = $state(false);
   let project = $state<any>(null);
-  let activeTab = $state<'editor' | 'preview'>('editor');
+  let activeTab = $state<'editor' | 'preview' | 'versions' | 'dependencies' | 'security' | 'git'>('editor');
 
   // Repo tracking
   let repoUrl = $state('');
@@ -50,6 +52,17 @@
   let gitMessage = $state('');
   let gitLoading = $state(false);
 
+  // Git branches
+  let gitBranches = $state<Array<{name: string, is_current: boolean, hash: string}>>([]);
+  let gitCurrentBranch = $state('main');
+  let newBranchName = $state('');
+  let gitRemote = $state('origin');
+  let gitBranchLoading = $state(false);
+  let gitPushLoading = $state(false);
+  let gitPullLoading = $state(false);
+  let gitPushOutput = $state('');
+  let gitPullOutput = $state('');
+
   // ADB device panel
   let showADBPanels = $state(false);
   let adbDevices = $state<Array<{serial: string, model: string, state: string}>>([]);
@@ -69,7 +82,20 @@
   let signatureInfo = $state<{hash: string, size: number, signed_at: string, algorithm: string} | null>(null);
   let signing = $state(false);
   let verifying = $state(false);
-  let verifyResult = $state<{valid: boolean} | null>(null);
+  let verifyResult = $state<{valid: boolean, message?: string, signed?: boolean, error?: string} | null>(null);
+
+  // Security: Vulnerability scanning
+  let vulnScanning = $state(false);
+  let vulnResults = $state<any>(null);
+  let vulnHistory = $state<any[]>([]);
+
+  // Security: Permission audit
+  let permAuditing = $state(false);
+  let permResults = $state<any>(null);
+  let permHistory = $state<any[]>([]);
+
+  // Security: Signature from new endpoint
+  let sigInfo = $state<any>(null);
 
   // Validation
   let validationResults = $state<Array<{file: string, valid: boolean, errors: string[], warnings: string[]}>>([]);
@@ -116,9 +142,167 @@
   const COLLAB_COLORS = ['#e53935','#1e88e5','#43a047','#fb8c00','#8e24aa','#00acc1','#6d4c41','#546e7a'];
   let myCollabColor = $state(COLLAB_COLORS[Math.floor(Math.random() * COLLAB_COLORS.length)]);
 
+  // Team management
+  let showTeamPanel = $state(false);
+
   // Plugin system
   let showPluginPanel = $state(false);
   let pluginList = $state<Array<{id: string, name: string, slug: string, description: string, author: string, version: string, enabled: boolean}>>([]);
+  let activities = $state<any[]>([]);
+
+  // Feature 1: Version Management
+  let projectVersions = $state<Array<{id: number, project_id: string, version: string, changelog: string, file_count: number, total_size: number, file_hash: string, created_at: string}>>([]);
+  let versionsLoading = $state(false);
+  let showCreateVersionDialog = $state(false);
+  let newVersionNumber = $state('');
+  let newVersionChangelog = $state('');
+  let creatingVersion = $state(false);
+  let versionDiffFrom = $state('');
+  let versionDiffTo = $state('');
+  let versionDiffResult = $state<any>(null);
+  let diffingVersions = $state(false);
+
+  // Feature 3: Dependency Resolution
+  let depAnalysis = $state<any>(null);
+  let depTree = $state<any>(null);
+  let depsLoading = $state(false);
+  let resolvingDeps = $state(false);
+
+  async function loadActivities() {
+    try {
+      const res = await fetch(`/api/v1/projects/${id}/activities?limit=10`, {
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('moduforge_token') || ''}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        activities = data.activities || [];
+      }
+    } catch {}
+  }
+
+  // Feature 1: Version Management functions
+  async function loadVersions() {
+    versionsLoading = true;
+    try {
+      const token = localStorage.getItem('moduforge_token') || '';
+      const res = await fetch(`/api/v1/projects/${id}/versions`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        projectVersions = data.versions || [];
+      }
+    } catch {}
+    versionsLoading = false;
+  }
+
+  async function createVersion() {
+    if (!newVersionNumber.trim()) return;
+    creatingVersion = true;
+    try {
+      const token = localStorage.getItem('moduforge_token') || '';
+      const res = await fetch(`/api/v1/projects/${id}/versions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ version: newVersionNumber, changelog: newVersionChangelog }),
+      });
+      if (res.ok) {
+        showCreateVersionDialog = false;
+        newVersionNumber = '';
+        newVersionChangelog = '';
+        await loadVersions();
+      } else {
+        const err = await res.json();
+        alert(err.error || '创建版本失败');
+      }
+    } catch {}
+    creatingVersion = false;
+  }
+
+  async function rollbackVersion(version: string) {
+    if (!confirm(`确定要回滚到版本 ${version} 吗？当前未保存的更改将丢失。`)) return;
+    try {
+      const token = localStorage.getItem('moduforge_token') || '';
+      const res = await fetch(`/api/v1/projects/${id}/versions/${version}/rollback`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        alert(`回滚成功，已恢复 ${data.files_restored} 个文件`);
+        // Reload files
+        window.location.reload();
+      } else {
+        const err = await res.json();
+        alert(err.error || '回滚失败');
+      }
+    } catch {}
+  }
+
+  async function diffVersions() {
+    if (!versionDiffFrom || !versionDiffTo) return;
+    diffingVersions = true;
+    try {
+      const token = localStorage.getItem('moduforge_token') || '';
+      const res = await fetch(`/api/v1/projects/${id}/versions/diff?from=${versionDiffFrom}&to=${versionDiffTo}`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      if (res.ok) {
+        versionDiffResult = await res.json();
+      } else {
+        const err = await res.json();
+        alert(err.error || '对比失败');
+      }
+    } catch {}
+    diffingVersions = false;
+  }
+
+  // Feature 3: Dependency Resolution functions
+  async function analyzeDependencies() {
+    depsLoading = true;
+    try {
+      const token = localStorage.getItem('moduforge_token') || '';
+      const res = await fetch(`/api/v1/projects/${id}/analyze-deps`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({}),
+      });
+      if (res.ok) {
+        depAnalysis = await res.json();
+      }
+    } catch {}
+    depsLoading = false;
+  }
+
+  async function loadDependencyTree() {
+    depsLoading = true;
+    try {
+      const token = localStorage.getItem('moduforge_token') || '';
+      const res = await fetch(`/api/v1/projects/${id}/dependencies`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      if (res.ok) {
+        depTree = await res.json();
+      }
+    } catch {}
+    depsLoading = false;
+  }
+
+  async function resolveDependencies() {
+    resolvingDeps = true;
+    try {
+      const token = localStorage.getItem('moduforge_token') || '';
+      const res = await fetch(`/api/v1/projects/${id}/resolve-deps`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ auto_install: false }),
+      });
+      if (res.ok) {
+        depAnalysis = await res.json();
+      }
+    } catch {}
+    resolvingDeps = false;
+  }
   let pluginInstallName = $state('');
   let pluginInstallSlug = $state('');
   let pluginInstallDesc = $state('');
@@ -619,6 +803,106 @@
     } catch {}
   }
 
+  async function loadGitBranches() {
+    gitBranchLoading = true;
+    try {
+      const res = await fetch(`/api/v1/git/branches?project_id=${id}`);
+      if (res.ok) {
+        const data = await res.json();
+        gitBranches = data.branches || [];
+        const current = gitBranches.find((b: any) => b.is_current);
+        if (current) gitCurrentBranch = current.name;
+      }
+    } catch {}
+    gitBranchLoading = false;
+  }
+
+  async function loadGitCurrentBranch() {
+    try {
+      const res = await fetch(`/api/v1/git/branch?project_id=${id}`);
+      if (res.ok) {
+        const data = await res.json();
+        gitCurrentBranch = data.branch || 'main';
+      }
+    } catch {}
+  }
+
+  async function createGitBranch() {
+    if (!newBranchName.trim()) return;
+    gitBranchLoading = true;
+    try {
+      const res = await fetch('/api/v1/git/branch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ project_id: id, branch_name: newBranchName })
+      });
+      if (res.ok) {
+        newBranchName = '';
+        await loadGitBranches();
+      }
+    } catch {}
+    gitBranchLoading = false;
+  }
+
+  async function switchGitBranch(branchName: string) {
+    gitBranchLoading = true;
+    try {
+      const res = await fetch('/api/v1/git/checkout-branch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ project_id: id, branch_name: branchName })
+      });
+      if (res.ok) {
+        await loadGitBranches();
+        await loadGitCommits();
+      }
+    } catch {}
+    gitBranchLoading = false;
+  }
+
+  async function pushGit() {
+    gitPushLoading = true;
+    gitPushOutput = '推送中...';
+    try {
+      const res = await fetch('/api/v1/git/push', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ project_id: id, remote: gitRemote })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        gitPushOutput = data.output || '推送成功';
+      } else {
+        gitPushOutput = data.error || '推送失败';
+      }
+    } catch (e: any) {
+      gitPushOutput = e.message || '推送失败';
+    }
+    gitPushLoading = false;
+  }
+
+  async function pullGit() {
+    gitPullLoading = true;
+    gitPullOutput = '拉取中...';
+    try {
+      const res = await fetch('/api/v1/git/pull', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ project_id: id, remote: gitRemote })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        gitPullOutput = data.output || '拉取成功';
+        await loadGitCommits();
+      } else {
+        gitPullOutput = data.error || '拉取失败';
+      }
+    } catch (e: any) {
+      gitPullOutput = e.message || '拉取失败';
+    }
+    gitPullLoading = false;
+  }
+
   async function checkADB() {
     adbChecking = true;
     try {
@@ -743,34 +1027,35 @@
     signing = true;
     verifyResult = null;
     try {
-      const res = await fetch('/api/v1/sign', {
+      const res = await fetch(`/api/v1/projects/${id}/sign`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ zip_path: `data/storage/downloads/moduforge_module_${id}.zip` })
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('moduforge_token') || ''}`,
+        },
       });
       if (res.ok) {
-        signatureInfo = await res.json();
+        sigInfo = await res.json();
+        signatureInfo = { hash: sigInfo.file_hash, size: 0, signed_at: sigInfo.signed_at, algorithm: sigInfo.algorithm };
       } else {
         const data = await res.json();
-        adbOutput = data.error || 'Sign failed';
+        alert(data.error || '签名失败');
       }
     } catch {
-      adbOutput = 'Sign service unavailable';
+      alert('签名服务不可用');
     }
     signing = false;
   }
 
   async function verifyModule() {
-    if (!signatureInfo) return;
     verifying = true;
     try {
-      const res = await fetch('/api/v1/verify', {
+      const res = await fetch(`/api/v1/projects/${id}/verify`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          zip_path: `data/storage/downloads/moduforge_module_${id}.zip`,
-          expected_hash: signatureInfo.hash
-        })
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('moduforge_token') || ''}`,
+        },
       });
       if (res.ok) {
         verifyResult = await res.json();
@@ -779,6 +1064,71 @@
       verifyResult = { valid: false };
     }
     verifying = false;
+  }
+
+  async function loadSignature() {
+    try {
+      const res = await fetch(`/api/v1/projects/${id}/signature`, {
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('moduforge_token') || ''}` },
+      });
+      if (res.ok) sigInfo = await res.json();
+    } catch {}
+  }
+
+  // Vulnerability scanning
+  async function scanVulnerabilities() {
+    vulnScanning = true;
+    try {
+      const res = await fetch(`/api/v1/projects/${id}/scan-vulns`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('moduforge_token') || ''}`,
+        },
+      });
+      if (res.ok) vulnResults = await res.json();
+    } catch {}
+    vulnScanning = false;
+  }
+
+  async function loadVulnHistory() {
+    try {
+      const res = await fetch(`/api/v1/projects/${id}/vulnerabilities`, {
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('moduforge_token') || ''}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        vulnHistory = data.scans || [];
+      }
+    } catch {}
+  }
+
+  // Permission audit
+  async function auditPermissions() {
+    permAuditing = true;
+    try {
+      const res = await fetch(`/api/v1/projects/${id}/audit`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('moduforge_token') || ''}`,
+        },
+      });
+      if (res.ok) permResults = await res.json();
+    } catch {}
+    permAuditing = false;
+  }
+
+  async function loadPermHistory() {
+    try {
+      const res = await fetch(`/api/v1/projects/${id}/permissions`, {
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('moduforge_token') || ''}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        permHistory = data.audits || [];
+      }
+    } catch {}
   }
 
   // Mirror functions
@@ -1045,15 +1395,17 @@
   }
 
   onMount(async () => {
+    if (!id) { loading = false; return; }
     try {
       project = await client.get(`/projects/${id}`);
       const fileData = await client.get<{path: string}[]>(`/projects/${id}/files`);
-      files = fileData.map(f => ({ path: f.path }));
+      files = (fileData || []).map(f => ({ path: f.path }));
     } catch(e) {
       console.error(e);
     } finally {
       loading = false;
     }
+    loadActivities();
   });
 
   async function selectFile(path: string) {
@@ -1112,6 +1464,8 @@
       {/if}
     </div>
 
+    <MemoryPanel projectId={id} />
+
     <div class="p-3 border-t border-[var(--color-border)] space-y-2">
       <button class="btn-primary w-full" onclick={() => { showRepoDialog = true; }}>
         <span class="material-symbols-outlined" slot="start">link</span>
@@ -1166,6 +1520,10 @@
         <span class="material-symbols-outlined" slot="start">speed</span>
         性能测试
       </button>
+      <button class="btn-primary w-full" onclick={() => showTeamPanel = !showTeamPanel}>
+        <span class="material-symbols-outlined" slot="start">groups</span>
+        团队
+      </button>
       <button class="btn-primary w-full" onclick={openCollabPanel}>
         <span class="material-symbols-outlined" slot="start">group</span>
         协作 👥
@@ -1202,6 +1560,46 @@
             onclick={() => activeTab = 'preview'}
           >
             预览
+          </button>
+          <button
+            class="px-3 py-1 text-sm transition-colors"
+            class:text-primary={activeTab === 'versions'}
+            class:text-[var(--color-text-secondary)]={activeTab !== 'versions'}
+            class:border-b-2={activeTab === 'versions'}
+            class:border-primary={activeTab === 'versions'}
+            onclick={() => { activeTab = 'versions'; loadVersions(); }}
+          >
+            版本
+          </button>
+          <button
+            class="px-3 py-1 text-sm transition-colors"
+            class:text-primary={activeTab === 'dependencies'}
+            class:text-[var(--color-text-secondary)]={activeTab !== 'dependencies'}
+            class:border-b-2={activeTab === 'dependencies'}
+            class:border-primary={activeTab === 'dependencies'}
+            onclick={() => { activeTab = 'dependencies'; analyzeDependencies(); loadDependencyTree(); }}
+          >
+            依赖
+          </button>
+          <button
+            class="px-3 py-1 text-sm transition-colors"
+            class:text-primary={activeTab === 'security'}
+            class:text-[var(--color-text-secondary)]={activeTab !== 'security'}
+            class:border-b-2={activeTab === 'security'}
+            class:border-primary={activeTab === 'security'}
+            onclick={() => { activeTab = 'security'; loadSignature(); loadVulnHistory(); loadPermHistory(); }}
+          >
+            🔒 安全
+          </button>
+          <button
+            class="px-3 py-1 text-sm transition-colors"
+            class:text-primary={activeTab === 'git'}
+            class:text-[var(--color-text-secondary)]={activeTab !== 'git'}
+            class:border-b-2={activeTab === 'git'}
+            class:border-primary={activeTab === 'git'}
+            onclick={() => { activeTab = 'git'; loadGitBranches(); loadGitCommits(); }}
+          >
+            Git
           </button>
         </div>
         <div class="flex items-center gap-2">
@@ -1251,8 +1649,231 @@
             language={selectedFile ? detectLanguage(selectedFile) : 'javascript'}
             onChange={(val) => { editorContent = val; sendCollabCursor(0, 0); }}
           />
-        {:else}
+        {:else if activeTab === 'preview'}
           <PreviewPanel htmlContent={generatePreviewContent()} />
+        {:else if activeTab === 'versions'}
+          <!-- Version Management Panel -->
+          <div class="h-full overflow-y-auto p-4 space-y-4">
+            <div class="flex items-center justify-between">
+              <h3 class="text-lg font-semibold">版本管理</h3>
+              <button class="btn-primary text-sm" onclick={() => showCreateVersionDialog = true}>
+                <span class="material-symbols-outlined text-sm" slot="start">add</span>
+                创建版本
+              </button>
+            </div>
+
+            {#if versionsLoading}
+              <div class="text-center py-8 text-[var(--color-text-secondary)]">加载中...</div>
+            {:else if projectVersions.length === 0}
+              <div class="text-center py-12 text-[var(--color-text-secondary)]">
+                <span class="material-symbols-outlined text-4xl mb-2 block">history</span>
+                暂无版本记录
+              </div>
+            {:else}
+              <div class="space-y-2">
+                {#each projectVersions as v}
+                  <div class="p-3 border border-[var(--color-border)] rounded-lg bg-[var(--color-surface)] hover:border-primary/50 transition-colors">
+                    <div class="flex items-center justify-between">
+                      <div>
+                        <span class="font-mono font-semibold text-primary">{v.version}</span>
+                        <span class="text-xs text-[var(--color-text-secondary)] ml-2">
+                          {new Date(v.created_at).toLocaleString('zh-CN')}
+                        </span>
+                      </div>
+                      <div class="flex items-center gap-2">
+                        <span class="text-xs text-[var(--color-text-secondary)]">
+                          {v.file_count} 文件 · {v.total_size > 1024 ? (v.total_size / 1024).toFixed(1) + ' KB' : v.total_size + ' B'}
+                        </span>
+                        <button class="btn-ghost text-xs px-2 py-1" onclick={() => rollbackVersion(v.version)}>
+                          回滚
+                        </button>
+                      </div>
+                    </div>
+                    {#if v.changelog}
+                      <p class="text-xs text-[var(--color-text-secondary)] mt-1">{v.changelog}</p>
+                    {/if}
+                  </div>
+                {/each}
+              </div>
+            {/if}
+
+            <!-- Version Diff Section -->
+            {#if projectVersions.length >= 2}
+              <div class="border-t border-[var(--color-border)] pt-4 mt-4">
+                <h4 class="font-medium mb-3">版本对比</h4>
+                <div class="flex items-center gap-2">
+                  <select class="input-field text-sm" bind:value={versionDiffFrom}>
+                    <option value="">选择基准版本</option>
+                    {#each projectVersions as v}
+                      <option value={v.version}>{v.version}</option>
+                    {/each}
+                  </select>
+                  <span class="text-[var(--color-text-secondary)]">→</span>
+                  <select class="input-field text-sm" bind:value={versionDiffTo}>
+                    <option value="">选择目标版本</option>
+                    {#each projectVersions as v}
+                      <option value={v.version}>{v.version}</option>
+                    {/each}
+                  </select>
+                  <button class="btn-ghost text-sm" onclick={diffVersions} disabled={diffingVersions || !versionDiffFrom || !versionDiffTo}>
+                    {diffingVersions ? '对比中...' : '对比'}
+                  </button>
+                </div>
+
+                {#if versionDiffResult}
+                  <div class="mt-3 space-y-1">
+                    <p class="text-xs text-[var(--color-text-secondary)]">
+                      {versionDiffResult.version_a} → {versionDiffResult.version_b} ({versionDiffResult.total} 个文件)
+                    </p>
+                    {#each versionDiffResult.diffs || [] as diff}
+                      <div class="flex items-center gap-2 text-xs py-1">
+                        <span class="material-symbols-outlined text-sm
+                          {diff.status === 'added' ? 'text-green-500' : diff.status === 'removed' ? 'text-red-500' : diff.status === 'modified' ? 'text-yellow-500' : 'text-[var(--color-text-secondary)]'}">
+                          {diff.status === 'added' ? 'add_circle' : diff.status === 'removed' ? 'remove_circle' : diff.status === 'modified' ? 'edit' : 'check_circle'}
+                        </span>
+                        <span class="font-mono">{diff.path}</span>
+                        <span class="text-[var(--color-text-secondary)]">{diff.status}</span>
+                      </div>
+                    {/each}
+                  </div>
+                {/if}
+              </div>
+            {/if}
+          </div>
+        {:else if activeTab === 'dependencies'}
+          <!-- Dependency Resolution Panel -->
+          <div class="h-full overflow-y-auto p-4 space-y-4">
+            <div class="flex items-center justify-between">
+              <h3 class="text-lg font-semibold">依赖分析</h3>
+              <div class="flex gap-2">
+                <button class="btn-ghost text-sm" onclick={analyzeDependencies} disabled={depsLoading}>
+                  <span class="material-symbols-outlined text-sm" slot="start">search</span>
+                  {depsLoading ? '分析中...' : '分析依赖'}
+                </button>
+                <button class="btn-ghost text-sm" onclick={resolveDependencies} disabled={resolvingDeps}>
+                  <span class="material-symbols-outlined text-sm" slot="start">auto_fix_high</span>
+                  {resolvingDeps ? '解析中...' : '自动解析'}
+                </button>
+              </div>
+            </div>
+
+            {#if depAnalysis}
+              <!-- Analysis Results -->
+              <div class="grid grid-cols-3 gap-3">
+                <div class="p-3 border border-[var(--color-border)] rounded-lg text-center">
+                  <div class="text-2xl font-bold text-primary">{depAnalysis.dependencies?.length || 0}</div>
+                  <div class="text-xs text-[var(--color-text-secondary)]">依赖总数</div>
+                </div>
+                <div class="p-3 border border-[var(--color-border)] rounded-lg text-center">
+                  <div class="text-2xl font-bold text-green-500">{(depAnalysis.dependencies?.length || 0) - (depAnalysis.missing?.length || 0)}</div>
+                  <div class="text-xs text-[var(--color-text-secondary)]">已解析</div>
+                </div>
+                <div class="p-3 border border-[var(--color-border)] rounded-lg text-center">
+                  <div class="text-2xl font-bold text-red-500">{depAnalysis.missing?.length || 0}</div>
+                  <div class="text-xs text-[var(--color-text-secondary)]">缺失</div>
+                </div>
+              </div>
+
+              {#if depAnalysis.warnings?.length > 0}
+                <div class="p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
+                  <div class="flex items-center gap-2 text-yellow-600 text-sm font-medium mb-1">
+                    <span class="material-symbols-outlined text-sm">warning</span>
+                    警告
+                  </div>
+                  {#each depAnalysis.warnings as warning}
+                    <p class="text-xs text-[var(--color-text-secondary)]">{warning}</p>
+                  {/each}
+                </div>
+              {/if}
+
+              {#if depAnalysis.missing?.length > 0}
+                <div class="border border-[var(--color-border)] rounded-lg overflow-hidden">
+                  <div class="px-3 py-2 bg-red-500/10 border-b border-[var(--color-border)] font-medium text-sm">
+                    缺失的依赖
+                  </div>
+                  {#each depAnalysis.missing as dep}
+                    <div class="px-3 py-2 border-b border-[var(--color-border)] last:border-b-0 flex items-center justify-between">
+                      <div>
+                        <span class="font-mono text-sm">{dep.name}</span>
+                        <span class="text-xs text-[var(--color-text-secondary)] ml-2">来源: {dep.source}</span>
+                        <span class="text-xs text-[var(--color-text-secondary)] ml-2">引用: {dep.reference_path}</span>
+                      </div>
+                      <button class="btn-ghost text-xs">安装</button>
+                    </div>
+                  {/each}
+                </div>
+              {/if}
+
+              {#if depAnalysis.dependencies?.length > 0}
+                <div class="border border-[var(--color-border)] rounded-lg overflow-hidden">
+                  <div class="px-3 py-2 bg-primary/10 border-b border-[var(--color-border)] font-medium text-sm">
+                    所有依赖
+                  </div>
+                  {#each depAnalysis.dependencies as dep}
+                    <div class="px-3 py-2 border-b border-[var(--color-border)] last:border-b-0 flex items-center justify-between">
+                      <div class="flex items-center gap-2">
+                        <span class="material-symbols-outlined text-sm
+                          {dep.id && !dep.id.startsWith('lib') ? 'text-green-500' : 'text-[var(--color-text-secondary)]'}">
+                          {dep.id && !dep.id.startsWith('lib') ? 'check_circle' : 'help_outline'}
+                        </span>
+                        <span class="font-mono text-sm">{dep.name}</span>
+                        {#if dep.version}
+                          <span class="text-xs text-[var(--color-text-secondary)]">v{dep.version}</span>
+                        {/if}
+                        <span class="text-xs text-[var(--color-text-secondary)]">{dep.source}</span>
+                      </div>
+                      <span class="text-xs {dep.required ? 'text-red-500' : 'text-[var(--color-text-secondary)]'}">
+                        {dep.required ? '必需' : '可选'}
+                      </span>
+                    </div>
+                  {/each}
+                </div>
+              {/if}
+            {/if}
+
+            <!-- Dependency Tree -->
+            {#if depTree}
+              <div class="border border-[var(--color-border)] rounded-lg overflow-hidden">
+                <div class="px-3 py-2 bg-[var(--color-surface)] border-b border-[var(--color-border)] font-medium text-sm">
+                  依赖树
+                </div>
+                <div class="p-3">
+                  <div class="flex items-center gap-2">
+                    <span class="material-symbols-outlined text-sm text-primary">folder</span>
+                    <span class="font-mono text-sm font-semibold">{depTree.name}</span>
+                    <span class="text-xs text-[var(--color-text-secondary)]">v{depTree.version}</span>
+                    <span class="px-1.5 py-0.5 text-xs rounded bg-green-500/20 text-green-600">{depTree.status}</span>
+                  </div>
+                  {#if depTree.children?.length > 0}
+                    <div class="ml-6 mt-2 space-y-1 border-l border-[var(--color-border)] pl-3">
+                      {#each depTree.children as child}
+                        <div class="flex items-center gap-2">
+                          <span class="material-symbols-outlined text-sm {child.status === 'resolved' ? 'text-green-500' : 'text-red-500'}">
+                            {child.status === 'resolved' ? 'check_circle' : 'cancel'}
+                          </span>
+                          <span class="font-mono text-sm">{child.name}</span>
+                          {#if child.version}
+                            <span class="text-xs text-[var(--color-text-secondary)]">v{child.version}</span>
+                          {/if}
+                          <span class="px-1.5 py-0.5 text-xs rounded
+                            {child.status === 'resolved' ? 'bg-green-500/20 text-green-600' : 'bg-red-500/20 text-red-600'}">
+                            {child.status}
+                          </span>
+                        </div>
+                      {/each}
+                    </div>
+                  {/if}
+                </div>
+              </div>
+            {/if}
+
+            {#if !depAnalysis && !depsLoading}
+              <div class="text-center py-12 text-[var(--color-text-secondary)]">
+                <span class="material-symbols-outlined text-4xl mb-2 block">account_tree</span>
+                点击"分析依赖"开始扫描项目依赖
+              </div>
+            {/if}
+          </div>
         {/if}
       </div>
 
@@ -1270,10 +1891,37 @@
             <div class="p-3 bg-[var(--color-bg)] rounded-lg border border-[var(--color-border)]">
               <p class="text-[11px] font-medium text-[var(--color-text-secondary)] mb-1">译文 ({translateLang})</p>
               <p class="text-xs">{translatedDesc}</p>
-            </div>
-          </div>
+      </div>
+    </div>
+  </div>
+{/if}
+
+{#if showCreateVersionDialog}
+  <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onclick={() => showCreateVersionDialog = false}>
+    <div class="bg-[var(--color-bg)] rounded-xl p-6 w-full max-w-md border border-[var(--color-border)] shadow-xl" onclick={(e) => e.stopPropagation()}>
+      <h3 class="text-lg font-semibold mb-4 flex items-center gap-2">
+        <span class="material-symbols-outlined text-primary">add_circle</span>
+        创建新版本
+      </h3>
+      <div class="space-y-3">
+        <div>
+          <label class="block text-sm font-medium mb-1">版本号</label>
+          <input type="text" placeholder="e.g. 1.0.0" class="w-full px-3 py-2 border border-[var(--color-border)] rounded-lg bg-[var(--color-bg)] text-[var(--color-text)]" bind:value={newVersionNumber} />
         </div>
-      {/if}
+        <div>
+          <label class="block text-sm font-medium mb-1">更新日志</label>
+          <textarea placeholder="描述此版本的更改..." class="w-full px-3 py-2 border border-[var(--color-border)] rounded-lg bg-[var(--color-bg)] text-[var(--color-text)] h-24 resize-none" bind:value={newVersionChangelog}></textarea>
+        </div>
+      </div>
+      <div class="flex justify-end gap-2 mt-4">
+        <button class="btn-ghost" onclick={() => showCreateVersionDialog = false}>取消</button>
+        <button class="btn-primary" onclick={createVersion} disabled={creatingVersion || !newVersionNumber.trim()}>
+          {creatingVersion ? '创建中...' : '创建版本'}
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
 
       {#if showValidation && validationResults.length > 0}
         <div class="border-t border-[var(--color-border)] bg-[var(--color-surface)]">
@@ -1824,9 +2472,398 @@
           <span class="text-xs">{verifyResult.valid ? '校验通过' : '校验失败'}</span>
         </div>
       </div>
-    {/if}
-  </div>
-{/if}
+            {/if}
+          </div>
+        {:else if activeTab === 'security'}
+          <!-- Security Panel -->
+          <div class="h-full overflow-y-auto p-4 space-y-6">
+            <h3 class="text-lg font-semibold">🔒 安全检查</h3>
+
+            <!-- Signature Section -->
+            <div class="border border-[var(--color-border)] rounded-lg overflow-hidden">
+              <div class="px-4 py-3 bg-[var(--color-surface)] border-b border-[var(--color-border)] flex items-center justify-between">
+                <h4 class="font-medium text-sm">模块签名</h4>
+                <div class="flex gap-2">
+                  <button class="btn-ghost text-xs" onclick={signModule} disabled={signing}>
+                    <span class="material-symbols-outlined text-sm" slot="start">edit_note</span>
+                    {signing ? '签名中...' : '签名模块'}
+                  </button>
+                  <button class="btn-ghost text-xs" onclick={verifyModule} disabled={verifying || !sigInfo}>
+                    <span class="material-symbols-outlined text-sm" slot="start">verified</span>
+                    {verifying ? '验证中...' : '验证签名'}
+                  </button>
+                </div>
+              </div>
+              <div class="p-4">
+                {#if sigInfo && sigInfo.signed}
+                  <div class="space-y-2">
+                    <div class="flex items-center gap-2 text-green-600">
+                      <span class="material-symbols-outlined text-sm">check_circle</span>
+                      <span class="text-sm font-medium">已签名</span>
+                    </div>
+                    <div class="grid grid-cols-2 gap-2 text-xs">
+                      <div><span class="text-[var(--color-text-secondary)]">算法:</span> {sigInfo.algorithm}</div>
+                      <div><span class="text-[var(--color-text-secondary)]">签名时间:</span> {new Date(sigInfo.signed_at).toLocaleString('zh-CN')}</div>
+                      <div class="col-span-2"><span class="text-[var(--color-text-secondary)]">文件哈希:</span> <code class="font-mono text-[10px] break-all">{sigInfo.file_hash}</code></div>
+                      {#if sigInfo.fingerprint}
+                        <div class="col-span-2"><span class="text-[var(--color-text-secondary)]">公钥指纹:</span> <code class="font-mono text-[10px] break-all">{sigInfo.fingerprint}</code></div>
+                      {/if}
+                    </div>
+                    {#if verifyResult}
+                      <div class="mt-2 p-2 rounded text-sm {verifyResult.valid ? 'bg-green-500/10 text-green-600' : 'bg-red-500/10 text-red-600'}">
+                        {verifyResult.valid ? '✅ 签名验证通过' : '❌ 签名验证失败'}
+                        {#if verifyResult.message}
+                          <span class="text-xs block">{verifyResult.message}</span>
+                        {:else if verifyResult.error}
+                          <span class="text-xs block">{verifyResult.error}</span>
+                        {/if}
+                      </div>
+                    {/if}
+                  </div>
+                {:else}
+                  <div class="text-center py-4 text-[var(--color-text-secondary)]">
+                    <span class="material-symbols-outlined text-3xl mb-2 block">lock_open</span>
+                    <p class="text-sm">模块未签名</p>
+                    <p class="text-xs mt-1">签名可确保模块代码的完整性和来源可信</p>
+                  </div>
+                {/if}
+              </div>
+            </div>
+
+            <!-- Vulnerability Scanning Section -->
+            <div class="border border-[var(--color-border)] rounded-lg overflow-hidden">
+              <div class="px-4 py-3 bg-[var(--color-surface)] border-b border-[var(--color-border)] flex items-center justify-between">
+                <h4 class="font-medium text-sm">漏洞扫描</h4>
+                <button class="btn-ghost text-xs" onclick={scanVulnerabilities} disabled={vulnScanning}>
+                  <span class="material-symbols-outlined text-sm" slot="start">bug_report</span>
+                  {vulnScanning ? '扫描中...' : '开始扫描'}
+                </button>
+              </div>
+              <div class="p-4">
+                {#if vulnResults}
+                  <div class="space-y-3">
+                    <!-- Stats -->
+                    <div class="grid grid-cols-4 gap-2 text-center">
+                      <div class="p-2 rounded bg-red-500/10">
+                        <div class="text-lg font-bold text-red-500">{vulnResults.critical_count}</div>
+                        <div class="text-[10px] text-[var(--color-text-secondary)]">高危</div>
+                      </div>
+                      <div class="p-2 rounded bg-orange-500/10">
+                        <div class="text-lg font-bold text-orange-500">{vulnResults.high_count}</div>
+                        <div class="text-[10px] text-[var(--color-text-secondary)]">中高</div>
+                      </div>
+                      <div class="p-2 rounded bg-yellow-500/10">
+                        <div class="text-lg font-bold text-yellow-500">{vulnResults.medium_count}</div>
+                        <div class="text-[10px] text-[var(--color-text-secondary)]">中危</div>
+                      </div>
+                      <div class="p-2 rounded bg-blue-500/10">
+                        <div class="text-lg font-bold text-blue-500">{vulnResults.low_count}</div>
+                        <div class="text-[10px] text-[var(--color-text-secondary)]">低危</div>
+                      </div>
+                    </div>
+                    <div class="text-center text-sm">
+                      风险评分: <span class="font-bold {vulnResults.risk_score >= 80 ? 'text-green-500' : vulnResults.risk_score >= 60 ? 'text-yellow-500' : 'text-red-500'}">{vulnResults.risk_score}/100</span>
+                    </div>
+
+                    <!-- Issues -->
+                    {#if vulnResults.issues?.length > 0}
+                      <div class="space-y-1 max-h-64 overflow-y-auto">
+                        {#each vulnResults.issues as issue}
+                          <div class="p-2 rounded text-xs border border-[var(--color-border)]">
+                            <div class="flex items-center gap-2 mb-1">
+                              <span class="px-1.5 py-0.5 rounded text-[10px] font-medium
+                                {issue.severity === 'critical' ? 'bg-red-500/20 text-red-600' :
+                                  issue.severity === 'high' ? 'bg-orange-500/20 text-orange-600' :
+                                  issue.severity === 'medium' ? 'bg-yellow-500/20 text-yellow-600' :
+                                  'bg-blue-500/20 text-blue-600'}">
+                                {issue.severity}
+                              </span>
+                              <span class="text-[var(--color-text-secondary)]">{issue.file}:{issue.line}</span>
+                            </div>
+                            <p class="text-[var(--color-text)]">{issue.message}</p>
+                            {#if issue.fix}
+                              <p class="text-[var(--color-text-secondary)] mt-1">💡 {issue.fix}</p>
+                            {/if}
+                          </div>
+                        {/each}
+                      </div>
+                    {:else}
+                      <p class="text-center text-sm text-green-500">✅ 未发现安全漏洞</p>
+                    {/if}
+                  </div>
+                {:else}
+                  <div class="text-center py-6 text-[var(--color-text-secondary)]">
+                    <span class="material-symbols-outlined text-3xl mb-2 block">security</span>
+                    <p class="text-sm">点击"开始扫描"检测代码中的安全漏洞</p>
+                    <p class="text-xs mt-1">检查危险函数、硬编码路径、不安全权限等</p>
+                  </div>
+                {/if}
+              </div>
+            </div>
+
+            <!-- Permission Audit Section -->
+            <div class="border border-[var(--color-border)] rounded-lg overflow-hidden">
+              <div class="px-4 py-3 bg-[var(--color-surface)] border-b border-[var(--color-border)] flex items-center justify-between">
+                <h4 class="font-medium text-sm">权限审计</h4>
+                <button class="btn-ghost text-xs" onclick={auditPermissions} disabled={permAuditing}>
+                  <span class="material-symbols-outlined text-sm" slot="start">admin_panel_settings</span>
+                  {permAuditing ? '审计中...' : '开始审计'}
+                </button>
+              </div>
+              <div class="p-4">
+                {#if permResults}
+                  <div class="space-y-3">
+                    <!-- Stats -->
+                    <div class="flex items-center justify-between">
+                      <div class="flex gap-3 text-sm">
+                        <span>总计: <strong>{permResults.total_permissions}</strong></span>
+                        <span class="text-red-500">危险: <strong>{permResults.dangerous_count}</strong></span>
+                        <span class="text-[var(--color-text-secondary)]">普通: <strong>{permResults.normal_count}</strong></span>
+                      </div>
+                      <div class="text-sm">
+                        风险评分: <span class="font-bold {permResults.risk_score >= 80 ? 'text-green-500' : permResults.risk_score >= 60 ? 'text-yellow-500' : 'text-red-500'}">{permResults.risk_score}/100</span>
+                        <span class="ml-2 px-2 py-0.5 rounded text-xs
+                          {permResults.risk_level === 'safe' ? 'bg-green-500/20 text-green-600' :
+                            permResults.risk_level === 'low' ? 'bg-blue-500/20 text-blue-600' :
+                            permResults.risk_level === 'medium' ? 'bg-yellow-500/20 text-yellow-600' :
+                            permResults.risk_level === 'high' ? 'bg-orange-500/20 text-orange-600' :
+                            'bg-red-500/20 text-red-600'}">
+                          {permResults.risk_level}
+                        </span>
+                      </div>
+                    </div>
+
+                    <!-- Warnings -->
+                    {#if permResults.warnings?.length > 0}
+                      <div class="p-2 bg-yellow-500/10 border border-yellow-500/30 rounded text-xs">
+                        {#each permResults.warnings as warning}
+                          <p>⚠️ {warning}</p>
+                        {/each}
+                      </div>
+                    {/if}
+
+                    <!-- Dangerous permissions -->
+                    {#if permResults.dangerous_permissions?.length > 0}
+                      <div>
+                        <h5 class="text-xs font-medium text-red-500 mb-1">⚠️ 危险权限</h5>
+                        <div class="space-y-1 max-h-48 overflow-y-auto">
+                          {#each permResults.dangerous_permissions as perm}
+                            <div class="p-2 rounded text-xs border border-red-500/20 bg-red-500/5">
+                              <div class="flex items-center gap-2">
+                                <span class="font-mono">{perm.name}</span>
+                                {#if perm.is_common}
+                                  <span class="px-1 py-0.5 rounded text-[10px] bg-blue-500/20 text-blue-600">常见</span>
+                                {/if}
+                              </div>
+                              <p class="text-[var(--color-text-secondary)] mt-0.5">{perm.description} — {perm.risk}</p>
+                            </div>
+                          {/each}
+                        </div>
+                      </div>
+                    {/if}
+
+                    <!-- All permissions -->
+                    {#if permResults.permissions?.length > 0}
+                      <details class="group">
+                        <summary class="text-xs font-medium cursor-pointer text-[var(--color-text-secondary)] hover:text-[var(--color-text)]">
+                          查看所有权限 ({permResults.permissions.length})
+                        </summary>
+                        <div class="mt-1 space-y-1 max-h-48 overflow-y-auto">
+                          {#each permResults.permissions as perm}
+                            <div class="p-1.5 rounded text-[11px] border border-[var(--color-border)] flex items-center justify-between">
+                              <span class="font-mono">{perm.name}</span>
+                              <span class="px-1 py-0.5 rounded text-[10px]
+                                {perm.level === 'dangerous' ? 'bg-red-500/20 text-red-600' :
+                                  perm.level === 'normal' ? 'bg-green-500/20 text-green-600' :
+                                  'bg-gray-500/20 text-gray-600'}">
+                                {perm.level}
+                              </span>
+                            </div>
+                          {/each}
+                        </div>
+                      </details>
+                    {/if}
+                  </div>
+                {:else}
+                  <div class="text-center py-6 text-[var(--color-text-secondary)]">
+                    <span class="material-symbols-outlined text-3xl mb-2 block">admin_panel_settings</span>
+                    <p class="text-sm">点击"开始审计"分析模块请求的权限</p>
+                    <p class="text-xs mt-1">检查危险权限、权限合理性、风险评分</p>
+                  </div>
+                {/if}
+              </div>
+            </div>
+
+            <!-- Audit History -->
+            {#if vulnHistory.length > 0 || permHistory.length > 0}
+              <div class="border border-[var(--color-border)] rounded-lg overflow-hidden">
+                <div class="px-4 py-3 bg-[var(--color-surface)] border-b border-[var(--color-border)]">
+                  <h4 class="font-medium text-sm">审计历史</h4>
+                </div>
+                <div class="p-4 space-y-2 max-h-48 overflow-y-auto">
+                  {#each vulnHistory.slice(0, 5) as scan}
+                    <div class="text-xs p-2 rounded bg-[var(--color-bg)] border border-[var(--color-border)]">
+                      <span class="text-[var(--color-text-secondary)]">{new Date(scan.scanned_at).toLocaleString('zh-CN')}</span>
+                      <span class="ml-2">漏洞扫描: {scan.total_issues} 个问题</span>
+                    </div>
+                  {/each}
+                  {#each permHistory.slice(0, 5) as audit}
+                    <div class="text-xs p-2 rounded bg-[var(--color-bg)] border border-[var(--color-border)]">
+                      <span class="text-[var(--color-text-secondary)]">{new Date(audit.audited_at).toLocaleString('zh-CN')}</span>
+                      <span class="ml-2">权限审计: {audit.total_permissions} 个权限</span>
+                    </div>
+                  {/each}
+                </div>
+              </div>
+            {/if}
+          </div>
+        {:else if activeTab === 'git'}
+          <!-- Git Panel -->
+          <div class="h-full overflow-y-auto p-4 space-y-6">
+            <h3 class="text-lg font-semibold">Git 版本控制</h3>
+
+            <!-- Current Branch -->
+            <div class="border border-[var(--color-border)] rounded-lg overflow-hidden">
+              <div class="px-4 py-3 bg-[var(--color-surface)] border-b border-[var(--color-border)] flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <span class="material-symbols-outlined text-sm">branch</span>
+                  <span class="font-medium text-sm">当前分支</span>
+                  <span class="text-xs px-2 py-0.5 rounded-full bg-primary-100 text-primary-700 font-mono">{gitCurrentBranch}</span>
+                </div>
+                <button class="btn-ghost text-xs" onclick={loadGitBranches} disabled={gitBranchLoading}>
+                  <span class="material-symbols-outlined text-sm" slot="start">refresh</span>
+                  {gitBranchLoading ? '刷新中...' : '刷新'}
+                </button>
+              </div>
+              <div class="p-4">
+                <!-- Branch List -->
+                <div class="space-y-2">
+                  {#each gitBranches as branch}
+                    <div class="flex items-center justify-between p-2 rounded-lg border {branch.is_current ? 'border-primary-500 bg-primary-500/10' : 'border-[var(--color-border)] hover:bg-[var(--color-surface)]'}">
+                      <div class="flex items-center gap-2">
+                        <span class="material-symbols-outlined text-sm {branch.is_current ? 'text-primary-500' : 'text-[var(--color-text-muted)]'}">
+                          {branch.is_current ? 'radio_button_checked' : 'radio_button_unchecked'}
+                        </span>
+                        <span class="text-sm font-mono">{branch.name}</span>
+                        {#if branch.is_current}
+                          <span class="text-[10px] px-1.5 py-0.5 rounded bg-primary-500 text-white">当前</span>
+                        {/if}
+                      </div>
+                      {#if !branch.is_current}
+                        <button class="btn-ghost text-xs" onclick={() => switchGitBranch(branch.name)} disabled={gitBranchLoading}>
+                          切换
+                        </button>
+                      {/if}
+                    </div>
+                  {/each}
+                </div>
+
+                <!-- Create Branch -->
+                <div class="mt-3 flex gap-2">
+                  <input
+                    type="text"
+                    class="flex-1 px-3 py-2 border border-[var(--color-border)] rounded-lg bg-[var(--color-bg)] text-[var(--color-text)] text-sm"
+                    placeholder="新分支名称"
+                    bind:value={newBranchName}
+                  />
+                  <button class="btn-primary text-sm" onclick={createGitBranch} disabled={gitBranchLoading || !newBranchName.trim()}>
+                    <span class="material-symbols-outlined text-sm" slot="start">add</span>
+                    创建
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Commit Changes -->
+            <div class="border border-[var(--color-border)] rounded-lg overflow-hidden">
+              <div class="px-4 py-3 bg-[var(--color-surface)] border-b border-[var(--color-border)]">
+                <h4 class="font-medium text-sm">提交更改</h4>
+              </div>
+              <div class="p-4 space-y-3">
+                <textarea
+                  class="w-full px-3 py-2 border border-[var(--color-border)] rounded-lg bg-[var(--color-bg)] text-[var(--color-text)] text-sm resize-none"
+                  rows="2"
+                  placeholder="提交信息..."
+                  bind:value={gitMessage}
+                ></textarea>
+                <div class="flex gap-2">
+                  <button class="btn-primary text-sm flex-1" onclick={saveGitCommit} disabled={gitLoading || !gitMessage.trim()}>
+                    <span class="material-symbols-outlined text-sm" slot="start">commit</span>
+                    {gitLoading ? '提交中...' : '提交'}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Push / Pull -->
+            <div class="border border-[var(--color-border)] rounded-lg overflow-hidden">
+              <div class="px-4 py-3 bg-[var(--color-surface)] border-b border-[var(--color-border)]">
+                <h4 class="font-medium text-sm">远程操作</h4>
+              </div>
+              <div class="p-4 space-y-3">
+                <div class="flex flex-col gap-1">
+                  <label class="text-[11px] font-medium text-[var(--color-text-secondary)]">远程仓库</label>
+                  <input
+                    type="text"
+                    class="px-3 py-2 border border-[var(--color-border)] rounded-lg bg-[var(--color-bg)] text-[var(--color-text)] text-sm"
+                    placeholder="origin"
+                    bind:value={gitRemote}
+                  />
+                </div>
+                <div class="flex gap-2">
+                  <button class="btn-ghost border border-[var(--color-border)] text-sm flex-1" onclick={pushGit} disabled={gitPushLoading}>
+                    <span class="material-symbols-outlined text-sm" slot="start">upload</span>
+                    {gitPushLoading ? '推送中...' : '推送'}
+                  </button>
+                  <button class="btn-ghost border border-[var(--color-border)] text-sm flex-1" onclick={pullGit} disabled={gitPullLoading}>
+                    <span class="material-symbols-outlined text-sm" slot="start">download</span>
+                    {gitPullLoading ? '拉取中...' : '拉取'}
+                  </button>
+                </div>
+                {#if gitPushOutput}
+                  <div class="text-xs p-2 rounded bg-[var(--color-surface)] border border-[var(--color-border)] font-mono whitespace-pre-wrap max-h-24 overflow-y-auto">{gitPushOutput}</div>
+                {/if}
+                {#if gitPullOutput}
+                  <div class="text-xs p-2 rounded bg-[var(--color-surface)] border border-[var(--color-border)] font-mono whitespace-pre-wrap max-h-24 overflow-y-auto">{gitPullOutput}</div>
+                {/if}
+              </div>
+            </div>
+
+            <!-- Commit History -->
+            <div class="border border-[var(--color-border)] rounded-lg overflow-hidden">
+              <div class="px-4 py-3 bg-[var(--color-surface)] border-b border-[var(--color-border)] flex items-center justify-between">
+                <h4 class="font-medium text-sm">提交历史</h4>
+                <button class="btn-ghost text-xs" onclick={loadGitCommits} disabled={gitLoading}>
+                  <span class="material-symbols-outlined text-sm" slot="start">refresh</span>
+                  {gitLoading ? '加载中...' : '刷新'}
+                </button>
+              </div>
+              <div class="p-4 space-y-2 max-h-96 overflow-y-auto">
+                {#if gitCommits.length === 0}
+                  <p class="text-sm text-[var(--color-text-secondary)] text-center py-4">暂无提交记录</p>
+                {:else}
+                  {#each gitCommits as commit}
+                    <div class="flex items-start gap-3 p-2 rounded-lg border border-[var(--color-border)] hover:bg-[var(--color-surface)] cursor-pointer"
+                         onclick={() => gitCheckout(commit.hash)}>
+                      <span class="material-symbols-outlined text-sm text-[var(--color-text-muted)] mt-0.5">commit</span>
+                      <div class="flex-1 min-w-0">
+                        <p class="text-sm text-[var(--color-text)] truncate">{commit.message}</p>
+                        <div class="flex items-center gap-2 text-[10px] text-[var(--color-text-secondary)] mt-0.5">
+                          <span class="font-mono">{commit.hash.slice(0, 8)}</span>
+                          <span>{commit.author}</span>
+                          <span>{new Date(commit.timestamp).toLocaleString('zh-CN')}</span>
+                        </div>
+                      </div>
+                      {#if commit.hash === gitHeadHash}
+                        <span class="text-[10px] px-1.5 py-0.5 rounded bg-green-100 text-green-700">HEAD</span>
+                      {/if}
+                    </div>
+                  {/each}
+                {/if}
+              </div>
+            </div>
+          </div>
+        {/if}
 
 <!-- Mirror Panel -->
 {#if showMirrorPanel}
@@ -2092,6 +3129,23 @@
   </div>
 {/if}
 
+<!-- Team Panel -->
+{#if showTeamPanel}
+  <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+    <div class="bg-[var(--color-bg)] rounded-2xl p-6 max-w-2xl w-full mx-4 max-h-[85vh] flex flex-col">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-lg font-semibold">团队管理</h2>
+        <button onclick={() => showTeamPanel = false}>
+          <span class="material-symbols-outlined">close</span>
+        </button>
+      </div>
+      <div class="flex-1 overflow-auto">
+        <TeamManager {projectId} />
+      </div>
+    </div>
+  </div>
+{/if}
+
 <!-- Collaboration Panel -->
 {#if showCollabPanel}
   <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
@@ -2229,6 +3283,32 @@
     </div>
   </div>
 {/if}
+
+<!-- Activity Feed -->
+<div class="border border-[var(--color-border)] rounded-xl p-4 mb-4">
+  <h3 class="text-sm font-semibold mb-3 flex items-center gap-2">
+    <span class="material-symbols-outlined text-sm">timeline</span>
+    最近活动
+  </h3>
+  {#if activities.length > 0}
+    <div class="space-y-2 max-h-48 overflow-auto">
+      {#each activities as act}
+        <div class="flex items-start gap-2 text-xs">
+          <span class="material-symbols-outlined text-[14px] mt-0.5 flex-shrink-0"
+                style="color: {act.activity_type === 'build_completed' ? 'var(--color-success)' : act.activity_type === 'build_failed' ? 'var(--color-error)' : 'var(--color-primary)'}">
+            {act.activity_type === 'build_completed' ? 'check_circle' : act.activity_type === 'build_failed' ? 'error' : act.activity_type === 'file_edited' ? 'edit_note' : 'circle'}
+          </span>
+          <div>
+            <p style="color: var(--color-text)">{act.description}</p>
+            <p class="text-[10px] mt-0.5" style="color: var(--color-text-muted)">{new Date(act.created_at).toLocaleString()}</p>
+          </div>
+        </div>
+      {/each}
+    </div>
+  {:else}
+    <p class="text-xs text-[var(--color-text-secondary)]">暂无活动</p>
+  {/if}
+</div>
 
 <!-- Plugin Panel -->
 {#if showPluginPanel}
