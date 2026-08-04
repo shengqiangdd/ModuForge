@@ -1315,6 +1315,7 @@ You are running WITHOUT a project context. This means:
 		// Read-only loop detection: if Agent only calls read_file/grep/glob without any write/edit, inject reminder
 		readOnlyCount := toolCallHistory["read_file"] + toolCallHistory["grep_search"] + toolCallHistory["glob_search"] + toolCallHistory["list_dir"]
 		writeCount := toolCallHistory["write_file"] + toolCallHistory["edit_file"] + toolCallHistory["write_file_batch"]
+		skipLoopDetection := false
 		if readOnlyCount >= 6 && writeCount == 0 && iter >= 2 {
 			diagnostic := fmt.Sprintf(
 				"⚠️ [Read-Only Loop] You have called read tools %d times without any write/edit operations. "+
@@ -1333,6 +1334,7 @@ You are running WITHOUT a project context. This means:
 				"step":    "think",
 				"content": fmt.Sprintf("🔄 检测到只读循环（%d 次读取，0 次写入），已注入编辑提醒", readOnlyCount),
 			})
+			skipLoopDetection = true // Give Agent a chance to respond before forcing answer
 		}
 
 		// Global error cap: if total consecutive errors across all skills >= 5, force answer
@@ -1346,10 +1348,12 @@ You are running WITHOUT a project context. This means:
 				"Multiple tools have failed consecutively. Stop using tools and provide your final answer based on what you've learned so far.")
 		}
 
-		// Smart loop detection
-		if reason := detectLoop(toolCallHistory, uniqueOps, totalToolCalls); reason != "" {
-			debugLog("loop detected: %s", reason)
-			return r.forceAnswer(ctx, conversation, w, sessionID, cfg, reqProviderID, reqModel, reason)
+		// Smart loop detection (skip if read-only reminder was just injected)
+		if !skipLoopDetection {
+			if reason := detectLoop(toolCallHistory, uniqueOps, totalToolCalls); reason != "" {
+				debugLog("loop detected: %s", reason)
+				return r.forceAnswer(ctx, conversation, w, sessionID, cfg, reqProviderID, reqModel, reason)
+			}
 		}
 	}
 
