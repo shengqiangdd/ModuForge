@@ -894,11 +894,6 @@ func (db *DB) migrateUserIDTypes() {
 
 		// Recreate with user_id as TEXT
 		newTable := table + "_migrated_uid"
-		newCreate := createSQL
-		// Replace the old CREATE TABLE with a new one changing user_id INTEGER to user_id TEXT
-		// We build it by replacing the column definition
-		newCreate = newCreate[0:len(newCreate)-1] + " --"
-		// Simpler: just use INSERT SELECT approach
 		tx, err := db.Conn.Begin()
 		if err != nil {
 			log.Printf("[DB] Could not begin transaction for %s: %v", table, err)
