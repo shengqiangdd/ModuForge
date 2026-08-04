@@ -1417,7 +1417,7 @@ You are running WITHOUT a project context. This means:
 				debugLog("garbage answer detected in main loop (len=%d), retrying...", len(answer))
 				conversation = appendRoleMessage(conversation, "assistant", answer)
 				conversation = appendRoleMessage(conversation, "user",
-					"Your previous answer was garbled/unreadable. Please provide a clear, well-formatted Markdown answer. Do NOT use tools.")
+					"你的上一轮回答出现了乱码。请重新开始，使用工具完成任务。从头读取文件并继续实现功能。")
 				iter++
 				continue
 			}
