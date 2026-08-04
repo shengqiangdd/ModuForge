@@ -9,7 +9,7 @@ import (
 )
 
 type ToolDef struct {
-	Type     string           `json:"type"`
+	Type     string          `json:"type"`
 	Function ToolFunctionDef `json:"function"`
 }
 
@@ -90,56 +90,6 @@ func (r *AgentRunner) buildToolDefinitionsForMode(mode AgentMode, modelName stri
 				"project_id": map[string]interface{}{"type": "string", "description": "Project ID (auto-created if omitted)"},
 			}
 			def.Function.Parameters["required"] = []string{"files"}
-		case "think":
-			def.Function.Parameters["properties"] = map[string]interface{}{
-				"thought": map[string]interface{}{"type": "string", "description": "Your reasoning, analysis, or plan"},
-			}
-			def.Function.Parameters["required"] = []string{"thought"}
-		case "gather_requirements":
-			def.Function.Parameters["properties"] = map[string]interface{}{
-				"description": map[string]interface{}{"type": "string", "description": "Project/module description to analyze"},
-				"answers":     map[string]interface{}{"type": "object", "description": "Optional Q&A answers {q1: answer, ...}"},
-			}
-			def.Function.Parameters["required"] = []string{"description"}
-		case "match_template":
-			def.Function.Parameters["properties"] = map[string]interface{}{
-				"description": map[string]interface{}{"type": "string", "description": "Project description to match against templates"},
-				"type":        map[string]interface{}{"type": "string", "description": "Module type (e.g. magisk_module, android_app, library)"},
-			}
-			def.Function.Parameters["required"] = []string{"description", "type"}
-		case "generate_code", "code_pipeline":
-			def.Function.Parameters["properties"] = map[string]interface{}{
-				"description":  map[string]interface{}{"type": "string", "description": "What to generate or build"},
-				"files_spec":   map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "object"}, "description": "File specifications to generate"},
-				"pipeline":     map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "string"}, "description": "Pipeline stages (detect/lint/test only)"},
-				"project_id":   map[string]interface{}{"type": "string", "description": "Project ID for file context"},
-			}
-			def.Function.Parameters["required"] = []string{"description"}
-		case "create_dir":
-			def.Function.Parameters["properties"] = map[string]interface{}{
-				"path": map[string]interface{}{"type": "string", "description": "Directory path to create"},
-			}
-			def.Function.Parameters["required"] = []string{"path"}
-		case "detect":
-			def.Function.Parameters["properties"] = map[string]interface{}{
-				"path": map[string]interface{}{"type": "string", "description": "File path to analyze"},
-			}
-			def.Function.Parameters["required"] = []string{"path"}
-		case "lint_code":
-			def.Function.Parameters["properties"] = map[string]interface{}{
-				"files": map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "string"}, "description": "File paths to lint"},
-			}
-			def.Function.Parameters["required"] = []string{"files"}
-		case "validate":
-			def.Function.Parameters["properties"] = map[string]interface{}{
-				"files": map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "string"}, "description": "File paths to validate"},
-			}
-			def.Function.Parameters["required"] = []string{"files"}
-		case "web_search":
-			def.Function.Parameters["properties"] = map[string]interface{}{
-				"query": map[string]interface{}{"type": "string", "description": "Search query"},
-			}
-			def.Function.Parameters["required"] = []string{"query"}
 		case "edit_file":
 			def.Function.Description = "Make targeted edits to an existing file. Use this for MOST changes (preferred over write_file for modifications <30% of file). Specify exact old_text to find and new_text to replace."
 			def.Function.Parameters["properties"] = map[string]interface{}{
@@ -175,14 +125,6 @@ func (r *AgentRunner) buildToolDefinitionsForMode(mode AgentMode, modelName stri
 				"project_id": map[string]interface{}{"type": "string", "description": "Project ID to build"},
 			}
 			def.Function.Parameters["required"] = []string{"project_id"}
-		case "memory_manager":
-			def.Function.Parameters["properties"] = map[string]interface{}{
-				"action": map[string]interface{}{"type": "string", "description": "Action: list/get/update/delete/search"},
-				"key":    map[string]interface{}{"type": "string", "description": "Memory key"},
-				"value":  map[string]interface{}{"type": "string", "description": "Memory value (for update)"},
-				"query":  map[string]interface{}{"type": "string", "description": "Search query (for search)"},
-			}
-			def.Function.Parameters["required"] = []string{"action"}
 		default:
 			def.Function.Parameters["properties"] = map[string]interface{}{
 				"input": map[string]interface{}{"type": "string", "description": "Input for the skill"},
@@ -224,21 +166,13 @@ func (r *AgentRunner) getToolDefinitions(mode AgentMode, modelName string) []Too
 // Returns a comma-separated list of missing param names, or "" if all OK.
 func validateRequiredParams(skillName string, input map[string]interface{}) string {
 	requiredMap := map[string][]string{
-		"write_file":        {"path", "content"},
-		"write_file_batch":  {"files"},
-		"read_file":         {"path"},
-		"create_dir":        {"path"},
-		"delete_file":       {"path"},
-		"delete_dir":        {"path"},
-		"move_file":         {"source", "destination"},
-		"list_dir":          {"path"},
-		"detect":            {"path"},
-		"web_search":        {"query"},
-		"think":             {"thought"},
-		"gather_requirements": {"description"},
-		"match_template":    {"description", "type"},
-		"generate_code":     {"description"},
-		"code_pipeline":     {"description"},
+		"write_file":       {"path", "content"},
+		"write_file_batch": {"files"},
+		"read_file":        {"path"},
+		"delete_file":      {"path"},
+		"delete_dir":       {"path"},
+		"move_file":        {"source", "destination"},
+		"list_dir":         {"path"},
 	}
 	required, ok := requiredMap[skillName]
 	if !ok {

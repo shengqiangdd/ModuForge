@@ -1,9 +1,10 @@
 // Package registry provides the skill registry, types, and auto-registration.
 //
 // Architecture:
-//   agent → registry (imports SkillRegistry, Skill, SkillMeta)
-//   skills → registry (imports RegisterFactory, SkillMeta, MetadataProvider)
-//   handler → registry (imports NewSkillRegistry, Deps)
+//
+//	agent → registry (imports SkillRegistry, Skill, SkillMeta)
+//	skills → registry (imports RegisterFactory, SkillMeta, MetadataProvider)
+//	handler → registry (imports NewSkillRegistry, Deps)
 //
 // Skills register themselves via init() with factory functions.
 // NewSkillRegistry(deps) instantiates all registered skills automatically.

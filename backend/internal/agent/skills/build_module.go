@@ -31,10 +31,6 @@ type sourceInfo struct {
 	goModDir string
 }
 
-func NewBuildModuleSkill(projectPath string) *BuildModuleSkill {
-	return &BuildModuleSkill{projectPath: projectPath}
-}
-
 func NewBuildModuleSkillWithDB(projectPath string, db *sql.DB) *BuildModuleSkill {
 	return &BuildModuleSkill{projectPath: projectPath, db: db}
 }
@@ -299,7 +295,7 @@ linker = "%s"
 			if errHost != nil {
 				return fmt.Sprintf("  ❌ Rust build failed:\n%s\n", string(outputHost))
 			}
-			return fmt.Sprintf("  ✅ Rust build succeeded (host target, cross-compile skipped: linker not found)\n")
+			return "  ✅ Rust build succeeded (host target, cross-compile skipped: linker not found)\n"
 		}
 		return fmt.Sprintf("  ❌ Rust build failed:\n%s\n", outputStr)
 	}
@@ -346,7 +342,7 @@ linker = "%s"
 		}
 	}
 
-	return fmt.Sprintf("  ✅ Rust build succeeded (binaries copied to system/bin/)\n")
+	return "  ✅ Rust build succeeded (binaries copied to system/bin/)\n"
 }
 
 // compileCpp 编译 C/C++ 代码
@@ -531,16 +527,6 @@ func (s *BuildModuleSkill) validateShellScripts(projectPath string) bool {
 func (s *BuildModuleSkill) hasFile(projectPath, name string) bool {
 	_, err := os.Stat(filepath.Join(projectPath, name))
 	return err == nil
-}
-
-// hasCppSources 检查是否有 C/C++ 源文件 (thin wrapper around detectSources)
-func (s *BuildModuleSkill) hasCppSources(projectPath string) bool {
-	return s.detectSources(projectPath).hasCpp
-}
-
-// hasGoSources 检查是否有 Go 源文件 (thin wrapper around detectSources)
-func (s *BuildModuleSkill) hasGoSources(projectPath string) bool {
-	return s.detectSources(projectPath).hasGo
 }
 
 // removeExisting 删除已有文件

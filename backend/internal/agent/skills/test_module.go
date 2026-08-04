@@ -45,7 +45,6 @@ var dangerousPathRe = regexp.MustCompile(`(rm\s+-rf\s+/|dd\s+if=|>/\s|>/dev/null
 var setRe = regexp.MustCompile(`set\s+-\w*[euwxo]`)
 var moduleIDRe = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9._-]*$`)
 var semverRe = regexp.MustCompile(`^\d+\.\d+\.\d+$`)
-var propFieldRe = regexp.MustCompile(`^[\w.-]+\s*=\s*.+$`)
 var varRefRe = regexp.MustCompile(`\$\(|\$\{|\$\w+`)
 var unquotedVarRe = regexp.MustCompile(`[^"'\$]\$\{?\w+\}?[^"'\}]`)
 
@@ -106,9 +105,12 @@ func (s *TestModuleSkill) runAllTests(files map[string]string) (string, error) {
 	for _, c := range propCases {
 		propReport.Total++
 		switch c.Status {
-		case "passed": propReport.Passed++
-		case "failed": propReport.Failed++
-		case "skipped": propReport.Skipped++
+		case "passed":
+			propReport.Passed++
+		case "failed":
+			propReport.Failed++
+		case "skipped":
+			propReport.Skipped++
 		}
 	}
 	propJSON, _ := json.MarshalIndent(propReport, "", "  ")
@@ -119,9 +121,12 @@ func (s *TestModuleSkill) runAllTests(files map[string]string) (string, error) {
 	for _, c := range permCases {
 		permReport.Total++
 		switch c.Status {
-		case "passed": permReport.Passed++
-		case "failed": permReport.Failed++
-		case "skipped": permReport.Skipped++
+		case "passed":
+			permReport.Passed++
+		case "failed":
+			permReport.Failed++
+		case "skipped":
+			permReport.Skipped++
 		}
 	}
 	permJSON, _ := json.MarshalIndent(permReport, "", "  ")

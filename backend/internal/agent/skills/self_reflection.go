@@ -169,10 +169,10 @@ func (s *SelfReflectionSkill) diagnose(input map[string]interface{}) (string, er
 	diagnosis = append(diagnosis, "3. After resolving, record: self_reflection({action: 'adapt', task_id: '"+taskID+"', lesson: 'what worked', strategy: 'the fix'})")
 
 	result := map[string]interface{}{
-		"action":  "diagnose",
-		"success": true,
-		"id":      id,
-		"attempt": attempt,
+		"action":    "diagnose",
+		"success":   true,
+		"id":        id,
+		"attempt":   attempt,
 		"diagnosis": strings.Join(diagnosis, "\n"),
 	}
 
@@ -284,13 +284,13 @@ func (s *SelfReflectionSkill) adapt(input map[string]interface{}) (string, error
 	}
 
 	result := map[string]interface{}{
-		"action":          "adapt",
-		"success":         true,
-		"task_id":         taskID,
-		"failures":        failures,
-		"unresolved":      unresolvedCount,
-		"resolved":        resolvedCount,
-		"advice":          advice,
+		"action":     "adapt",
+		"success":    true,
+		"task_id":    taskID,
+		"failures":   failures,
+		"unresolved": unresolvedCount,
+		"resolved":   resolvedCount,
+		"advice":     advice,
 	}
 
 	b, _ := json.MarshalIndent(result, "", "  ")
@@ -331,11 +331,11 @@ func (s *SelfReflectionSkill) history(input map[string]interface{}) (string, err
 	}
 
 	result := map[string]interface{}{
-		"action":    "history",
-		"success":   true,
-		"task_id":   taskID,
-		"entries":   entries,
-		"count":     len(entries),
+		"action":  "history",
+		"success": true,
+		"task_id": taskID,
+		"entries": entries,
+		"count":   len(entries),
 	}
 
 	b, _ := json.MarshalIndent(result, "", "  ")
@@ -375,9 +375,9 @@ func (s *SelfReflectionSkill) detectPatterns(input map[string]interface{}) (stri
 		var cnt, maxAttempt, resolvedCnt int
 		if err := rows.Scan(&error, &cnt, &maxAttempt, &resolvedCnt); err == nil {
 			patterns = append(patterns, map[string]interface{}{
-				"error":         error,
-				"occurrences":   cnt,
-				"max_attempt":   maxAttempt,
+				"error":          error,
+				"occurrences":    cnt,
+				"max_attempt":    maxAttempt,
 				"times_resolved": resolvedCnt,
 			})
 		}
@@ -393,10 +393,10 @@ func (s *SelfReflectionSkill) detectPatterns(input map[string]interface{}) (stri
 	unresolved = total - resolved
 
 	result := map[string]interface{}{
-		"action":    "pattern",
-		"success":   true,
-		"task_id":   taskID,
-		"patterns":  patterns,
+		"action":   "pattern",
+		"success":  true,
+		"task_id":  taskID,
+		"patterns": patterns,
 		"stats": map[string]interface{}{
 			"total":      total,
 			"resolved":   resolved,
@@ -427,10 +427,10 @@ func (s *SelfReflectionSkill) reset(input map[string]interface{}) (string, error
 	affected, _ := result.RowsAffected()
 
 	resp := map[string]interface{}{
-		"action":   "reset",
-		"success":  true,
-		"task_id":  taskID,
-		"deleted":  affected,
+		"action":  "reset",
+		"success": true,
+		"task_id": taskID,
+		"deleted": affected,
 	}
 
 	b, _ := json.MarshalIndent(resp, "", "  ")

@@ -11,10 +11,10 @@ import (
 
 func TestStagnationDetector_RecordToolCall(t *testing.T) {
 	sd := &StagnationDetector{
-		lastToolCalls:          make([]string, 0, 10),
-		lastResults:            make([]string, 0, 10),
-		maxIdenticalRepeats:    3,
-		maxStagnationRounds:    5,
+		lastToolCalls:         make([]string, 0, 10),
+		lastResults:           make([]string, 0, 10),
+		maxIdenticalRepeats:   3,
+		maxStagnationRounds:   5,
 		maxConsecutiveNoWrite: 15,
 	}
 
@@ -35,10 +35,10 @@ func TestStagnationDetector_RecordToolCall(t *testing.T) {
 
 func TestStagnationDetector_IdenticalRepeats(t *testing.T) {
 	sd := &StagnationDetector{
-		lastToolCalls:          make([]string, 0, 10),
-		lastResults:            make([]string, 0, 10),
-		maxIdenticalRepeats:    3,
-		maxStagnationRounds:    5,
+		lastToolCalls:         make([]string, 0, 10),
+		lastResults:           make([]string, 0, 10),
+		maxIdenticalRepeats:   3,
+		maxStagnationRounds:   5,
 		maxConsecutiveNoWrite: 15,
 	}
 
@@ -68,10 +68,10 @@ func TestStagnationDetector_IdenticalRepeats(t *testing.T) {
 
 func TestStagnationDetector_ConsecutiveIdenticalResults(t *testing.T) {
 	sd := &StagnationDetector{
-		lastToolCalls:          make([]string, 0, 10),
-		lastResults:            make([]string, 0, 10),
-		maxIdenticalRepeats:    3,
-		maxStagnationRounds:    5,
+		lastToolCalls:         make([]string, 0, 10),
+		lastResults:           make([]string, 0, 10),
+		maxIdenticalRepeats:   3,
+		maxStagnationRounds:   5,
 		maxConsecutiveNoWrite: 15,
 	}
 
@@ -91,10 +91,10 @@ func TestStagnationDetector_ConsecutiveIdenticalResults(t *testing.T) {
 
 func TestStagnationDetector_ResetNoWrite(t *testing.T) {
 	sd := &StagnationDetector{
-		lastToolCalls:          make([]string, 0, 10),
-		lastResults:            make([]string, 0, 10),
-		maxIdenticalRepeats:    3,
-		maxStagnationRounds:    5,
+		lastToolCalls:         make([]string, 0, 10),
+		lastResults:           make([]string, 0, 10),
+		maxIdenticalRepeats:   3,
+		maxStagnationRounds:   5,
 		maxConsecutiveNoWrite: 15,
 	}
 
@@ -124,10 +124,10 @@ func TestToolRetryFallback_GetFallback(t *testing.T) {
 	}
 
 	tests := []struct {
-		name                 string
-		err                  error
-		consecutiveFailures  int
-		expectedFallback     FallbackStrategy
+		name                string
+		err                 error
+		consecutiveFailures int
+		expectedFallback    FallbackStrategy
 	}{
 		{
 			name:                "tool not found",
@@ -268,7 +268,7 @@ func TestTaskDecomposer_GetNextSubtask(t *testing.T) {
 	// Next should be "implement" since "analyze" is completed
 	next := td.GetNextSubtask(subtasks)
 	if next == nil {
-		t.Error("Expected next subtask")
+		t.Fatal("Expected next subtask")
 	}
 	if next.ID != "implement" {
 		t.Errorf("Expected implement, got %s", next.ID)
@@ -278,7 +278,7 @@ func TestTaskDecomposer_GetNextSubtask(t *testing.T) {
 	subtasks[1].Status = "completed"
 	next = td.GetNextSubtask(subtasks)
 	if next == nil {
-		t.Error("Expected next subtask")
+		t.Fatal("Expected next subtask")
 	}
 	if next.ID != "verify" {
 		t.Errorf("Expected verify, got %s", next.ID)

@@ -52,24 +52,20 @@ const (
 
 	// Optimization 37: Per-tool execution timeouts
 	// Fast tools (read-only, in-memory) get short timeouts; slow tools (build, compile) get longer ones.
-	toolTimeoutFast  = 30 * time.Second  // read_file, list_dir, detect, etc.
-	toolTimeoutWrite = 60 * time.Second  // write_file, create_dir, etc.
-	toolTimeoutSlow  = 300 * time.Second // build_module, code_pipeline, etc.
-	toolTimeoutLLM   = 180 * time.Second // web_search, generate_code (may call external APIs)
+	toolTimeoutFast  = 30 * time.Second  // read-only tools (read_file, list_dir, grep_search, glob_search)
+	toolTimeoutWrite = 60 * time.Second  // write_file, edit_file, delete_file, etc.
+	toolTimeoutSlow  = 300 * time.Second // build_module, test_module
 )
 
 // toolTimeoutForName returns the appropriate timeout for a given tool.
 func toolTimeoutForName(name string) time.Duration {
 	switch name {
-	case "read_file", "list_dir", "detect", "lint_code", "validate", "think",
-		"memory_manager", "match_template", "gather_requirements":
+	case "read_file", "list_dir", "grep_search", "glob_search":
 		return toolTimeoutFast
-	case "write_file", "write_file_batch", "create_dir", "delete_file", "delete_dir", "move_file":
+	case "write_file", "write_file_batch", "edit_file", "delete_file", "delete_dir", "move_file":
 		return toolTimeoutWrite
-	case "build_module", "code_pipeline", "regression_check":
+	case "build_module", "test_module":
 		return toolTimeoutSlow
-	case "web_search", "generate_code":
-		return toolTimeoutLLM
 	default:
 		return toolTimeoutWrite // safe default
 	}
@@ -116,16 +112,16 @@ type FileCheckpoint struct {
 // ═══════════════════════════════════════════════════════════════════
 
 type RunConfig struct {
-	UserID         string
-	ProjectID      string
-	ProjectContext string
-	MaxIterations  int
-	MaxResultLen   int
-	Mode           AgentMode // "plan" or "act" — controls tool availability
-	LLMEndpoint    string    // resolved endpoint (from handler, overrides DB lookup)
-	LLMApiKey      string    // resolved API key
-	LLMModel       string    // resolved model ID
-	MaxOutputTokens int      // max output tokens (0 = use model default)
+	UserID          string
+	ProjectID       string
+	ProjectContext  string
+	MaxIterations   int
+	MaxResultLen    int
+	Mode            AgentMode // "plan" or "act" — controls tool availability
+	LLMEndpoint     string    // resolved endpoint (from handler, overrides DB lookup)
+	LLMApiKey       string    // resolved API key
+	LLMModel        string    // resolved model ID
+	MaxOutputTokens int       // max output tokens (0 = use model default)
 }
 
 type AgentRunner struct {
@@ -143,7 +139,7 @@ type AgentRunner struct {
 	toolDefCacheMu sync.RWMutex
 
 	// Optimization 16: Session-scoped tool result cache (persists across Run() calls)
-	sessionCaches   sync.Map // sessionID -> *toolResultCache
+	sessionCaches sync.Map // sessionID -> *toolResultCache
 	// Optimization 17: write_file content cache (avoids redundant read_file after write)
 	writeContentCache sync.Map // sessionID -> map[string]string (path -> content)
 	// Optimization 1: Session access time tracking for TTL-based cleanup
@@ -199,9 +195,9 @@ type TaskDecomposer struct {
 
 // Subtask represents a piece of a larger task.
 type Subtask struct {
-	ID          string
-	Description string
-	Status      string // pending, in_progress, completed, failed
+	ID           string
+	Description  string
+	Status       string   // pending, in_progress, completed, failed
 	Dependencies []string // IDs of subtasks that must complete first
 }
 
@@ -220,15 +216,15 @@ func (td *TaskDecomposer) DecomposeTask(task string, projectContext string) []Su
 			Status:      "pending",
 		})
 		subtasks = append(subtasks, Subtask{
-			ID:          "implement",
-			Description: "实现功能代码",
-			Status:      "pending",
+			ID:           "implement",
+			Description:  "实现功能代码",
+			Status:       "pending",
 			Dependencies: []string{"analyze"},
 		})
 		subtasks = append(subtasks, Subtask{
-			ID:          "verify",
-			Description: "验证编译和功能",
-			Status:      "pending",
+			ID:           "verify",
+			Description:  "验证编译和功能",
+			Status:       "pending",
 			Dependencies: []string{"implement"},
 		})
 	}
@@ -241,15 +237,15 @@ func (td *TaskDecomposer) DecomposeTask(task string, projectContext string) []Su
 			Status:      "pending",
 		})
 		subtasks = append(subtasks, Subtask{
-			ID:          "fix",
-			Description: "修复问题",
-			Status:      "pending",
+			ID:           "fix",
+			Description:  "修复问题",
+			Status:       "pending",
 			Dependencies: []string{"diagnose"},
 		})
 		subtasks = append(subtasks, Subtask{
-			ID:          "verify",
-			Description: "验证修复",
-			Status:      "pending",
+			ID:           "verify",
+			Description:  "验证修复",
+			Status:       "pending",
 			Dependencies: []string{"fix"},
 		})
 	}
@@ -262,21 +258,21 @@ func (td *TaskDecomposer) DecomposeTask(task string, projectContext string) []Su
 			Status:      "pending",
 		})
 		subtasks = append(subtasks, Subtask{
-			ID:          "plan",
-			Description: "制定重构计划",
-			Status:      "pending",
+			ID:           "plan",
+			Description:  "制定重构计划",
+			Status:       "pending",
 			Dependencies: []string{"analyze"},
 		})
 		subtasks = append(subtasks, Subtask{
-			ID:          "execute",
-			Description: "执行重构",
-			Status:      "pending",
+			ID:           "execute",
+			Description:  "执行重构",
+			Status:       "pending",
 			Dependencies: []string{"plan"},
 		})
 		subtasks = append(subtasks, Subtask{
-			ID:          "verify",
-			Description: "验证重构结果",
-			Status:      "pending",
+			ID:           "verify",
+			Description:  "验证重构结果",
+			Status:       "pending",
 			Dependencies: []string{"execute"},
 		})
 	}
@@ -333,14 +329,14 @@ type QualityVerifier struct {
 
 // QualityReport contains quality metrics for a file.
 type QualityReport struct {
-	FilePath       string
-	Lines          int
-	Complexity     int  // cyclomatic complexity estimate
-	Duplication    bool // has duplicated code patterns
-	HasTests       bool
-	HasComments    bool
-	Score          int  // 0-100 quality score
-	Issues         []string
+	FilePath    string
+	Lines       int
+	Complexity  int  // cyclomatic complexity estimate
+	Duplication bool // has duplicated code patterns
+	HasTests    bool
+	HasComments bool
+	Score       int // 0-100 quality score
+	Issues      []string
 }
 
 // VerifyFile checks the quality of a file.
@@ -453,7 +449,7 @@ func (qv *QualityVerifier) GetQualitySummary(reports []QualityReport) string {
 	}
 	avgScore := totalScore / len(reports)
 
-	summary := fmt.Sprintf("📊 代码质量报告:\n")
+	summary := "📊 代码质量报告:\n"
 	summary += fmt.Sprintf("- 检查文件: %d\n", len(reports))
 	summary += fmt.Sprintf("- 平均质量分: %d/100\n", avgScore)
 	summary += fmt.Sprintf("- 发现问题: %d\n", totalIssues)
@@ -526,12 +522,12 @@ func (fl *FileLock) Cleanup() {
 
 // CallBudget tracks tool call usage against limits.
 type CallBudget struct {
-	TotalCalls    int
-	ReadCalls     int
-	WriteCalls    int
-	MaxTotal      int
-	MaxRead       int
-	MaxWrite      int
+	TotalCalls     int
+	ReadCalls      int
+	WriteCalls     int
+	MaxTotal       int
+	MaxRead        int
+	MaxWrite       int
 	BudgetExceeded bool
 }
 
@@ -562,7 +558,7 @@ func (cb *CallBudget) CanCall(toolName string) bool {
 		if cb.ReadCalls > cb.MaxRead {
 			return false
 		}
-	case "write_file", "write_file_batch", "create_dir", "delete_file":
+	case "write_file", "write_file_batch", "delete_file":
 		cb.WriteCalls++
 		if cb.WriteCalls > cb.MaxWrite {
 			return false
@@ -577,7 +573,7 @@ func (cb *CallBudget) GetRemaining(toolName string) int {
 	switch toolName {
 	case "read_file", "list_dir":
 		return cb.MaxRead - cb.ReadCalls
-	case "write_file", "write_file_batch", "create_dir", "delete_file":
+	case "write_file", "write_file_batch", "delete_file":
 		return cb.MaxWrite - cb.WriteCalls
 	default:
 		return cb.MaxTotal - cb.TotalCalls
@@ -590,11 +586,11 @@ func (cb *CallBudget) GetRemaining(toolName string) int {
 
 // ReflectionEvent records an agent's self-reflection about its actions.
 type ReflectionEvent struct {
-	Timestamp   time.Time
-	ToolName    string
-	Action      string // "success", "failure", "retry", "skip"
-	Reason      string
-	Iteration   int
+	Timestamp time.Time
+	ToolName  string
+	Action    string // "success", "failure", "retry", "skip"
+	Reason    string
+	Iteration int
 }
 
 // ReflectionLog tracks agent reflections for debugging and improvement.
@@ -666,13 +662,13 @@ func (rl *ReflectionLog) GetSummary() string {
 // StagnationDetector tracks agent progress and detects when it's stuck in a loop.
 // It monitors: repeated tool calls, lack of write operations, and identical results.
 type StagnationDetector struct {
-	lastToolCalls        []string // last N tool call signatures (tool:hash)
-	lastResults          []string // last N tool results (truncated)
-	consecutiveNoWrite   int      // iterations without write_file call
-	maxConsecutiveNoWrite int     // threshold to force answer
-	maxIdenticalRepeats  int      // max times same tool+args can repeat
-	maxStagnationRounds  int      // rounds with no meaningful progress
-	stagnationCount      int      // current stagnation counter
+	lastToolCalls         []string // last N tool call signatures (tool:hash)
+	lastResults           []string // last N tool results (truncated)
+	consecutiveNoWrite    int      // iterations without write_file call
+	maxConsecutiveNoWrite int      // threshold to force answer
+	maxIdenticalRepeats   int      // max times same tool+args can repeat
+	maxStagnationRounds   int      // rounds with no meaningful progress
+	stagnationCount       int      // current stagnation counter
 }
 
 // toolCallSignature creates a compact signature for a tool call (tool name + args hash).
@@ -843,10 +839,10 @@ func (trf *ToolRetryFallback) SimplifyTaskInput(toolName string, input map[strin
 func (trf *ToolRetryFallback) GetFallbackModel(currentModel string) string {
 	// Simple fallback chain
 	fallbacks := map[string]string{
-		"deepseek-v3":  "deepseek-v3",
-		"deepseek-v4":  "deepseek-v3",
-		"gpt-4":        "gpt-3.5-turbo",
-		"claude-3":     "claude-3-haiku",
+		"deepseek-v3": "deepseek-v3",
+		"deepseek-v4": "deepseek-v3",
+		"gpt-4":       "gpt-3.5-turbo",
+		"claude-3":    "claude-3-haiku",
 	}
 
 	if fallback, ok := fallbacks[currentModel]; ok {
@@ -863,16 +859,16 @@ func (trf *ToolRetryFallback) GetFallbackModel(currentModel string) string {
 type ErrorCategory int
 
 const (
-	ErrorUnknown ErrorCategory = iota
-	ErrorNetwork        // Network timeout, connection refused
-	ErrorAuth           // Authentication failed, permission denied
-	ErrorRateLimit      // Rate limit exceeded (429)
-	ErrorContext        // Context too long
-	ErrorToolNotFound   // Tool/skill not found
-	ErrorPermission     // File permission denied
-	ErrorDiskSpace      // Disk full
-	ErrorSyntax         // Code syntax error
-	ErrorBuild          // Build/compile error
+	ErrorUnknown      ErrorCategory = iota
+	ErrorNetwork                    // Network timeout, connection refused
+	ErrorAuth                       // Authentication failed, permission denied
+	ErrorRateLimit                  // Rate limit exceeded (429)
+	ErrorContext                    // Context too long
+	ErrorToolNotFound               // Tool/skill not found
+	ErrorPermission                 // File permission denied
+	ErrorDiskSpace                  // Disk full
+	ErrorSyntax                     // Code syntax error
+	ErrorBuild                      // Build/compile error
 )
 
 // ClassifyError determines the error category from an error message.
@@ -940,13 +936,13 @@ func ClassifyError(errMsg string) ErrorCategory {
 type RecoveryStrategy int
 
 const (
-	RecoveryRetrySame RecoveryStrategy = iota  // Retry with same parameters
-	RecoverySimplifyInput                       // Simplify task input
-	RecoverySwitchModel                         // Switch to different model
-	RecoveryForceAnswer                         // Force agent to provide answer
-	RecoverySkipTool                             // Skip this tool and continue
-	RecoveryCompactContext                       // Compact context and retry
-	RecoveryAbort                                // Abort immediately
+	RecoveryRetrySame      RecoveryStrategy = iota // Retry with same parameters
+	RecoverySimplifyInput                          // Simplify task input
+	RecoverySwitchModel                            // Switch to different model
+	RecoveryForceAnswer                            // Force agent to provide answer
+	RecoverySkipTool                               // Skip this tool and continue
+	RecoveryCompactContext                         // Compact context and retry
+	RecoveryAbort                                  // Abort immediately
 )
 
 // GetRecoveryStrategy determines the best recovery strategy for an error.
@@ -1119,16 +1115,6 @@ func (r *AgentRunner) getCachedWriteContent(sessionID, path string) string {
 		return cc.content
 	}
 	return ""
-}
-
-// cleanSessionCaches removes session-scoped caches (called on session end/disconnect).
-func (r *AgentRunner) cleanSessionCaches(sessionID string) {
-	if sessionID == "" {
-		return
-	}
-	r.sessionCaches.Delete(sessionID)
-	r.writeContentCache.Delete(sessionID)
-	r.sessionAccessTimes.Delete(sessionID)
 }
 
 // startSessionCacheCleanup runs a background goroutine that periodically evicts
@@ -1326,18 +1312,18 @@ You are running WITHOUT a project context. This means:
 	toolCache := r.getSessionCache(sessionID)
 
 	// Optimization 24: Self-reflection tracking — detect repeated tool failures
-	toolConsecutiveErrors := make(map[string]int)  // skill name -> consecutive error count
-	toolLastResults := make(map[string]string)     // skill name -> last result (for pattern detection)
+	toolConsecutiveErrors := make(map[string]int)    // skill name -> consecutive error count
+	toolLastResults := make(map[string]string)       // skill name -> last result (for pattern detection)
 	toolConsecutiveIdentical := make(map[string]int) // skill name -> consecutive identical calls
 
 	// P0-1: Smart loop termination — detect stagnation
-	 stagnationDetector := &StagnationDetector{
-		lastToolCalls:     make([]string, 0, 10),
-		lastResults:       make([]string, 0, 10),
-		consecutiveNoWrite: 0,
+	stagnationDetector := &StagnationDetector{
+		lastToolCalls:         make([]string, 0, 10),
+		lastResults:           make([]string, 0, 10),
+		consecutiveNoWrite:    0,
 		maxConsecutiveNoWrite: 15, // force answer after 15 iterations without write_file
-		maxIdenticalRepeats: 3,   // stop if same tool+args repeated 3 times
-		maxStagnationRounds: 5,   // stop if no progress for 5 rounds
+		maxIdenticalRepeats:   3,  // stop if same tool+args repeated 3 times
+		maxStagnationRounds:   5,  // stop if no progress for 5 rounds
 	}
 
 	// P0-2: Tool retry fallback
@@ -1574,13 +1560,13 @@ You are running WITHOUT a project context. This means:
 			// In Plan mode: check if answer includes a plan that needs approval
 			if cfg.Mode == ModePlan {
 				// Plan mode always returns answer directly
-			w.WriteSSE(map[string]interface{}{
-				"type":    "step",
-				"step":    "answer",
-				"content": answer,
-				"mode":    "plan",
-			})
-			answerSent = true
+				w.WriteSSE(map[string]interface{}{
+					"type":    "step",
+					"step":    "answer",
+					"content": answer,
+					"mode":    "plan",
+				})
+				answerSent = true
 			} else {
 				// Check if answer claims modification without calling write_file
 				if claimsFileModification(answer) && !writeFileCalled && iter < cfg.MaxIterations-1 {
@@ -1594,13 +1580,13 @@ You are running WITHOUT a project context. This means:
 					})
 					continue
 				}
-			w.WriteSSE(map[string]interface{}{
-				"type":    "step",
-				"step":    "answer",
-				"content": answer,
-			})
-			answerSent = true
-		}
+				w.WriteSSE(map[string]interface{}{
+					"type":    "step",
+					"step":    "answer",
+					"content": answer,
+				})
+				answerSent = true
+			}
 
 			if sessionID != "" {
 				r.convStore.Append(sessionID, service.Message{Role: "assistant", Content: answer})
@@ -1641,10 +1627,10 @@ You are running WITHOUT a project context. This means:
 		// Optimization 1: Parallel tool execution for read-only tools
 		// Separate tools into parallel-safe (read-only) and sequential (write/side-effect)
 		type toolTask struct {
-			tc        LLMToolCall
-			skillName string
+			tc         LLMToolCall
+			skillName  string
 			skillInput map[string]interface{}
-			parallel  bool
+			parallel   bool
 		}
 		var tasks []toolTask
 		for _, tc := range llmResp.ToolCalls {
@@ -1839,34 +1825,16 @@ You are running WITHOUT a project context. This means:
 			})
 		}
 
-		// Group parallel tasks
+		// Group tasks: read-only tools run in parallel; write/edit tools run
+		// sequentially to avoid same-file conflicts. Non-write tools are also
+		// promoted to the parallel set so each tool executes exactly once.
 		var parallelTasks []toolTask
 		var sequentialTasks []toolTask
 		for _, t := range tasks {
-			if t.parallel {
+			if t.parallel || (t.skillName != "write_file" && t.skillName != "edit_file") {
 				parallelTasks = append(parallelTasks, t)
 			} else {
 				sequentialTasks = append(sequentialTasks, t)
-			}
-		}
-
-		// Optimization: Group write tasks by file path for parallel execution
-		// Different files can be written in parallel
-		fileGroups := make(map[string][]toolTask)
-		var writeOrder []string
-		for _, t := range sequentialTasks {
-			if t.skillName == "write_file" || t.skillName == "edit_file" {
-				path := ""
-				if p, ok := t.skillInput["path"].(string); ok {
-					path = p
-				}
-				if _, exists := fileGroups[path]; !exists {
-					writeOrder = append(writeOrder, path)
-				}
-				fileGroups[path] = append(fileGroups[path], t)
-			} else {
-				// Non-write tools go directly to sequential
-				parallelTasks = append(parallelTasks, t)
 			}
 		}
 
@@ -2132,7 +2100,6 @@ You are running WITHOUT a project context. This means:
 				case RecoveryCompactContext:
 					result = fmt.Sprintf("Error: %v. Context will be compacted on next iteration.", err)
 				case RecoveryAbort:
-					result = fmt.Sprintf("Fatal error: %v. Aborting execution.", err)
 					w.WriteSSE(map[string]interface{}{
 						"type":  "error",
 						"error": fmt.Sprintf("多次执行失败，已终止: %v", err),

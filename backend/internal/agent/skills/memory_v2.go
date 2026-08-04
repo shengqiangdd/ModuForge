@@ -31,18 +31,18 @@ func (s *MemoryV2Skill) Description() string {
 }
 
 type MemoryEntry struct {
-	ID         string   `json:"id"`
-	UserID     string   `json:"user_id"`
-	SessionID  string   `json:"session_id"`
-	Content    string   `json:"content"`
-	Category   string   `json:"category"` // episodic, semantic, procedural
-	Tier       string   `json:"tier"`     // short_term, long_term, archive
-	Importance int      `json:"importance"`
-	Tags       []string `json:"tags"`
-	AccessCount int     `json:"access_count"`
-	LastAccessed string `json:"last_accessed"`
-	CreatedAt  string   `json:"created_at"`
-	ExpiresAt  string   `json:"expires_at,omitempty"`
+	ID           string   `json:"id"`
+	UserID       string   `json:"user_id"`
+	SessionID    string   `json:"session_id"`
+	Content      string   `json:"content"`
+	Category     string   `json:"category"` // episodic, semantic, procedural
+	Tier         string   `json:"tier"`     // short_term, long_term, archive
+	Importance   int      `json:"importance"`
+	Tags         []string `json:"tags"`
+	AccessCount  int      `json:"access_count"`
+	LastAccessed string   `json:"last_accessed"`
+	CreatedAt    string   `json:"created_at"`
+	ExpiresAt    string   `json:"expires_at,omitempty"`
 }
 
 func (s *MemoryV2Skill) Execute(ctx context.Context, input map[string]interface{}) (string, error) {
@@ -206,13 +206,13 @@ func (s *MemoryV2Skill) storeMemory(userID, sessionID string, input map[string]i
 	}
 
 	result := map[string]interface{}{
-		"action":    "store",
-		"success":   true,
-		"entry_id":  entryID,
-		"category":  category,
-		"tier":      tier,
+		"action":     "store",
+		"success":    true,
+		"entry_id":   entryID,
+		"category":   category,
+		"tier":       tier,
 		"importance": importance,
-		"message":   fmt.Sprintf("Memory stored: %s (%s)", category, tier),
+		"message":    fmt.Sprintf("Memory stored: %s (%s)", category, tier),
 	}
 
 	b, _ := json.MarshalIndent(result, "", "  ")
@@ -419,8 +419,8 @@ func (s *MemoryV2Skill) consolidateMemory(userID string, input map[string]interf
 	s.db.QueryRow("SELECT COUNT(*) FROM memory_v2 WHERE user_id = ? AND tier = 'archive'", userID).Scan(&archive)
 
 	result := map[string]interface{}{
-		"action":    "consolidate",
-		"success":   true,
+		"action":     "consolidate",
+		"success":    true,
 		"short_term": shortTerm,
 		"long_term":  longTerm,
 		"archive":    archive,
@@ -481,13 +481,13 @@ func (s *MemoryV2Skill) getStats(userID string) (string, error) {
 	}
 
 	result := map[string]interface{}{
-		"action":       "stats",
-		"success":      true,
-		"total":        total,
-		"short_term":   shortTerm,
-		"long_term":    longTerm,
-		"archive":      archive,
-		"total_size":   totalSize,
+		"action":     "stats",
+		"success":    true,
+		"total":      total,
+		"short_term": shortTerm,
+		"long_term":  longTerm,
+		"archive":    archive,
+		"total_size": totalSize,
 		"by_category": map[string]int{
 			"episodic":   episodic,
 			"semantic":   semantic,
@@ -523,8 +523,8 @@ func (s *MemoryV2Skill) forgetMemory(input map[string]interface{}) (string, erro
 	}
 
 	result := map[string]interface{}{
-		"action":  "forget",
-		"success": true,
+		"action":   "forget",
+		"success":  true,
 		"entry_id": entryID,
 		"message":  "Memory forgotten",
 	}
@@ -550,8 +550,8 @@ func (s *MemoryV2Skill) promoteMemory(input map[string]interface{}) (string, err
 	}
 
 	result := map[string]interface{}{
-		"action":  "promote",
-		"success": true,
+		"action":   "promote",
+		"success":  true,
 		"entry_id": entryID,
 		"message":  "Memory promoted to long_term",
 	}
@@ -577,8 +577,8 @@ func (s *MemoryV2Skill) demoteMemory(input map[string]interface{}) (string, erro
 	}
 
 	result := map[string]interface{}{
-		"action":  "demote",
-		"success": true,
+		"action":   "demote",
+		"success":  true,
 		"entry_id": entryID,
 		"message":  "Memory demoted to short_term",
 	}

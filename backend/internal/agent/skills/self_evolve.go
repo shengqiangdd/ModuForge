@@ -27,10 +27,10 @@ func (s *SelfEvolvingSkill) Description() string {
 }
 
 type EvolutionResult struct {
-	Action   string      `json:"action"`
-	Success  bool        `json:"success"`
-	Message  string      `json:"message"`
-	Data     interface{} `json:"data,omitempty"`
+	Action  string      `json:"action"`
+	Success bool        `json:"success"`
+	Message string      `json:"message"`
+	Data    interface{} `json:"data,omitempty"`
 }
 
 func (s *SelfEvolvingSkill) Execute(ctx context.Context, input map[string]interface{}) (string, error) {
@@ -458,10 +458,10 @@ func (s *SelfEvolvingSkill) analyzeFailure(executionID int) (string, error) {
 
 	if success == 1 {
 		result := map[string]interface{}{
-			"action":        "analyze_failure",
-			"success":       true,
-			"message":       "该执行记录为成功状态，无需分析失败原因",
-			"execution_id":  executionID,
+			"action":         "analyze_failure",
+			"success":        true,
+			"message":        "该执行记录为成功状态，无需分析失败原因",
+			"execution_id":   executionID,
 			"was_successful": true,
 		}
 		b, _ := json.MarshalIndent(result, "", "  ")

@@ -29,13 +29,13 @@ func (s *SkillRegistrySkill) Description() string {
 }
 
 type SkillConfig struct {
-	Name        string                 `json:"name"`
-	Enabled     bool                   `json:"enabled"`
-	Version     string                 `json:"version"`
-	Description string                 `json:"description"`
-	Config      map[string]interface{} `json:"config,omitempty"`
-	Dependencies []string              `json:"dependencies,omitempty"`
-	LastUpdated string                 `json:"last_updated"`
+	Name         string                 `json:"name"`
+	Enabled      bool                   `json:"enabled"`
+	Version      string                 `json:"version"`
+	Description  string                 `json:"description"`
+	Config       map[string]interface{} `json:"config,omitempty"`
+	Dependencies []string               `json:"dependencies,omitempty"`
+	LastUpdated  string                 `json:"last_updated"`
 }
 
 func (s *SkillRegistrySkill) Execute(ctx context.Context, input map[string]interface{}) (string, error) {
@@ -113,7 +113,7 @@ func (s *SkillRegistrySkill) listSkills(input map[string]interface{}) (string, e
 	// Add built-in skills that aren't in the config table
 	builtinSkills := []string{
 		"read_file", "write_file", "edit_file", "grep_search", "glob_search",
-		"bash", "build_module", "web_search", "memory_manager", "agent_preset",
+		"bash", "build_module", "agent_preset",
 		"todo_manager", "task_delegator", "context_manager", "skill_registry",
 	}
 
@@ -280,8 +280,6 @@ func (s *SkillRegistrySkill) getSkillInfo(skillName string) (string, error) {
 			"glob_search":     "Find files by pattern",
 			"bash":            "Execute shell commands",
 			"build_module":    "Build and package module",
-			"web_search":      "Search the web",
-			"memory_manager":  "Manage memory entries",
 			"agent_preset":    "Manage agent presets",
 			"todo_manager":    "Manage todo lists",
 			"task_delegator":  "Delegate tasks to sub-agents",
@@ -374,15 +372,15 @@ func (s *SkillRegistrySkill) getStats() (string, error) {
 	s.db.QueryRow("SELECT COUNT(*) FROM skill_configs WHERE enabled = 0").Scan(&disabled)
 
 	// Count builtin skills
-	builtinCount := 14 // read_file, write_file, edit_file, grep_search, glob_search, bash, build_module, web_search, memory_manager, agent_preset, todo_manager, task_delegator, context_manager, skill_registry
+	builtinCount := 12 // read_file, write_file, edit_file, grep_search, glob_search, bash, build_module, agent_preset, todo_manager, task_delegator, context_manager, skill_registry
 
 	result := map[string]interface{}{
-		"action":         "stats",
-		"success":        true,
-		"total_config":   total,
-		"enabled":        enabled,
-		"disabled":       disabled,
-		"builtin_count":  builtinCount,
+		"action":          "stats",
+		"success":         true,
+		"total_config":    total,
+		"enabled":         enabled,
+		"disabled":        disabled,
+		"builtin_count":   builtinCount,
 		"total_available": total + builtinCount,
 	}
 

@@ -15,10 +15,6 @@ type EditFileSkill struct {
 	db          *sql.DB
 }
 
-func NewEditFileSkill(projectPath string) *EditFileSkill {
-	return &EditFileSkill{projectPath: projectPath}
-}
-
 func NewEditFileSkillWithDB(projectPath string, db *sql.DB) *EditFileSkill {
 	return &EditFileSkill{projectPath: projectPath, db: db}
 }
@@ -55,7 +51,7 @@ func (s *EditFileSkill) Execute(ctx context.Context, input map[string]interface{
 
 	projectPath := s.resolvePath(projectID)
 	fullPath := filepath.Join(projectPath, path)
-	if !filepath.HasPrefix(fullPath, filepath.Clean(projectPath)) {
+	if !isPathWithin(projectPath, fullPath) {
 		return "", fmt.Errorf("path traversal not allowed")
 	}
 
@@ -128,9 +124,6 @@ func (s *EditFileSkill) syncToDB(projectID, path, content string) {
 }
 
 func (s *EditFileSkill) resolvePath(projectID string) string {
-	if s.projectPath == "" || projectID == "" {
-		return s.projectPath
-	}
 	return ResolveProjectPath(s.db, s.projectPath, projectID)
 }
 

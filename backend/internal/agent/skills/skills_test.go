@@ -1,6 +1,8 @@
 package skills
 
 import (
+	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -13,9 +15,24 @@ func TestResolveProjectPath_EmptyProjectID(t *testing.T) {
 
 func TestResolveProjectPath_NilDB(t *testing.T) {
 	result := ResolveProjectPath(nil, "/projects", "abc123")
-	expected := "/projects/abc123"
+	expected := filepath.Join("/projects", "abc123")
 	if result != expected {
 		t.Errorf("expected %q, got %q", expected, result)
+	}
+}
+
+func TestResolveProjectPath_NilDB_CrossPlatform(t *testing.T) {
+	result := ResolveProjectPath(nil, "/projects", "abc123")
+	if runtime.GOOS == "windows" {
+		expected := "\\projects\\abc123"
+		if result != expected {
+			t.Errorf("expected %q, got %q", expected, result)
+		}
+	} else {
+		expected := "/projects/abc123"
+		if result != expected {
+			t.Errorf("expected %q, got %q", expected, result)
+		}
 	}
 }
 

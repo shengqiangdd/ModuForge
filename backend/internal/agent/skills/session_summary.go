@@ -340,10 +340,10 @@ func (s *SessionSummarySkill) getStats() (string, error) {
 	s.db.QueryRow("SELECT COUNT(DISTINCT session_id) FROM session_summaries").Scan(&uniqueSessions)
 
 	result := map[string]interface{}{
-		"action":          "stats",
-		"success":         true,
-		"total_summaries": totalSummaries,
-		"unique_sessions": uniqueSessions,
+		"action":            "stats",
+		"success":           true,
+		"total_summaries":   totalSummaries,
+		"unique_sessions":   uniqueSessions,
 		"total_token_saved": totalTokenSaved,
 	}
 

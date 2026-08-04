@@ -42,7 +42,7 @@ func (r *AgentRunner) smartCompressHistory(ctx context.Context, history []servic
 
 	// Phase 1: Incremental compaction — summarize oldest messages progressively
 	compacted := r.incrementalCompactHistory(ctx, history, w, cfg, total)
-	if compacted != nil && len(compacted) > 0 {
+	if len(compacted) > 0 {
 		// Recalculate total after incremental compaction
 		newTotal := 0
 		for _, m := range compacted {
@@ -61,7 +61,7 @@ func (r *AgentRunner) smartCompressHistory(ctx context.Context, history []servic
 
 	// Phase 2: Full LLM compaction (only if incremental wasn't enough)
 	compacted2 := r.compactHistoryViaLLM(ctx, history, w, cfg)
-	if compacted2 != nil && len(compacted2) > 0 {
+	if len(compacted2) > 0 {
 		log.Printf("[Agent] LLM compaction: %d msgs → %d msgs (was %d chars)", len(history), len(compacted2), total)
 		// Fix: ensure tool_calls/tool_call_id consistency after compression
 		compacted2 = fixToolCallsInHistory(compacted2)
@@ -83,11 +83,11 @@ func (r *AgentRunner) smartCompressHistory(ctx context.Context, history []servic
 
 // incrementalCompactHistory progressively summarizes older messages as the
 // conversation grows. Unlike the full LLM compaction, this:
-// 1. Only summarizes the oldest N messages (not the entire history)
-// 2. Replaces them with a compact summary system message
-// 3. Preserves the most recent messages in full
-// 4. Optimization 23: Prioritizes preserving write_file/build_module results
-//    (they contain critical file modification records) over read_file results.
+//  1. Only summarizes the oldest N messages (not the entire history)
+//  2. Replaces them with a compact summary system message
+//  3. Preserves the most recent messages in full
+//  4. Optimization 23: Prioritizes preserving write_file/build_module results
+//     (they contain critical file modification records) over read_file results.
 //
 // This is cheaper and faster than full LLM compaction, and triggers earlier
 // (at 60% of maxHistoryChars) to avoid sudden expensive calls.
@@ -125,7 +125,7 @@ func (r *AgentRunner) incrementalCompactHistory(ctx context.Context, history []s
 	summary.WriteString(fmt.Sprintf("以下是 %d 条早期对话的摘要（共 %d 字符）：\n\n", len(toCompact), currentTotal))
 
 	// Track key facts for the summary
-	var fileChanges []string // files that were written/modified
+	var fileChanges []string  // files that were written/modified
 	var buildResults []string // build outcomes
 
 	for _, msg := range toCompact {
@@ -758,41 +758,13 @@ Example: "I updated ipc.rs to fix libc::open type mismatch. Build passes."
 - bash(command) → run shell commands (build, test, git)
 - build_module(project_id) → compile + package ZIP
 
-## TOOL BEST PRACTICES
-### write_file
-- ALWAYS read_file first to understand current content
-- Write COMPLETE file content, not snippets
-- For large files (>100 lines), consider edit_file for changes <30%
-- After write, verify with read_file to confirm
-
-### edit_file
-- Use for changes <30% of file content
-- old_text must match EXACTLY (including whitespace)
-- Test with small changes first
-- If edit fails, fall back to write_file
-
-### grep_search
-- Use before read_file to locate relevant code
-- Supports regex patterns
-- Use is_regex=true for complex patterns
-- Check include_pattern to filter file types
-
-### bash
-- Use for build, test, git operations
-- Check exit code for success/failure
-- Use cd && command for directory-specific ops
-- Timeout is 30s for read-only, 60s for write operations
-
-### build_module
-- ALWAYS call after write_file
-- Reads error messages carefully
-- Fix issues before retrying (max 3 retries)
-
-## FILE RULES
+## TOOL RULES
 - edit_file for changes <30% of file (MOST common)
 - write_file for new files or complete rewrites ONLY
+- ALWAYS read_file BEFORE edit_file/write_file
 - grep_search BEFORE read_file (locate code first)
 - After writing, ALWAYS call build_module
+- build_module fails? Read error → fix → rebuild (max 3 retries)
 
 ## WORKFLOW
 1. grep_search → find relevant code

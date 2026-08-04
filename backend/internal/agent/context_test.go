@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -70,13 +71,13 @@ func TestPrefilterConversation_DeduplicatesToolResults(t *testing.T) {
 	sameContent := "file_content_xyz_123"
 	conversation := []map[string]interface{}{
 		{"role": "user", "content": "read file"},
-		{"role": "tool", "content": sameContent},    // 1st: count=1, kept
+		{"role": "tool", "content": sameContent}, // 1st: count=1, kept
 		{"role": "assistant", "content": "ok"},
-		{"role": "tool", "content": sameContent},    // 2nd: count=2, kept
+		{"role": "tool", "content": sameContent}, // 2nd: count=2, kept
 		{"role": "assistant", "content": "ok"},
-		{"role": "tool", "content": sameContent},    // 3rd: count=2, skipped (>=2)
+		{"role": "tool", "content": sameContent}, // 3rd: count=2, skipped (>=2)
 		{"role": "assistant", "content": "ok"},
-		{"role": "tool", "content": sameContent},    // 4th: count=2, skipped (>=2)
+		{"role": "tool", "content": sameContent}, // 4th: count=2, skipped (>=2)
 	}
 
 	result := prefilterConversation(conversation)
@@ -98,7 +99,7 @@ func TestIncrementalCompactHistory_TooFewMessages(t *testing.T) {
 		{Role: "user", Content: "hello"},
 		{Role: "assistant", Content: "hi"},
 	}
-	result := r.incrementalCompactHistory(nil, history, nil, RunConfig{}, 1000)
+	result := r.incrementalCompactHistory(context.TODO(), history, nil, RunConfig{}, 1000)
 	if result != nil {
 		t.Error("expected nil for too few messages")
 	}
@@ -113,7 +114,7 @@ func TestIncrementalCompactHistory_AlreadyCompacted(t *testing.T) {
 		{Role: "user", Content: "more"},
 		{Role: "assistant", Content: "done"},
 	}
-	result := r.incrementalCompactHistory(nil, history, nil, RunConfig{}, 50000)
+	result := r.incrementalCompactHistory(context.TODO(), history, nil, RunConfig{}, 50000)
 	if result != nil {
 		t.Error("expected nil when already compacted")
 	}
@@ -135,7 +136,7 @@ func TestIncrementalCompactHistory_CompactsOldMessages(t *testing.T) {
 	}
 
 	// Force compaction by passing large currentTotal
-	result := r.incrementalCompactHistory(nil, history, nil, RunConfig{}, 50000)
+	result := r.incrementalCompactHistory(context.TODO(), history, nil, RunConfig{}, 50000)
 
 	if result == nil {
 		t.Fatal("expected compaction to happen")
@@ -175,7 +176,7 @@ func TestIncrementalCompactHistory_SmallTotalNotCompacted(t *testing.T) {
 	}
 
 	// Small total, should not compact
-	result := r.incrementalCompactHistory(nil, history, nil, RunConfig{}, 100)
+	result := r.incrementalCompactHistory(context.TODO(), history, nil, RunConfig{}, 100)
 	if result != nil {
 		t.Error("expected nil when total is small")
 	}

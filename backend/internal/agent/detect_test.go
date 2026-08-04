@@ -23,21 +23,12 @@ func TestDetectLoop_ReadFileLoop(t *testing.T) {
 	}
 }
 
-func TestDetectLoop_CreateDirLoop(t *testing.T) {
-	history := map[string]int{"create_dir": 3}
-	unique := map[string]bool{"create_dir:dir1": true, "create_dir:dir2": true, "create_dir:dir3": true}
-	result := detectLoop(history, unique, 3)
-	if result == "" {
-		t.Error("detectLoop should detect create_dir loop")
-	}
-}
-
 func TestDetectLoop_TotalBudget(t *testing.T) {
-	history := map[string]int{"read_file": 5, "write_file": 5, "think": 5}
+	history := map[string]int{"read_file": 5, "write_file": 5, "bash": 5}
 	unique := map[string]bool{
 		"read_file:f1": true, "read_file:f2": true, "read_file:f3": true,
 		"write_file:f1": true, "write_file:f2": true, "write_file:f3": true,
-		"think:t1": true, "think:t2": true, "think:t3": true,
+		"bash:t1": true, "bash:t2": true, "bash:t3": true,
 	}
 	result := detectLoop(history, unique, 15)
 	if result == "" {
@@ -133,11 +124,11 @@ func TestIsGarbageOutput_Unicode(t *testing.T) {
 }
 
 func TestDetectLoop_GeneralSkillLoop(t *testing.T) {
-	// lint_code called 6 times on different files — should trigger
-	history := map[string]int{"lint_code": 6}
+	// build_module called 6 times on different files — should trigger
+	history := map[string]int{"build_module": 6}
 	unique := map[string]bool{
-		"lint_code:f1": true, "lint_code:f2": true, "lint_code:f3": true,
-		"lint_code:f4": true, "lint_code:f5": true, "lint_code:f6": true,
+		"build_module:f1": true, "build_module:f2": true, "build_module:f3": true,
+		"build_module:f4": true, "build_module:f5": true, "build_module:f6": true,
 	}
 	result := detectLoop(history, unique, 6)
 	if result == "" {

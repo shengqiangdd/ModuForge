@@ -47,9 +47,9 @@ func TestCleanAnswer_CollapsesBlankLines(t *testing.T) {
 
 func TestCleanAnswer_ToolNameOnly(t *testing.T) {
 	// Standalone tool name lines should be removed
-	input := "validate\nread_file\nHere is my answer."
+	input := "bash\nread_file\nHere is my answer."
 	result := cleanAnswer(input)
-	if contains(result, "validate") || contains(result, "read_file") {
+	if contains(result, "bash") || contains(result, "read_file") {
 		t.Errorf("cleanAnswer should remove standalone tool names, got:\n%s", result)
 	}
 	if !contains(result, "Here is my answer") {
@@ -59,11 +59,14 @@ func TestCleanAnswer_ToolNameOnly(t *testing.T) {
 
 func TestToolNameSet_Completeness(t *testing.T) {
 	expectedTools := []string{
-		"read_file", "write_file", "validate", "lint_code", "review_code",
-		"detect", "check_compat", "profile_code", "gen_docs", "web_search",
-		"think", "gather_requirements", "match_template", "test_module",
-		"regression_check", "create_dir", "generate_code", "code_pipeline",
-		"build_module", "memory_manager", "self_evolve", "pattern_learn", "agent_preset",
+		"read_file", "write_file", "write_file_batch",
+		"edit_file", "grep_search", "glob_search",
+		"list_dir", "delete_file", "delete_dir",
+		"move_file", "bash", "build_module",
+		"test_module", "agent_preset", "self_evolve",
+		"pattern_learn", "memory_v2", "skill_manager",
+		"self_reflection", "session_summary", "skill_registry",
+		"context_manager", "task_delegator", "todo_manager",
 	}
 	for _, tool := range expectedTools {
 		if !toolNameSet[tool] {

@@ -14,17 +14,17 @@ import (
 type SessionState struct {
 	mu sync.RWMutex
 
-	SessionID     string                 `json:"session_id"`
-	ProjectID     string                 `json:"project_id"`
-	UserID        string                 `json:"user_id"`
-	Mode          string                 `json:"mode"`
-	ToolsEnabled  map[string]bool        `json:"tools_enabled"`
-	Preferences   map[string]interface{} `json:"preferences"`
-	Checkpoints   []FileCheckpoint       `json:"checkpoints"`
-	ToolHistory   map[string]int         `json:"tool_history"`
-	LastError     string                 `json:"last_error,omitempty"`
-	CreatedAt     time.Time              `json:"created_at"`
-	UpdatedAt     time.Time              `json:"updated_at"`
+	SessionID    string                 `json:"session_id"`
+	ProjectID    string                 `json:"project_id"`
+	UserID       string                 `json:"user_id"`
+	Mode         string                 `json:"mode"`
+	ToolsEnabled map[string]bool        `json:"tools_enabled"`
+	Preferences  map[string]interface{} `json:"preferences"`
+	Checkpoints  []FileCheckpoint       `json:"checkpoints"`
+	ToolHistory  map[string]int         `json:"tool_history"`
+	LastError    string                 `json:"last_error,omitempty"`
+	CreatedAt    time.Time              `json:"created_at"`
+	UpdatedAt    time.Time              `json:"updated_at"`
 }
 
 // SessionPersistence manages session state persistence to disk.

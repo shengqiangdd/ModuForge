@@ -17,10 +17,6 @@ type GrepSearchSkill struct {
 	db          *sql.DB
 }
 
-func NewGrepSearchSkill(projectPath string) *GrepSearchSkill {
-	return &GrepSearchSkill{projectPath: projectPath}
-}
-
 func NewGrepSearchSkillWithDB(projectPath string, db *sql.DB) *GrepSearchSkill {
 	return &GrepSearchSkill{projectPath: projectPath, db: db}
 }

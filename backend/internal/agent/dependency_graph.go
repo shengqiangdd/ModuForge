@@ -9,15 +9,15 @@ import (
 // DependencyGraph tracks tool call dependencies and determines execution order.
 // It identifies which tool calls can run in parallel vs sequentially.
 type DependencyGraph struct {
-	mu     sync.RWMutex
-	nodes  map[string]*DependencyNode // toolCallID -> node
-	edges  map[string][]string       // toolCallID -> dependent toolCallIDs
+	mu    sync.RWMutex
+	nodes map[string]*DependencyNode // toolCallID -> node
+	edges map[string][]string        // toolCallID -> dependent toolCallIDs
 }
 
 type DependencyNode struct {
-	ToolName  string
-	FilePath  string // for read/write tools
-	IsWrite   bool
+	ToolName   string
+	FilePath   string // for read/write tools
+	IsWrite    bool
 	ToolCallID string
 }
 
@@ -34,9 +34,9 @@ func (dg *DependencyGraph) AddToolCall(tcID, toolName, filePath string, isWrite 
 	dg.mu.Lock()
 	defer dg.mu.Unlock()
 	dg.nodes[tcID] = &DependencyNode{
-		ToolName:  toolName,
-		FilePath:  filePath,
-		IsWrite:   isWrite,
+		ToolName:   toolName,
+		FilePath:   filePath,
+		IsWrite:    isWrite,
 		ToolCallID: tcID,
 	}
 }
@@ -60,7 +60,7 @@ func (dg *DependencyGraph) AnalyzeAndLink() {
 
 	// Track file access by type
 	type fileAccess struct {
-		id     string
+		id      string
 		isWrite bool
 	}
 	// Map: filePath -> list of accesses (in order)

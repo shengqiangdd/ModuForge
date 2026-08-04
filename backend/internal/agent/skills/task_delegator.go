@@ -37,7 +37,7 @@ type SubTask struct {
 	Result      string   `json:"result,omitempty"`
 	Error       string   `json:"error,omitempty"`
 	Tools       []string `json:"tools,omitempty"` // tool whitelist for sub-agent
-	Timeout     int      `json:"timeout"` // seconds
+	Timeout     int      `json:"timeout"`         // seconds
 	CreatedAt   string   `json:"created_at"`
 	StartedAt   string   `json:"started_at,omitempty"`
 	CompletedAt string   `json:"completed_at,omitempty"`

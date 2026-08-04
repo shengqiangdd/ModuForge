@@ -16,15 +16,10 @@ const toolResultCacheMax = 30
 const cacheMaxEntrySize = 4096 // 4 KB
 
 type toolResultCache struct {
-	entries   map[string]string // key -> result (O(1) lookup)
-	order     []string          // insertion order for FIFO eviction
-	maxSize   int
-	mu        sync.RWMutex     // protects concurrent access from parallel tool goroutines
-}
-
-type toolCacheEntry struct {
-	key    string // skillName + sorted params
-	result string
+	entries map[string]string // key -> result (O(1) lookup)
+	order   []string          // insertion order for FIFO eviction
+	maxSize int
+	mu      sync.RWMutex // protects concurrent access from parallel tool goroutines
 }
 
 func newToolResultCache() *toolResultCache {
@@ -72,7 +67,9 @@ func (c *toolResultCache) cacheKey(skillName string, input map[string]interface{
 // isCacheable returns true if this tool's result can be safely cached.
 func (c *toolResultCache) isCacheable(skillName string) bool {
 	// Cache read-only tools + build_module (expensive operation)
-	return skillName == "read_file" || skillName == "list_dir" || skillName == "detect" || skillName == "build_module"
+	return skillName == "read_file" || skillName == "list_dir" ||
+		skillName == "grep_search" || skillName == "glob_search" ||
+		skillName == "build_module"
 }
 
 // Get returns cached result if available, empty string otherwise.

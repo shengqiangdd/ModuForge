@@ -10,18 +10,18 @@ import (
 type PermissionLevel int
 
 const (
-	PermRead      PermissionLevel = iota // Read-only operations
-	PermWrite                            // Write operations (non-destructive)
-	PermDelete                           // Delete operations (destructive)
-	PermSystem                           // System-level operations (bash, docker)
+	PermRead   PermissionLevel = iota // Read-only operations
+	PermWrite                         // Write operations (non-destructive)
+	PermDelete                        // Delete operations (destructive)
+	PermSystem                        // System-level operations (bash, docker)
 )
 
 // ToolPermission defines what a tool can do.
 type ToolPermission struct {
-	ToolName       string
-	Level          PermissionLevel
+	ToolName        string
+	Level           PermissionLevel
 	RequiresConfirm bool   // Whether user confirmation is needed
-	Description    string // Human-readable description for confirmation
+	Description     string // Human-readable description for confirmation
 }
 
 // PermissionChecker manages tool call permissions.
@@ -31,8 +31,8 @@ type PermissionChecker struct {
 	// Per-project overrides
 	projectPerms map[string]map[string]bool // projectID -> toolName -> allowed
 	// Audit trail
-	deniedCalls  []DenialRecord
-	maxDenials   int
+	deniedCalls []DenialRecord
+	maxDenials  int
 }
 
 type DenialRecord struct {
@@ -45,7 +45,7 @@ type DenialRecord struct {
 // NewPermissionChecker creates a permission checker with defaults.
 func NewPermissionChecker() *PermissionChecker {
 	pc := &PermissionChecker{
-		permissions: make(map[string]ToolPermission),
+		permissions:  make(map[string]ToolPermission),
 		projectPerms: make(map[string]map[string]bool),
 		deniedCalls:  make([]DenialRecord, 0),
 		maxDenials:   1000,

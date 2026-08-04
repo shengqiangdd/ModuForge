@@ -19,18 +19,18 @@ type AuditLog struct {
 }
 
 type AuditEntry struct {
-	Timestamp   time.Time              `json:"timestamp"`
-	SessionID   string                 `json:"session_id"`
-	ToolName    string                 `json:"tool_name"`
-	ToolCallID  string                 `json:"tool_call_id"`
-	Parameters  map[string]interface{} `json:"parameters"`
-	Result      string                 `json:"result"`
-	Success     bool                   `json:"success"`
-	Duration    int64                  `json:"duration_ms"`
-	Error       string                 `json:"error,omitempty"`
-	Iteration   int                    `json:"iteration"`
-	UserID      string                 `json:"user_id,omitempty"`
-	ProjectID   string                 `json:"project_id,omitempty"`
+	Timestamp  time.Time              `json:"timestamp"`
+	SessionID  string                 `json:"session_id"`
+	ToolName   string                 `json:"tool_name"`
+	ToolCallID string                 `json:"tool_call_id"`
+	Parameters map[string]interface{} `json:"parameters"`
+	Result     string                 `json:"result"`
+	Success    bool                   `json:"success"`
+	Duration   int64                  `json:"duration_ms"`
+	Error      string                 `json:"error,omitempty"`
+	Iteration  int                    `json:"iteration"`
+	UserID     string                 `json:"user_id,omitempty"`
+	ProjectID  string                 `json:"project_id,omitempty"`
 }
 
 // NewAuditLog creates a new audit log.
@@ -140,12 +140,12 @@ func (al *AuditLog) GetToolStats() map[string]ToolStats {
 }
 
 type ToolStats struct {
-	TotalCalls   int   `json:"total_calls"`
-	SuccessCalls int   `json:"success_calls"`
-	FailureCalls int   `json:"failure_calls"`
+	TotalCalls    int   `json:"total_calls"`
+	SuccessCalls  int   `json:"success_calls"`
+	FailureCalls  int   `json:"failure_calls"`
 	TotalDuration int64 `json:"total_duration_ms"`
-	AvgDuration  int64 `json:"avg_duration_ms"`
-	Count        int   `json:"count"`
+	AvgDuration   int64 `json:"avg_duration_ms"`
+	Count         int   `json:"count"`
 }
 
 // rotateIfNeeded rotates the log file if it's too large.

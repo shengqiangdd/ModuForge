@@ -35,7 +35,7 @@ type TodoItem struct {
 	TodoID      string `json:"todo_id"`
 	Title       string `json:"title"`
 	Description string `json:"description"`
-	Status      string `json:"status"` // pending, in_progress, completed, cancelled
+	Status      string `json:"status"`   // pending, in_progress, completed, cancelled
 	Priority    string `json:"priority"` // low, medium, high, urgent
 	CreatedAt   string `json:"created_at"`
 	UpdatedAt   string `json:"updated_at"`
@@ -151,38 +151,36 @@ func (s *TodoManagerSkill) createTodo(userID, sessionID string, input map[string
 
 	// Insert items if provided
 	var createdItems []TodoItem
-	if items != nil {
-		for i, item := range items {
-			itemMap, ok := item.(map[string]interface{})
-			if !ok {
-				continue
-			}
+	for i, item := range items {
+		itemMap, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
 
-			itemTitle, _ := itemMap["title"].(string)
-			itemDesc, _ := itemMap["description"].(string)
-			itemPriority, _ := itemMap["priority"].(string)
-			if itemPriority == "" {
-				itemPriority = "medium"
-			}
+		itemTitle, _ := itemMap["title"].(string)
+		itemDesc, _ := itemMap["description"].(string)
+		itemPriority, _ := itemMap["priority"].(string)
+		if itemPriority == "" {
+			itemPriority = "medium"
+		}
 
-			itemID := fmt.Sprintf("item_%s_%d", todoID, i)
-			_, err := s.db.Exec(`
+		itemID := fmt.Sprintf("item_%s_%d", todoID, i)
+		_, err := s.db.Exec(`
 				INSERT INTO todo_items (id, todo_id, title, description, priority)
 				VALUES (?, ?, ?, ?, ?)
 			`, itemID, todoID, itemTitle, itemDesc, itemPriority)
-			if err != nil {
-				return "", fmt.Errorf("create item: %w", err)
-			}
-
-			createdItems = append(createdItems, TodoItem{
-				ID:          itemID,
-				TodoID:      todoID,
-				Title:       itemTitle,
-				Description: itemDesc,
-				Status:      "pending",
-				Priority:    itemPriority,
-			})
+		if err != nil {
+			return "", fmt.Errorf("create item: %w", err)
 		}
+
+		createdItems = append(createdItems, TodoItem{
+			ID:          itemID,
+			TodoID:      todoID,
+			Title:       itemTitle,
+			Description: itemDesc,
+			Status:      "pending",
+			Priority:    itemPriority,
+		})
 	}
 
 	result := map[string]interface{}{

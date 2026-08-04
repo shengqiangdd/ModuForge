@@ -10,8 +10,8 @@ type mockSkill struct {
 	name string
 }
 
-func (m *mockSkill) Name() string                                              { return m.name }
-func (m *mockSkill) Description() string                                       { return "mock " + m.name }
+func (m *mockSkill) Name() string        { return m.name }
+func (m *mockSkill) Description() string { return "mock " + m.name }
 func (m *mockSkill) Execute(_ context.Context, _ map[string]interface{}) (string, error) {
 	return "ok:" + m.name, nil
 }

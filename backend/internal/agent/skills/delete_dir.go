@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 )
 
 type DeleteDirSkill struct {
@@ -45,14 +44,14 @@ func (s *DeleteDirSkill) Execute(ctx context.Context, input map[string]interface
 	if path == "." || path == "" {
 		confirm, _ := input["confirm"].(bool)
 		if !confirm {
-			return "", fmt.Errorf("deleting entire project (path='.') requires confirm=true. This will remove ALL files in the project.")
+			return "", fmt.Errorf("deleting entire project (path='.') requires confirm=true. This will remove ALL files in the project")
 		}
 	}
 
 	// Path traversal protection
 	basePath := s.resolvePath(projectID)
 	fullPath := filepath.Join(basePath, path)
-	if !filepath.HasPrefix(fullPath, filepath.Clean(basePath)) {
+	if !isPathWithin(basePath, fullPath) {
 		return "", fmt.Errorf("path traversal not allowed: %s", path)
 	}
 
@@ -87,97 +86,6 @@ func (s *DeleteDirSkill) Execute(ctx context.Context, input map[string]interface
 	}
 
 	return fmt.Sprintf("Directory deleted: %s", path), nil
-}
-
-// countFilesInDir counts files in a directory path from DB
-func countFilesInDir(db *sql.DB, projectID, dirPath string) int {
-	if db == nil {
-		return 0
-	}
-	likePattern := dirPath + "/%"
-	if dirPath == "." {
-		likePattern = "%"
-	}
-	var count int
-	db.QueryRow(
-		`SELECT COUNT(*) FROM project_files WHERE project_id=? AND path LIKE ?`,
-		projectID, likePattern,
-	).Scan(&count)
-	return count
-}
-
-// listFilesInDir returns files in a directory from DB
-func listFilesInDir(db *sql.DB, projectID, dirPath string) []string {
-	if db == nil {
-		return nil
-	}
-	likePattern := dirPath + "/%"
-	if dirPath == "." {
-		likePattern = "%"
-	}
-	rows, err := db.Query(
-		`SELECT path FROM project_files WHERE project_id=? AND path LIKE ? ORDER BY path`,
-		projectID, likePattern,
-	)
-	if err != nil {
-		return nil
-	}
-	defer rows.Close()
-
-	var files []string
-	for rows.Next() {
-		var p string
-		if err := rows.Scan(&p); err == nil {
-			files = append(files, p)
-		}
-	}
-	return files
-}
-
-// isDirEmpty checks if a directory path has any files in DB
-func isDirEmpty(db *sql.DB, projectID, dirPath string) bool {
-	likePattern := dirPath + "/%"
-	var count int
-	db.QueryRow(
-		`SELECT COUNT(*) FROM project_files WHERE project_id=? AND path LIKE ?`,
-		projectID, likePattern,
-	).Scan(&count)
-	return count == 0
-}
-
-// getImmediateChildren returns immediate child entries (files and subdirs) under a path
-func getImmediateChildren(db *sql.DB, projectID, dirPath string) map[string]bool {
-	if db == nil {
-		return nil
-	}
-	likePattern := dirPath + "/%"
-	if dirPath == "." {
-		likePattern = "%"
-	}
-	rows, err := db.Query(
-		`SELECT path FROM project_files WHERE project_id=? AND path LIKE ? ORDER BY path`,
-		projectID, likePattern,
-	)
-	if err != nil {
-		return nil
-	}
-	defer rows.Close()
-
-	children := make(map[string]bool)
-	for rows.Next() {
-		var p string
-		if err := rows.Scan(&p); err == nil {
-			// Get the part after the directory path
-			rel := strings.TrimPrefix(p, dirPath+"/")
-			// Get first component
-			if idx := strings.Index(rel, "/"); idx >= 0 {
-				children[rel[:idx]+"/"] = true // directory
-			} else {
-				children[rel] = false // file
-			}
-		}
-	}
-	return children
 }
 
 func (s *DeleteDirSkill) Metadata() SkillMeta {

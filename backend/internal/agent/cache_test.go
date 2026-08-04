@@ -187,12 +187,12 @@ func TestInvalidateBuild(t *testing.T) {
 
 func TestAdaptiveCooldown(t *testing.T) {
 	tests := []struct {
-		failures  int
-		wantMin   time.Duration
-		wantMax   time.Duration
+		failures int
+		wantMin  time.Duration
+		wantMax  time.Duration
 	}{
-		{3, 60 * time.Second, 60 * time.Second},   // base
-		{4, 60 * time.Second, 60 * time.Second},   // still base
+		{3, 60 * time.Second, 60 * time.Second},    // base
+		{4, 60 * time.Second, 60 * time.Second},    // still base
 		{5, 120 * time.Second, 120 * time.Second},  // stepped up
 		{9, 120 * time.Second, 120 * time.Second},  // still stepped
 		{10, 300 * time.Second, 300 * time.Second}, // high

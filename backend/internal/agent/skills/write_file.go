@@ -15,10 +15,6 @@ type WriteFileSkill struct {
 	db          *sql.DB
 }
 
-func NewWriteFileSkill(projectPath string) *WriteFileSkill {
-	return &WriteFileSkill{projectPath: projectPath}
-}
-
 func NewWriteFileSkillWithDB(projectPath string, db *sql.DB) *WriteFileSkill {
 	return &WriteFileSkill{projectPath: projectPath, db: db}
 }
@@ -28,7 +24,7 @@ func (s *WriteFileSkill) Name() string {
 }
 
 func (s *WriteFileSkill) Description() string {
-	return "Write content to a file. Parent directories are auto-created. Use this to create new files — no need to call create_dir first. Input: {\"path\": \"...\", \"content\": \"...\", \"project_id\": \"...\" (optional)}. Verifies content was saved correctly."
+	return "Write content to a file. Parent directories are auto-created. Input: {\"path\": \"...\", \"content\": \"...\", \"project_id\": \"...\" (optional)}. Verifies content was saved correctly."
 }
 
 // resolvePath 根据 project_id 解析实际文件路径
@@ -105,7 +101,7 @@ func (s *WriteFileSkill) Execute(ctx context.Context, input map[string]interface
 		if err == nil && len(existingContent) > 0 {
 			// Guard: reject if new content is drastically shorter than existing (likely truncation/garbage)
 			if len(content) < len(existingContent)/10 && len(existingContent) > 100 {
-				return "", fmt.Errorf("content too short (%d bytes vs existing %d bytes) — possible truncation. Aborting to prevent data loss.", len(content), len(existingContent))
+				return "", fmt.Errorf("content too short (%d bytes vs existing %d bytes) - possible truncation. Aborting to prevent data loss", len(content), len(existingContent))
 			}
 		}
 	}
@@ -119,7 +115,7 @@ func (s *WriteFileSkill) Execute(ctx context.Context, input map[string]interface
 	// Optional: write to filesystem (may fail in read-only containers)
 	basePath := s.resolvePath(projectID)
 	fullPath := filepath.Join(basePath, path)
-	if !filepath.HasPrefix(fullPath, filepath.Clean(basePath)) {
+	if !isPathWithin(basePath, fullPath) {
 		return "", fmt.Errorf("path traversal not allowed")
 	}
 
@@ -157,34 +153,6 @@ func (s *WriteFileSkill) Execute(ctx context.Context, input map[string]interface
 	}
 
 	return statusMsg, nil
-}
-
-// verifyWrite reads back the written file to confirm content integrity.
-func (s *WriteFileSkill) verifyWrite(fullPath, projectID, path, originalContent string) error {
-	// Verify file on disk
-	data, err := os.ReadFile(fullPath)
-	if err != nil {
-		return fmt.Errorf("verification read failed: %v", err)
-	}
-	if string(data) != originalContent {
-		return fmt.Errorf("content mismatch: wrote %d bytes, read back %d bytes", len(originalContent), len(data))
-	}
-
-	// Verify in database if project_id provided
-	if s.db != nil && projectID != "" {
-		var dbContent string
-		err := s.db.QueryRow(
-			`SELECT content FROM project_files WHERE project_id=? AND path=?`, projectID, path,
-		).Scan(&dbContent)
-		if err != nil {
-			return fmt.Errorf("database verification failed: %v", err)
-		}
-		if dbContent != originalContent {
-			return fmt.Errorf("database content mismatch for %s", path)
-		}
-	}
-
-	return nil
 }
 
 func (s *WriteFileSkill) Metadata() SkillMeta {

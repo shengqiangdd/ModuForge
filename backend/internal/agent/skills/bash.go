@@ -17,10 +17,6 @@ type BashSkill struct {
 	db          *sql.DB
 }
 
-func NewBashSkill(projectPath string) *BashSkill {
-	return &BashSkill{projectPath: projectPath}
-}
-
 func NewBashSkillWithDB(projectPath string, db *sql.DB) *BashSkill {
 	return &BashSkill{projectPath: projectPath, db: db}
 }

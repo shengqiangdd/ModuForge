@@ -15,10 +15,6 @@ type GlobSearchSkill struct {
 	db          *sql.DB
 }
 
-func NewGlobSearchSkill(projectPath string) *GlobSearchSkill {
-	return &GlobSearchSkill{projectPath: projectPath}
-}
-
 func NewGlobSearchSkillWithDB(projectPath string, db *sql.DB) *GlobSearchSkill {
 	return &GlobSearchSkill{projectPath: projectPath, db: db}
 }

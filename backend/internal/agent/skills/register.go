@@ -47,7 +47,7 @@ func init() {
 	// Project management
 	registry.RegisterFactory("agent_preset", func(d *registry.Deps) registry.Skill { return NewAgentPresetSkill(d.DB) })
 	registry.RegisterFactory("self_evolve", func(d *registry.Deps) registry.Skill { return NewSelfEvolvingSkill(d.DB) })
-	registry.RegisterFactory("pattern_learning", func(d *registry.Deps) registry.Skill { return NewPatternLearningSkill(d.DB) })
+	registry.RegisterFactory("pattern_learn", func(d *registry.Deps) registry.Skill { return NewPatternLearningSkill(d.DB) })
 
 	// Enhanced Memory V2 (semantic search, tiered storage)
 	registry.RegisterFactory("memory_v2", func(d *registry.Deps) registry.Skill {

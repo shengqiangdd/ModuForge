@@ -30,13 +30,13 @@ func (s *ContextManagerSkill) Description() string {
 }
 
 type ContextEntry struct {
-	ID        string `json:"id"`
-	SessionID string `json:"session_id"`
-	Category  string `json:"category"` // project, user, global
-	Key       string `json:"key"`
-	Value     string `json:"value"`
-	Importance int   `json:"importance"` // 1-10
-	CreatedAt string `json:"created_at"`
+	ID         string `json:"id"`
+	SessionID  string `json:"session_id"`
+	Category   string `json:"category"` // project, user, global
+	Key        string `json:"key"`
+	Value      string `json:"value"`
+	Importance int    `json:"importance"` // 1-10
+	CreatedAt  string `json:"created_at"`
 	AccessedAt string `json:"accessed_at"`
 }
 
@@ -136,13 +136,13 @@ func (s *ContextManagerSkill) remember(sessionID string, input map[string]interf
 	}
 
 	result := map[string]interface{}{
-		"action":    "remember",
-		"success":   true,
-		"entry_id":  entryID,
-		"key":       key,
-		"category":  category,
+		"action":     "remember",
+		"success":    true,
+		"entry_id":   entryID,
+		"key":        key,
+		"category":   category,
 		"importance": importance,
-		"message":   fmt.Sprintf("Remembered: %s", key),
+		"message":    fmt.Sprintf("Remembered: %s", key),
 	}
 
 	b, _ := json.MarshalIndent(result, "", "  ")
@@ -339,13 +339,13 @@ func (s *ContextManagerSkill) getStats(sessionID string) (string, error) {
 	s.db.QueryRow("SELECT MAX(created_at) FROM context_entries WHERE session_id = ? OR session_id IS NULL", sessionID).Scan(&newest)
 
 	result := map[string]interface{}{
-		"action":      "stats",
-		"success":     true,
-		"total":       totalEntries,
-		"total_size":  totalSize,
-		"avg_size":    0,
-		"oldest":      oldest,
-		"newest":      newest,
+		"action":     "stats",
+		"success":    true,
+		"total":      totalEntries,
+		"total_size": totalSize,
+		"avg_size":   0,
+		"oldest":     oldest,
+		"newest":     newest,
 	}
 	if totalEntries > 0 {
 		result["avg_size"] = totalSize / totalEntries

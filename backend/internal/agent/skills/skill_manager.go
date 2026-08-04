@@ -30,23 +30,23 @@ func (s *SkillManagerSkill) Description() string {
 }
 
 type SkillVersion struct {
-	ID          string                 `json:"id"`
-	SkillName   string                 `json:"skill_name"`
-	Version     string                 `json:"version"`
-	Changelog   string                 `json:"changelog"`
-	Config      map[string]interface{} `json:"config,omitempty"`
-	Dependencies []string              `json:"dependencies,omitempty"`
-	Status      string                 `json:"status"` // active, deprecated, archived
-	CreatedBy   string                 `json:"created_by"`
-	CreatedAt   string                 `json:"created_at"`
+	ID           string                 `json:"id"`
+	SkillName    string                 `json:"skill_name"`
+	Version      string                 `json:"version"`
+	Changelog    string                 `json:"changelog"`
+	Config       map[string]interface{} `json:"config,omitempty"`
+	Dependencies []string               `json:"dependencies,omitempty"`
+	Status       string                 `json:"status"` // active, deprecated, archived
+	CreatedBy    string                 `json:"created_by"`
+	CreatedAt    string                 `json:"created_at"`
 }
 
 type SkillDependency struct {
-	SkillName    string `json:"skill_name"`
-	DependsOn    string `json:"depends_on"`
-	MinVersion   string `json:"min_version"`
-	MaxVersion   string `json:"max_version"`
-	Optional     bool   `json:"optional"`
+	SkillName  string `json:"skill_name"`
+	DependsOn  string `json:"depends_on"`
+	MinVersion string `json:"min_version"`
+	MaxVersion string `json:"max_version"`
+	Optional   bool   `json:"optional"`
 }
 
 func (s *SkillManagerSkill) Execute(ctx context.Context, input map[string]interface{}) (string, error) {
@@ -223,11 +223,11 @@ func (s *SkillManagerSkill) listVersions(skillName string) (string, error) {
 	}
 
 	result := map[string]interface{}{
-		"action":    "versions",
-		"success":   true,
+		"action":     "versions",
+		"success":    true,
 		"skill_name": skillName,
-		"versions":  versions,
-		"count":     len(versions),
+		"versions":   versions,
+		"count":      len(versions),
 	}
 
 	b, _ := json.MarshalIndent(result, "", "  ")
@@ -394,12 +394,12 @@ func (s *SkillManagerSkill) rollbackVersion(skillName string, input map[string]i
 	}
 
 	result := map[string]interface{}{
-		"action":          "rollback",
-		"success":         true,
-		"skill_name":      skillName,
-		"rollback_to":     targetVersion,
-		"new_version":     newVersion,
-		"message":         fmt.Sprintf("Rolled back to version %s", targetVersion),
+		"action":      "rollback",
+		"success":     true,
+		"skill_name":  skillName,
+		"rollback_to": targetVersion,
+		"new_version": newVersion,
+		"message":     fmt.Sprintf("Rolled back to version %s", targetVersion),
 	}
 
 	b, _ := json.MarshalIndent(result, "", "  ")
@@ -482,11 +482,11 @@ func (s *SkillManagerSkill) cloneSkill(skillName string, input map[string]interf
 	}
 
 	result := map[string]interface{}{
-		"action":     "clone",
-		"success":    true,
-		"source":     skillName,
-		"new_name":   newName,
-		"message":    fmt.Sprintf("Cloned %s to %s", skillName, newName),
+		"action":   "clone",
+		"success":  true,
+		"source":   skillName,
+		"new_name": newName,
+		"message":  fmt.Sprintf("Cloned %s to %s", skillName, newName),
 	}
 
 	b, _ := json.MarshalIndent(result, "", "  ")
@@ -525,12 +525,12 @@ func (s *SkillManagerSkill) exportSkill(skillName string) (string, error) {
 	}
 
 	export := map[string]interface{}{
-		"skill_name":  skillName,
-		"version":     version,
-		"changelog":   changelog,
-		"config":      configJSON,
+		"skill_name":   skillName,
+		"version":      version,
+		"changelog":    changelog,
+		"config":       configJSON,
 		"dependencies": deps,
-		"exported_at": time.Now().Format(time.RFC3339),
+		"exported_at":  time.Now().Format(time.RFC3339),
 	}
 
 	b, _ := json.MarshalIndent(export, "", "  ")

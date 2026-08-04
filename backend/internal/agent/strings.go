@@ -16,20 +16,21 @@ var sbPool = sync.Pool{
 	},
 }
 
-func getSB() *strings.Builder  { return sbPool.Get().(*strings.Builder) }
+func getSB() *strings.Builder   { return sbPool.Get().(*strings.Builder) }
 func putSB(sb *strings.Builder) { sb.Reset(); sbPool.Put(sb) }
 
 // toolNameSet is a pre-built lookup for known tool names, replacing
 // the previous O(n×m) slice scan with O(1) map access.
+// Mirrors the skills registered in the agent registry.
 var toolNameSet = map[string]bool{
-	"read_file": true, "write_file": true, "validate": true,
-	"lint_code": true, "review_code": true, "detect": true,
-	"check_compat": true, "profile_code": true, "gen_docs": true,
-	"web_search": true, "think": true, "gather_requirements": true,
-	"match_template": true, "test_module": true, "regression_check": true,
-	"create_dir": true, "generate_code": true, "code_pipeline": true,
-	"build_module": true, "memory_manager": true, "self_evolve": true,
-	"pattern_learn": true, "agent_preset": true,
+	"read_file": true, "write_file": true, "write_file_batch": true,
+	"edit_file": true, "grep_search": true, "glob_search": true,
+	"list_dir": true, "delete_file": true, "delete_dir": true,
+	"move_file": true, "bash": true, "build_module": true,
+	"test_module": true, "agent_preset": true, "self_evolve": true,
+	"pattern_learn": true, "memory_v2": true, "skill_manager": true,
+	"self_reflection": true, "session_summary": true, "skill_registry": true,
+	"context_manager": true, "task_delegator": true, "todo_manager": true,
 }
 
 func cleanAnswer(text string) string {
@@ -42,7 +43,7 @@ func cleanAnswer(text string) string {
 		if strings.HasPrefix(lowerTrim, "function call:") {
 			continue
 		}
-		// Skip standalone tool name lines (e.g. "validate" or "read_file")
+		// Skip standalone tool name lines (e.g. "read_file")
 		if toolNameSet[trim] {
 			continue
 		}
@@ -90,6 +91,7 @@ func cleanAnswer(text string) string {
 //   - lowercase→Uppercase: "theUser" → "the User"
 //   - letter→digit: "v123" stays (version strings), but "file123abc" → "file123 abc"
 //   - lowercase letter→opening paren with preceding uppercase: "createNewProject(" stays
+//
 // Only processes runs of ASCII letters; leaves CJK, URLs intact.
 // Skips code blocks (``` fenced regions) to preserve code identifiers.
 func fixConcatenatedEnglish(text string) string {
@@ -346,8 +348,6 @@ func smartSummarizeResult(result string, skillName string, maxLen int) string {
 		return summarizeReadFile(lines, maxLen)
 	case "build_module":
 		return summarizeBuildOutput(lines, maxLen)
-	case "web_search":
-		return summarizeSearchResult(lines, maxLen)
 	default:
 		return summarizeResult(result, maxLen)
 	}
@@ -498,23 +498,6 @@ func summarizeBuildOutput(lines []string, maxLen int) string {
 	}
 
 	result := sb.String()
-	if len(result) > maxLen {
-		result = result[:maxLen]
-	}
-	return result
-}
-
-// summarizeSearchResult keeps top results and strips HTML artifacts.
-func summarizeSearchResult(lines []string, maxLen int) string {
-	// Keep first 60 lines (usually the most relevant results)
-	keep := 60
-	if keep > len(lines) {
-		keep = len(lines)
-	}
-	result := strings.Join(lines[:keep], "\n")
-	if len(lines) > keep {
-		result += fmt.Sprintf("\n... [%d more lines omitted]", len(lines)-keep)
-	}
 	if len(result) > maxLen {
 		result = result[:maxLen]
 	}

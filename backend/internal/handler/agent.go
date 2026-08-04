@@ -13,7 +13,6 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/moduforge/backend/internal/agent"
 	"github.com/moduforge/backend/internal/agent/registry"
-	"github.com/moduforge/backend/internal/agent/skills"
 	"github.com/moduforge/backend/internal/config"
 	"github.com/moduforge/backend/internal/database"
 	"github.com/moduforge/backend/internal/llm"
@@ -29,7 +28,6 @@ type AgentHandler struct {
 func NewAgentHandler(cfg *config.Config, db *database.DB) *AgentHandler {
 	// Auto-register all skills via init() factories — no manual registration needed
 	memStore := service.NewMemoryStore(db.Conn)
-	skills.SetMemoryStore(memStore)
 
 	deps := &registry.Deps{
 		DB:          db.Conn,

@@ -27,10 +27,10 @@ func (s *PatternLearningSkill) Description() string {
 }
 
 type Pattern struct {
-	ID          int64  `json:"id"`
-	ModuleType  string `json:"module_type"`
-	PatternType string `json:"pattern_type"`
-	Pattern     string `json:"pattern"`
+	ID          int64   `json:"id"`
+	ModuleType  string  `json:"module_type"`
+	PatternType string  `json:"pattern_type"`
+	Pattern     string  `json:"pattern"`
 	SuccessRate float64 `json:"success_rate"`
 	UsageCount  int     `json:"usage_count"`
 }
@@ -40,11 +40,11 @@ var sensitivePatterns = regexp.MustCompile(`(?i)(api[_-]?key|secret|password|tok
 
 // Pre-compiled redaction patterns (avoid MustCompile on every call)
 var (
-	redactApiKey        = regexp.MustCompile(`(?i)(api[_-]?key\s*[=:]\s*)\S+`)
-	redactSecret        = regexp.MustCompile(`(?i)(secret\s*[=:]\s*)\S+`)
-	redactPassword      = regexp.MustCompile(`(?i)(password\s*[=:]\s*)\S+`)
-	redactToken         = regexp.MustCompile(`(?i)(token\s*[=:]\s*)\S+`)
-	redactPrivateKey    = regexp.MustCompile(`(?i)(private[_-]?key\s*[=:]\s*)\S+`)
+	redactApiKey          = regexp.MustCompile(`(?i)(api[_-]?key\s*[=:]\s*)\S+`)
+	redactSecret          = regexp.MustCompile(`(?i)(secret\s*[=:]\s*)\S+`)
+	redactPassword        = regexp.MustCompile(`(?i)(password\s*[=:]\s*)\S+`)
+	redactToken           = regexp.MustCompile(`(?i)(token\s*[=:]\s*)\S+`)
+	redactPrivateKey      = regexp.MustCompile(`(?i)(private[_-]?key\s*[=:]\s*)\S+`)
 	redactPrivateKeyBlock = regexp.MustCompile(`-----BEGIN.*PRIVATE KEY-----[A-Za-z0-9+/=\s]+-----END.*PRIVATE KEY-----`)
 )
 
@@ -313,13 +313,13 @@ func (s *PatternLearningSkill) discoverPatterns(moduleType string, input map[str
 	defer rows.Close()
 
 	type DiscoveredPattern struct {
-		ID          int64  `json:"id"`
-		UserID      string `json:"user_id"`
-		ModuleType  string `json:"module_type"`
-		Pattern     string `json:"pattern"`
+		ID          int64   `json:"id"`
+		UserID      string  `json:"user_id"`
+		ModuleType  string  `json:"module_type"`
+		Pattern     string  `json:"pattern"`
 		SuccessRate float64 `json:"success_rate"`
-		UsageCount  int    `json:"usage_count"`
-		SharedAt    string `json:"shared_at"`
+		UsageCount  int     `json:"usage_count"`
+		SharedAt    string  `json:"shared_at"`
 	}
 
 	var discovered []DiscoveredPattern

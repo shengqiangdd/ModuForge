@@ -18,8 +18,8 @@ import (
 // Reusing TCP connections avoids the TLS handshake overhead on every LLM call,
 // which is critical for free-tier providers that rate-limit per-connection.
 var llmHTTPTransport = &http.Transport{
-	MaxIdleConns:        30,              // Optimization 41: increased from 10 to support concurrent agent sessions
-	MaxIdleConnsPerHost: 10,              // Optimization 41: increased from 5 to reuse more connections per LLM endpoint
+	MaxIdleConns:        30, // Optimization 41: increased from 10 to support concurrent agent sessions
+	MaxIdleConnsPerHost: 10, // Optimization 41: increased from 5 to reuse more connections per LLM endpoint
 	IdleConnTimeout:     90 * time.Second,
 	TLSHandshakeTimeout: 10 * time.Second,
 	DisableKeepAlives:   false,
@@ -109,10 +109,10 @@ const circuitBreakerThreshold = 3
 const circuitBreakerBaseCooldown = 60 * time.Second
 
 type circuitBreaker struct {
-	mu             sync.Mutex
-	failures       map[string]int       // providerID -> consecutive failures
-	lastFailure    map[string]time.Time // providerID -> last failure time
-	breakerActive  map[string]bool      // providerID -> is breaker open?
+	mu            sync.Mutex
+	failures      map[string]int       // providerID -> consecutive failures
+	lastFailure   map[string]time.Time // providerID -> last failure time
+	breakerActive map[string]bool      // providerID -> is breaker open?
 }
 
 var globalCircuitBreaker = &circuitBreaker{
@@ -182,8 +182,8 @@ func (cb *circuitBreaker) IsOpen(providerID string) bool {
 
 type rateLimitTracker struct {
 	mu           sync.Mutex
-	requests     []time.Time // timestamps of recent requests
-	maxPerMinute int         // max requests per minute (0 = no limit)
+	requests     []time.Time   // timestamps of recent requests
+	maxPerMinute int           // max requests per minute (0 = no limit)
 	minInterval  time.Duration // minimum interval between requests
 }
 
@@ -200,7 +200,7 @@ func (r *rateLimitTracker) ConfigureForModel(modelName string) {
 	lower := strings.ToLower(modelName)
 	// Free models: conservative limits to avoid 429s
 	if strings.Contains(lower, "free") || strings.Contains(lower, "mini") || strings.Contains(lower, "lite") {
-		r.maxPerMinute = 10 // 10 requests per minute
+		r.maxPerMinute = 10             // 10 requests per minute
 		r.minInterval = 6 * time.Second // at least 6s between requests
 		log.Printf("[RateLimit] configured for free model: %d req/min, %v interval", r.maxPerMinute, r.minInterval)
 	} else {
@@ -235,7 +235,7 @@ func (r *rateLimitTracker) WaitForSlot(ctx context.Context) error {
 	if r.maxPerMinute > 0 && len(r.requests) >= r.maxPerMinute {
 		// Wait until oldest request falls out of window
 		oldest := r.requests[0]
-		waitTime := oldest.Add(1 * time.Minute).Sub(now) + 100*time.Millisecond
+		waitTime := oldest.Add(1*time.Minute).Sub(now) + 100*time.Millisecond
 		if waitTime > 0 {
 			log.Printf("[RateLimit] rate limit reached, waiting %v", waitTime)
 			select {
@@ -291,13 +291,13 @@ func (r *rateLimitTracker) Record429() {
 // Used when the user hasn't explicitly configured max_tokens for a model.
 var defaultModelMaxTokens = map[string]int{
 	// OpenAI
-	"o1":         32768,
-	"o3":         32768,
-	"o4-mini":    32768,
-	"gpt-4o":     16384,
+	"o1":          32768,
+	"o3":          32768,
+	"o4-mini":     32768,
+	"gpt-4o":      16384,
 	"gpt-4-turbo": 4096,
-	"gpt-4":      8192,
-	"gpt-3.5":    4096,
+	"gpt-4":       8192,
+	"gpt-3.5":     4096,
 	// Anthropic
 	"claude-3.5-sonnet": 8192,
 	"claude-3-opus":     4096,
@@ -305,30 +305,30 @@ var defaultModelMaxTokens = map[string]int{
 	"claude-4":          16384,
 	"claude":            8192,
 	// Google
-	"gemini-2.5-pro":  65536,
+	"gemini-2.5-pro":   65536,
 	"gemini-2.5-flash": 65536,
-	"gemini-2.0":      8192,
-	"gemini-1.5-pro":  8192,
-	"gemini":          8192,
+	"gemini-2.0":       8192,
+	"gemini-1.5-pro":   8192,
+	"gemini":           8192,
 	// DeepSeek
-	"deepseek-v3":  8192,
-	"deepseek-v2.5": 8192,
+	"deepseek-v3":    8192,
+	"deepseek-v2.5":  8192,
 	"deepseek-coder": 8192,
-	"deepseek":     8192,
+	"deepseek":       8192,
 	// Qwen
-	"qwen-max":     8192,
-	"qwen-plus":    8192,
-	"qwen-turbo":   8192,
-	"qwen":         8192,
+	"qwen-max":   8192,
+	"qwen-plus":  8192,
+	"qwen-turbo": 8192,
+	"qwen":       8192,
 	// Meta
 	"llama-3.1-405b": 4096,
 	"llama-3.1-70b":  4096,
 	"llama-3.1-8b":   4096,
 	"llama":          4096,
 	// Mistral
-	"mistral-large": 8192,
+	"mistral-large":  8192,
 	"mistral-medium": 8192,
-	"mistral":       8192,
+	"mistral":        8192,
 	// Default for unknown models
 	"_default": 8192,
 }
@@ -359,8 +359,8 @@ func resolveModelMaxTokens(modelName string) int {
 type ModelTier int
 
 const (
-	TierFree  ModelTier = 0 // free models, small context (deepseek-v4-flash-free, etc.)
-	TierMid   ModelTier = 1 // mid-tier models (deepseek-v3, qwen-turbo, etc.)
+	TierFree   ModelTier = 0 // free models, small context (deepseek-v4-flash-free, etc.)
+	TierMid    ModelTier = 1 // mid-tier models (deepseek-v3, qwen-turbo, etc.)
 	TierStrong ModelTier = 2 // strong paid models (gpt-4o, claude, gemini-pro, etc.)
 )
 
@@ -931,59 +931,4 @@ func (r *AgentRunner) resolveLLMConfig(userID, reqProviderID, reqModel string, c
 	}
 	log.Printf("[Agent] resolveLLMConfig: fallback endpoint=%s model=%s", endpoint, model)
 	return endpoint, apiKey, model
-}
-
-func (r *AgentRunner) callLLM(ctx context.Context, messages []map[string]string, userID string, cfg ...RunConfig) (string, error) {
-	var rc RunConfig
-	if len(cfg) > 0 {
-		rc = cfg[0]
-	}
-	endpoint, apiKey, model := r.resolveLLMConfig(userID, "", "", rc)
-	if !strings.HasSuffix(endpoint, "/chat/completions") {
-		endpoint = endpoint + "/chat/completions"
-	}
-	body := map[string]interface{}{
-		"model":    model,
-		"messages": messages,
-		"stream":   false,
-	}
-	// Resolve max_output_tokens: RunConfig > model default
-	maxTokens := rc.MaxOutputTokens
-	if maxTokens <= 0 {
-		maxTokens = resolveModelMaxTokens(model)
-	}
-	if maxTokens > 0 {
-		body["max_tokens"] = maxTokens
-	}
-	bodyBytes, err := json.Marshal(body)
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal request: %w", err)
-	}
-	req, err := http.NewRequestWithContext(ctx, "POST", endpoint, bytes.NewReader(bodyBytes))
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	if apiKey != "" {
-		req.Header.Set("Authorization", "Bearer "+apiKey)
-	}
-	resp, err := llmHTTPClient.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-	var result struct {
-		Choices []struct {
-			Message struct {
-				Content string `json:"content"`
-			} `json:"message"`
-		} `json:"choices"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return "", err
-	}
-	if len(result.Choices) == 0 {
-		return "", fmt.Errorf("no choices in LLM response")
-	}
-	return result.Choices[0].Message.Content, nil
 }

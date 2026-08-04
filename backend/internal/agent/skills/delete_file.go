@@ -43,7 +43,7 @@ func (s *DeleteFileSkill) Execute(ctx context.Context, input map[string]interfac
 	// Path traversal protection
 	basePath := s.resolvePath(projectID)
 	fullPath := filepath.Join(basePath, path)
-	if !filepath.HasPrefix(fullPath, filepath.Clean(basePath)) {
+	if !isPathWithin(basePath, fullPath) {
 		return "", fmt.Errorf("path traversal not allowed: %s", path)
 	}
 

@@ -49,10 +49,10 @@ func (s *MoveFileSkill) Execute(ctx context.Context, input map[string]interface{
 	basePath := s.resolvePath(projectID)
 	fullFrom := filepath.Join(basePath, from)
 	fullTo := filepath.Join(basePath, to)
-	if !filepath.HasPrefix(fullFrom, filepath.Clean(basePath)) {
+	if !isPathWithin(basePath, fullFrom) {
 		return "", fmt.Errorf("path traversal not allowed for source: %s", from)
 	}
-	if !filepath.HasPrefix(fullTo, filepath.Clean(basePath)) {
+	if !isPathWithin(basePath, fullTo) {
 		return "", fmt.Errorf("path traversal not allowed for destination: %s", to)
 	}
 
