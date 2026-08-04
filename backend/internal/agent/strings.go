@@ -444,7 +444,14 @@ func summarizeBuildOutput(lines []string, maxLen int) string {
 
 	for _, line := range lines {
 		lower := strings.ToLower(strings.TrimSpace(line))
-		if strings.Contains(lower, "error") || strings.Contains(lower, "failed") || strings.Contains(lower, "panicked") {
+		if strings.Contains(lower, "error") || strings.Contains(lower, "failed") || strings.Contains(lower, "panicked") ||
+			// P0-3: Go compiler diagnostics often omit the literal words "error"/"failed"
+			// (e.g. "./main.go:5:2: undefined: foo"), so they were dropped from the
+			// Errors section and the LLM never saw the real build failure.
+			strings.Contains(lower, "undefined:") || strings.Contains(lower, "cannot ") ||
+			strings.Contains(lower, "not enough arguments") || strings.Contains(lower, "too many arguments") ||
+			strings.Contains(lower, "exit status") || strings.Contains(lower, "imported and not used") ||
+			strings.Contains(lower, "implicit assignment to") || strings.Contains(lower, " undeclared") {
 			errors = append(errors, line)
 		} else if strings.Contains(lower, "warning") {
 			warnings = append(warnings, line)

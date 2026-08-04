@@ -1255,8 +1255,10 @@ You are running WITHOUT a project context. This means:
 - Keep your answers focused and practical`
 	}
 
-	// Build tool definitions — filtered by mode and model tier
-	toolDefs := r.getToolDefinitions(cfg.Mode, cfg.LLMModel)
+	// Build tool definitions — filtered by mode and model tier.
+	// Use resolvedModel (not cfg.LLMModel) so tier filtering matches the prompt
+	// branch above (free tier gets fewer tools, same as it gets a shorter prompt).
+	toolDefs := r.getToolDefinitions(cfg.Mode, resolvedModel)
 
 	// Build initial conversation
 	conversation := []map[string]interface{}{

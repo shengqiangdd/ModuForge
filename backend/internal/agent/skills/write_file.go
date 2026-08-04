@@ -262,6 +262,7 @@ func (s *WriteFileBatchSkill) Metadata() SkillMeta {
 	return SkillMeta{
 		ReadOnly:  false,
 		Essential: false,
+		Core:      true,
 		NeedsDB:   true,
 		NeedsLLM:  false,
 	}

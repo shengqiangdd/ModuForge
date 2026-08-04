@@ -92,6 +92,7 @@ func (s *DeleteDirSkill) Metadata() SkillMeta {
 	return SkillMeta{
 		ReadOnly:  false,
 		Essential: false,
+		Core:      true,
 		NeedsDB:   true,
 		NeedsLLM:  false,
 	}

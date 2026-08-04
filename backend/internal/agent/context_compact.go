@@ -14,6 +14,44 @@ import (
 	"github.com/moduforge/backend/internal/service"
 )
 
+// isFileChangeResult reports whether a tool result records a file modification
+// (write_file/edit_file/move_file) so it can be preserved during compaction.
+// P0-1: edit_file results ("File edited:") were previously missed, so edits were
+// silently dropped from compacted summaries even though writes were kept.
+func isFileChangeResult(content string) bool {
+	return strings.Contains(content, "Successfully wrote") ||
+		strings.Contains(content, "File edited:") ||
+		strings.Contains(content, "File moved:") ||
+		strings.Contains(content, "write_file")
+}
+
+// extractFileChange extracts the first file-change line from a tool result for
+// use in compaction key-facts summaries.
+func extractFileChange(content string) string {
+	for _, marker := range []string{"Successfully wrote", "File edited:", "File moved:"} {
+		if idx := strings.Index(content, marker); idx >= 0 {
+			end := strings.Index(content[idx:], "\n")
+			if end < 0 {
+				end = len(content[idx:])
+			}
+			return content[idx : idx+end]
+		}
+	}
+	return ""
+}
+
+// containsDecision reports whether a message records a decision, conclusion, or
+// plan that must be preserved in full during compaction. P1-6: mirrors the
+// heuristic-compaction decision extraction so incremental compaction does not
+// truncate critical user constraints and agent choices to 200 chars.
+func containsDecision(content string) bool {
+	lower := strings.ToLower(content)
+	return strings.Contains(lower, "decided") || strings.Contains(lower, "decision") ||
+		strings.Contains(lower, "conclusion") || strings.Contains(lower, "chose") ||
+		strings.Contains(lower, "approach") || strings.Contains(lower, "plan") ||
+		strings.Contains(lower, "agree") || strings.Contains(lower, "disagree")
+}
+
 func (r *AgentRunner) smartCompressHistory(ctx context.Context, history []service.Message, w SSEWriter, cfg RunConfig) []service.Message {
 	total := 0
 	for _, m := range history {
@@ -110,6 +148,7 @@ func (r *AgentRunner) incrementalCompactHistory(ctx context.Context, history []s
 	// Track key facts for the summary
 	var fileChanges []string  // files that were written/modified
 	var buildResults []string // build outcomes
+	var decisions []string    // key decisions/plans (P1-6)
 
 	for _, msg := range toCompact {
 		role := "User"
@@ -124,14 +163,10 @@ func (r *AgentRunner) incrementalCompactHistory(ctx context.Context, history []s
 		content := msg.Content
 
 		// Optimization 23: Extract key facts from important messages
-		if strings.Contains(content, "write_file") || strings.Contains(content, "Successfully wrote") {
-			// Extract file paths from write results
-			if idx := strings.Index(content, "Successfully wrote"); idx >= 0 {
-				end := strings.Index(content[idx:], "\n")
-				if end < 0 {
-					end = len(content[idx:])
-				}
-				fileChanges = append(fileChanges, content[idx:idx+end])
+		if isFileChangeResult(content) {
+			// Extract file paths from write/edit results
+			if fc := extractFileChange(content); fc != "" {
+				fileChanges = append(fileChanges, fc)
 			} else if len(content) < 200 {
 				fileChanges = append(fileChanges, content)
 			}
@@ -142,6 +177,10 @@ func (r *AgentRunner) incrementalCompactHistory(ctx context.Context, history []s
 				content = content[:300] + "...[截断]"
 			}
 			buildResults = append(buildResults, content)
+		} else if containsDecision(content) {
+			// P1-6: Preserve decision/plan/conclusion messages in full instead of
+			// truncating them to 200 chars (matches heuristic compaction behavior).
+			decisions = append(decisions, content)
 		} else {
 			// Aggressively truncate read_file and other low-value messages
 			if len(content) > 200 {
@@ -153,7 +192,7 @@ func (r *AgentRunner) incrementalCompactHistory(ctx context.Context, history []s
 	}
 
 	// Append a key-facts section at the end for quick reference
-	if len(fileChanges) > 0 || len(buildResults) > 0 {
+	if len(fileChanges) > 0 || len(buildResults) > 0 || len(decisions) > 0 {
 		summary.WriteString("\n## Key Facts (preserved from compacted messages):\n")
 		if len(fileChanges) > 0 {
 			summary.WriteString(fmt.Sprintf("Files modified: %d\n", len(fileChanges)))
@@ -168,6 +207,16 @@ func (r *AgentRunner) incrementalCompactHistory(ctx context.Context, history []s
 		}
 		if len(buildResults) > 0 {
 			summary.WriteString(fmt.Sprintf("Build results: %d\n", len(buildResults)))
+		}
+		if len(decisions) > 0 {
+			summary.WriteString(fmt.Sprintf("Key decisions: %d\n", len(decisions)))
+			limit := len(decisions)
+			if limit > 5 {
+				limit = 5
+			}
+			for _, d := range decisions[:limit] {
+				summary.WriteString(fmt.Sprintf("  - %s\n", d))
+			}
 		}
 	}
 
@@ -246,14 +295,10 @@ func (r *AgentRunner) heuristicCompactHistory(history []service.Message) []servi
 
 	for _, msg := range history {
 		content := msg.Content
-		// Extract file paths from write results
-		if strings.Contains(content, "Successfully wrote") {
-			if idx := strings.Index(content, "Successfully wrote"); idx >= 0 {
-				end := strings.Index(content[idx:], "\n")
-				if end < 0 {
-					end = len(content[idx:])
-				}
-				fileChanges = append(fileChanges, content[idx:idx+end])
+		// Extract file paths from write/edit results
+		if isFileChangeResult(content) {
+			if fc := extractFileChange(content); fc != "" {
+				fileChanges = append(fileChanges, fc)
 			}
 		}
 		// Extract decisions (assistant messages with key phrases)
@@ -476,13 +521,9 @@ func (r *AgentRunner) heuristicCompactConversation(conversation []map[string]int
 	for _, msg := range conversation {
 		role, _ := msg["role"].(string)
 		content, _ := msg["content"].(string)
-		if role == "tool" && strings.Contains(content, "Successfully wrote") {
-			if idx := strings.Index(content, "Successfully wrote"); idx >= 0 {
-				end := strings.Index(content[idx:], "\n")
-				if end < 0 {
-					end = len(content[idx:])
-				}
-				fileChanges = append(fileChanges, content[idx:idx+end])
+		if role == "tool" && isFileChangeResult(content) {
+			if fc := extractFileChange(content); fc != "" {
+				fileChanges = append(fileChanges, fc)
 			}
 		}
 		if role == "tool" && (strings.HasPrefix(content, "Error:") || strings.HasPrefix(content, "❌") || strings.HasPrefix(content, "⚠️")) {

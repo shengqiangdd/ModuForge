@@ -80,7 +80,9 @@ Do NOT output raw tool call syntax. Summarize tool results instead of repeating 
 2. write_file → create/modify each file (COMPLETE content, not snippets)
 3. build_module → verify compilation
 4. If build fails: read error, fix with write_file, rebuild (max 3 retries)
-5. Answer: "I modified X files: [list]. Build status: [pass/fail]."
+5. test_module → validate module files (module.prop, shell scripts); if test files exist (*_test.go, *_test.rs, *_spec.js, etc.) run them via bash (go test ./... / cargo test / npm test)
+6. If tests fail: read error, fix with write_file, rebuild and retest
+7. Answer: "I modified X files: [list]. Build status: [pass/fail]. Tests: [pass/fail]."
 
 ## ANTI-PATTERNS (NEVER do these)
 - Outputting a "plan" without calling write_file
@@ -88,6 +90,7 @@ Do NOT output raw tool call syntax. Summarize tool results instead of repeating 
 - Saying "需要创建 X" without write_file
 - Reading files and only outputting analysis
 - Skipping build_module after writing code
+- Claiming tests pass without running them
 
 ## OUTPUT FORMAT
 Final answer must be clean Markdown. NO raw tool syntax, NO JSON, NO "Executing tool..." lines.
@@ -103,27 +106,41 @@ Example: "I updated ipc.rs to fix libc::open type mismatch. Build passes."
 - read_file(path) → read file content
 - write_file(path, content) → write COMPLETE file (auto-creates dirs)
 - edit_file(path, old_text, new_text) → find-and-replace (preferred for small changes)
+- write_file_batch(files) → write many files in one transaction
 - grep_search(pattern) → search code across all files (like grep -rn)
 - glob_search(pattern) → find files by name (e.g., "**/*.go")
-- bash(command) → run shell commands (build, test, git)
+- list_dir(path) → list files in a directory (project structure)
+- bash(command) → run shell commands (build, test, git) — e.g. go test ./..., cargo test
 - build_module(project_id) → compile + package ZIP
+- test_module(files, test_type) → validate module files (module.prop, shell syntax, permissions)
+- delete_file(path) / delete_dir(path) / move_file(source, destination) → file management
 
 ## TOOL RULES
 - edit_file for changes <30% of file (MOST common)
 - write_file for new files or complete rewrites ONLY
 - ALWAYS read_file BEFORE edit_file/write_file
-- grep_search BEFORE read_file (locate code first)
+- grep_search/glob_search help locate code; read_file directly is fine when you already know the path
 - After writing, ALWAYS call build_module
+- If tests exist, run test_module and language tests (go test/cargo test) after a successful build
 - build_module fails? Read error → fix → rebuild (max 3 retries)
 
 ## WORKFLOW
-1. grep_search → find relevant code
+1. grep_search → find relevant code (or read_file directly if the path is known)
 2. read_file → understand context
 3. edit_file → make changes (or write_file for new files)
 4. build_module → verify compilation
-5. Report: files changed + build status
+5. test_module → validate module files; run language tests if test files exist
+6. Report: files changed + build status + test status
 
-CRITICAL: You are evaluated on whether you ACTUALLY WROTE FILES and VERIFIED THE BUILD.
+## CODE STYLE
+- Match the existing style of the files you modify
+- Go: gofmt format, run go vet; keep functions small with meaningful names
+- Rust: rustfmt format (cargo fmt), consider cargo clippy
+- Shell: follow POSIX /bin/sh style for Magisk scripts, quote variables ("$VAR")
+- JavaScript/TypeScript: prettier/eslint conventions
+- Never leave dead code, debug prints, or TODO stubs behind
+
+CRITICAL: You are evaluated on whether you ACTUALLY WROTE FILES, VERIFIED THE BUILD, AND RAN THE TESTS.
 A plan without execution is a failure. Analysis without modification is a failure.
 `)
 	}
@@ -443,8 +460,8 @@ func smartPruneConversation(conversation []map[string]interface{}) []map[string]
 			continue
 		}
 
-		// Extract file write results
-		if strings.Contains(content, "Successfully wrote") || strings.Contains(content, "write_file") {
+		// Extract file write/edit results
+		if isFileChangeResult(content) {
 			if len(content) > 100 {
 				content = content[:100]
 			}
@@ -551,7 +568,8 @@ func buildFreeModelPrompt(mode AgentMode) string {
 2. write_file → create/modify
 3. build_module → verify
 4. Fix errors → rebuild (max 3 retries)
-5. Answer: files modified + build status
+5. test_module → validate module files; run language tests (go test/cargo test) if test files exist
+6. Answer: files modified + build status + test status
 
 NEVER output plans without writing. NEVER skip build_module.`
 }

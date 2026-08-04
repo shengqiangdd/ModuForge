@@ -75,7 +75,7 @@ func (r *AgentRunner) buildToolDefinitionsForMode(mode AgentMode, modelName stri
 
 		switch s.Name() {
 		case "read_file":
-			def.Function.Description = "Read file content. ALWAYS use grep_search first to find relevant code, then read only what you need."
+			def.Function.Description = "Read file content. For large codebases, consider grep_search/glob_search first to locate relevant code, but reading a known file directly is fine."
 			def.Function.Parameters = toolParams(map[string]interface{}{
 				"path":       map[string]interface{}{"type": "string", "description": "File path to read"},
 				"start_line": map[string]interface{}{"type": "integer", "description": "First line (1-based, optional)"},
@@ -87,15 +87,6 @@ func (r *AgentRunner) buildToolDefinitionsForMode(mode AgentMode, modelName stri
 				"path":    map[string]interface{}{"type": "string", "description": "File path to write"},
 				"content": map[string]interface{}{"type": "string", "description": "Complete file content"},
 			}, []string{"path", "content"})
-		case "write_file_batch":
-			def.Function.Parameters = toolParams(map[string]interface{}{
-				"files": map[string]interface{}{
-					"type":        "array",
-					"items":       map[string]interface{}{"type": "object"},
-					"description": "Array of {path, content} objects to write in one transaction",
-				},
-				"project_id": map[string]interface{}{"type": "string", "description": "Project ID (auto-created if omitted)"},
-			}, []string{"files"})
 		case "edit_file":
 			def.Function.Description = "Make targeted edits to an existing file. Use this for MOST changes (preferred over write_file for modifications <30% of file). Specify exact old_text to find and new_text to replace."
 			def.Function.Parameters = toolParams(map[string]interface{}{
@@ -126,6 +117,50 @@ func (r *AgentRunner) buildToolDefinitionsForMode(mode AgentMode, modelName stri
 			def.Function.Parameters = toolParams(map[string]interface{}{
 				"project_id": map[string]interface{}{"type": "string", "description": "Project ID to build"},
 			}, []string{"project_id"})
+		case "test_module":
+			def.Function.Description = "Validate Magisk module files (module.prop, shell script syntax, permissions, META-INF). Use after build_module to catch issues compilers miss."
+			def.Function.Parameters = toolParams(map[string]interface{}{
+				"files": map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "string"}, "description": "Files to validate (optional; defaults to all project files)"},
+				"test_type": map[string]interface{}{"type": "string", "enum": []interface{}{"shell", "unit", "integration", "all"}, "description": "Validation type (default all)"},
+			}, []string{})
+		case "list_dir":
+			def.Function.Description = "List files and directories in the project (non-recursive by default). Use to discover project structure."
+			def.Function.Parameters = toolParams(map[string]interface{}{
+				"path":       map[string]interface{}{"type": "string", "description": "Directory path (default '.')"},
+				"recursive":  map[string]interface{}{"type": "boolean", "description": "List recursively"},
+				"project_id": map[string]interface{}{"type": "string", "description": "Project ID"},
+			}, nil)
+		case "delete_file":
+			def.Function.Description = "Delete a single file from the project. Use when a file is no longer needed."
+			def.Function.Parameters = toolParams(map[string]interface{}{
+				"path":       map[string]interface{}{"type": "string", "description": "File path to delete"},
+				"project_id": map[string]interface{}{"type": "string", "description": "Project ID"},
+			}, []string{"path"})
+		case "delete_dir":
+			def.Function.Description = "Delete a directory and its contents. Set confirm=true when the path is '.' (project root)."
+			def.Function.Parameters = toolParams(map[string]interface{}{
+				"path":       map[string]interface{}{"type": "string", "description": "Directory path to delete"},
+				"confirm":    map[string]interface{}{"type": "boolean", "description": "Confirmation flag (required when deleting project root)"},
+				"project_id": map[string]interface{}{"type": "string", "description": "Project ID"},
+			}, []string{"path"})
+		case "move_file":
+			def.Function.Description = "Move or rename a file within the project (from → to)."
+			def.Function.Parameters = toolParams(map[string]interface{}{
+				"from":       map[string]interface{}{"type": "string", "description": "Source path"},
+				"to":         map[string]interface{}{"type": "string", "description": "Destination path"},
+				"project_id": map[string]interface{}{"type": "string", "description": "Project ID"},
+			}, []string{"from", "to"})
+		case "write_file_batch":
+			def.Function.Description = "Write multiple files atomically in one call. Prefer for multi-file changes over repeated write_file calls."
+			def.Function.Parameters = toolParams(map[string]interface{}{
+				"files": map[string]interface{}{"type": "array", "items": map[string]interface{}{
+					"type": "object", "properties": map[string]interface{}{
+						"path":    map[string]interface{}{"type": "string", "description": "File path"},
+						"content": map[string]interface{}{"type": "string", "description": "File content"},
+					}, "required": []interface{}{"path", "content"},
+				}, "description": "List of files to write"},
+				"project_id": map[string]interface{}{"type": "string", "description": "Project ID"},
+			}, []string{"files"})
 		default:
 			def.Function.Parameters = toolParams(map[string]interface{}{
 				"input": map[string]interface{}{"type": "string", "description": "Input for the skill"},
