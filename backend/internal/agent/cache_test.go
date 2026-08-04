@@ -260,9 +260,10 @@ func TestWriteContentCache_TTLExpiry(t *testing.T) {
 	// Manually expire the entry
 	val, _ := r.writeContentCache.Load("sess1")
 	m := val.(*sync.Map)
-	m.Store("src/main.rs", cachedContent{
+	m.Store("src/main.rs", cachedContentWithMtime{
 		content:   "fn main() {}",
 		expiresAt: time.Now().Add(-1 * time.Second), // already expired
+		mtime:     time.Now().Add(-2 * time.Second),
 	})
 
 	// Should miss (expired)

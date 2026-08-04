@@ -463,6 +463,192 @@ func (r *AgentRunner) SetMemoryV2Store(store *service.MemoryV2Store) {
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// P1-2: FileLock — Prevent race conditions on concurrent file access
+// ═══════════════════════════════════════════════════════════════════
+
+// FileLock provides per-file locking to prevent race conditions.
+type FileLock struct {
+	locks sync.Map // path -> *sync.Mutex
+}
+
+// fileLock is a per-file mutex wrapper.
+type fileLock struct {
+	mu sync.Mutex
+}
+
+// Lock acquires the lock for a specific file path.
+func (fl *FileLock) Lock(path string) {
+	val, _ := fl.locks.LoadOrStore(path, &fileLock{})
+	l := val.(*fileLock)
+	l.mu.Lock()
+}
+
+// Unlock releases the lock for a specific file path.
+func (fl *FileLock) Unlock(path string) {
+	if val, ok := fl.locks.Load(path); ok {
+		l := val.(*fileLock)
+		l.mu.Unlock()
+	}
+}
+
+// TryLock attempts to acquire the lock without blocking.
+func (fl *FileLock) TryLock(path string) bool {
+	val, _ := fl.locks.LoadOrStore(path, &fileLock{})
+	l := val.(*fileLock)
+	return l.mu.TryLock()
+}
+
+// Cleanup removes locks for files that no longer exist.
+func (fl *FileLock) Cleanup() {
+	fl.locks.Range(func(key, value interface{}) bool {
+		path := key.(string)
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			fl.locks.Delete(path)
+		}
+		return true
+	})
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// P1-3: CallBudget — Global tool call budget per session
+// ═══════════════════════════════════════════════════════════════════
+
+// CallBudget tracks tool call usage against limits.
+type CallBudget struct {
+	TotalCalls    int
+	ReadCalls     int
+	WriteCalls    int
+	MaxTotal      int
+	MaxRead       int
+	MaxWrite      int
+	BudgetExceeded bool
+}
+
+// NewCallBudget creates a new call budget with default limits.
+func NewCallBudget() *CallBudget {
+	return &CallBudget{
+		MaxTotal: 200, // total tool calls per session
+		MaxRead:  100, // read_file calls per session
+		MaxWrite: 50,  // write_file calls per session
+	}
+}
+
+// CanCall checks if a tool call is within budget.
+func (cb *CallBudget) CanCall(toolName string) bool {
+	if cb.BudgetExceeded {
+		return false
+	}
+
+	cb.TotalCalls++
+	if cb.TotalCalls > cb.MaxTotal {
+		cb.BudgetExceeded = true
+		return false
+	}
+
+	switch toolName {
+	case "read_file", "list_dir":
+		cb.ReadCalls++
+		if cb.ReadCalls > cb.MaxRead {
+			return false
+		}
+	case "write_file", "write_file_batch", "create_dir", "delete_file":
+		cb.WriteCalls++
+		if cb.WriteCalls > cb.MaxWrite {
+			return false
+		}
+	}
+
+	return true
+}
+
+// GetRemaining returns remaining budget for a tool type.
+func (cb *CallBudget) GetRemaining(toolName string) int {
+	switch toolName {
+	case "read_file", "list_dir":
+		return cb.MaxRead - cb.ReadCalls
+	case "write_file", "write_file_batch", "create_dir", "delete_file":
+		return cb.MaxWrite - cb.WriteCalls
+	default:
+		return cb.MaxTotal - cb.TotalCalls
+	}
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// P2-1: SelfReflection — Agent self-reflection logging
+// ═══════════════════════════════════════════════════════════════════
+
+// ReflectionEvent records an agent's self-reflection about its actions.
+type ReflectionEvent struct {
+	Timestamp   time.Time
+	ToolName    string
+	Action      string // "success", "failure", "retry", "skip"
+	Reason      string
+	Iteration   int
+}
+
+// ReflectionLog tracks agent reflections for debugging and improvement.
+type ReflectionLog struct {
+	events []ReflectionEvent
+	mu     sync.Mutex
+}
+
+// NewReflectionLog creates a new reflection log.
+func NewReflectionLog() *ReflectionLog {
+	return &ReflectionLog{
+		events: make([]ReflectionEvent, 0, 100),
+	}
+}
+
+// Record adds a reflection event.
+func (rl *ReflectionLog) Record(toolName, action, reason string, iteration int) {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+	rl.events = append(rl.events, ReflectionEvent{
+		Timestamp: time.Now(),
+		ToolName:  toolName,
+		Action:    action,
+		Reason:    reason,
+		Iteration: iteration,
+	})
+}
+
+// GetRecent returns the last N reflection events.
+func (rl *ReflectionLog) GetRecent(n int) []ReflectionEvent {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+	if n > len(rl.events) {
+		n = len(rl.events)
+	}
+	return rl.events[len(rl.events)-n:]
+}
+
+// GetSummary returns a summary of reflections.
+func (rl *ReflectionLog) GetSummary() string {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+	if len(rl.events) == 0 {
+		return "无反思记录"
+	}
+
+	successCount := 0
+	failureCount := 0
+	retryCount := 0
+	for _, e := range rl.events {
+		switch e.Action {
+		case "success":
+			successCount++
+		case "failure":
+			failureCount++
+		case "retry":
+			retryCount++
+		}
+	}
+
+	return fmt.Sprintf("反思统计: 成功=%d, 失败=%d, 重试=%d, 总计=%d",
+		successCount, failureCount, retryCount, len(rl.events))
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // P0-1: StagnationDetector — Smart loop termination
 // ═══════════════════════════════════════════════════════════════════
 
@@ -658,6 +844,182 @@ func (trf *ToolRetryFallback) GetFallbackModel(currentModel string) string {
 	return currentModel // no fallback available
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// P0-2: ErrorClassifier — Classify errors and determine recovery strategy
+// ═══════════════════════════════════════════════════════════════════
+
+// ErrorCategory represents the type of error encountered.
+type ErrorCategory int
+
+const (
+	ErrorUnknown ErrorCategory = iota
+	ErrorNetwork        // Network timeout, connection refused
+	ErrorAuth           // Authentication failed, permission denied
+	ErrorRateLimit      // Rate limit exceeded (429)
+	ErrorContext        // Context too long
+	ErrorToolNotFound   // Tool/skill not found
+	ErrorPermission     // File permission denied
+	ErrorDiskSpace      // Disk full
+	ErrorSyntax         // Code syntax error
+	ErrorBuild          // Build/compile error
+)
+
+// ClassifyError determines the error category from an error message.
+func ClassifyError(errMsg string) ErrorCategory {
+	msg := strings.ToLower(errMsg)
+
+	// Network errors
+	if strings.Contains(msg, "timeout") || strings.Contains(msg, "deadline exceeded") ||
+		strings.Contains(msg, "connection refused") || strings.Contains(msg, "dial tcp") {
+		return ErrorNetwork
+	}
+
+	// Auth errors
+	if strings.Contains(msg, "unauthorized") || strings.Contains(msg, "401") ||
+		strings.Contains(msg, "authentication") || strings.Contains(msg, "api key") {
+		return ErrorAuth
+	}
+
+	// Rate limit
+	if strings.Contains(msg, "rate") || strings.Contains(msg, "429") ||
+		strings.Contains(msg, "too many requests") {
+		return ErrorRateLimit
+	}
+
+	// Context too long
+	if strings.Contains(msg, "context_length") || strings.Contains(msg, "maximum context") ||
+		strings.Contains(msg, "max_tokens") || strings.Contains(msg, "token limit") {
+		return ErrorContext
+	}
+
+	// Tool not found
+	if strings.Contains(msg, "not found") || strings.Contains(msg, "unknown skill") ||
+		strings.Contains(msg, "no such skill") {
+		return ErrorToolNotFound
+	}
+
+	// Permission
+	if strings.Contains(msg, "permission denied") || strings.Contains(msg, "access denied") ||
+		strings.Contains(msg, "eacces") {
+		return ErrorPermission
+	}
+
+	// Disk space
+	if strings.Contains(msg, "no space") || strings.Contains(msg, "disk full") ||
+		strings.Contains(msg, "enospc") {
+		return ErrorDiskSpace
+	}
+
+	// Syntax errors
+	if strings.Contains(msg, "syntax error") || strings.Contains(msg, "unexpected token") ||
+		strings.Contains(msg, "parse error") {
+		return ErrorSyntax
+	}
+
+	// Build errors
+	if strings.Contains(msg, "build failed") || strings.Contains(msg, "compile error") ||
+		strings.Contains(msg, "cannot find package") || strings.Contains(msg, "undefined:") {
+		return ErrorBuild
+	}
+
+	return ErrorUnknown
+}
+
+// RecoveryStrategy represents the recommended recovery action.
+type RecoveryStrategy int
+
+const (
+	RecoveryRetrySame RecoveryStrategy = iota  // Retry with same parameters
+	RecoverySimplifyInput                       // Simplify task input
+	RecoverySwitchModel                         // Switch to different model
+	RecoveryForceAnswer                         // Force agent to provide answer
+	RecoverySkipTool                             // Skip this tool and continue
+	RecoveryCompactContext                       // Compact context and retry
+	RecoveryAbort                                // Abort immediately
+)
+
+// GetRecoveryStrategy determines the best recovery strategy for an error.
+func GetRecoveryStrategy(category ErrorCategory, consecutiveFailures int) RecoveryStrategy {
+	switch category {
+	case ErrorNetwork:
+		// Network: retry with backoff, after 3 failures abort
+		if consecutiveFailures >= 3 {
+			return RecoveryAbort
+		}
+		return RecoveryRetrySame
+
+	case ErrorAuth:
+		// Auth: try different provider, after 2 attempts abort
+		if consecutiveFailures >= 2 {
+			return RecoveryAbort
+		}
+		return RecoverySwitchModel
+
+	case ErrorRateLimit:
+		// Rate limit: switch model immediately
+		return RecoverySwitchModel
+
+	case ErrorContext:
+		// Context too long: compact first, then force answer
+		if consecutiveFailures >= 2 {
+			return RecoveryForceAnswer
+		}
+		return RecoveryCompactContext
+
+	case ErrorToolNotFound:
+		// Tool not found: skip and continue
+		return RecoverySkipTool
+
+	case ErrorPermission:
+		// Permission: skip and inform user
+		return RecoverySkipTool
+
+	case ErrorDiskSpace:
+		// Disk full: abort immediately
+		return RecoveryAbort
+
+	case ErrorSyntax:
+		// Syntax error: simplify input (maybe truncation caused it)
+		if consecutiveFailures >= 2 {
+			return RecoveryForceAnswer
+		}
+		return RecoverySimplifyInput
+
+	case ErrorBuild:
+		// Build error: let agent fix it
+		return RecoverySkipTool
+
+	default:
+		// Unknown: retry once, then force answer
+		if consecutiveFailures >= 2 {
+			return RecoveryForceAnswer
+		}
+		return RecoveryRetrySame
+	}
+}
+
+// GetRecoveryMessage returns a user-friendly message for the recovery strategy.
+func GetRecoveryMessage(strategy RecoveryStrategy, toolName string) string {
+	switch strategy {
+	case RecoveryRetrySame:
+		return fmt.Sprintf("工具 '%s' 执行失败，正在重试...", toolName)
+	case RecoverySimplifyInput:
+		return fmt.Sprintf("工具 '%s' 输入过复杂，正在简化...", toolName)
+	case RecoverySwitchModel:
+		return "当前模型限流，正在切换备用模型..."
+	case RecoveryForceAnswer:
+		return "多次重试失败，请基于已有信息给出答案"
+	case RecoverySkipTool:
+		return fmt.Sprintf("跳过工具 '%s'，继续执行...", toolName)
+	case RecoveryCompactContext:
+		return "上下文过长，正在压缩..."
+	case RecoveryAbort:
+		return "多次失败，终止执行"
+	default:
+		return fmt.Sprintf("工具 '%s' 执行异常", toolName)
+	}
+}
+
 // getSessionCache returns (or creates) a session-scoped tool result cache.
 // This cache persists across multiple Run() calls in the same session,
 // avoiding redundant I/O when the LLM re-reads the same file in later rounds.
@@ -677,9 +1039,11 @@ func (r *AgentRunner) getSessionCache(sessionID string) *toolResultCache {
 
 // Optimization 30: Write-through cache with TTL (5 minutes)
 // Prevents stale data when files are modified externally or by other processes.
-type cachedContent struct {
+// P0-1: Now tracks file mtime for external modification detection.
+type cachedContentWithMtime struct {
 	content   string
 	expiresAt time.Time
+	mtime     time.Time // file modification time when cached
 }
 
 const writeContentCacheTTL = 5 * time.Minute
@@ -687,18 +1051,30 @@ const writeContentCacheTTL = 5 * time.Minute
 // cacheWriteContent stores the content of a successful write_file call.
 // When read_file is called for the same path immediately after, it returns
 // this cached content instead of re-reading from disk — saving one full I/O round.
+// P0-1: Now tracks file modification time for invalidation.
 func (r *AgentRunner) cacheWriteContent(sessionID, path, content string) {
 	if sessionID == "" {
 		return
 	}
 	val, _ := r.writeContentCache.LoadOrStore(sessionID, &sync.Map{})
 	m := val.(*sync.Map)
-	m.Store(path, cachedContent{content: content, expiresAt: time.Now().Add(writeContentCacheTTL)})
-	debugLog("writeContentCache PUT: session=%s path=%s len=%d", sessionID, path, len(content))
+	// Get current file mtime for invalidation
+	var mtime time.Time
+	if info, err := os.Stat(path); err == nil {
+		mtime = info.ModTime()
+	} else {
+		mtime = time.Now()
+	}
+	m.Store(path, cachedContentWithMtime{
+		content:   content,
+		expiresAt: time.Now().Add(writeContentCacheTTL),
+		mtime:     mtime,
+	})
+	debugLog("writeContentCache PUT: session=%s path=%s len=%d mtime=%v", sessionID, path, len(content), mtime)
 }
 
 // getCachedWriteContent returns the cached content for a path, or "" if not cached or expired.
-// Only returns content for read_file calls that happen in the same session.
+// P0-1: Also checks if file was modified externally (mtime mismatch).
 func (r *AgentRunner) getCachedWriteContent(sessionID, path string) string {
 	if sessionID == "" {
 		return ""
@@ -711,12 +1087,22 @@ func (r *AgentRunner) getCachedWriteContent(sessionID, path string) string {
 	}
 	m := val.(*sync.Map)
 	if cached, ok := m.Load(path); ok {
-		cc := cached.(cachedContent)
+		cc := cached.(cachedContentWithMtime)
 		if time.Now().After(cc.expiresAt) {
 			// Entry expired — remove it and return empty
 			m.Delete(path)
 			debugLog("writeContentCache EXPIRED: session=%s path=%s", sessionID, path)
 			return ""
+		}
+		// P0-1: Check if file was modified externally
+		if info, err := os.Stat(path); err == nil {
+			if info.ModTime().After(cc.mtime) {
+				// File was modified after we cached it — invalidate cache
+				m.Delete(path)
+				debugLog("writeContentCache INVALIDATED (mtime changed): session=%s path=%s cacheMtime=%v fileMtime=%v",
+					sessionID, path, cc.mtime, info.ModTime())
+				return ""
+			}
 		}
 		debugLog("writeContentCache HIT: session=%s path=%s", sessionID, path)
 		return cc.content
@@ -960,6 +1346,15 @@ You are running WITHOUT a project context. This means:
 	qualityVerifier := &QualityVerifier{db: r.db}
 	qualityReports := make([]QualityReport, 0)
 
+	// P1-2: File lock for race condition prevention
+	fileLock := &FileLock{}
+
+	// P1-3: Global call budget
+	callBudget := NewCallBudget()
+
+	// P2-1: Self-reflection log
+	reflectionLog := NewReflectionLog()
+
 	// Derive skill sets from metadata (no hardcoded maps)
 	readOnlySkills := r.registry.ReadOnlySkills()
 
@@ -1114,6 +1509,12 @@ You are running WITHOUT a project context. This means:
 			if len(qualityReports) > 0 {
 				qualitySummary := qualityVerifier.GetQualitySummary(qualityReports)
 				answer += "\n\n" + qualitySummary
+			}
+
+			// P2-1: Append reflection summary
+			reflectionSummary := reflectionLog.GetSummary()
+			if reflectionSummary != "无反思记录" {
+				answer += "\n\n📊 " + reflectionSummary
 			}
 
 			// P2-1: Mark subtask as completed if applicable
@@ -1525,6 +1926,35 @@ You are running WITHOUT a project context. This means:
 		// Execute sequential tasks (write/side-effect tools)
 		anyWriteCalled := false
 		for _, st := range sequentialTasks {
+			// P1-3: Check call budget
+			if !callBudget.CanCall(st.skillName) {
+				budgetMsg := fmt.Sprintf("⚠️ 工具调用预算已用尽 (读取: %d/%d, 写入: %d/%d, 总计: %d/%d)",
+					callBudget.ReadCalls, callBudget.MaxRead,
+					callBudget.WriteCalls, callBudget.MaxWrite,
+					callBudget.TotalCalls, callBudget.MaxTotal)
+				log.Printf("[Agent] call budget exceeded: %s", budgetMsg)
+				w.WriteSSE(map[string]interface{}{
+					"type":    "step",
+					"step":    "skill_result",
+					"skill":   st.skillName,
+					"content": budgetMsg,
+					"blocked": true,
+				})
+				toolResultMsg := map[string]interface{}{
+					"role":         "tool",
+					"tool_call_id": st.tc.ID,
+					"content":      budgetMsg,
+				}
+				conversation = append(conversation, toolResultMsg)
+				if sessionID != "" {
+					r.convStore.Append(sessionID, service.Message{
+						Role:       "tool",
+						Content:    budgetMsg,
+						ToolCallID: st.tc.ID,
+					})
+				}
+				continue
+			}
 			// Notify frontend
 			w.WriteSSE(map[string]interface{}{
 				"type":  "step",
@@ -1555,6 +1985,15 @@ You are running WITHOUT a project context. This means:
 			// Execute with timeout
 			toolTimeout := toolTimeoutForName(st.skillName)
 			toolCtx, toolCancel := context.WithTimeout(ctx, toolTimeout)
+
+			// P1-2: Acquire file lock for write operations
+			if st.skillName == "write_file" || st.skillName == "write_file_batch" {
+				if path, ok := st.skillInput["path"].(string); ok {
+					fileLock.Lock(path)
+					defer fileLock.Unlock(path)
+				}
+			}
+
 			result, err := r.executeSkill(toolCtx, st.skillName, st.skillInput)
 			toolCancel()
 			close(skillDone)
@@ -1565,14 +2004,24 @@ You are running WITHOUT a project context. This means:
 				log.Printf("[Agent] write_file failed: %v, providing error context to LLM", err)
 				result = fmt.Sprintf("Write failed: %v. Please check the path and content, then try again.", err)
 			} else if err != nil {
-				// P0-2: Apply fallback strategy
+				// P0-2: Classify error and determine recovery strategy
+				errCategory := ClassifyError(err.Error())
 				toolConsecutiveErrors[st.skillName]++
-				fallback := toolRetryFallback.GetFallback(st.skillName, err, toolConsecutiveErrors[st.skillName])
-				log.Printf("[Agent] tool %s failed (attempt %d): %v, fallback=%d", st.skillName, toolConsecutiveErrors[st.skillName], err, fallback)
+				recovery := GetRecoveryStrategy(errCategory, toolConsecutiveErrors[st.skillName])
+				recoveryMsg := GetRecoveryMessage(recovery, st.skillName)
+				log.Printf("[Agent] tool %s failed (attempt %d): %v, category=%d, recovery=%d",
+					st.skillName, toolConsecutiveErrors[st.skillName], err, errCategory, recovery)
 
-				switch fallback {
-				case FallbackSimplifyTask:
-					// Simplify input and retry
+				w.WriteSSE(map[string]interface{}{
+					"type":    "step",
+					"step":    "think",
+					"content": recoveryMsg,
+				})
+
+				switch recovery {
+				case RecoveryRetrySame:
+					result = fmt.Sprintf("Error: %v. Please try again.", err)
+				case RecoverySimplifyInput:
 					simplified := toolRetryFallback.SimplifyTaskInput(st.skillName, st.skillInput)
 					retryResult, retryErr := r.executeSkill(toolCtx, st.skillName, simplified)
 					if retryErr == nil {
@@ -1581,17 +2030,27 @@ You are running WITHOUT a project context. This means:
 					} else {
 						result = fmt.Sprintf("Error: %v (simplified retry also failed: %v)", err, retryErr)
 					}
-				case FallbackSwitchModel:
-					// Log model switch suggestion (actual switch happens at LLM level)
-					result = fmt.Sprintf("Error: %v. Consider switching to a different model.", err)
-				case FallbackForceAnswer:
-					// Force the agent to provide an answer
-					result = fmt.Sprintf("Error: %v. Please provide your best answer based on what you know so far.", err)
+				case RecoverySwitchModel:
+					result = fmt.Sprintf("Error: %v. Model rate limited, please try a different approach.", err)
+				case RecoveryForceAnswer:
+					result = fmt.Sprintf("Error: %v. Please provide your best answer based on available information.", err)
 					conversation = append(conversation, map[string]interface{}{
 						"role":    "user",
-						"content": "[System: Tool execution failed. Please provide your final answer based on available information.]",
+						"content": "[System: Multiple tool failures. Please provide your final answer based on available information.]",
 					})
 					answerSent = true
+				case RecoverySkipTool:
+					result = fmt.Sprintf("Skipped tool '%s' due to error: %v", st.skillName, err)
+				case RecoveryCompactContext:
+					result = fmt.Sprintf("Error: %v. Context will be compacted on next iteration.", err)
+				case RecoveryAbort:
+					result = fmt.Sprintf("Fatal error: %v. Aborting execution.", err)
+					w.WriteSSE(map[string]interface{}{
+						"type":  "error",
+						"error": fmt.Sprintf("多次执行失败，已终止: %v", err),
+					})
+					w.WriteSSEPlain("[DONE]")
+					return err
 				default:
 					result = fmt.Sprintf("Error: %v", err)
 				}
@@ -1613,6 +2072,32 @@ You are running WITHOUT a project context. This means:
 						qualityReports = append(qualityReports, report)
 						if len(report.Issues) > 0 {
 							log.Printf("[Agent] quality issues in %s: %v", path, report.Issues)
+						}
+						// P1-1: Auto-rollback if quality score is too low
+						if report.Score < 40 && len(checkpoints) > 0 {
+							// Find the last checkpoint for this file
+							for i := len(checkpoints) - 1; i >= 0; i-- {
+								if checkpoints[i].Path == path && checkpoints[i].Content != "" {
+									log.Printf("[Agent] quality score %d < 40, rolling back %s", report.Score, path)
+									// Write back the checkpoint content
+									rollbackResult, rollbackErr := r.executeSkill(ctx, "write_file", map[string]interface{}{
+										"path":    path,
+										"content": checkpoints[i].Content,
+									})
+									if rollbackErr == nil && rollbackResult != "" {
+										result = fmt.Sprintf("⚠️ 代码质量过低 (score=%d)，已自动回滚到之前的版本\n\n质量问题:\n%s",
+											report.Score, strings.Join(report.Issues, "\n"))
+										w.WriteSSE(map[string]interface{}{
+											"type":    "step",
+											"step":    "think",
+											"content": fmt.Sprintf("⚠️ 代码质量过低 (score=%d)，已自动回滚", report.Score),
+										})
+									} else {
+										log.Printf("[Agent] rollback failed: %v", rollbackErr)
+									}
+									break
+								}
+							}
 						}
 					}
 				}
@@ -1656,6 +2141,13 @@ You are running WITHOUT a project context. This means:
 				}
 			}
 			uniqueOps[opKey] = true
+
+			// P2-1: Record reflection
+			if err != nil {
+				reflectionLog.Record(st.skillName, "failure", err.Error(), iter+1)
+			} else {
+				reflectionLog.Record(st.skillName, "success", "", iter+1)
+			}
 
 			// Truncate large results
 			if len(result) > cfg.MaxResultLen {

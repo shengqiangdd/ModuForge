@@ -758,6 +758,36 @@ Example: "I updated ipc.rs to fix libc::open type mismatch. Build passes."
 - bash(command) → run shell commands (build, test, git)
 - build_module(project_id) → compile + package ZIP
 
+## TOOL BEST PRACTICES
+### write_file
+- ALWAYS read_file first to understand current content
+- Write COMPLETE file content, not snippets
+- For large files (>100 lines), consider edit_file for changes <30%
+- After write, verify with read_file to confirm
+
+### edit_file
+- Use for changes <30% of file content
+- old_text must match EXACTLY (including whitespace)
+- Test with small changes first
+- If edit fails, fall back to write_file
+
+### grep_search
+- Use before read_file to locate relevant code
+- Supports regex patterns
+- Use is_regex=true for complex patterns
+- Check include_pattern to filter file types
+
+### bash
+- Use for build, test, git operations
+- Check exit code for success/failure
+- Use cd && command for directory-specific ops
+- Timeout is 30s for read-only, 60s for write operations
+
+### build_module
+- ALWAYS call after write_file
+- Reads error messages carefully
+- Fix issues before retrying (max 3 retries)
+
 ## FILE RULES
 - edit_file for changes <30% of file (MOST common)
 - write_file for new files or complete rewrites ONLY
