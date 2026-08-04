@@ -23,6 +23,7 @@ import (
 	"github.com/moduforge/backend/internal/middleware"
 	"github.com/moduforge/backend/internal/service"
 	"github.com/moduforge/backend/internal/builder"
+	_ "github.com/moduforge/backend/internal/agent/skills"
 )
 
 type apiError struct {
