@@ -502,6 +502,11 @@ func RegisterRoutes(api fiber.Router, db *database.DB, cfg *config.Config) {
 	r("GET", "/agent/custom-skills/:id/evolution", agentH.GetSkillEvolution)
 	r("POST", "/agent/custom-skills/:id/evolution", agentH.RecordSkillEvolution)
 	r("GET", "/agent/custom-skills/:id/optimize", agentH.GetSkillOptimization)
+	// NEW: Statistics and monitoring endpoints
+	r("GET", "/agent/stats", agentH.GetToolStats)
+	r("GET", "/agent/audit", agentH.GetAuditHistory)
+	r("GET", "/agent/denials", agentH.GetPermissionDenials)
+	r("GET", "/agent/session/:sessionId", agentH.GetSessionState)
 
 	// Collaboration
 	collabSvc := service.NewCollaborationService(db.Conn)

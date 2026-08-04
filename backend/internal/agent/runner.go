@@ -1320,6 +1320,7 @@ You are running WITHOUT a project context. This means:
 	consecutiveErrors := 0
 	answerSent := false
 	var lastLLMResp *LLMResponse
+	startTime := time.Now() // NEW: Track total execution time
 
 	// Optimization 1: Session-scoped tool result cache (persists across Run() calls)
 	toolCache := r.getSessionCache(sessionID)
@@ -1817,6 +1818,27 @@ You are running WITHOUT a project context. This means:
 			result string
 		}
 
+		// NEW: Analyze dependencies for better parallelism
+		r.depGraph.Reset()
+		for _, t := range tasks {
+			filePath := ""
+			if p, ok := t.skillInput["path"].(string); ok {
+				filePath = p
+			}
+			r.depGraph.AddToolCall(t.tc.ID, t.skillName, filePath, !readOnlySkills[t.skillName])
+		}
+		r.depGraph.AnalyzeAndLink()
+		depLayers := r.depGraph.GetExecutionLayers()
+		if len(depLayers) > 1 {
+			log.Printf("[Agent] dependency analysis: %d layers, grouping: %s", len(depLayers), r.depGraph.GetParallelGroup())
+			w.WriteSSE(map[string]interface{}{
+				"type":          "step",
+				"step":          "dependency_analysis",
+				"layers":        len(depLayers),
+				"parallel_info": r.depGraph.GetParallelGroup(),
+			})
+		}
+
 		// Group parallel tasks
 		var parallelTasks []toolTask
 		var sequentialTasks []toolTask
@@ -1986,13 +2008,48 @@ You are running WITHOUT a project context. This means:
 				}
 				continue
 			}
-			// Notify frontend
-			w.WriteSSE(map[string]interface{}{
+
+			// NEW: Permission check
+			allowed, needsConfirm, reason := r.permChecker.CheckPermission(st.skillName, sessionID)
+			if !allowed {
+				denyMsg := fmt.Sprintf("❌ 权限拒绝: %s", reason)
+				r.permChecker.LogDenial(sessionID, st.skillName, reason)
+				log.Printf("[Agent] permission denied: %s - %s", st.skillName, reason)
+				w.WriteSSE(map[string]interface{}{
+					"type":    "step",
+					"step":    "skill_result",
+					"skill":   st.skillName,
+					"content": denyMsg,
+					"blocked": true,
+				})
+				toolResultMsg := map[string]interface{}{
+					"role":         "tool",
+					"tool_call_id": st.tc.ID,
+					"content":      denyMsg,
+				}
+				conversation = append(conversation, toolResultMsg)
+				if sessionID != "" {
+					r.convStore.Append(sessionID, service.Message{
+						Role:       "tool",
+						Content:    denyMsg,
+						ToolCallID: st.tc.ID,
+					})
+				}
+				continue
+			}
+
+			// Notify frontend with permission info
+			notifyData := map[string]interface{}{
 				"type":  "step",
 				"step":  "skill_call",
 				"skill": st.skillName,
 				"input": st.skillInput,
-			})
+			}
+			if needsConfirm {
+				notifyData["needs_confirm"] = true
+				notifyData["confirm_msg"] = r.permChecker.GetConfirmationMessage(st.skillName, st.skillInput)
+			}
+			w.WriteSSE(notifyData)
 
 			// Keepalive during execution
 			skillDone := make(chan struct{})
@@ -2178,6 +2235,30 @@ You are running WITHOUT a project context. This means:
 				reflectionLog.Record(st.skillName, "failure", err.Error(), iter+1)
 			} else {
 				reflectionLog.Record(st.skillName, "success", "", iter+1)
+			}
+
+			// NEW: Audit logging
+			r.auditLog.RecordToolCall(
+				sessionID,
+				st.skillName,
+				st.tc.ID,
+				st.skillInput,
+				result,
+				err == nil,
+				time.Since(startTime),
+				iter+1,
+				cfg.UserID,
+				cfg.ProjectID,
+			)
+
+			// NEW: Session persistence for checkpoints
+			if sessionID != "" && st.skillName == "write_file" {
+				if path, ok := st.skillInput["path"].(string); ok {
+					if content, ok := st.skillInput["content"].(string); ok {
+						r.sessionPersist.UpdateCheckpoint(sessionID, path, content)
+						r.sessionPersist.Save(sessionID)
+					}
+				}
 			}
 
 			// Truncate large results
@@ -2531,4 +2612,33 @@ You are running WITHOUT a project context. This means:
 	// Clean up write-content cache for this session (tool result cache persists)
 	r.writeContentCache.Delete(sessionID)
 	return nil
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// NEW: Statistics and monitoring methods
+// ═══════════════════════════════════════════════════════════════════
+
+// GetToolStats returns tool usage statistics from audit log.
+func (r *AgentRunner) GetToolStats() map[string]ToolStats {
+	return r.auditLog.GetToolStats()
+}
+
+// GetAuditHistory returns recent audit entries.
+func (r *AgentRunner) GetAuditHistory(toolName string, limit int) []AuditEntry {
+	return r.auditLog.GetHistory(toolName, limit)
+}
+
+// GetPermissionDenials returns recent permission denials.
+func (r *AgentRunner) GetPermissionDenials(limit int) []DenialRecord {
+	return r.permChecker.GetDenials(limit)
+}
+
+// GetSessionState returns the session state for a given session ID.
+func (r *AgentRunner) GetSessionState(sessionID string) *SessionState {
+	return r.sessionPersist.GetOrCreate(sessionID)
+}
+
+// CleanupSessions removes sessions older than maxAge.
+func (r *AgentRunner) CleanupSessions(maxAge time.Duration) int {
+	return r.sessionPersist.Cleanup(maxAge)
 }

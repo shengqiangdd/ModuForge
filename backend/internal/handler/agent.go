@@ -833,3 +833,42 @@ func (w *answerCaptureWriter) WriteSSE(data map[string]interface{}) error {
 	}
 	return w.SSEWriter.WriteSSE(data)
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// NEW: Statistics and monitoring endpoints
+// ═══════════════════════════════════════════════════════════════════
+
+// GetToolStats returns tool usage statistics.
+func (h *AgentHandler) GetToolStats(c fiber.Ctx) error {
+	stats := h.runner.GetToolStats()
+	return c.JSON(fiber.Map{"stats": stats})
+}
+
+// GetAuditHistory returns recent audit entries.
+func (h *AgentHandler) GetAuditHistory(c fiber.Ctx) error {
+	toolName := c.Query("tool", "")
+	limitStr := c.Query("limit", "50")
+	limit := 50
+	fmt.Sscanf(limitStr, "%d", &limit)
+	entries := h.runner.GetAuditHistory(toolName, limit)
+	return c.JSON(fiber.Map{"entries": entries})
+}
+
+// GetPermissionDenials returns recent permission denials.
+func (h *AgentHandler) GetPermissionDenials(c fiber.Ctx) error {
+	limitStr := c.Query("limit", "50")
+	limit := 50
+	fmt.Sscanf(limitStr, "%d", &limit)
+	denials := h.runner.GetPermissionDenials(limit)
+	return c.JSON(fiber.Map{"denials": denials})
+}
+
+// GetSessionState returns session state for a given session ID.
+func (h *AgentHandler) GetSessionState(c fiber.Ctx) error {
+	sessionID := c.Params("sessionId")
+	if sessionID == "" {
+		return BadRequest(c, "sessionId required")
+	}
+	state := h.runner.GetSessionState(sessionID)
+	return c.JSON(fiber.Map{"state": state})
+}
