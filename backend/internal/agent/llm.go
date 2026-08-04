@@ -640,6 +640,44 @@ func handleLLMHTTPError(resp *http.Response, modelTier ModelTier, reqProviderID 
 	return err, true
 }
 
+// streamChunk is a single SSE "data:" payload from a chat-completions stream.
+type streamChunk struct {
+	Choices []struct {
+		Delta struct {
+			Role             string                `json:"role"`
+			Content          string                `json:"content"`
+			ReasoningContent string                `json:"reasoning_content"`
+			ToolCalls        []streamToolCallDelta `json:"tool_calls"`
+		} `json:"delta"`
+		FinishReason string `json:"finish_reason"`
+	} `json:"choices"`
+}
+
+// forEachSSEChunk iterates over the SSE "data:" payloads in a streaming
+// chat-completions body, invoking fn for each non-"[DONE]" payload. It stops on
+// "[DONE]" or when fn returns false, and returns the scanner error (nil on a
+// clean end). Shared by parseStreamingResponse and streamSSEContent.
+func forEachSSEChunk(r io.Reader, bufSize int, fn func(data []byte) bool) error {
+	scanner := bufio.NewScanner(r)
+	// Use a large buffer to avoid "bufio.Scanner: token too long" on long tool
+	// call JSONs. Default 64KB is too small; 256KB handles most LLM responses.
+	scanner.Buffer(make([]byte, 0, bufSize), bufSize)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if !strings.HasPrefix(line, "data: ") {
+			continue
+		}
+		data := strings.TrimPrefix(line, "data: ")
+		if data == "[DONE]" {
+			break
+		}
+		if !fn([]byte(data)) {
+			break
+		}
+	}
+	return scanner.Err()
+}
+
 // parseStreamingResponse reads an SSE stream and extracts content + tool calls.
 // Uses a 256KB scanner buffer to handle large tool call JSON without truncation.
 func (r *AgentRunner) parseStreamingResponse(ctx context.Context, resp *http.Response, w SSEWriter) (*LLMResponse, error) {
@@ -651,41 +689,18 @@ func (r *AgentRunner) parseStreamingResponse(ctx context.Context, resp *http.Res
 	keepAliveDone := make(chan struct{})
 	startKeepalive(ctx, w, keepAliveDone, 10*time.Second)
 
-	// Use a large buffer to avoid "bufio.Scanner: token too long" on long tool call JSONs.
-	// Default 64KB is too small; 256KB handles most LLM responses comfortably.
-	scanner := bufio.NewScanner(resp.Body)
-	scanner.Buffer(make([]byte, 0, 256*1024), 256*1024)
-	for scanner.Scan() {
-		line := scanner.Text()
-		if !strings.HasPrefix(line, "data: ") {
-			continue
-		}
-		data := strings.TrimPrefix(line, "data: ")
-		if data == "[DONE]" {
-			break
-		}
+	err := forEachSSEChunk(resp.Body, 256*1024, func(data []byte) bool {
 		if w.IsDisconnected() {
-			break
+			return false
 		}
-
-		var parsed struct {
-			Choices []struct {
-				Delta struct {
-					Role             string                `json:"role"`
-					Content          string                `json:"content"`
-					ReasoningContent string                `json:"reasoning_content"`
-					ToolCalls        []streamToolCallDelta `json:"tool_calls"`
-				} `json:"delta"`
-				FinishReason string `json:"finish_reason"`
-			} `json:"choices"`
-		}
-		if err := json.Unmarshal([]byte(data), &parsed); err != nil {
+		var parsed streamChunk
+		if err := json.Unmarshal(data, &parsed); err != nil {
 			// Log failed parse at debug level (some LLMs send non-standard chunks)
 			debugLog("stream parse failed (len=%d): %v", len(data), err)
-			continue
+			return true
 		}
 		if len(parsed.Choices) == 0 {
-			continue
+			return true
 		}
 
 		delta := parsed.Choices[0].Delta
@@ -706,17 +721,18 @@ func (r *AgentRunner) parseStreamingResponse(ctx context.Context, resp *http.Res
 		for _, tc := range delta.ToolCalls {
 			accumulateStreamToolCall(tc, toolCallMap)
 		}
-	}
-	if err := scanner.Err(); err != nil {
+		return true
+	})
+	close(keepAliveDone)
+
+	if err != nil {
 		log.Printf("[Agent] scanner error: %v", err)
-		close(keepAliveDone)
 		// If scanner failed and we have no data at all, propagate the error
 		// so callers know the LLM stream was interrupted (network/proxy issue).
 		if fullContent.Len() == 0 && len(toolCallMap) == 0 {
 			return nil, fmt.Errorf("LLM stream interrupted: %w", err)
 		}
 	}
-	close(keepAliveDone)
 
 	toolCalls = mergeToolCalls(toolCallMap)
 

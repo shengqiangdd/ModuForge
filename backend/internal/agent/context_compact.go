@@ -1,7 +1,6 @@
 package agent
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -623,30 +622,15 @@ func (r *AgentRunner) callLLMSummary(ctx context.Context, cfg RunConfig, summary
 // the delta content chunks.
 func streamSSEContent(resp *http.Response) string {
 	var summary strings.Builder
-	scanner := bufio.NewScanner(resp.Body)
-	scanner.Buffer(make([]byte, 64*1024), 64*1024)
-	for scanner.Scan() {
-		line := scanner.Text()
-		if !strings.HasPrefix(line, "data: ") {
-			continue
-		}
-		data := strings.TrimPrefix(line, "data: ")
-		if data == "[DONE]" {
-			break
-		}
-		var chunk struct {
-			Choices []struct {
-				Delta struct {
-					Content string `json:"content"`
-				} `json:"delta"`
-			} `json:"choices"`
-		}
-		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
-			continue
+	forEachSSEChunk(resp.Body, 64*1024, func(data []byte) bool {
+		var chunk streamChunk
+		if err := json.Unmarshal(data, &chunk); err != nil {
+			return true
 		}
 		if len(chunk.Choices) > 0 && chunk.Choices[0].Delta.Content != "" {
 			summary.WriteString(chunk.Choices[0].Delta.Content)
 		}
-	}
+		return true
+	})
 	return summary.String()
 }

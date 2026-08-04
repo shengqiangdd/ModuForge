@@ -48,7 +48,6 @@ const (
 	defaultMaxResultLen  = 32768
 	totalTimeout         = 1800 * time.Second // 30 minutes for complex tasks
 	maxHistoryChars      = 30000
-	summaryMaxLen        = 2000
 
 	// Optimization 37: Per-tool execution timeouts
 	// Fast tools (read-only, in-memory) get short timeouts; slow tools (build, compile) get longer ones.
@@ -498,24 +497,6 @@ func (fl *FileLock) Unlock(path string) {
 	}
 }
 
-// TryLock attempts to acquire the lock without blocking.
-func (fl *FileLock) TryLock(path string) bool {
-	val, _ := fl.locks.LoadOrStore(path, &fileLock{})
-	l := val.(*fileLock)
-	return l.mu.TryLock()
-}
-
-// Cleanup removes locks for files that no longer exist.
-func (fl *FileLock) Cleanup() {
-	fl.locks.Range(func(key, value interface{}) bool {
-		path := key.(string)
-		if _, err := os.Stat(path); os.IsNotExist(err) {
-			fl.locks.Delete(path)
-		}
-		return true
-	})
-}
-
 // ═══════════════════════════════════════════════════════════════════
 // P1-3: CallBudget — Global tool call budget per session
 // ═══════════════════════════════════════════════════════════════════
@@ -568,18 +549,6 @@ func (cb *CallBudget) CanCall(toolName string) bool {
 	return true
 }
 
-// GetRemaining returns remaining budget for a tool type.
-func (cb *CallBudget) GetRemaining(toolName string) int {
-	switch toolName {
-	case "read_file", "list_dir":
-		return cb.MaxRead - cb.ReadCalls
-	case "write_file", "write_file_batch", "delete_file":
-		return cb.MaxWrite - cb.WriteCalls
-	default:
-		return cb.MaxTotal - cb.TotalCalls
-	}
-}
-
 // ═══════════════════════════════════════════════════════════════════
 // P2-1: SelfReflection — Agent self-reflection logging
 // ═══════════════════════════════════════════════════════════════════
@@ -617,16 +586,6 @@ func (rl *ReflectionLog) Record(toolName, action, reason string, iteration int) 
 		Reason:    reason,
 		Iteration: iteration,
 	})
-}
-
-// GetRecent returns the last N reflection events.
-func (rl *ReflectionLog) GetRecent(n int) []ReflectionEvent {
-	rl.mu.Lock()
-	defer rl.mu.Unlock()
-	if n > len(rl.events) {
-		n = len(rl.events)
-	}
-	return rl.events[len(rl.events)-n:]
 }
 
 // GetSummary returns a summary of reflections.
@@ -833,22 +792,6 @@ func (trf *ToolRetryFallback) SimplifyTaskInput(toolName string, input map[strin
 	}
 
 	return simplified
-}
-
-// GetFallbackModel returns an alternative model when current one fails.
-func (trf *ToolRetryFallback) GetFallbackModel(currentModel string) string {
-	// Simple fallback chain
-	fallbacks := map[string]string{
-		"deepseek-v3": "deepseek-v3",
-		"deepseek-v4": "deepseek-v3",
-		"gpt-4":       "gpt-3.5-turbo",
-		"claude-3":    "claude-3-haiku",
-	}
-
-	if fallback, ok := fallbacks[currentModel]; ok {
-		return fallback
-	}
-	return currentModel // no fallback available
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -1964,9 +1907,4 @@ func (r *AgentRunner) GetPermissionDenials(limit int) []DenialRecord {
 // GetSessionState returns the session state for a given session ID.
 func (r *AgentRunner) GetSessionState(sessionID string) *SessionState {
 	return r.sessionPersist.GetOrCreate(sessionID)
-}
-
-// CleanupSessions removes sessions older than maxAge.
-func (r *AgentRunner) CleanupSessions(maxAge time.Duration) int {
-	return r.sessionPersist.Cleanup(maxAge)
 }

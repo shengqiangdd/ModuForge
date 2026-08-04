@@ -89,30 +89,6 @@ func (pc *PermissionChecker) CheckPermission(toolName, sessionID string) (allowe
 	return true, perm.RequiresConfirm, perm.Description
 }
 
-// GetPermissionLevel returns the permission level for a tool.
-func (pc *PermissionChecker) GetPermissionLevel(toolName string) PermissionLevel {
-	pc.mu.RLock()
-	defer pc.mu.RUnlock()
-
-	perm, exists := pc.permissions[toolName]
-	if !exists {
-		return PermRead
-	}
-	return perm.Level
-}
-
-// NeedsConfirmation returns whether a tool needs user confirmation.
-func (pc *PermissionChecker) NeedsConfirmation(toolName string) bool {
-	pc.mu.RLock()
-	defer pc.mu.RUnlock()
-
-	perm, exists := pc.permissions[toolName]
-	if !exists {
-		return false
-	}
-	return perm.RequiresConfirm
-}
-
 // GetConfirmationMessage returns a human-readable confirmation message.
 func (pc *PermissionChecker) GetConfirmationMessage(toolName string, params map[string]interface{}) string {
 	pc.mu.RLock()
@@ -161,42 +137,4 @@ func (pc *PermissionChecker) GetDenials(limit int) []DenialRecord {
 		start = 0
 	}
 	return append([]DenialRecord{}, pc.deniedCalls[start:]...)
-}
-
-// IsDestructiveTool returns whether a tool performs destructive operations.
-func IsDestructiveTool(toolName string) bool {
-	switch toolName {
-	case "bash", "delete_file", "rm", "rmdir":
-		return true
-	}
-	return false
-}
-
-// GetSensitivePatterns returns patterns that indicate sensitive operations.
-func GetSensitivePatterns(command string) []string {
-	var patterns []string
-	sensitive := []struct {
-		pattern string
-		desc    string
-	}{
-		{"rm -rf", "递归删除"},
-		{"rm -r", "递归删除"},
-		{"sudo", "需要sudo权限"},
-		{"chmod 777", "设置不安全权限"},
-		{"> /dev/", "写入设备文件"},
-		{"dd if=", "磁盘操作"},
-		{"mkfs", "格式化磁盘"},
-		{"fdisk", "分区操作"},
-		{"curl | sh", "管道执行脚本"},
-		{"wget | sh", "管道执行脚本"},
-		{"eval", "动态执行"},
-		{"exec", "执行命令"},
-	}
-
-	for _, s := range sensitive {
-		if strings.Contains(command, s.pattern) {
-			patterns = append(patterns, s.desc)
-		}
-	}
-	return patterns
 }
