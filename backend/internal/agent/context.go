@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"sort"
 	"strings"
 	"sync"
 
@@ -522,10 +523,87 @@ func (r *AgentRunner) compactConversation(ctx context.Context, conversation []ma
 
 // heuristicCompactConversation provides zero-LLM-cost summarization for free models.
 // Optimization 28: Extracts key facts and keeps recent messages, no LLM call needed.
+// P1-1: Enhanced with information density scoring to preserve critical context.
 func (r *AgentRunner) heuristicCompactConversation(conversation []map[string]interface{}) []map[string]interface{} {
+	// P1-1: Score messages by importance
+	type scoredMsg struct {
+		msg      map[string]interface{}
+		score    float64
+		position int
+	}
+
+	scored := make([]scoredMsg, 0, len(conversation))
+	for i, msg := range conversation {
+		role, _ := msg["role"].(string)
+		content, _ := msg["content"].(string)
+		score := 0.0
+
+		// System messages are always important
+		if role == "system" {
+			score = 100.0
+		}
+
+		// User messages are important
+		if role == "user" {
+			score = 80.0
+		}
+
+		// Tool results with file changes are critical
+		if role == "tool" && strings.Contains(content, "Successfully wrote") {
+			score = 90.0
+		}
+
+		// Errors are important for debugging
+		if role == "tool" && (strings.HasPrefix(content, "Error:") || strings.HasPrefix(content, "❌")) {
+			score = 70.0
+		}
+
+		// Recent messages get position bonus
+		positionBonus := float64(i) / float64(len(conversation)) * 20.0
+		score += positionBonus
+
+		// Penalize very long messages (they waste context window)
+		if len(content) > 5000 {
+			score -= 10.0
+		}
+
+		scored = append(scored, scoredMsg{msg: msg, score: score, position: i})
+	}
+
+	// Sort by score descending
+	sort.Slice(scored, func(i, j int) bool {
+		return scored[i].score > scored[j].score
+	})
+
+	// Keep top messages by score, but maintain order
+	keepCount := len(conversation) / 3 // Keep 1/3 of messages
+	if keepCount < 5 {
+		keepCount = 5
+	}
+	if keepCount > len(scored) {
+		keepCount = len(scored)
+	}
+
+	// Select top scored messages
+	keepSet := make(map[int]bool)
+	for i := 0; i < keepCount; i++ {
+		keepSet[scored[i].position] = true
+	}
+
+	// Rebuild conversation in original order
 	var fileChanges []string
 	var errors []string
+	newConv := make([]map[string]interface{}, 0)
 
+	// Always keep system prompt
+	for _, msg := range conversation {
+		if msg["role"] == "system" {
+			newConv = append(newConv, msg)
+			break
+		}
+	}
+
+	// Add summary of what happened
 	for _, msg := range conversation {
 		role, _ := msg["role"].(string)
 		content, _ := msg["content"].(string)
@@ -546,47 +624,52 @@ func (r *AgentRunner) heuristicCompactConversation(conversation []map[string]int
 		}
 	}
 
-	var sb strings.Builder
-	sb.WriteString("[上下文压缩 - 节省模式]\n\n")
+	// Build summary
+	var summary strings.Builder
+	summary.WriteString("[上下文压缩 - 智能保留重要信息]\n\n")
 	if len(fileChanges) > 0 {
-		sb.WriteString(fmt.Sprintf("已修改文件 (%d):\n", len(fileChanges)))
+		summary.WriteString(fmt.Sprintf("已修改文件 (%d):\n", len(fileChanges)))
 		for _, fc := range fileChanges {
-			if len(fileChanges) > 10 && sb.Len() > 500 {
-				sb.WriteString(fmt.Sprintf("  ... 还有 %d 个文件\n", len(fileChanges)-10))
+			if len(fileChanges) > 10 && summary.Len() > 500 {
+				summary.WriteString(fmt.Sprintf("  ... 还有 %d 个文件\n", len(fileChanges)-10))
 				break
 			}
-			sb.WriteString(fmt.Sprintf("  - %s\n", fc))
+			summary.WriteString(fmt.Sprintf("  - %s\n", fc))
 		}
 	}
 	if len(errors) > 0 {
-		sb.WriteString(fmt.Sprintf("\n错误 (%d):\n", len(errors)))
+		summary.WriteString(fmt.Sprintf("\n错误 (%d):\n", len(errors)))
 		limit := len(errors)
 		if limit > 5 {
 			limit = 5
 		}
 		for _, e := range errors[:limit] {
-			sb.WriteString(fmt.Sprintf("  - %s\n", e))
+			summary.WriteString(fmt.Sprintf("  - %s\n", e))
 		}
 	}
 
-	// Rebuild: system prompt + summary + last 2 messages
-	newConv := make([]map[string]interface{}, 0)
-	for _, msg := range conversation {
-		if msg["role"] == "system" {
+	newConv = append(newConv, map[string]interface{}{
+		"role":    "system",
+		"content": summary.String(),
+	})
+
+	// Add kept messages in order
+	for i, msg := range conversation {
+		if keepSet[i] && msg["role"] != "system" {
 			newConv = append(newConv, msg)
+		}
+	}
+
+	// Always keep last user message
+	for i := len(conversation) - 1; i >= 0; i-- {
+		if conversation[i]["role"] == "user" {
+			if !keepSet[i] {
+				newConv = append(newConv, conversation[i])
+			}
 			break
 		}
 	}
-	newConv = append(newConv, map[string]interface{}{
-		"role":    "system",
-		"content": sb.String(),
-	})
-	// Keep last 2 messages
-	keepCount := 2
-	if len(conversation) < keepCount {
-		keepCount = len(conversation)
-	}
-	newConv = append(newConv, conversation[len(conversation)-keepCount:]...)
+
 	return newConv
 }
 

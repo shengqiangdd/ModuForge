@@ -177,8 +177,485 @@ func (r *AgentRunner) SetMemoryStore(ms *service.MemoryStore) {
 	r.memoryStore = ms
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// P2-1: TaskDecomposer — Break complex tasks into subtasks
+// ═══════════════════════════════════════════════════════════════════
+
+// TaskDecomposer analyzes a task and breaks it into manageable subtasks.
+type TaskDecomposer struct {
+	db *sql.DB
+}
+
+// Subtask represents a piece of a larger task.
+type Subtask struct {
+	ID          string
+	Description string
+	Status      string // pending, in_progress, completed, failed
+	Dependencies []string // IDs of subtasks that must complete first
+}
+
+// DecomposeTask breaks a complex task into subtasks.
+func (td *TaskDecomposer) DecomposeTask(task string, projectContext string) []Subtask {
+	subtasks := make([]Subtask, 0)
+
+	// Simple heuristic: detect common patterns
+	taskLower := strings.ToLower(task)
+
+	// Pattern: "create X" -> analyze, implement, test
+	if strings.Contains(taskLower, "create") || strings.Contains(taskLower, "implement") || strings.Contains(taskLower, "add") {
+		subtasks = append(subtasks, Subtask{
+			ID:          "analyze",
+			Description: "分析需求和现有代码结构",
+			Status:      "pending",
+		})
+		subtasks = append(subtasks, Subtask{
+			ID:          "implement",
+			Description: "实现功能代码",
+			Status:      "pending",
+			Dependencies: []string{"analyze"},
+		})
+		subtasks = append(subtasks, Subtask{
+			ID:          "verify",
+			Description: "验证编译和功能",
+			Status:      "pending",
+			Dependencies: []string{"implement"},
+		})
+	}
+
+	// Pattern: "fix X" -> diagnose, fix, test
+	if strings.Contains(taskLower, "fix") || strings.Contains(taskLower, "repair") || strings.Contains(taskLower, "debug") {
+		subtasks = append(subtasks, Subtask{
+			ID:          "diagnose",
+			Description: "诊断问题原因",
+			Status:      "pending",
+		})
+		subtasks = append(subtasks, Subtask{
+			ID:          "fix",
+			Description: "修复问题",
+			Status:      "pending",
+			Dependencies: []string{"diagnose"},
+		})
+		subtasks = append(subtasks, Subtask{
+			ID:          "verify",
+			Description: "验证修复",
+			Status:      "pending",
+			Dependencies: []string{"fix"},
+		})
+	}
+
+	// Pattern: "refactor X" -> analyze, plan, execute, verify
+	if strings.Contains(taskLower, "refactor") || strings.Contains(taskLower, "optimize") || strings.Contains(taskLower, "improve") {
+		subtasks = append(subtasks, Subtask{
+			ID:          "analyze",
+			Description: "分析当前代码",
+			Status:      "pending",
+		})
+		subtasks = append(subtasks, Subtask{
+			ID:          "plan",
+			Description: "制定重构计划",
+			Status:      "pending",
+			Dependencies: []string{"analyze"},
+		})
+		subtasks = append(subtasks, Subtask{
+			ID:          "execute",
+			Description: "执行重构",
+			Status:      "pending",
+			Dependencies: []string{"plan"},
+		})
+		subtasks = append(subtasks, Subtask{
+			ID:          "verify",
+			Description: "验证重构结果",
+			Status:      "pending",
+			Dependencies: []string{"execute"},
+		})
+	}
+
+	// If no pattern matched, treat as single task
+	if len(subtasks) == 0 {
+		subtasks = append(subtasks, Subtask{
+			ID:          "complete",
+			Description: task,
+			Status:      "pending",
+		})
+	}
+
+	return subtasks
+}
+
+// GetNextSubtask returns the next subtask to execute based on dependencies.
+func (td *TaskDecomposer) GetNextSubtask(subtasks []Subtask) *Subtask {
+	completed := make(map[string]bool)
+	for _, st := range subtasks {
+		if st.Status == "completed" {
+			completed[st.ID] = true
+		}
+	}
+
+	for i := range subtasks {
+		if subtasks[i].Status != "pending" {
+			continue
+		}
+		// Check if all dependencies are completed
+		allDepsMet := true
+		for _, dep := range subtasks[i].Dependencies {
+			if !completed[dep] {
+				allDepsMet = false
+				break
+			}
+		}
+		if allDepsMet {
+			return &subtasks[i]
+		}
+	}
+
+	return nil // all done or blocked
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// P2-2: QualityVerifier — Verify code quality
+// ═══════════════════════════════════════════════════════════════════
+
+// QualityVerifier checks code quality metrics.
+type QualityVerifier struct {
+	db *sql.DB
+}
+
+// QualityReport contains quality metrics for a file.
+type QualityReport struct {
+	FilePath       string
+	Lines          int
+	Complexity     int  // cyclomatic complexity estimate
+	Duplication    bool // has duplicated code patterns
+	HasTests       bool
+	HasComments    bool
+	Score          int  // 0-100 quality score
+	Issues         []string
+}
+
+// VerifyFile checks the quality of a file.
+func (qv *QualityVerifier) VerifyFile(filePath string, content string) QualityReport {
+	report := QualityReport{
+		FilePath: filePath,
+		Lines:    strings.Count(content, "\n") + 1,
+		Issues:   make([]string, 0),
+	}
+
+	// Check for common issues
+	lines := strings.Split(content, "\n")
+
+	// 1. Check line length
+	longLines := 0
+	for _, line := range lines {
+		if len(line) > 120 {
+			longLines++
+		}
+	}
+	if longLines > 0 {
+		report.Issues = append(report.Issues, fmt.Sprintf("%d 行超过120字符", longLines))
+	}
+
+	// 2. Check for TODO/FIXME/HACK
+	todoCount := 0
+	for _, line := range lines {
+		lineUpper := strings.ToUpper(strings.TrimSpace(line))
+		if strings.Contains(lineUpper, "TODO") || strings.Contains(lineUpper, "FIXME") || strings.Contains(lineUpper, "HACK") {
+			todoCount++
+		}
+	}
+	if todoCount > 0 {
+		report.Issues = append(report.Issues, fmt.Sprintf("发现 %d 个 TODO/FIXME/HACK 注释", todoCount))
+	}
+
+	// 3. Check for very long functions (simple heuristic: count opening braces)
+	braceCount := 0
+	maxBraceDepth := 0
+	for _, line := range lines {
+		for _, ch := range line {
+			if ch == '{' {
+				braceCount++
+				if braceCount > maxBraceDepth {
+					maxBraceDepth = braceCount
+				}
+			}
+			if ch == '}' {
+				braceCount--
+			}
+		}
+	}
+	if maxBraceDepth > 5 {
+		report.Issues = append(report.Issues, fmt.Sprintf("代码嵌套深度 %d 层，建议重构", maxBraceDepth))
+		report.Complexity = maxBraceDepth
+	}
+
+	// 4. Check for magic numbers (simple heuristic)
+	magicNumbers := 0
+	for _, line := range lines {
+		// Skip comments
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "//") || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		// Count numbers that aren't 0 or 1
+		words := strings.Fields(trimmed)
+		for _, word := range words {
+			if len(word) > 1 && word[0] >= '2' && word[0] <= '9' {
+				// Simple heuristic for magic numbers
+				magicNumbers++
+			}
+		}
+	}
+	if magicNumbers > 5 {
+		report.Issues = append(report.Issues, fmt.Sprintf("发现 %d 个可能的魔法数字，建议提取为常量", magicNumbers))
+	}
+
+	// 5. Calculate score
+	report.Score = 100
+	for _, issue := range report.Issues {
+		if strings.Contains(issue, "嵌套深度") {
+			report.Score -= 20
+		} else if strings.Contains(issue, "魔法数字") {
+			report.Score -= 10
+		} else if strings.Contains(issue, "TODO") || strings.Contains(issue, "FIXME") {
+			report.Score -= 8
+		} else {
+			report.Score -= 5
+		}
+	}
+	if report.Score < 0 {
+		report.Score = 0
+	}
+
+	return report
+}
+
+// GetQualitySummary returns a summary of quality reports.
+func (qv *QualityVerifier) GetQualitySummary(reports []QualityReport) string {
+	if len(reports) == 0 {
+		return "无文件需要检查"
+	}
+
+	totalScore := 0
+	totalIssues := 0
+	for _, r := range reports {
+		totalScore += r.Score
+		totalIssues += len(r.Issues)
+	}
+	avgScore := totalScore / len(reports)
+
+	summary := fmt.Sprintf("📊 代码质量报告:\n")
+	summary += fmt.Sprintf("- 检查文件: %d\n", len(reports))
+	summary += fmt.Sprintf("- 平均质量分: %d/100\n", avgScore)
+	summary += fmt.Sprintf("- 发现问题: %d\n", totalIssues)
+
+	if avgScore >= 80 {
+		summary += "- 评价: ✅ 良好"
+	} else if avgScore >= 60 {
+		summary += "- 评价: ⚠️ 一般，建议优化"
+	} else {
+		summary += "- 评价: ❌ 较差，需要重构"
+	}
+
+	return summary
+}
+
 func (r *AgentRunner) SetMemoryV2Store(store *service.MemoryV2Store) {
 	r.memV2Store = store
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// P0-1: StagnationDetector — Smart loop termination
+// ═══════════════════════════════════════════════════════════════════
+
+// StagnationDetector tracks agent progress and detects when it's stuck in a loop.
+// It monitors: repeated tool calls, lack of write operations, and identical results.
+type StagnationDetector struct {
+	lastToolCalls        []string // last N tool call signatures (tool:hash)
+	lastResults          []string // last N tool results (truncated)
+	consecutiveNoWrite   int      // iterations without write_file call
+	maxConsecutiveNoWrite int     // threshold to force answer
+	maxIdenticalRepeats  int      // max times same tool+args can repeat
+	maxStagnationRounds  int      // rounds with no meaningful progress
+	stagnationCount      int      // current stagnation counter
+}
+
+// toolCallSignature creates a compact signature for a tool call (tool name + args hash).
+func toolCallSignature(name string, args map[string]interface{}) string {
+	// Simple hash: just use first 100 chars of JSON args
+	argStr, _ := json.Marshal(args)
+	if len(argStr) > 100 {
+		argStr = argStr[:100]
+	}
+	return name + ":" + string(argStr)
+}
+
+// resultSignature creates a compact signature for a tool result.
+func resultSignature(result string) string {
+	if len(result) > 200 {
+		return result[:200]
+	}
+	return result
+}
+
+// RecordToolCall records a tool call and returns true if stagnation detected.
+func (sd *StagnationDetector) RecordToolCall(name string, args map[string]interface{}, result string) (stagnant bool, reason string) {
+	sig := toolCallSignature(name, args)
+	sd.lastToolCalls = append(sd.lastToolCalls, sig)
+	if len(sd.lastToolCalls) > 10 {
+		sd.lastToolCalls = sd.lastToolCalls[1:]
+	}
+
+	resSig := resultSignature(result)
+	sd.lastResults = append(sd.lastResults, resSig)
+	if len(sd.lastResults) > 10 {
+		sd.lastResults = sd.lastResults[1:]
+	}
+
+	// Check 1: Same tool+args repeated maxIdenticalRepeats times
+	count := 0
+	for _, s := range sd.lastToolCalls {
+		if s == sig {
+			count++
+		}
+	}
+	if count >= sd.maxIdenticalRepeats {
+		return true, fmt.Sprintf("工具 '%s' 已重复调用 %d 次（相同参数），建议换一种方式或直接给出答案", name, count)
+	}
+
+	// Check 2: Same result repeated maxStagnationRounds times
+	if len(sd.lastResults) >= sd.maxStagnationRounds {
+		// Check if the last N results are all the same
+		allSame := true
+		for i := len(sd.lastResults) - sd.maxStagnationRounds + 1; i < len(sd.lastResults); i++ {
+			if sd.lastResults[i] != sd.lastResults[i-1] {
+				allSame = false
+				break
+			}
+		}
+		if allSame && sd.lastResults[len(sd.lastResults)-1] != "" {
+			sd.stagnationCount++
+			if sd.stagnationCount >= 1 { // detect immediately after maxStagnationRounds identical results
+				return true, "连续多轮返回相同结果，Agent 可能陷入循环，建议直接给出当前进度的答案"
+			}
+		} else {
+			sd.stagnationCount = 0
+		}
+	}
+
+	return false, ""
+}
+
+// RecordNoWrite tracks iterations without write_file.
+func (sd *StagnationDetector) RecordNoWrite() bool {
+	sd.consecutiveNoWrite++
+	if sd.consecutiveNoWrite >= sd.maxConsecutiveNoWrite {
+		return true // force answer
+	}
+	return false
+}
+
+// ResetNoWrite resets the no-write counter (called when write_file is executed).
+func (sd *StagnationDetector) ResetNoWrite() {
+	sd.consecutiveNoWrite = 0
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// P0-2: ToolRetryFallback — Fallback strategies for failed tools
+// ═══════════════════════════════════════════════════════════════════
+
+// ToolRetryFallback provides fallback strategies when tool calls fail.
+type ToolRetryFallback struct {
+	db           *sql.DB
+	currentModel string
+}
+
+// FallbackStrategy represents a fallback action.
+type FallbackStrategy int
+
+const (
+	FallbackRetrySame FallbackStrategy = iota
+	FallbackSimplifyTask
+	FallbackSwitchModel
+	FallbackForceAnswer
+)
+
+// GetFallback determines the best fallback strategy for a failed tool call.
+func (trf *ToolRetryFallback) GetFallback(toolName string, err error, consecutiveFailures int) FallbackStrategy {
+	errStr := err.Error()
+
+	// If tool not found, try alternative
+	if strings.Contains(errStr, "not found") || strings.Contains(errStr, "unknown skill") {
+		return FallbackSimplifyTask
+	}
+
+	// If timeout, try with simpler input
+	if strings.Contains(errStr, "timeout") || strings.Contains(errStr, "deadline exceeded") {
+		if consecutiveFailures >= 2 {
+			return FallbackSimplifyTask
+		}
+		return FallbackRetrySame
+	}
+
+	// If rate limited, switch model
+	if strings.Contains(errStr, "rate") || strings.Contains(errStr, "429") {
+		return FallbackSwitchModel
+	}
+
+	// If context too long, force answer
+	if strings.Contains(errStr, "context_length") || strings.Contains(errStr, "max_tokens") {
+		return FallbackForceAnswer
+	}
+
+	// Default: after 3 failures, simplify
+	if consecutiveFailures >= 3 {
+		return FallbackSimplifyTask
+	}
+
+	return FallbackRetrySame
+}
+
+// SimplifyTaskInput creates a simplified version of the tool input.
+func (trf *ToolRetryFallback) SimplifyTaskInput(toolName string, input map[string]interface{}) map[string]interface{} {
+	simplified := make(map[string]interface{})
+	for k, v := range input {
+		simplified[k] = v
+	}
+
+	switch toolName {
+	case "write_file":
+		// If content is too long, truncate and add marker
+		if content, ok := simplified["content"].(string); ok && len(content) > 5000 {
+			simplified["content"] = content[:5000] + "\n// ... (truncated due to size limit)"
+		}
+	case "bash":
+		// If command is complex, simplify
+		if cmd, ok := simplified["command"].(string); ok {
+			if strings.Contains(cmd, "&&") {
+				// Take only first command
+				parts := strings.SplitN(cmd, "&&", 2)
+				simplified["command"] = strings.TrimSpace(parts[0])
+			}
+		}
+	case "build_module":
+		// No simplification needed
+	}
+
+	return simplified
+}
+
+// GetFallbackModel returns an alternative model when current one fails.
+func (trf *ToolRetryFallback) GetFallbackModel(currentModel string) string {
+	// Simple fallback chain
+	fallbacks := map[string]string{
+		"deepseek-v3":  "deepseek-v3",
+		"deepseek-v4":  "deepseek-v3",
+		"gpt-4":        "gpt-3.5-turbo",
+		"claude-3":     "claude-3-haiku",
+	}
+
+	if fallback, ok := fallbacks[currentModel]; ok {
+		return fallback
+	}
+	return currentModel // no fallback available
 }
 
 // getSessionCache returns (or creates) a session-scoped tool result cache.
@@ -437,8 +914,11 @@ You are running WITHOUT a project context. This means:
 	writeFileCalled := false
 	writeFileCount := 0
 	readFileCount := 0
-	const maxWriteFilePerTurn = 15 // safety limit per iteration (raised from 5: large projects often need 10+ files per turn)
-	const maxReadFilePerTurn = 10 // limit read_file calls per iteration (raised from 4: OpenCode-style tools need more reads)
+	// P1-2: Dynamic limits based on project complexity
+	baseMaxReadFilePerTurn := 10
+	baseMaxWriteFilePerTurn := 15
+	maxWriteFilePerTurn := baseMaxWriteFilePerTurn
+	maxReadFilePerTurn := baseMaxReadFilePerTurn
 	checkpoints := make([]FileCheckpoint, 0) // file change history for undo
 	consecutiveErrors := 0
 	answerSent := false
@@ -452,12 +932,53 @@ You are running WITHOUT a project context. This means:
 	toolLastResults := make(map[string]string)     // skill name -> last result (for pattern detection)
 	toolConsecutiveIdentical := make(map[string]int) // skill name -> consecutive identical calls
 
+	// P0-1: Smart loop termination — detect stagnation
+	 stagnationDetector := &StagnationDetector{
+		lastToolCalls:     make([]string, 0, 10),
+		lastResults:       make([]string, 0, 10),
+		consecutiveNoWrite: 0,
+		maxConsecutiveNoWrite: 15, // force answer after 15 iterations without write_file
+		maxIdenticalRepeats: 3,   // stop if same tool+args repeated 3 times
+		maxStagnationRounds: 5,   // stop if no progress for 5 rounds
+	}
+
+	// P0-2: Tool retry fallback
+	toolRetryFallback := &ToolRetryFallback{
+		db:           r.db,
+		currentModel: resolvedModel,
+	}
+
+	// P2-1: Task decomposer for complex tasks
+	taskDecomposer := &TaskDecomposer{db: r.db}
+	subtasks := taskDecomposer.DecomposeTask(task, cfg.ProjectContext)
+	currentSubtask := taskDecomposer.GetNextSubtask(subtasks)
+	if currentSubtask != nil {
+		log.Printf("[Agent] task decomposed into %d subtasks, starting: %s", len(subtasks), currentSubtask.Description)
+	}
+
+	// P2-2: Quality verifier
+	qualityVerifier := &QualityVerifier{db: r.db}
+	qualityReports := make([]QualityReport, 0)
+
 	// Derive skill sets from metadata (no hardcoded maps)
 	readOnlySkills := r.registry.ReadOnlySkills()
 
 	for iter := 0; iter < cfg.MaxIterations; iter++ {
 		writeFileCount = 0 // reset per-iteration counter
 		readFileCount = 0
+
+		// P1-2: Dynamically adjust limits based on project complexity
+		if cfg.ProjectID != "" && iter > 0 {
+			// Increase limits for complex projects (more files to read/write)
+			if totalToolCalls > 20 {
+				maxReadFilePerTurn = baseMaxReadFilePerTurn + 5
+				maxWriteFilePerTurn = baseMaxWriteFilePerTurn + 5
+			}
+			if totalToolCalls > 50 {
+				maxReadFilePerTurn = baseMaxReadFilePerTurn + 10
+				maxWriteFilePerTurn = baseMaxWriteFilePerTurn + 10
+			}
+		}
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
@@ -588,6 +1109,18 @@ You are running WITHOUT a project context. This means:
 		// ── Case 1: Final answer ──
 		if llmResp.Role == "assistant" && len(llmResp.ToolCalls) == 0 {
 			answer := cleanAnswer(llmResp.Content)
+
+			// P2-2: Append quality report if we have quality data
+			if len(qualityReports) > 0 {
+				qualitySummary := qualityVerifier.GetQualitySummary(qualityReports)
+				answer += "\n\n" + qualitySummary
+			}
+
+			// P2-1: Mark subtask as completed if applicable
+			if currentSubtask != nil {
+				currentSubtask.Status = "completed"
+				currentSubtask = taskDecomposer.GetNextSubtask(subtasks)
+			}
 
 			// Auto-retry if answer was truncated by max_tokens
 			if llmResp.FinishReason == "length" && iter < cfg.MaxIterations-1 {
@@ -990,6 +1523,7 @@ You are running WITHOUT a project context. This means:
 		}
 
 		// Execute sequential tasks (write/side-effect tools)
+		anyWriteCalled := false
 		for _, st := range sequentialTasks {
 			// Notify frontend
 			w.WriteSSE(map[string]interface{}{
@@ -1031,16 +1565,55 @@ You are running WITHOUT a project context. This means:
 				log.Printf("[Agent] write_file failed: %v, providing error context to LLM", err)
 				result = fmt.Sprintf("Write failed: %v. Please check the path and content, then try again.", err)
 			} else if err != nil {
-				result = fmt.Sprintf("Error: %v", err)
+				// P0-2: Apply fallback strategy
+				toolConsecutiveErrors[st.skillName]++
+				fallback := toolRetryFallback.GetFallback(st.skillName, err, toolConsecutiveErrors[st.skillName])
+				log.Printf("[Agent] tool %s failed (attempt %d): %v, fallback=%d", st.skillName, toolConsecutiveErrors[st.skillName], err, fallback)
+
+				switch fallback {
+				case FallbackSimplifyTask:
+					// Simplify input and retry
+					simplified := toolRetryFallback.SimplifyTaskInput(st.skillName, st.skillInput)
+					retryResult, retryErr := r.executeSkill(toolCtx, st.skillName, simplified)
+					if retryErr == nil {
+						result = retryResult
+						toolConsecutiveErrors[st.skillName] = 0
+					} else {
+						result = fmt.Sprintf("Error: %v (simplified retry also failed: %v)", err, retryErr)
+					}
+				case FallbackSwitchModel:
+					// Log model switch suggestion (actual switch happens at LLM level)
+					result = fmt.Sprintf("Error: %v. Consider switching to a different model.", err)
+				case FallbackForceAnswer:
+					// Force the agent to provide an answer
+					result = fmt.Sprintf("Error: %v. Please provide your best answer based on what you know so far.", err)
+					conversation = append(conversation, map[string]interface{}{
+						"role":    "user",
+						"content": "[System: Tool execution failed. Please provide your final answer based on available information.]",
+					})
+					answerSent = true
+				default:
+					result = fmt.Sprintf("Error: %v", err)
+				}
+			} else {
+				toolConsecutiveErrors[st.skillName] = 0 // reset on success
 			}
 
 			if st.skillName == "write_file" {
 				writeFileCalled = true
+				anyWriteCalled = true
+				stagnationDetector.ResetNoWrite()
 				if path, ok := st.skillInput["path"].(string); ok {
 					toolCache.invalidate(path)
 					// Optimization 17: Cache written content for immediate read-back
 					if content, ok := st.skillInput["content"].(string); ok && err == nil {
 						r.cacheWriteContent(sessionID, path, content)
+						// P2-2: Quality verification after write
+						report := qualityVerifier.VerifyFile(path, content)
+						qualityReports = append(qualityReports, report)
+						if len(report.Issues) > 0 {
+							log.Printf("[Agent] quality issues in %s: %v", path, report.Issues)
+						}
 					}
 				}
 				// Optimization 22: Invalidate build_module cache when source files change
@@ -1130,6 +1703,55 @@ You are running WITHOUT a project context. This means:
 					}
 				}
 			}
+		}
+
+		// P0-1: Track stagnation for each tool call
+		for _, res := range results {
+			// Check stagnation
+			var toolInput map[string]interface{}
+			json.Unmarshal([]byte(res.tc.Function.Arguments), &toolInput)
+			if stagnant, reason := stagnationDetector.RecordToolCall(res.tc.Function.Name, toolInput, res.result); stagnant {
+				log.Printf("[Agent] stagnation detected: %s", reason)
+				w.WriteSSE(map[string]interface{}{
+					"type":    "step",
+					"step":    "think",
+					"content": fmt.Sprintf("⚠️ %s", reason),
+				})
+				// Force answer by appending a user message asking for summary
+				conversation = append(conversation, map[string]interface{}{
+					"role":    "user",
+					"content": fmt.Sprintf("[System: %s. Please provide a summary of what you've done so far and any remaining work.]", reason),
+				})
+				answerSent = true
+				break
+			}
+
+			// Track write_file calls
+			if res.tc.Function.Name == "write_file" {
+				anyWriteCalled = true
+				stagnationDetector.ResetNoWrite()
+			}
+		}
+
+		// Check no-write stagnation
+		if !anyWriteCalled && !answerSent {
+			if stagnationDetector.RecordNoWrite() {
+				log.Printf("[Agent] no-write stagnation: %d iterations without write_file", stagnationDetector.consecutiveNoWrite)
+				w.WriteSSE(map[string]interface{}{
+					"type":    "step",
+					"step":    "think",
+					"content": "⚠️ 已连续多轮未执行写入操作，请直接给出当前进度的答案或执行必要的文件修改",
+				})
+				conversation = append(conversation, map[string]interface{}{
+					"role":    "user",
+					"content": "[System: You have not written any files for multiple iterations. Please either write the necessary files or provide your final answer based on what you've read so far.]",
+				})
+				answerSent = true
+			}
+		}
+
+		if answerSent {
+			continue
 		}
 
 		// Add all results to conversation in order
