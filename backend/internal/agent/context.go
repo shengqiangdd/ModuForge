@@ -448,7 +448,7 @@ func (r *AgentRunner) compactConversation(ctx context.Context, conversation []ma
 
 	req, err := http.NewRequestWithContext(ctx, "POST", endpoint, bytes.NewReader(bodyBytes))
 	if err != nil {
-		return conversation, err
+		return conversation, fmt.Errorf("failed to build compaction request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	if apiKey != "" {
@@ -457,7 +457,7 @@ func (r *AgentRunner) compactConversation(ctx context.Context, conversation []ma
 
 	resp, err := llmHTTPClient.Do(req)
 	if err != nil {
-		return conversation, err
+		return conversation, fmt.Errorf("compaction LLM request failed: %w", err)
 	}
 	defer resp.Body.Close()
 

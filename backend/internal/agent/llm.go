@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -578,7 +579,7 @@ func (r *AgentRunner) callLLMWithTools(ctx context.Context, messages []map[strin
 			respBody, _ := io.ReadAll(resp.Body)
 			resp.Body.Close()
 			errMsg := fmt.Sprintf("LLM error (HTTP %d): %s", resp.StatusCode, string(respBody))
-			lastErr = fmt.Errorf("%s", errMsg)
+			lastErr = errors.New(errMsg)
 			if isLLMRetryableError(resp.StatusCode) {
 				// Record 429 for rate limit tracking
 				if resp.StatusCode == 429 {
@@ -627,20 +628,7 @@ func (r *AgentRunner) parseStreamingResponse(ctx context.Context, resp *http.Res
 	var finishReason string
 
 	keepAliveDone := make(chan struct{})
-	go func() {
-		ticker := time.NewTicker(10 * time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ticker.C:
-				_ = w.WriteSSE(map[string]interface{}{"type": "step", "step": "think", "content": ""})
-			case <-keepAliveDone:
-				return
-			case <-ctx.Done():
-				return
-			}
-		}
-	}()
+	startKeepalive(ctx, w, keepAliveDone, 10*time.Second)
 
 	// Use a large buffer to avoid "bufio.Scanner: token too long" on long tool call JSONs.
 	// Default 64KB is too small; 256KB handles most LLM responses comfortably.

@@ -8,6 +8,7 @@ import (
 	"log"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gofiber/fiber/v3"
@@ -691,11 +692,14 @@ func (h *AgentHandler) GetSkillOptimization(c fiber.Ctx) error {
 // return immediately without attempting I/O (preventing busy-loop on
 // disconnected clients).
 type bufioSSEWriter struct {
-	bw      *bufio.Writer
+	bw           *bufio.Writer
 	disconnected bool
+	mu           sync.Mutex // serializes concurrent writes (parallel tools, keepalives)
 }
 
 func (w *bufioSSEWriter) WriteSSE(data map[string]interface{}) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	if w.disconnected {
 		return io.ErrClosedPipe
 	}
@@ -712,6 +716,8 @@ func (w *bufioSSEWriter) WriteSSE(data map[string]interface{}) error {
 }
 
 func (w *bufioSSEWriter) WriteSSEPlain(data string) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	if w.disconnected {
 		return io.ErrClosedPipe
 	}
@@ -724,6 +730,8 @@ func (w *bufioSSEWriter) WriteSSEPlain(data string) error {
 }
 
 func (w *bufioSSEWriter) WriteSSEComment(comment string) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	if w.disconnected {
 		return io.ErrClosedPipe
 	}
@@ -737,6 +745,8 @@ func (w *bufioSSEWriter) WriteSSEComment(comment string) error {
 
 // IsDisconnected returns true if the underlying connection has been lost.
 func (w *bufioSSEWriter) IsDisconnected() bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	return w.disconnected
 }
 
@@ -744,7 +754,7 @@ func (w *bufioSSEWriter) IsDisconnected() bool {
 func (w *bufioSSEWriter) FlushWithTimeout(d time.Duration) error {
 	done := make(chan error, 1)
 	go func() {
-		done <- w.bw.Flush()
+		done <- w.Flush()
 	}()
 	select {
 	case err := <-done:
@@ -755,6 +765,8 @@ func (w *bufioSSEWriter) FlushWithTimeout(d time.Duration) error {
 }
 
 func (w *bufioSSEWriter) Flush() error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	return w.bw.Flush()
 }
 
@@ -770,9 +782,12 @@ type answerCaptureWriter struct {
 	// Track tool calls for persistence
 	toolCallsJSON string
 	toolCallID    string
+	mu            sync.Mutex // serializes concurrent WriteSSE from parallel tool goroutines
 }
 
 func (w *answerCaptureWriter) WriteSSE(data map[string]interface{}) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	// Accumulate reasoning chunks (streaming LLM extended thinking)
 	if dataType, _ := data["type"].(string); dataType == "reasoning" {
 		if content, _ := data["content"].(string); content != "" {

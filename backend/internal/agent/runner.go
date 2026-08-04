@@ -1269,9 +1269,7 @@ You are running WITHOUT a project context. This means:
 		history := r.convStore.Get(sessionID)
 		if len(history) > 0 {
 			history = r.smartCompressHistory(ctx, history, w, cfg)
-			conversation = append(conversation, map[string]interface{}{
-				"role": "system", "content": "[Previous conversation]",
-			})
+			conversation = appendRoleMessage(conversation, "system", "[Previous conversation]")
 			for _, msg := range history {
 				convMsg := map[string]interface{}{
 					"role":    msg.Role,
@@ -1410,20 +1408,7 @@ You are running WITHOUT a project context. This means:
 
 		// Call LLM with keepalive — send empty think events every 10s to prevent frontend idle timeout
 		llmDone := make(chan struct{})
-		go func() {
-			incGoroutines()
-			defer decGoroutines()
-			ticker := time.NewTicker(10 * time.Second)
-			defer ticker.Stop()
-			for {
-				select {
-				case <-ticker.C:
-					_ = w.WriteSSE(map[string]interface{}{"type": "step", "step": "think", "content": ""})
-				case <-llmDone:
-					return
-				}
-			}
-		}()
+		startKeepalive(ctx, w, llmDone, 10*time.Second)
 
 		// Optimization 2: Prefilter conversation to remove waste
 		prefiltered := prefilterConversation(conversation)
@@ -1432,66 +1417,11 @@ You are running WITHOUT a project context. This means:
 		close(llmDone)
 		lastLLMResp = llmResp
 		if err != nil {
-			// Classify error: permanent errors stop immediately, transient ones retry
-			if !isRetryableError(err) {
-				log.Printf("[Agent] non-retryable error: %v", err)
-				w.WriteSSE(map[string]interface{}{"type": "error", "error": userFriendlyError(err)})
-				w.WriteSSEPlain("[DONE]")
-				return err
+			var abortErr error
+			conversation, consecutiveErrors, abortErr = r.handleLLMCallError(ctx, w, cfg, conversation, consecutiveErrors, err)
+			if abortErr != nil {
+				return abortErr
 			}
-			consecutiveErrors++
-			if consecutiveErrors >= 3 {
-				log.Printf("[Agent] retry limit reached after %d attempts: %v", consecutiveErrors, err)
-				w.WriteSSE(map[string]interface{}{"type": "error", "error": userFriendlyError(err)})
-				w.WriteSSEPlain("[DONE]")
-				return err
-			}
-			// Auto-compact on context-too-long errors before retrying
-			errStr := err.Error()
-			if strings.Contains(errStr, "context_length_exceeded") || strings.Contains(errStr, "maximum context length") || strings.Contains(errStr, "max_tokens") {
-				log.Printf("[Agent] context too long, compacting conversation before retry...")
-				compacted, cErr := r.compactConversation(ctx, conversation, w, cfg)
-				if cErr == nil {
-					conversation = compacted
-					w.WriteSSE(map[string]interface{}{
-						"type":    "step",
-						"step":    "think",
-						"content": "📋 上下文过长，已自动压缩，正在重试...",
-					})
-				}
-			}
-			// Backoff: 1s, 2s, 4s (exponential)
-			backoff := time.Duration(1<<(consecutiveErrors-1)) * time.Second
-			log.Printf("[Agent] LLM error (attempt %d): %v, retrying in %v...", consecutiveErrors, err, backoff)
-			// Notify frontend before sleeping so safety timer resets
-			w.WriteSSE(map[string]interface{}{
-				"type":    "step",
-				"step":    "think",
-				"content": fmt.Sprintf("⚠️ LLM 调用失败 (attempt %d/%d)，%v 后重试...", consecutiveErrors, 3, backoff),
-			})
-			// Keepalive during sleep — send real data events, not just comments
-			// Some proxies/CDNs drop connections with only SSE comments
-			sleepDone := make(chan struct{})
-			go func() {
-				incGoroutines()
-				defer decGoroutines()
-				ticker := time.NewTicker(3 * time.Second)
-				defer ticker.Stop()
-				for {
-					select {
-					case <-ticker.C:
-						_ = w.WriteSSE(map[string]interface{}{"type": "step", "step": "think", "content": ""})
-					case <-sleepDone:
-						return
-					}
-				}
-			}()
-			time.Sleep(backoff)
-			close(sleepDone)
-			conversation = append(conversation, map[string]interface{}{
-				"role":    "user",
-				"content": fmt.Sprintf("[System: LLM call failed with error: %v. Please try again.]", err),
-			})
 			continue
 		}
 		consecutiveErrors = 0
@@ -1529,13 +1459,9 @@ You are running WITHOUT a project context. This means:
 					"step":    "think",
 					"content": "⚠️ 答案被截断，正在请求续写...",
 				})
-				conversation = append(conversation, map[string]interface{}{
-					"role": "assistant", "content": answer,
-				})
-				conversation = append(conversation, map[string]interface{}{
-					"role":    "user",
-					"content": "你的回答被截断了。请继续完成上面的回答，从上次中断的地方接着写。不要重复已有内容。",
-				})
+				conversation = appendRoleMessage(conversation, "assistant", answer)
+				conversation = appendRoleMessage(conversation, "user",
+					"你的回答被截断了。请继续完成上面的回答，从上次中断的地方接着写。不要重复已有内容。")
 				iter++
 				continue
 			}
@@ -1543,13 +1469,9 @@ You are running WITHOUT a project context. This means:
 			// If answer is garbled, retry once
 			if isGarbageOutput(answer) && iter < cfg.MaxIterations-1 {
 				debugLog("garbage answer detected in main loop (len=%d), retrying...", len(answer))
-				conversation = append(conversation, map[string]interface{}{
-					"role": "assistant", "content": answer,
-				})
-				conversation = append(conversation, map[string]interface{}{
-					"role":    "user",
-					"content": "Your previous answer was garbled/unreadable. Please provide a clear, well-formatted Markdown answer. Do NOT use tools.",
-				})
+				conversation = appendRoleMessage(conversation, "assistant", answer)
+				conversation = appendRoleMessage(conversation, "user",
+					"Your previous answer was garbled/unreadable. Please provide a clear, well-formatted Markdown answer. Do NOT use tools.")
 				iter++
 				continue
 			}
@@ -1571,13 +1493,9 @@ You are running WITHOUT a project context. This means:
 				// Check if answer claims modification without calling write_file
 				if claimsFileModification(answer) && !writeFileCalled && iter < cfg.MaxIterations-1 {
 					log.Printf("[Agent] answer claims modification but write_file not called")
-					conversation = append(conversation, map[string]interface{}{
-						"role": "assistant", "content": answer,
-					})
-					conversation = append(conversation, map[string]interface{}{
-						"role":    "user",
-						"content": "你提到修改了文件但没有调用 write_file。请调用 write_file 保存更改，或者直接回答。",
-					})
+					conversation = appendRoleMessage(conversation, "assistant", answer)
+					conversation = appendRoleMessage(conversation, "user",
+						"你提到修改了文件但没有调用 write_file。请调用 write_file 保存更改，或者直接回答。")
 					continue
 				}
 				w.WriteSSE(map[string]interface{}{
@@ -1636,7 +1554,9 @@ You are running WITHOUT a project context. This means:
 		for _, tc := range llmResp.ToolCalls {
 			skillName := tc.Function.Name
 			var skillInput map[string]interface{}
-			json.Unmarshal([]byte(tc.Function.Arguments), &skillInput)
+			if err := json.Unmarshal([]byte(tc.Function.Arguments), &skillInput); err != nil {
+				debugLog("tool args unmarshal failed for %s: %v", skillName, err)
+			}
 
 			// Plan mode: block write operations
 			if cfg.Mode == ModePlan && !readOnlySkills[skillName] {
@@ -1648,20 +1568,7 @@ You are running WITHOUT a project context. This means:
 					"content": blocked,
 					"blocked": true,
 				})
-				toolResultMsg := map[string]interface{}{
-					"role":         "tool",
-					"tool_call_id": tc.ID,
-					"content":      blocked,
-				}
-				conversation = append(conversation, toolResultMsg)
-				// Persist to convStore
-				if sessionID != "" {
-					r.convStore.Append(sessionID, service.Message{
-						Role:       "tool",
-						Content:    blocked,
-						ToolCallID: tc.ID,
-					})
-				}
+				conversation = r.appendToolResult(conversation, sessionID, tc.ID, blocked)
 				continue
 			}
 
@@ -1679,20 +1586,7 @@ You are running WITHOUT a project context. This means:
 						"content": blocked,
 						"blocked": true,
 					})
-					toolResultMsg := map[string]interface{}{
-						"role":         "tool",
-						"tool_call_id": tc.ID,
-						"content":      blocked,
-					}
-					conversation = append(conversation, toolResultMsg)
-					// Persist to convStore
-					if sessionID != "" {
-						r.convStore.Append(sessionID, service.Message{
-							Role:       "tool",
-							Content:    blocked,
-							ToolCallID: tc.ID,
-						})
-					}
+					conversation = r.appendToolResult(conversation, sessionID, tc.ID, blocked)
 					continue
 				}
 			}
@@ -1710,20 +1604,7 @@ You are running WITHOUT a project context. This means:
 						"content": blocked,
 						"blocked": true,
 					})
-					toolResultMsg := map[string]interface{}{
-						"role":         "tool",
-						"tool_call_id": tc.ID,
-						"content":      blocked,
-					}
-					conversation = append(conversation, toolResultMsg)
-					// Persist to convStore
-					if sessionID != "" {
-						r.convStore.Append(sessionID, service.Message{
-							Role:       "tool",
-							Content:    blocked,
-							ToolCallID: tc.ID,
-						})
-					}
+					conversation = r.appendToolResult(conversation, sessionID, tc.ID, blocked)
 					continue
 				}
 			}
@@ -1748,20 +1629,7 @@ You are running WITHOUT a project context. This means:
 			if missing := validateRequiredParams(skillName, skillInput); missing != "" {
 				log.Printf("[Agent] missing required param for %s: %s", skillName, missing)
 				paramErr := fmt.Sprintf("❌ Missing required parameter(s): %s. Check the tool schema and provide all required fields.", missing)
-				toolResultMsg := map[string]interface{}{
-					"role":         "tool",
-					"tool_call_id": tc.ID,
-					"content":      paramErr,
-				}
-				conversation = append(conversation, toolResultMsg)
-				// Persist to convStore
-				if sessionID != "" {
-					r.convStore.Append(sessionID, service.Message{
-						Role:       "tool",
-						Content:    paramErr,
-						ToolCallID: tc.ID,
-					})
-				}
+				conversation = r.appendToolResult(conversation, sessionID, tc.ID, paramErr)
 				w.WriteSSE(map[string]interface{}{
 					"type":    "step",
 					"step":    "skill_result",
@@ -1961,19 +1829,7 @@ You are running WITHOUT a project context. This means:
 					"content": budgetMsg,
 					"blocked": true,
 				})
-				toolResultMsg := map[string]interface{}{
-					"role":         "tool",
-					"tool_call_id": st.tc.ID,
-					"content":      budgetMsg,
-				}
-				conversation = append(conversation, toolResultMsg)
-				if sessionID != "" {
-					r.convStore.Append(sessionID, service.Message{
-						Role:       "tool",
-						Content:    budgetMsg,
-						ToolCallID: st.tc.ID,
-					})
-				}
+				conversation = r.appendToolResult(conversation, sessionID, st.tc.ID, budgetMsg)
 				continue
 			}
 
@@ -1990,19 +1846,7 @@ You are running WITHOUT a project context. This means:
 					"content": denyMsg,
 					"blocked": true,
 				})
-				toolResultMsg := map[string]interface{}{
-					"role":         "tool",
-					"tool_call_id": st.tc.ID,
-					"content":      denyMsg,
-				}
-				conversation = append(conversation, toolResultMsg)
-				if sessionID != "" {
-					r.convStore.Append(sessionID, service.Message{
-						Role:       "tool",
-						Content:    denyMsg,
-						ToolCallID: st.tc.ID,
-					})
-				}
+				conversation = r.appendToolResult(conversation, sessionID, st.tc.ID, denyMsg)
 				continue
 			}
 
@@ -2021,22 +1865,7 @@ You are running WITHOUT a project context. This means:
 
 			// Keepalive during execution
 			skillDone := make(chan struct{})
-			go func() {
-				incGoroutines()
-				defer decGoroutines()
-				ticker := time.NewTicker(10 * time.Second)
-				defer ticker.Stop()
-				for {
-					select {
-					case <-ticker.C:
-						_ = w.WriteSSE(map[string]interface{}{"type": "step", "step": "think", "content": ""})
-					case <-skillDone:
-						return
-					case <-ctx.Done():
-						return
-					}
-				}
-			}()
+			startKeepalive(ctx, w, skillDone, 10*time.Second)
 
 			// Execute with timeout
 			toolTimeout := toolTimeoutForName(st.skillName)
@@ -2090,10 +1919,8 @@ You are running WITHOUT a project context. This means:
 					result = fmt.Sprintf("Error: %v. Model rate limited, please try a different approach.", err)
 				case RecoveryForceAnswer:
 					result = fmt.Sprintf("Error: %v. Please provide your best answer based on available information.", err)
-					conversation = append(conversation, map[string]interface{}{
-						"role":    "user",
-						"content": "[System: Multiple tool failures. Please provide your final answer based on available information.]",
-					})
+					conversation = appendRoleMessage(conversation, "user",
+						"[System: Multiple tool failures. Please provide your final answer based on available information.]")
 					answerSent = true
 				case RecoverySkipTool:
 					result = fmt.Sprintf("Skipped tool '%s' due to error: %v", st.skillName, err)
@@ -2280,7 +2107,9 @@ You are running WITHOUT a project context. This means:
 		for _, res := range results {
 			// Check stagnation
 			var toolInput map[string]interface{}
-			json.Unmarshal([]byte(res.tc.Function.Arguments), &toolInput)
+			if err := json.Unmarshal([]byte(res.tc.Function.Arguments), &toolInput); err != nil {
+				debugLog("tool args unmarshal failed for stagnation check (%s): %v", res.tc.Function.Name, err)
+			}
 			if stagnant, reason := stagnationDetector.RecordToolCall(res.tc.Function.Name, toolInput, res.result); stagnant {
 				log.Printf("[Agent] stagnation detected: %s", reason)
 				w.WriteSSE(map[string]interface{}{
@@ -2289,10 +2118,8 @@ You are running WITHOUT a project context. This means:
 					"content": fmt.Sprintf("⚠️ %s", reason),
 				})
 				// Force answer by appending a user message asking for summary
-				conversation = append(conversation, map[string]interface{}{
-					"role":    "user",
-					"content": fmt.Sprintf("[System: %s. Please provide a summary of what you've done so far and any remaining work.]", reason),
-				})
+				conversation = appendRoleMessage(conversation, "user",
+					fmt.Sprintf("[System: %s. Please provide a summary of what you've done so far and any remaining work.]", reason))
 				answerSent = true
 				break
 			}
@@ -2313,10 +2140,8 @@ You are running WITHOUT a project context. This means:
 					"step":    "think",
 					"content": "⚠️ 已连续多轮未执行写入操作，请直接给出当前进度的答案或执行必要的文件修改",
 				})
-				conversation = append(conversation, map[string]interface{}{
-					"role":    "user",
-					"content": "[System: You have not written any files for multiple iterations. Please either write the necessary files or provide your final answer based on what you've read so far.]",
-				})
+				conversation = appendRoleMessage(conversation, "user",
+					"[System: You have not written any files for multiple iterations. Please either write the necessary files or provide your final answer based on what you've read so far.]")
 				answerSent = true
 			}
 		}
@@ -2339,20 +2164,7 @@ You are running WITHOUT a project context. This means:
 			if len(pendingWriteFiles) == 1 {
 				// Single write_file — add as-is
 				wf := pendingWriteFiles[0]
-				toolResultMsg := map[string]interface{}{
-					"role":         "tool",
-					"tool_call_id": wf.tc.ID,
-					"content":      wf.result,
-				}
-				conversation = append(conversation, toolResultMsg)
-				// Persist to convStore
-				if sessionID != "" {
-					r.convStore.Append(sessionID, service.Message{
-						Role:       "tool",
-						Content:    wf.result,
-						ToolCallID: wf.tc.ID,
-					})
-				}
+				conversation = r.appendToolResult(conversation, sessionID, wf.tc.ID, wf.result)
 			} else {
 				// Multiple consecutive write_files — merge into summary
 				var paths []string
@@ -2362,35 +2174,10 @@ You are running WITHOUT a project context. This means:
 				merged := fmt.Sprintf("✅ Successfully wrote %d files: %s",
 					len(pendingWriteFiles), strings.Join(paths, ", "))
 				// Add one merged result for the first tool_call_id, skip the rest
-				toolResultMsg := map[string]interface{}{
-					"role":         "tool",
-					"tool_call_id": pendingWriteFiles[0].tc.ID,
-					"content":      merged,
-				}
-				conversation = append(conversation, toolResultMsg)
-				// Persist to convStore
-				if sessionID != "" {
-					r.convStore.Append(sessionID, service.Message{
-						Role:       "tool",
-						Content:    merged,
-						ToolCallID: pendingWriteFiles[0].tc.ID,
-					})
-				}
+				conversation = r.appendToolResult(conversation, sessionID, pendingWriteFiles[0].tc.ID, merged)
 				// For the remaining write_file calls, add empty acknowledges
 				for _, wf := range pendingWriteFiles[1:] {
-					conversation = append(conversation, map[string]interface{}{
-						"role":         "tool",
-						"tool_call_id": wf.tc.ID,
-						"content":      "(merged into previous result)",
-					})
-					// Persist to convStore
-					if sessionID != "" {
-						r.convStore.Append(sessionID, service.Message{
-							Role:       "tool",
-							Content:    "(merged into previous result)",
-							ToolCallID: wf.tc.ID,
-						})
-					}
+					conversation = r.appendToolResult(conversation, sessionID, wf.tc.ID, "(merged into previous result)")
 				}
 				debugLog("merged %d write_file results into one message (saved ~%d tokens)",
 					len(pendingWriteFiles), len(pendingWriteFiles)*50)
@@ -2426,21 +2213,7 @@ You are running WITHOUT a project context. This means:
 			}
 			// Non-write tool: flush pending writes first
 			flushWriteFiles()
-			toolResultMsg := map[string]interface{}{
-				"role":         "tool",
-				"tool_call_id": res.tc.ID,
-				"content":      res.result,
-			}
-			conversation = append(conversation, toolResultMsg)
-
-			// Persist tool result to convStore
-			if sessionID != "" {
-				r.convStore.Append(sessionID, service.Message{
-					Role:       "tool",
-					Content:    res.result,
-					ToolCallID: res.tc.ID,
-				})
-			}
+			conversation = r.appendToolResult(conversation, sessionID, res.tc.ID, res.result)
 
 			debugLog("tool=%s resultLen=%d uniqueOps=%d totalCalls=%d",
 				res.tc.Function.Name, len(res.result), len(uniqueOps), totalToolCalls)
@@ -2467,10 +2240,7 @@ You are running WITHOUT a project context. This means:
 							"(3) If stuck, use write_file to create the file directly.",
 						skillName, toolConsecutiveErrors[skillName], res.result)
 					log.Printf("[Agent] self-reflection triggered: %s failed %d times", skillName, toolConsecutiveErrors[skillName])
-					conversation = append(conversation, map[string]interface{}{
-						"role":    "system",
-						"content": diagnostic,
-					})
+					conversation = appendRoleMessage(conversation, "system", diagnostic)
 					w.WriteSSE(map[string]interface{}{
 						"type":    "step",
 						"step":    "think",
@@ -2518,10 +2288,7 @@ You are running WITHOUT a project context. This means:
 					"DO NOT read any more files. Start writing code immediately.",
 				readOnlyCount)
 			log.Printf("[Agent] read-only loop detected: %d reads, %d writes", readOnlyCount, writeCount)
-			conversation = append(conversation, map[string]interface{}{
-				"role":    "system",
-				"content": diagnostic,
-			})
+			conversation = appendRoleMessage(conversation, "system", diagnostic)
 			w.WriteSSE(map[string]interface{}{
 				"type":    "step",
 				"step":    "think",
@@ -2551,31 +2318,7 @@ You are running WITHOUT a project context. This means:
 	}
 
 	// Exhausted iterations — send answer if we haven't already
-	if !answerSent {
-		if lastLLMResp != nil && lastLLMResp.Content != "" {
-			answer := cleanAnswer(lastLLMResp.Content)
-			if answer != "" {
-				w.WriteSSE(map[string]interface{}{
-					"type":    "step",
-					"step":    "answer",
-					"content": answer,
-				})
-			} else {
-				w.WriteSSE(map[string]interface{}{
-					"type":    "step",
-					"step":    "answer",
-					"content": fmt.Sprintf("⚠️ Agent 已完成 %d 轮迭代，但未生成最终回答。请检查上方的工具调用步骤了解执行过程。\n\n💡 提示：你可以继续发送消息让 Agent 继续完成任务。", cfg.MaxIterations),
-				})
-			}
-		} else {
-			w.WriteSSE(map[string]interface{}{
-				"type":    "step",
-				"step":    "answer",
-				"content": fmt.Sprintf("⚠️ Agent 已完成 %d 轮迭代，但未生成最终回答。请检查上方的工具调用步骤了解执行过程。\n\n💡 提示：你可以继续发送消息让 Agent 继续完成任务。", cfg.MaxIterations),
-			})
-		}
-	}
-	w.WriteSSEPlain("[DONE]")
+	sendFinalAnswer(w, cfg, lastLLMResp, answerSent)
 	// Clean up write-content cache for this session (tool result cache persists)
 	r.writeContentCache.Delete(sessionID)
 	return nil
