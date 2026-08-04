@@ -19,6 +19,19 @@ type ToolFunctionDef struct {
 	Parameters  map[string]interface{} `json:"parameters"`
 }
 
+// toolParams builds a JSON-schema object parameter map. "required" is only
+// included when non-empty.
+func toolParams(props map[string]interface{}, required []string) map[string]interface{} {
+	p := map[string]interface{}{
+		"type":       "object",
+		"properties": props,
+	}
+	if len(required) > 0 {
+		p["required"] = required
+	}
+	return p
+}
+
 func (r *AgentRunner) buildToolDefinitionsForMode(mode AgentMode, modelName string) []ToolDef {
 	skills := r.registry.List()
 	defs := make([]ToolDef, 0, len(skills))
@@ -57,78 +70,66 @@ func (r *AgentRunner) buildToolDefinitionsForMode(mode AgentMode, modelName stri
 			Function: ToolFunctionDef{
 				Name:        s.Name(),
 				Description: s.Description(),
-				Parameters: map[string]interface{}{
-					"type":       "object",
-					"properties": map[string]interface{}{},
-				},
 			},
 		}
 
 		switch s.Name() {
 		case "read_file":
 			def.Function.Description = "Read file content. ALWAYS use grep_search first to find relevant code, then read only what you need."
-			def.Function.Parameters["properties"] = map[string]interface{}{
+			def.Function.Parameters = toolParams(map[string]interface{}{
 				"path":       map[string]interface{}{"type": "string", "description": "File path to read"},
 				"start_line": map[string]interface{}{"type": "integer", "description": "First line (1-based, optional)"},
 				"end_line":   map[string]interface{}{"type": "integer", "description": "Last line (1-based, optional)"},
-			}
-			def.Function.Parameters["required"] = []string{"path"}
+			}, []string{"path"})
 		case "write_file":
 			def.Function.Description = "Write COMPLETE file content. Use ONLY for new files or complete rewrites. For small changes, prefer edit_file."
-			def.Function.Parameters["properties"] = map[string]interface{}{
+			def.Function.Parameters = toolParams(map[string]interface{}{
 				"path":    map[string]interface{}{"type": "string", "description": "File path to write"},
 				"content": map[string]interface{}{"type": "string", "description": "Complete file content"},
-			}
-			def.Function.Parameters["required"] = []string{"path", "content"}
+			}, []string{"path", "content"})
 		case "write_file_batch":
-			def.Function.Parameters["properties"] = map[string]interface{}{
+			def.Function.Parameters = toolParams(map[string]interface{}{
 				"files": map[string]interface{}{
 					"type":        "array",
 					"items":       map[string]interface{}{"type": "object"},
 					"description": "Array of {path, content} objects to write in one transaction",
 				},
 				"project_id": map[string]interface{}{"type": "string", "description": "Project ID (auto-created if omitted)"},
-			}
-			def.Function.Parameters["required"] = []string{"files"}
+			}, []string{"files"})
 		case "edit_file":
 			def.Function.Description = "Make targeted edits to an existing file. Use this for MOST changes (preferred over write_file for modifications <30% of file). Specify exact old_text to find and new_text to replace."
-			def.Function.Parameters["properties"] = map[string]interface{}{
+			def.Function.Parameters = toolParams(map[string]interface{}{
 				"path":     map[string]interface{}{"type": "string", "description": "File path to edit"},
 				"old_text": map[string]interface{}{"type": "string", "description": "Exact text to find (must match exactly)"},
 				"new_text": map[string]interface{}{"type": "string", "description": "Replacement text"},
-			}
-			def.Function.Parameters["required"] = []string{"path", "old_text", "new_text"}
+			}, []string{"path", "old_text", "new_text"})
 		case "grep_search":
 			def.Function.Description = "Search code patterns across all project files (like grep -rn). Use BEFORE read_file to find relevant code."
-			def.Function.Parameters["properties"] = map[string]interface{}{
+			def.Function.Parameters = toolParams(map[string]interface{}{
 				"pattern":         map[string]interface{}{"type": "string", "description": "Search pattern (regex supported)"},
 				"include_pattern": map[string]interface{}{"type": "string", "description": "File filter glob (e.g. *.go)"},
 				"context_lines":   map[string]interface{}{"type": "integer", "description": "Context lines before/after match"},
 				"is_regex":        map[string]interface{}{"type": "boolean", "description": "Treat pattern as regex"},
-			}
-			def.Function.Parameters["required"] = []string{"pattern"}
+			}, []string{"pattern"})
 		case "glob_search":
 			def.Function.Description = "Find files by name pattern (e.g., *.go, **/*.rs). Use to discover project structure."
-			def.Function.Parameters["properties"] = map[string]interface{}{
+			def.Function.Parameters = toolParams(map[string]interface{}{
 				"pattern": map[string]interface{}{"type": "string", "description": "Glob pattern (use ** for recursive)"},
-			}
-			def.Function.Parameters["required"] = []string{"pattern"}
+			}, []string{"pattern"})
 		case "bash":
 			def.Function.Description = "Execute shell commands. Use for: build (go build, cargo build), test (go test, cargo test), git, file inspection (cat, ls, find)."
-			def.Function.Parameters["properties"] = map[string]interface{}{
+			def.Function.Parameters = toolParams(map[string]interface{}{
 				"command": map[string]interface{}{"type": "string", "description": "Shell command to execute"},
-			}
-			def.Function.Parameters["required"] = []string{"command"}
+			}, []string{"command"})
 		case "build_module":
 			def.Function.Description = "Compile and package the project into a ZIP. ALWAYS call after writing code to verify it compiles."
-			def.Function.Parameters["properties"] = map[string]interface{}{
+			def.Function.Parameters = toolParams(map[string]interface{}{
 				"project_id": map[string]interface{}{"type": "string", "description": "Project ID to build"},
-			}
-			def.Function.Parameters["required"] = []string{"project_id"}
+			}, []string{"project_id"})
 		default:
-			def.Function.Parameters["properties"] = map[string]interface{}{
+			def.Function.Parameters = toolParams(map[string]interface{}{
 				"input": map[string]interface{}{"type": "string", "description": "Input for the skill"},
-			}
+			}, nil)
 		}
 
 		defs = append(defs, def)

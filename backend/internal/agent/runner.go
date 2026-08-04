@@ -1289,12 +1289,14 @@ You are running WITHOUT a project context. This means:
 	}
 
 	// Tracking state
-	toolCallHistory := make(map[string]int)
-	uniqueOps := make(map[string]bool)
-	totalToolCalls := 0
+	m := &runMetrics{
+		toolCallHistory:          make(map[string]int),
+		uniqueOps:                make(map[string]bool),
+		toolConsecutiveErrors:    make(map[string]int),
+		toolLastResults:          make(map[string]string),
+		toolConsecutiveIdentical: make(map[string]int),
+	}
 	writeFileCalled := false
-	writeFileCount := 0
-	readFileCount := 0
 	// P1-2: Dynamic limits based on project complexity
 	baseMaxReadFilePerTurn := 10
 	baseMaxWriteFilePerTurn := 15
@@ -1309,11 +1311,6 @@ You are running WITHOUT a project context. This means:
 	// Optimization 1: Session-scoped tool result cache (persists across Run() calls)
 	toolCache := r.getSessionCache(sessionID)
 
-	// Optimization 24: Self-reflection tracking — detect repeated tool failures
-	toolConsecutiveErrors := make(map[string]int)    // skill name -> consecutive error count
-	toolLastResults := make(map[string]string)       // skill name -> last result (for pattern detection)
-	toolConsecutiveIdentical := make(map[string]int) // skill name -> consecutive identical calls
-
 	// P0-1: Smart loop termination — detect stagnation
 	stagnationDetector := &StagnationDetector{
 		lastToolCalls:         make([]string, 0, 10),
@@ -1322,6 +1319,13 @@ You are running WITHOUT a project context. This means:
 		maxConsecutiveNoWrite: 15, // force answer after 15 iterations without write_file
 		maxIdenticalRepeats:   3,  // stop if same tool+args repeated 3 times
 		maxStagnationRounds:   5,  // stop if no progress for 5 rounds
+	}
+
+	// Post-execution analysis — stagnation detection, self-reflection, loop detection
+	trp := &toolResultProcessor{
+		r: r, ctx: ctx, w: w, cfg: cfg, sessionID: sessionID,
+		reqProviderID: reqProviderID, reqModel: reqModel,
+		stagnationDetector: stagnationDetector, m: m,
 	}
 
 	// P0-2: Tool retry fallback
@@ -1355,17 +1359,14 @@ You are running WITHOUT a project context. This means:
 	readOnlySkills := r.registry.ReadOnlySkills()
 
 	for iter := 0; iter < cfg.MaxIterations; iter++ {
-		writeFileCount = 0 // reset per-iteration counter
-		readFileCount = 0
-
 		// P1-2: Dynamically adjust limits based on project complexity
 		if cfg.ProjectID != "" && iter > 0 {
 			// Increase limits for complex projects (more files to read/write)
-			if totalToolCalls > 20 {
+			if m.totalToolCalls > 20 {
 				maxReadFilePerTurn = baseMaxReadFilePerTurn + 5
 				maxWriteFilePerTurn = baseMaxWriteFilePerTurn + 5
 			}
-			if totalToolCalls > 50 {
+			if m.totalToolCalls > 50 {
 				maxReadFilePerTurn = baseMaxReadFilePerTurn + 10
 				maxWriteFilePerTurn = baseMaxWriteFilePerTurn + 10
 			}
@@ -1542,171 +1543,19 @@ You are running WITHOUT a project context. This means:
 			})
 		}
 
-		// Optimization 1: Parallel tool execution for read-only tools
-		// Separate tools into parallel-safe (read-only) and sequential (write/side-effect)
-		type toolTask struct {
-			tc         LLMToolCall
-			skillName  string
-			skillInput map[string]interface{}
-			parallel   bool
-		}
-		var tasks []toolTask
-		for _, tc := range llmResp.ToolCalls {
-			skillName := tc.Function.Name
-			var skillInput map[string]interface{}
-			if err := json.Unmarshal([]byte(tc.Function.Arguments), &skillInput); err != nil {
-				debugLog("tool args unmarshal failed for %s: %v", skillName, err)
-			}
-
-			// Plan mode: block write operations
-			if cfg.Mode == ModePlan && !readOnlySkills[skillName] {
-				blocked := fmt.Sprintf("⚠️ Plan 模式下无法执行 %s。请切换到 Act 模式后再执行写入操作。", skillName)
-				w.WriteSSE(map[string]interface{}{
-					"type":    "step",
-					"step":    "skill_result",
-					"skill":   skillName,
-					"content": blocked,
-					"blocked": true,
-				})
-				conversation = r.appendToolResult(conversation, sessionID, tc.ID, blocked)
-				continue
-			}
-
-			// read_file safety limit — prevents SSE timeout from too many parallel reads
-			if skillName == "read_file" {
-				readFileCount++
-				log.Printf("[Agent] read_file limit check: count=%d max=%d", readFileCount, maxReadFilePerTurn)
-				if readFileCount > maxReadFilePerTurn {
-					blocked := fmt.Sprintf("⚠️ 安全限制：单轮最多允许 %d 次 read_file 调用，已达到上限。请先分析已有文件内容，下一轮再继续读取。", maxReadFilePerTurn)
-					log.Printf("[Agent] read_file limit reached (%d), blocking further reads", maxReadFilePerTurn)
-					w.WriteSSE(map[string]interface{}{
-						"type":    "step",
-						"step":    "skill_result",
-						"skill":   skillName,
-						"content": blocked,
-						"blocked": true,
-					})
-					conversation = r.appendToolResult(conversation, sessionID, tc.ID, blocked)
-					continue
-				}
-			}
-
-			// write_file safety limit
-			if skillName == "write_file" {
-				writeFileCount++
-				if writeFileCount > maxWriteFilePerTurn {
-					blocked := fmt.Sprintf("⚠️ 安全限制：单轮最多允许 %d 次 write_file 调用，已达到上限。请在下一轮继续修改。", maxWriteFilePerTurn)
-					log.Printf("[Agent] write_file limit reached (%d), blocking further writes", maxWriteFilePerTurn)
-					w.WriteSSE(map[string]interface{}{
-						"type":    "step",
-						"step":    "skill_result",
-						"skill":   skillName,
-						"content": blocked,
-						"blocked": true,
-					})
-					conversation = r.appendToolResult(conversation, sessionID, tc.ID, blocked)
-					continue
-				}
-			}
-
-			// Auto-inject project_id and user_id
-			if skillInput == nil {
-				skillInput = make(map[string]interface{})
-			}
-			if cfg.ProjectID != "" {
-				if _, exists := skillInput["project_id"]; !exists {
-					skillInput["project_id"] = cfg.ProjectID
-				}
-			}
-			if cfg.UserID != "" {
-				skillInput["user_id"] = cfg.UserID
-			}
-
-			// Normalize skill input
-			skillInput = normalizeSkillInput(skillInput)
-
-			// Validate required parameters
-			if missing := validateRequiredParams(skillName, skillInput); missing != "" {
-				log.Printf("[Agent] missing required param for %s: %s", skillName, missing)
-				paramErr := fmt.Sprintf("❌ Missing required parameter(s): %s. Check the tool schema and provide all required fields.", missing)
-				conversation = r.appendToolResult(conversation, sessionID, tc.ID, paramErr)
-				w.WriteSSE(map[string]interface{}{
-					"type":    "step",
-					"step":    "skill_result",
-					"skill":   skillName,
-					"content": paramErr,
-				})
-				continue
-			}
-
-			// Determine if this tool can run in parallel (read-only, no side effects)
-			parallelSafe := readOnlySkills[skillName] && skillName != "build_module"
-			tasks = append(tasks, toolTask{tc: tc, skillName: skillName, skillInput: skillInput, parallel: parallelSafe})
-		}
-
-		// Optimization 6: Deduplicate identical tool calls (same name + arguments).
-		// Weak models sometimes issue the same tool call multiple times in one iteration.
-		originalTasks := tasks
-		seen := make(map[string]int) // dedupKey -> index in deduped slice
-		var deduped []toolTask
-		var skippedToolCalls []LLMToolCall
-		for _, t := range tasks {
-			dedupKey := t.skillName + ":" + t.tc.Function.Arguments
-			if idx, exists := seen[dedupKey]; exists {
-				debugLog("dedup: skipping duplicate tool call %s (same as task %d)", t.skillName, idx)
-				skippedToolCalls = append(skippedToolCalls, t.tc)
-				continue
-			}
-			seen[dedupKey] = len(deduped)
-			deduped = append(deduped, t)
-		}
-		if len(deduped) < len(originalTasks) {
-			log.Printf("[Agent] dedup: removed %d/%d duplicate tool calls", len(originalTasks)-len(deduped), len(originalTasks))
-		}
-		tasks = deduped
+		// Prepare tool tasks: validate, dedup, analyze dependencies, group into
+		// parallel-safe (read-only) and sequential (write/side-effect) sets
+		plan := r.prepareToolTasks(llmResp, conversation, sessionID, w, cfg, readOnlySkills, maxReadFilePerTurn, maxWriteFilePerTurn)
+		conversation = plan.conversation
 
 		// Execute tools: parallel for read-only AND different-file writes, sequential for same-file writes
 		var mu sync.Mutex
 		var results []toolResult
 
-		// NEW: Analyze dependencies for better parallelism
-		r.depGraph.Reset()
-		for _, t := range tasks {
-			filePath := ""
-			if p, ok := t.skillInput["path"].(string); ok {
-				filePath = p
-			}
-			r.depGraph.AddToolCall(t.tc.ID, t.skillName, filePath, !readOnlySkills[t.skillName])
-		}
-		r.depGraph.AnalyzeAndLink()
-		depLayers := r.depGraph.GetExecutionLayers()
-		if len(depLayers) > 1 {
-			log.Printf("[Agent] dependency analysis: %d layers, grouping: %s", len(depLayers), r.depGraph.GetParallelGroup())
-			w.WriteSSE(map[string]interface{}{
-				"type":          "step",
-				"step":          "dependency_analysis",
-				"layers":        len(depLayers),
-				"parallel_info": r.depGraph.GetParallelGroup(),
-			})
-		}
-
-		// Group tasks: read-only tools run in parallel; write/edit tools run
-		// sequentially to avoid same-file conflicts. Non-write tools are also
-		// promoted to the parallel set so each tool executes exactly once.
-		var parallelTasks []toolTask
-		var sequentialTasks []toolTask
-		for _, t := range tasks {
-			if t.parallel || (t.skillName != "write_file" && t.skillName != "edit_file") {
-				parallelTasks = append(parallelTasks, t)
-			} else {
-				sequentialTasks = append(sequentialTasks, t)
-			}
-		}
-
 		// Execute parallel tasks concurrently
-		if len(parallelTasks) > 0 {
+		if len(plan.parallelTasks) > 0 {
 			var wg sync.WaitGroup
-			for _, pt := range parallelTasks {
+			for _, pt := range plan.parallelTasks {
 				wg.Add(1)
 				go func(task toolTask) {
 					defer wg.Done()
@@ -1774,13 +1623,13 @@ You are running WITHOUT a project context. This means:
 					mu.Lock()
 					appendToolResultToList(&results, task.tc, result)
 					// Track parallel tool calls for loop detection
-					toolCallHistory[task.skillName]++
-					totalToolCalls++
+					m.toolCallHistory[task.skillName]++
+					m.totalToolCalls++
 					opKey := task.skillName
 					if path, ok := task.skillInput["path"].(string); ok {
 						opKey = task.skillName + ":" + path
 					}
-					uniqueOps[opKey] = true
+					m.uniqueOps[opKey] = true
 					mu.Unlock()
 
 					w.WriteSSE(map[string]interface{}{
@@ -1796,7 +1645,7 @@ You are running WITHOUT a project context. This means:
 
 		// Execute sequential tasks (write/side-effect tools)
 		anyWriteCalled := false
-		for _, st := range sequentialTasks {
+		for _, st := range plan.sequentialTasks {
 			// P1-3: Check call budget
 			if !callBudget.CanCall(st.skillName) {
 				budgetMsg := fmt.Sprintf("⚠️ 工具调用预算已用尽 (读取: %d/%d, 写入: %d/%d, 总计: %d/%d)",
@@ -1873,11 +1722,11 @@ You are running WITHOUT a project context. This means:
 			} else if err != nil {
 				// P0-2: Classify error and determine recovery strategy
 				errCategory := ClassifyError(err.Error())
-				toolConsecutiveErrors[st.skillName]++
-				recovery := GetRecoveryStrategy(errCategory, toolConsecutiveErrors[st.skillName])
+				m.toolConsecutiveErrors[st.skillName]++
+				recovery := GetRecoveryStrategy(errCategory, m.toolConsecutiveErrors[st.skillName])
 				recoveryMsg := GetRecoveryMessage(recovery, st.skillName)
 				log.Printf("[Agent] tool %s failed (attempt %d): %v, category=%d, recovery=%d",
-					st.skillName, toolConsecutiveErrors[st.skillName], err, errCategory, recovery)
+					st.skillName, m.toolConsecutiveErrors[st.skillName], err, errCategory, recovery)
 
 				w.WriteSSE(map[string]interface{}{
 					"type":    "step",
@@ -1893,7 +1742,7 @@ You are running WITHOUT a project context. This means:
 					retryResult, retryErr := r.executeSkill(toolCtx, st.skillName, simplified)
 					if retryErr == nil {
 						result = retryResult
-						toolConsecutiveErrors[st.skillName] = 0
+						m.toolConsecutiveErrors[st.skillName] = 0
 					} else {
 						result = fmt.Sprintf("Error: %v (simplified retry also failed: %v)", err, retryErr)
 					}
@@ -1919,7 +1768,7 @@ You are running WITHOUT a project context. This means:
 					result = fmt.Sprintf("Error: %v", err)
 				}
 			} else {
-				toolConsecutiveErrors[st.skillName] = 0 // reset on success
+				m.toolConsecutiveErrors[st.skillName] = 0 // reset on success
 			}
 
 			if st.skillName == "write_file" {
@@ -1996,15 +1845,15 @@ You are running WITHOUT a project context. This means:
 			}
 
 			// Track operations
-			toolCallHistory[st.skillName]++
-			totalToolCalls++
+			m.toolCallHistory[st.skillName]++
+			m.totalToolCalls++
 			opKey := st.skillName
 			if st.skillName == "read_file" || st.skillName == "write_file" {
 				if path, ok := st.skillInput["path"].(string); ok {
 					opKey = st.skillName + ":" + path
 				}
 			}
-			uniqueOps[opKey] = true
+			m.uniqueOps[opKey] = true
 
 			// P2-1: Record reflection
 			if err != nil {
@@ -2054,13 +1903,13 @@ You are running WITHOUT a project context. This means:
 
 		// Optimization 6: Map deduplicated tool calls back to their executed counterparts.
 		// For each skipped duplicate, find the matching executed result and reuse it.
-		if len(skippedToolCalls) > 0 {
-			for _, origTC := range skippedToolCalls {
+		if len(plan.skippedToolCalls) > 0 {
+			for _, origTC := range plan.skippedToolCalls {
 				dedupKey := origTC.Function.Name + ":" + origTC.Function.Arguments
-				if executedIdx, ok := seen[dedupKey]; ok {
+				if executedIdx, ok := plan.seen[dedupKey]; ok {
 					for _, res := range results {
-						if res.tc.Function.Name == deduped[executedIdx].skillName &&
-							res.tc.Function.Arguments == deduped[executedIdx].tc.Function.Arguments {
+						if res.tc.Function.Name == plan.deduped[executedIdx].skillName &&
+							res.tc.Function.Arguments == plan.deduped[executedIdx].tc.Function.Arguments {
 							mu.Lock()
 							appendToolResultToList(&results, origTC, res.result)
 							mu.Unlock()
@@ -2073,150 +1922,14 @@ You are running WITHOUT a project context. This means:
 			}
 		}
 
-		// P0-1: Track stagnation for each tool call
-		for _, res := range results {
-			// Check stagnation
-			var toolInput map[string]interface{}
-			if err := json.Unmarshal([]byte(res.tc.Function.Arguments), &toolInput); err != nil {
-				debugLog("tool args unmarshal failed for stagnation check (%s): %v", res.tc.Function.Name, err)
-			}
-			if stagnant, reason := stagnationDetector.RecordToolCall(res.tc.Function.Name, toolInput, res.result); stagnant {
-				log.Printf("[Agent] stagnation detected: %s", reason)
-				w.WriteSSE(map[string]interface{}{
-					"type":    "step",
-					"step":    "think",
-					"content": fmt.Sprintf("⚠️ %s", reason),
-				})
-				// Force answer by appending a user message asking for summary
-				conversation = appendRoleMessage(conversation, "user",
-					fmt.Sprintf("[System: %s. Please provide a summary of what you've done so far and any remaining work.]", reason))
-				answerSent = true
-				break
-			}
-
-			// Track write_file calls
-			if res.tc.Function.Name == "write_file" {
-				anyWriteCalled = true
-				stagnationDetector.ResetNoWrite()
-			}
+		// Post-execution analysis: stagnation detection, self-reflection, loop detection
+		var procErr error
+		conversation, answerSent, procErr = trp.process(iter, conversation, results, anyWriteCalled, answerSent)
+		if procErr != nil {
+			return procErr
 		}
-
-		// Check no-write stagnation
-		if !anyWriteCalled && !answerSent {
-			if stagnationDetector.RecordNoWrite() {
-				log.Printf("[Agent] no-write stagnation: %d iterations without write_file", stagnationDetector.consecutiveNoWrite)
-				w.WriteSSE(map[string]interface{}{
-					"type":    "step",
-					"step":    "think",
-					"content": "⚠️ 已连续多轮未执行写入操作，请直接给出当前进度的答案或执行必要的文件修改",
-				})
-				conversation = appendRoleMessage(conversation, "user",
-					"[System: You have not written any files for multiple iterations. Please either write the necessary files or provide your final answer based on what you've read so far.]")
-				answerSent = true
-			}
-		}
-
 		if answerSent {
 			continue
-		}
-
-		// Add all results to conversation in order
-		// Optimization 18: Merge consecutive write_file results to save tokens
-		conversation = r.appendResultsToConversation(conversation, sessionID, results, uniqueOps, totalToolCalls)
-
-		// Optimization 24: Self-reflection — track failures and inject diagnostic prompts
-		// Update error tracking for each tool result
-		for _, res := range results {
-			skillName := res.tc.Function.Name
-			isError := strings.HasPrefix(res.result, "Error:") || strings.HasPrefix(res.result, "❌") ||
-				strings.HasPrefix(res.result, "⚠️") || strings.Contains(res.result, "failed")
-
-			if isError {
-				toolConsecutiveErrors[skillName]++
-				if toolConsecutiveErrors[skillName] >= 3 {
-					// Same tool failed 3 times in a row — inject reflection prompt
-					diagnostic := fmt.Sprintf(
-						"⚠️ [Self-Reflection] The tool '%s' has failed %d times consecutively. "+
-							"Recent errors: %s. "+
-							"STOP using this tool with the same approach. Instead: "+
-							"(1) Analyze WHY it's failing, (2) Try a completely different approach, "+
-							"(3) If stuck, use write_file to create the file directly.",
-						skillName, toolConsecutiveErrors[skillName], res.result)
-					log.Printf("[Agent] self-reflection triggered: %s failed %d times", skillName, toolConsecutiveErrors[skillName])
-					conversation = appendRoleMessage(conversation, "system", diagnostic)
-					w.WriteSSE(map[string]interface{}{
-						"type":    "step",
-						"step":    "think",
-						"content": fmt.Sprintf("🔄 检测到 %s 连续失败 %d 次，已注入反思提示", skillName, toolConsecutiveErrors[skillName]),
-					})
-					toolConsecutiveErrors[skillName] = 0 // reset after injection
-				}
-			} else {
-				toolConsecutiveErrors[skillName] = 0 // success resets counter
-			}
-
-			// Track consecutive identical tool calls (same skill + same input)
-			inputKey := skillName
-			if len(res.tc.Function.Arguments) > 0 {
-				p := res.tc.Function.Arguments
-				if len(p) > 100 {
-					p = p[:100]
-				}
-				inputKey = skillName + ":" + p
-			}
-			if prev, ok := toolLastResults[inputKey]; ok && prev == res.result {
-				toolConsecutiveIdentical[inputKey]++
-				if toolConsecutiveIdentical[inputKey] >= 3 {
-					// Same exact tool call with same result 3 times — force answer
-					log.Printf("[Agent] early termination: '%s' called %d times with identical result", skillName, toolConsecutiveIdentical[inputKey])
-					return r.forceAnswer(ctx, conversation, w, sessionID, cfg, reqProviderID, reqModel,
-						fmt.Sprintf("You've called '%s' with identical parameters %d times and got the same result each time. This is a dead end. You must stop using tools and provide your final answer.", skillName, toolConsecutiveIdentical[inputKey]))
-				}
-			} else {
-				toolConsecutiveIdentical[inputKey] = 0
-			}
-			toolLastResults[inputKey] = res.result
-		}
-
-		// Read-only loop detection: if Agent only calls read_file/grep/glob without any write/edit, inject reminder
-		readOnlyCount := toolCallHistory["read_file"] + toolCallHistory["grep_search"] + toolCallHistory["glob_search"] + toolCallHistory["list_dir"]
-		writeCount := toolCallHistory["write_file"] + toolCallHistory["edit_file"] + toolCallHistory["write_file_batch"]
-		skipLoopDetection := false
-		if readOnlyCount >= 6 && writeCount == 0 && iter >= 2 {
-			diagnostic := fmt.Sprintf(
-				"⚠️ [Read-Only Loop] You have called read tools %d times without any write/edit operations. "+
-					"You have already read enough code. NOW you MUST: "+
-					"(1) Use edit_file for targeted fixes, or write_file to rewrite files completely. "+
-					"(2) Then call build_module to verify. "+
-					"DO NOT read any more files. Start writing code immediately.",
-				readOnlyCount)
-			log.Printf("[Agent] read-only loop detected: %d reads, %d writes", readOnlyCount, writeCount)
-			conversation = appendRoleMessage(conversation, "system", diagnostic)
-			w.WriteSSE(map[string]interface{}{
-				"type":    "step",
-				"step":    "think",
-				"content": fmt.Sprintf("🔄 检测到只读循环（%d 次读取，0 次写入），已注入编辑提醒", readOnlyCount),
-			})
-			skipLoopDetection = true // Give Agent a chance to respond before forcing answer
-		}
-
-		// Global error cap: if total consecutive errors across all skills >= 5, force answer
-		totalConsecutiveErrors := 0
-		for _, count := range toolConsecutiveErrors {
-			totalConsecutiveErrors += count
-		}
-		if totalConsecutiveErrors >= 5 {
-			log.Printf("[Agent] early termination: total consecutive errors across all skills = %d", totalConsecutiveErrors)
-			return r.forceAnswer(ctx, conversation, w, sessionID, cfg, reqProviderID, reqModel,
-				"Multiple tools have failed consecutively. Stop using tools and provide your final answer based on what you've learned so far.")
-		}
-
-		// Smart loop detection (skip if read-only reminder was just injected)
-		if !skipLoopDetection {
-			if reason := detectLoop(toolCallHistory, uniqueOps, totalToolCalls); reason != "" {
-				debugLog("loop detected: %s", reason)
-				return r.forceAnswer(ctx, conversation, w, sessionID, cfg, reqProviderID, reqModel, reason)
-			}
 		}
 	}
 

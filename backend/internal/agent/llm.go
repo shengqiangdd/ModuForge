@@ -483,6 +483,89 @@ func (r *AgentRunner) callLLMWithTools(ctx context.Context, messages []map[strin
 		return nil, fmt.Errorf("rate limit wait cancelled: %w", err)
 	}
 
+	bodyBytes, err := buildLLMRequestBody(messages, tools, cfg, model, modelTier)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	// Retry loop with exponential backoff for transient errors (429, 5xx, network)
+	var lastErr error
+	var retryable bool
+	for attempt := 0; attempt <= llmMaxRetries; attempt++ {
+		if attempt > 0 {
+			retryAfter := ""
+			if lastErr != nil {
+				// Try to extract Retry-After from error message
+				errStr := lastErr.Error()
+				if idx := strings.Index(errStr, "Retry-After:"); idx >= 0 {
+					rest := errStr[idx+len("Retry-After:"):]
+					if endIdx := strings.IndexAny(rest, "\n\r"); endIdx > 0 {
+						retryAfter = strings.TrimSpace(rest[:endIdx])
+					}
+				}
+			}
+			backoff := llmRetryBackoff(attempt, retryAfter)
+			log.Printf("[Agent] LLM retry %d/%d after %v: %v", attempt, llmMaxRetries, backoff, lastErr)
+			w.WriteSSE(map[string]interface{}{
+				"type":    "step",
+				"step":    "think",
+				"content": fmt.Sprintf("⚠️ LLM 请求失败 (%v)，%v 后重试 (%d/%d)...", lastErr, backoff, attempt, llmMaxRetries),
+			})
+			select {
+			case <-time.After(backoff):
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		}
+
+		req, err := http.NewRequestWithContext(ctx, "POST", endpoint, bytes.NewReader(bodyBytes))
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		if apiKey != "" {
+			req.Header.Set("Authorization", "Bearer "+apiKey)
+		}
+
+		debugLog("LLM request (attempt %d/%d): endpoint=%s model=%s apiKey_len=%d", attempt+1, llmMaxRetries+1, endpoint, model, len(apiKey))
+		resp, err := llmHTTPClient.Do(req)
+		if err != nil {
+			lastErr = fmt.Errorf("LLM request failed: %w", err)
+			continue // retry on network error
+		}
+
+		if resp.StatusCode >= 400 {
+			lastErr, retryable = handleLLMHTTPError(resp, modelTier, reqProviderID)
+			if !retryable {
+				return nil, lastErr // permanent error, no retry
+			}
+			continue // retry on 429/5xx
+		}
+
+		// Success — record success for circuit breaker
+		if modelTier == TierFree && reqProviderID != "" {
+			globalCircuitBreaker.RecordSuccess(reqProviderID)
+		}
+
+		// Success — parse the streaming response
+		result, parseErr := r.parseStreamingResponse(ctx, resp, w)
+		resp.Body.Close()
+		if parseErr != nil {
+			lastErr = parseErr
+			// Only retry if we got no data at all (stream interrupted before any content)
+			if result == nil || (result.Content == "" && len(result.ToolCalls) == 0) {
+				continue
+			}
+		}
+		return result, nil
+	}
+
+	return nil, fmt.Errorf("LLM failed after %d attempts: %w", llmMaxRetries+1, lastErr)
+}
+
+// buildLLMRequestBody constructs the chat/completions request body, applying
+// adaptive max_tokens based on the approximate context size.
+func buildLLMRequestBody(messages []map[string]interface{}, tools []ToolDef, cfg RunConfig, model string, modelTier ModelTier) ([]byte, error) {
 	body := map[string]interface{}{
 		"model":    model,
 		"messages": messages,
@@ -528,98 +611,33 @@ func (r *AgentRunner) callLLMWithTools(ctx context.Context, messages []map[strin
 		body["tool_choice"] = "auto"
 	}
 
-	bodyBytes, err := json.Marshal(body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	return json.Marshal(body)
+}
+
+// handleLLMHTTPError converts an HTTP error response into an error and a
+// retryable flag. It records 429 rate limits and circuit-breaker failures for
+// free models, and extracts the Retry-After header when present.
+func handleLLMHTTPError(resp *http.Response, modelTier ModelTier, reqProviderID string) (error, bool) {
+	respBody, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	errMsg := fmt.Sprintf("LLM error (HTTP %d): %s", resp.StatusCode, string(respBody))
+	err := errors.New(errMsg)
+	if !isLLMRetryableError(resp.StatusCode) {
+		return err, false
 	}
-
-	// Retry loop with exponential backoff for transient errors (429, 5xx, network)
-	var lastErr error
-	for attempt := 0; attempt <= llmMaxRetries; attempt++ {
-		if attempt > 0 {
-			retryAfter := ""
-			if lastErr != nil {
-				// Try to extract Retry-After from error message
-				errStr := lastErr.Error()
-				if idx := strings.Index(errStr, "Retry-After:"); idx >= 0 {
-					rest := errStr[idx+len("Retry-After:"):]
-					if endIdx := strings.IndexAny(rest, "\n\r"); endIdx > 0 {
-						retryAfter = strings.TrimSpace(rest[:endIdx])
-					}
-				}
-			}
-			backoff := llmRetryBackoff(attempt, retryAfter)
-			log.Printf("[Agent] LLM retry %d/%d after %v: %v", attempt, llmMaxRetries, backoff, lastErr)
-			w.WriteSSE(map[string]interface{}{
-				"type":    "step",
-				"step":    "think",
-				"content": fmt.Sprintf("⚠️ LLM 请求失败 (%v)，%v 后重试 (%d/%d)...", lastErr, backoff, attempt, llmMaxRetries),
-			})
-			select {
-			case <-time.After(backoff):
-			case <-ctx.Done():
-				return nil, ctx.Err()
-			}
-		}
-
-		req, err := http.NewRequestWithContext(ctx, "POST", endpoint, bytes.NewReader(bodyBytes))
-		if err != nil {
-			return nil, err
-		}
-		req.Header.Set("Content-Type", "application/json")
-		if apiKey != "" {
-			req.Header.Set("Authorization", "Bearer "+apiKey)
-		}
-
-		debugLog("LLM request (attempt %d/%d): endpoint=%s model=%s apiKey_len=%d", attempt+1, llmMaxRetries+1, endpoint, model, len(apiKey))
-		resp, err := llmHTTPClient.Do(req)
-		if err != nil {
-			lastErr = fmt.Errorf("LLM request failed: %w", err)
-			continue // retry on network error
-		}
-
-		if resp.StatusCode >= 400 {
-			respBody, _ := io.ReadAll(resp.Body)
-			resp.Body.Close()
-			errMsg := fmt.Sprintf("LLM error (HTTP %d): %s", resp.StatusCode, string(respBody))
-			lastErr = errors.New(errMsg)
-			if isLLMRetryableError(resp.StatusCode) {
-				// Record 429 for rate limit tracking
-				if resp.StatusCode == 429 {
-					globalRateLimiter.Record429()
-					// Circuit breaker: record failure for free models
-					if modelTier == TierFree && reqProviderID != "" {
-						globalCircuitBreaker.RecordFailure(reqProviderID)
-					}
-				}
-				// Extract Retry-After header for 429
-				if retryAfter := resp.Header.Get("Retry-After"); retryAfter != "" {
-					lastErr = fmt.Errorf("%s\nRetry-After: %s", errMsg, retryAfter)
-				}
-				continue // retry on 429/5xx
-			}
-			return nil, lastErr // permanent error, no retry
-		}
-
-		// Success — record success for circuit breaker
+	// Record 429 for rate limit tracking
+	if resp.StatusCode == 429 {
+		globalRateLimiter.Record429()
+		// Circuit breaker: record failure for free models
 		if modelTier == TierFree && reqProviderID != "" {
-			globalCircuitBreaker.RecordSuccess(reqProviderID)
+			globalCircuitBreaker.RecordFailure(reqProviderID)
 		}
-
-		// Success — parse the streaming response
-		result, parseErr := r.parseStreamingResponse(ctx, resp, w)
-		resp.Body.Close()
-		if parseErr != nil {
-			lastErr = parseErr
-			// Only retry if we got no data at all (stream interrupted before any content)
-			if result == nil || (result.Content == "" && len(result.ToolCalls) == 0) {
-				continue
-			}
-		}
-		return result, nil
 	}
-
-	return nil, fmt.Errorf("LLM failed after %d attempts: %w", llmMaxRetries+1, lastErr)
+	// Extract Retry-After header for 429
+	if retryAfter := resp.Header.Get("Retry-After"); retryAfter != "" {
+		err = fmt.Errorf("%s\nRetry-After: %s", errMsg, retryAfter)
+	}
+	return err, true
 }
 
 // parseStreamingResponse reads an SSE stream and extracts content + tool calls.
@@ -653,18 +671,10 @@ func (r *AgentRunner) parseStreamingResponse(ctx context.Context, resp *http.Res
 		var parsed struct {
 			Choices []struct {
 				Delta struct {
-					Role             string `json:"role"`
-					Content          string `json:"content"`
-					ReasoningContent string `json:"reasoning_content"`
-					ToolCalls        []struct {
-						Index    int    `json:"index"`
-						ID       string `json:"id"`
-						Type     string `json:"type"`
-						Function struct {
-							Name      string `json:"name"`
-							Arguments string `json:"arguments"`
-						} `json:"function"`
-					} `json:"tool_calls"`
+					Role             string                `json:"role"`
+					Content          string                `json:"content"`
+					ReasoningContent string                `json:"reasoning_content"`
+					ToolCalls        []streamToolCallDelta `json:"tool_calls"`
 				} `json:"delta"`
 				FinishReason string `json:"finish_reason"`
 			} `json:"choices"`
@@ -694,29 +704,7 @@ func (r *AgentRunner) parseStreamingResponse(ctx context.Context, resp *http.Res
 			w.WriteSSE(map[string]interface{}{"type": "stream_delta", "content": delta.Content})
 		}
 		for _, tc := range delta.ToolCalls {
-			idx := tc.Index
-			if idx < 0 {
-				idx = 0
-			}
-			existing, ok := toolCallMap[idx]
-			if !ok {
-				toolCallMap[idx] = &LLMToolCall{
-					ID:   tc.ID,
-					Type: tc.Type,
-					Function: ToolCallFunction{
-						Name:      tc.Function.Name,
-						Arguments: tc.Function.Arguments,
-					},
-				}
-			} else {
-				if tc.ID != "" {
-					existing.ID = tc.ID
-				}
-				if tc.Function.Name != "" {
-					existing.Function.Name = tc.Function.Name
-				}
-				existing.Function.Arguments += tc.Function.Arguments
-			}
+			accumulateStreamToolCall(tc, toolCallMap)
 		}
 	}
 	if err := scanner.Err(); err != nil {
@@ -741,6 +729,45 @@ func (r *AgentRunner) parseStreamingResponse(ctx context.Context, resp *http.Res
 		ToolCalls:    toolCalls,
 		FinishReason: finishReason,
 	}, nil
+}
+
+// streamToolCallDelta is the tool_calls portion of a streaming SSE delta chunk.
+type streamToolCallDelta struct {
+	Index    int    `json:"index"`
+	ID       string `json:"id"`
+	Type     string `json:"type"`
+	Function struct {
+		Name      string `json:"name"`
+		Arguments string `json:"arguments"`
+	} `json:"function"`
+}
+
+// accumulateStreamToolCall merges a streaming tool-call delta into the map
+// keyed by call index, appending argument fragments across chunks.
+func accumulateStreamToolCall(tc streamToolCallDelta, toolCallMap map[int]*LLMToolCall) {
+	idx := tc.Index
+	if idx < 0 {
+		idx = 0
+	}
+	existing, ok := toolCallMap[idx]
+	if !ok {
+		toolCallMap[idx] = &LLMToolCall{
+			ID:   tc.ID,
+			Type: tc.Type,
+			Function: ToolCallFunction{
+				Name:      tc.Function.Name,
+				Arguments: tc.Function.Arguments,
+			},
+		}
+		return
+	}
+	if tc.ID != "" {
+		existing.ID = tc.ID
+	}
+	if tc.Function.Name != "" {
+		existing.Function.Name = tc.Function.Name
+	}
+	existing.Function.Arguments += tc.Function.Arguments
 }
 
 // mergeToolCalls flattens the per-index tool call map into an ordered slice.
