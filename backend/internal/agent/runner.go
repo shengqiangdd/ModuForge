@@ -968,6 +968,14 @@ You are running WITHOUT a project context. This means:
 						tc     LLMToolCall
 						result string
 					}{tc: task.tc, result: result})
+					// Track parallel tool calls for loop detection
+					toolCallHistory[task.skillName]++
+					totalToolCalls++
+					opKey := task.skillName
+					if path, ok := task.skillInput["path"].(string); ok {
+						opKey = task.skillName + ":" + path
+					}
+					uniqueOps[opKey] = true
 					mu.Unlock()
 
 					w.WriteSSE(map[string]interface{}{
