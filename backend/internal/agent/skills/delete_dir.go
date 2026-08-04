@@ -27,17 +27,7 @@ func (s *DeleteDirSkill) Description() string {
 }
 
 func (s *DeleteDirSkill) resolvePath(projectID string) string {
-	if projectID == "" {
-		return s.projectPath
-	}
-	if s.db != nil {
-		var storagePath string
-		err := s.db.QueryRow(`SELECT COALESCE(storage_path,'') FROM projects WHERE id=?`, projectID).Scan(&storagePath)
-		if err == nil && storagePath != "" {
-			return storagePath
-		}
-	}
-	return filepath.Join(s.projectPath, projectID)
+	return ResolveProjectPath(s.db, s.projectPath, projectID)
 }
 
 func (s *DeleteDirSkill) Execute(ctx context.Context, input map[string]interface{}) (string, error) {
