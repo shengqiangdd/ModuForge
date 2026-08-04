@@ -77,6 +77,7 @@
   }
 
   interface AppInfo {
+    app_name?: string;
     package_name: string;
     version_name: string;
     version_code: number;
@@ -153,7 +154,6 @@
   let tapIndicator = $state<{x: number, y: number} | null>(null);
   let screenAutoRefresh = $state(false);
   let screenAutoRefreshTimer: ReturnType<typeof setInterval> | null = null;
-  let screenConnected = $state(false);
 
   // Touch gesture state
   let touchStartTime = $state(0);
@@ -1450,8 +1450,6 @@
               fitWidth={screenFitWidth}
               onKey={(key) => sendKey(key)}
               onInput={(text) => apiPost(`/api/v1/adb/input/text`, { serial: selectedDevice, text })}
-              onSwipe={(x1, y1, x2, y2, dur) => swipeScreen(x1, y1, x2, y2, dur)}
-              onStatusChange={(connected) => { screenConnected = connected; }}
             />
           </div>
 

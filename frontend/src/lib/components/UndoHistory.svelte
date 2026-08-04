@@ -1,7 +1,10 @@
 <script lang="ts">
   import { historyStore } from '$lib/stores/history';
 
-  let { onClose = () => {}, onRollback = (_index: number) => {} } = $props();
+  let { onClose = () => {}, onRollback = (_index: number) => {} }: {
+    onClose?: () => void;
+    onRollback?: (index: number) => void;
+  } = $props();
 
   let history = $state(historyStore.getHistory());
 

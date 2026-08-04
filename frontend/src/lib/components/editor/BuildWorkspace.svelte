@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { toast } from '$lib/stores/toast.svelte';
 
-  let { projectId = '', onNavigate }: { projectId?: string; onNavigate?: (route: string) => void } = $props();
+  let { projectId = '', onNavigate }: { projectId?: string; onNavigate?: (route: string, projectId?: string) => void } = $props();
 
   interface ArchTarget {
     value: string;
@@ -25,6 +25,7 @@
   let pollTimer = $state<ReturnType<typeof setInterval> | null>(null);
   let project = $state<any>(null);
   let triggerMode = $state<'manual' | 'git' | 'schedule'>('manual');
+  const triggerModes: ('manual' | 'git' | 'schedule')[] = ['manual', 'git', 'schedule'];
   let buildHistory = $state<any[]>([]);
   let buildCached = $state(false);
   let gitConfig = $state({ url: '', branch: 'main' });
@@ -156,21 +157,23 @@
     } catch {}
   }
 
-  onMount(async () => {
-    if (!projectId) return;
-    try {
-      const res = await fetch(`/api/v1/projects/${projectId}`, {
-        headers: { 'Authorization': `Bearer ${localStorage.getItem('moduforge_token') || ''}` },
-      });
-      if (res.ok) {
-        project = await res.json();
-        gitConfig.url = project.git_url || '';
-        gitConfig.branch = project.git_branch || 'main';
-      }
-    } catch {}
-    loadBuildHistory();
-    loadCacheStatus();
-    loadBuildSchedules();
+  onMount(() => {
+    void (async () => {
+      if (!projectId) return;
+      try {
+        const res = await fetch(`/api/v1/projects/${projectId}`, {
+          headers: { 'Authorization': `Bearer ${localStorage.getItem('moduforge_token') || ''}` },
+        });
+        if (res.ok) {
+          project = await res.json();
+          gitConfig.url = project.git_url || '';
+          gitConfig.branch = project.git_branch || 'main';
+        }
+      } catch {}
+      loadBuildHistory();
+      loadCacheStatus();
+      loadBuildSchedules();
+    })();
     return () => { if (pollTimer) clearInterval(pollTimer); };
   });
 
@@ -386,7 +389,7 @@
     <div class="mb-6">
       <label class="text-sm font-medium text-[var(--color-text-secondary)] mb-3 block">触发方式</label>
       <div class="grid grid-cols-3 gap-2">
-        {#each ['manual', 'git', 'schedule'] as mode}
+        {#each triggerModes as mode (mode)}
             {@const icons = { manual: 'build', git: 'cloud_upload', schedule: 'schedule' }}
           <button
             class="py-2.5 px-2 rounded-xl text-sm font-medium transition-all duration-200 flex items-center justify-center gap-1.5 cursor-pointer"

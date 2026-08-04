@@ -65,7 +65,7 @@
   async function loadAll() {
     loading = true;
     const token = getToken();
-    const headers = token ? { Authorization: `Bearer ${token}` } : {};
+    const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
     try {
       const promises: Promise<any>[] = [
         fetch('/api/v1/analytics/module-stats', { headers }).then(r => r.json()),
@@ -83,18 +83,24 @@
       const results = await Promise.allSettled(promises);
       let idx = 0;
       if (isAdmin) {
-        if (results[idx]?.status === 'fulfilled') systemStats = results[idx].value;
+        const sys = results[idx];
+        if (sys?.status === 'fulfilled') systemStats = sys.value;
         idx++;
-        if (results[idx]?.status === 'fulfilled') buildStats = results[idx].value;
+        const bs = results[idx];
+        if (bs?.status === 'fulfilled') buildStats = bs.value;
         idx++;
-        if (results[idx]?.status === 'fulfilled') buildTrends = results[idx].value?.trends || [];
+        const bt = results[idx];
+        if (bt?.status === 'fulfilled') buildTrends = bt.value?.trends || [];
         idx++;
-        if (results[idx]?.status === 'fulfilled') healthData = results[idx].value;
+        const hd = results[idx];
+        if (hd?.status === 'fulfilled') healthData = hd.value;
         idx++;
       }
-      if (results[idx]?.status === 'fulfilled') moduleStats = results[idx].value;
+      const ms = results[idx];
+      if (ms?.status === 'fulfilled') moduleStats = ms.value;
       idx++;
-      if (results[idx]?.status === 'fulfilled') trendingMods = results[idx].value?.modules?.slice(0, 5) || [];
+      const tm = results[idx];
+      if (tm?.status === 'fulfilled') trendingMods = tm.value?.modules?.slice(0, 5) || [];
     } catch {}
     loading = false;
   }
@@ -103,7 +109,7 @@
     healthDetailLoading = true;
     try {
       const token = getToken();
-      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
       const r = await fetch('/api/v1/admin/health/detailed', { headers });
       if (r.ok) {
         healthDetail = await r.json();
@@ -118,7 +124,8 @@
   // Visible widgets filtered by role
   let visibleWidgets = $derived(widgets.filter(w => w.is_visible && (isAdmin || !adminWidgetTypes.has(w.widget_type))));
 
-  onMount(async () => {
+  onMount(() => {
+    void (async () => {
     // Check admin role first
     const token = getToken();
     if (token) {
@@ -144,6 +151,7 @@
       await loadWidgets();
     }
     if (!systemStats) await loadAll();
+    })();
 
     return () => { if (autoRefreshTimer) clearInterval(autoRefreshTimer); };
   });

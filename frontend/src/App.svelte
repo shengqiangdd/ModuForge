@@ -284,40 +284,42 @@
     }
   }
 
-  onMount(async () => {
-    mounted = true;
-    offline = !navigator.onLine;
-    const saved = getToken();
-    if (saved && hasValidToken()) {
-      token = saved;
-      current = 'projects';
-      loadProjects();
-      scheduleTokenRefresh();
-      // Connect WebSocket if we have a token
-      try { ws.connect(); } catch {}
-    } else if (saved) {
-      // Token exists but expired — try refresh
-      const refreshed = await tryRefreshToken();
-      if (refreshed) {
-        token = getToken();
+  onMount(() => {
+    void (async () => {
+      mounted = true;
+      offline = !navigator.onLine;
+      const saved = getToken();
+      if (saved && hasValidToken()) {
+        token = saved;
         current = 'projects';
         loadProjects();
         scheduleTokenRefresh();
+        // Connect WebSocket if we have a token
         try { ws.connect(); } catch {}
-      } else {
-        // Refresh failed — clear and show login
-        clearToken();
+      } else if (saved) {
+        // Token exists but expired — try refresh
+        const refreshed = await tryRefreshToken();
+        if (refreshed) {
+          token = getToken();
+          current = 'projects';
+          loadProjects();
+          scheduleTokenRefresh();
+          try { ws.connect(); } catch {}
+        } else {
+          // Refresh failed — clear and show login
+          clearToken();
+        }
       }
-    }
 
-    // Show onboarding for first-time users
-    if (token && !localStorage.getItem('moduforge_onboarded')) {
-      showOnboarding = true;
-    }
+      // Show onboarding for first-time users
+      if (token && !localStorage.getItem('moduforge_onboarded')) {
+        showOnboarding = true;
+      }
 
-    // Initialize theme
-    initTheme();
-    themeMode = getTheme();
+      // Initialize theme
+      initTheme();
+      themeMode = getTheme();
+    })();
 
     function handlePopState() {
       const path = window.location.pathname;
@@ -455,7 +457,7 @@
 
 <ConfirmDialog
   open={confirmOpen}
-  {confirmTitle}
+  title={confirmTitle}
   message={confirmMessage}
   variant={confirmVariant}
   onConfirm={() => { confirmOpen = false; confirmCallback?.(); }}

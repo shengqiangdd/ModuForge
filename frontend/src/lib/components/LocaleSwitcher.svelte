@@ -1,10 +1,11 @@
 <script lang="ts">
   import { currentLocale } from '$lib/i18n';
+  import type { Locale } from '$lib/i18n';
 
   let { compact = false }: { compact?: boolean } = $props();
   let open = $state(false);
 
-  const languages = [
+  const languages: { code: Locale; label: string; flag: string; name: string }[] = [
     { code: 'en', label: 'EN', flag: '🇺🇸', name: 'English' },
     { code: 'zh', label: '中文', flag: '🇨🇳', name: '中文' },
     { code: 'ja', label: '日本語', flag: '🇯🇵', name: '日本語' },
@@ -13,7 +14,7 @@
 
   let currentLang = $derived(languages.find(l => l.code === $currentLocale) || languages[0]);
 
-  function select(code: string) {
+  function select(code: Locale) {
     $currentLocale = code;
     open = false;
   }

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
 
-  let { onClose = () => {} } = $props();
+  let { onClose = () => {} }: { onClose?: () => void } = $props();
 
   const categories = [
     {

@@ -19,8 +19,8 @@ import { getToken } from '$lib/api/client';
   let currentModelId = $state('');
 
   // ===== Preset Providers =====
-  let presetProviders: any[] = [];
-  let providerConfigs: Record<string, {endpoint: string, api_key: string, models_json?: string}> = {};
+  let presetProviders = $state<any[]>([]);
+  let providerConfigs = $state<Record<string, {endpoint: string, api_key: string, models_json?: string}>>({});
   let configModalProvider = $state<any>(null);
   let configEndpoint = $state('');
   let configApiKey = $state('');
@@ -37,7 +37,7 @@ import { getToken } from '$lib/api/client';
   let featuredProviders: any[] = $derived(presetProviders.filter((p: any) => FEATURED_IDS.includes(p.id)));
 
   // ===== Custom Providers =====
-  let customProviders: any[] = [];
+  let customProviders = $state<any[]>([]);
   let showCustomModal = $state(false);
   let editingCustom = $state<any>(null);
   let customForm = $state({ name: '', endpoint: '', api_key: '', models: [] as {id: string; name: string; max_tokens: number}[] });
@@ -350,6 +350,7 @@ import { getToken } from '$lib/api/client';
   let skillForm = $state({ name: '', description: '', prompt: '', input_schema: '{}', is_public: false });
   let loadingSkills = $state(false);
   let testingSkillId = $state<number | null>(null);
+  let testSkillId = $state<number | null>(null);
   let testInput = $state('');
   let testResult = $state('');
   let showTestInput = $state(false);
@@ -357,7 +358,7 @@ import { getToken } from '$lib/api/client';
   // Skill evolution (6)
   let skillEvolutionData = $state<Record<number, any>>({});
   let loadingEvolution = $state<Set<number>>(new Set());
-  let showEvolution = $state(false);
+  let showEvolution = $state<number | null>(null);
 
   async function loadCustomSkills() {
     loadingSkills = true;
@@ -967,9 +968,30 @@ import { getToken } from '$lib/api/client';
     showInstallPrompt = false;
   }
 
-  onMount(async () => {
-    username = localStorage.getItem('moduforge_username') || '';
-    email = localStorage.getItem('moduforge_email') || '';
+  onMount(() => {
+    void (async () => {
+      username = localStorage.getItem('moduforge_username') || '';
+      email = localStorage.getItem('moduforge_email') || '';
+
+      await loadAll();
+      await loadProfile(); // Sets isAdmin — must complete before admin-only calls
+
+      // Parallelize independent data loads
+      await Promise.all([
+        loadRecycleBin(),
+        loadFavorites(),
+        loadSearchHistory(),
+        loadCustomSkills(),
+        loadMemory(),
+        loadSchedules(),
+      ]);
+      initShortcuts();
+
+      // Admin-only endpoints (loadProfile must have run first)
+      if (isAdmin) {
+        await Promise.all([loadEmailConfig(), loadHealth()]);
+      }
+    })();
 
     const handler = (e: Event) => {
       e.preventDefault();
@@ -977,25 +999,6 @@ import { getToken } from '$lib/api/client';
       showInstallPrompt = true;
     };
     window.addEventListener('beforeinstallprompt', handler);
-
-    await loadAll();
-    await loadProfile(); // Sets isAdmin — must complete before admin-only calls
-
-    // Parallelize independent data loads
-    await Promise.all([
-      loadRecycleBin(),
-      loadFavorites(),
-      loadSearchHistory(),
-      loadCustomSkills(),
-      loadMemory(),
-      loadSchedules(),
-    ]);
-    initShortcuts();
-
-    // Admin-only endpoints (loadProfile must have run first)
-    if (isAdmin) {
-      await Promise.all([loadEmailConfig(), loadHealth()]);
-    }
 
     return () => window.removeEventListener('beforeinstallprompt', handler);
   });

@@ -227,21 +227,23 @@
     }
   }
 
-  onMount(async () => {
+  onMount(() => {
     document.addEventListener('keydown', handleKeydown);
-    if (!projectId) { loading = false; return; }
-    try {
-      const [p, fileData] = await Promise.all([
-        client.get<any>(`/projects/${projectId}`),
-        client.get<{ id?: number; path: string }[]>(`/projects/${projectId}/files`),
-      ]);
-      project = p;
-      files = (fileData || []).map(f => ({ ...f, path: f.path }));
-    } catch (e: any) {
-      toast(e.message || '加载项目失败', 'error');
-    } finally {
-      loading = false;
-    }
+    void (async () => {
+      if (!projectId) { loading = false; return; }
+      try {
+        const [p, fileData] = await Promise.all([
+          client.get<any>(`/projects/${projectId}`),
+          client.get<{ id?: number; path: string }[]>(`/projects/${projectId}/files`),
+        ]);
+        project = p;
+        files = (fileData || []).map(f => ({ ...f, path: f.path }));
+      } catch (e: any) {
+        toast(e.message || '加载项目失败', 'error');
+      } finally {
+        loading = false;
+      }
+    })();
     return () => document.removeEventListener('keydown', handleKeydown);
   });
 

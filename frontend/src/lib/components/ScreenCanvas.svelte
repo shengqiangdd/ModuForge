@@ -160,7 +160,7 @@
     renderingFrame = true;
 
     if (!reuseImg) reuseImg = new Image();
-    const blob = new Blob([imageBytes], { type: 'image/png' });
+    const blob = new Blob([imageBytes as BlobPart], { type: 'image/png' });
     const url = URL.createObjectURL(blob);
 
     reuseImg.onload = () => {
@@ -199,7 +199,7 @@
     renderingFrame = true;
 
     if (!reuseImg) reuseImg = new Image();
-    const blob = new Blob([imageBytes], { type: 'image/jpeg' });
+    const blob = new Blob([imageBytes as BlobPart], { type: 'image/jpeg' });
     const url = URL.createObjectURL(blob);
 
     reuseImg.onload = () => {
