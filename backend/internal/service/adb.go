@@ -1489,7 +1489,7 @@ func (s *ADBService) BackupModule(ctx context.Context, serial, moduleName, local
 		if err != nil || strings.TrimSpace(out) == "" {
 			errMsg += " | su-tar: " + err.Error() + " " + out
 			// Last resort: try zip
-			out, err = s.RunShell(ctx, serial, "cd "+basePath+" && zip -r "+archivePath+" "+moduleName)
+			_, err = s.RunShell(ctx, serial, "cd "+basePath+" && zip -r "+archivePath+" "+moduleName)
 			if err != nil {
 				_, err = s.RunShell(ctx, serial, "su -c 'cd "+escapedBase+" && zip -r "+archivePath+" "+escapedName+"'")
 				if err != nil {
@@ -1550,9 +1550,9 @@ func (s *ADBService) ExportModule(ctx context.Context, serial, moduleName string
 	// Try tar first, fallback to zip
 	out, err := s.RunShell(ctx, serial, "cd "+basePath+" && tar czf "+archivePath+" "+moduleName)
 	if err != nil || strings.TrimSpace(out) == "" {
-		out, err = s.RunShell(ctx, serial, "su -c 'cd "+escapedBase+" && tar czf "+archivePath+" "+escapedName+"'")
+		_, err = s.RunShell(ctx, serial, "su -c 'cd "+escapedBase+" && tar czf "+archivePath+" "+escapedName+"'")
 		if err != nil {
-			out, err = s.RunShell(ctx, serial, "cd "+basePath+" && zip -r "+archivePath+" "+moduleName)
+			_, err = s.RunShell(ctx, serial, "cd "+basePath+" && zip -r "+archivePath+" "+moduleName)
 			if err != nil {
 				_, err = s.RunShell(ctx, serial, "su -c 'cd "+escapedBase+" && zip -r "+archivePath+" "+escapedName+"'")
 				if err != nil {

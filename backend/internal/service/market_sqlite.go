@@ -219,10 +219,12 @@ func (s *SQLiteMarketService) RollbackModule(slug, version string) (*domain.Mark
 	}
 
 	// Create a rollback version record
-	_, err = s.db.Conn.Exec(
+	if _, err = s.db.Conn.Exec(
 		"INSERT INTO module_versions (module_id, version, changelog, created_at) VALUES (?, ?, ?, ?)",
 		mod.ID, rollbackVersion.Version, "Rolled back to "+rollbackVersion.Version, time.Now(),
-	)
+	); err != nil {
+		return nil, err
+	}
 
 	return s.GetModule(slug)
 }

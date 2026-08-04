@@ -331,11 +331,9 @@ func (s *BackupService) RunScheduledBackup(scheduleID int64) error {
 	if err != nil {
 		return err
 	}
-	path, err := s.ExportDatabase(context.Background())
-	if err != nil {
+	if _, err := s.ExportDatabase(context.Background()); err != nil {
 		return err
 	}
-	_ = path
 
 	now := time.Now()
 	var next time.Time
