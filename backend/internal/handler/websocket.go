@@ -1,152 +1,96 @@
 package handler
 
 import (
-	"encoding/json"
-	"log"
+	"log/slog"
 	"time"
 
 	"github.com/gofiber/contrib/v3/websocket"
+	"github.com/gofiber/fiber/v3"
 	"github.com/moduforge/backend/internal/service"
 )
 
-type WSHandler struct {
-	ws *service.WebSocketService
-}
+// RegisterWSRoute registers the WebSocket endpoint using gofiber/contrib/v3/websocket.
+// This properly integrates with Fiber v3's middleware chain (unlike raw fasthttp/websocket).
+func RegisterWSRoute(api fiber.Router, jwtSecret string) {
+	// Register the WebSocket upgrade check as middleware,
+	// and the actual WS handler after it.
+	//
+	// NOTE: gofiber/websocket handles the HTTP→WS upgrade internally.
+	// We must NOT register a separate fiber.Handler before it that calls c.Next(),
+	// because that would pass the already-upgraded context through.
+	// Instead, we put auth logic INSIDE the websocket.New handler.
+	wsHandler := websocket.New(func(c *websocket.Conn) {
+		userID := ""
 
-func NewWSHandler(ws *service.WebSocketService) *WSHandler {
-	return &WSHandler{ws: ws}
-}
+		// 1) Try Fiber locals (set by auth middleware if route is protected)
+		if uid, ok := c.Locals("user_id").(string); ok && uid != "" {
+			userID = uid
+		}
+		if userID == "" {
+			if uid, ok := c.Locals("uid").(string); ok && uid != "" {
+				userID = uid
+			}
+		}
 
-type wsInboundMessage struct {
-	Type    string          `json:"type"`
-	Payload json.RawMessage `json:"payload"`
-}
+		// 2) Fallback: extract token from query param (browser WS can't send headers)
+		if userID == "" {
+			if token := c.Query("token"); token != "" {
+				claims, err := service.ParseJWT(token, jwtSecret)
+				if err == nil && claims != nil {
+					userID = claims.UID
+				}
+			}
+		}
 
-type cursorPayload struct {
-	ProjectID string `json:"project_id"`
-	UserID    string `json:"user_id"`
-	Username  string `json:"username"`
-	FilePath  string `json:"file"`
-	Line      int    `json:"line"`
-	Col       int    `json:"col"`
-	Color     string `json:"color"`
-}
+		if userID == "" {
+			slog.Warn("ws: missing user_id")
+			c.WriteJSON(fiber.Map{"error": "未授权"})
+			c.Close()
+			return
+		}
 
-type selectionPayload struct {
-	ProjectID  string `json:"project_id"`
-	UserID     string `json:"user_id"`
-	Username   string `json:"username"`
-	FilePath   string `json:"file"`
-	StartLine  int    `json:"start_line"`
-	StartCol   int    `json:"start_col"`
-	EndLine    int    `json:"end_line"`
-	EndCol     int    `json:"end_col"`
-	Color      string `json:"color"`
-}
+		slog.Info("ws connected", "user_id", userID)
 
-type editPayload struct {
-	ProjectID string `json:"project_id"`
-	UserID    string `json:"user_id"`
-	Username  string `json:"username"`
-	FilePath  string `json:"file"`
-	Content   string `json:"content"`
-}
-
-type joinPayload struct {
-	ProjectID string `json:"project_id"`
-	UserID    string `json:"user_id"`
-	Username  string `json:"username"`
-	Color     string `json:"color"`
-}
-
-type leavePayload struct {
-	ProjectID string `json:"project_id"`
-	UserID    string `json:"user_id"`
-	Username  string `json:"username"`
-}
-
-func (h *WSHandler) HandleConnection(c *websocket.Conn) {
-	clientID := c.Query("uid", c.RemoteAddr().String())
-	projectID := c.Query("project_id", "")
-
-	client := &service.WSClient{
-		Conn:      c,
-		Send:      make(chan []byte, 256),
-		ID:        clientID,
-		ProjectID: projectID,
-	}
-
-	h.ws.Register() <- client
-
-	// Writer goroutine
-	go func() {
-		ticker := time.NewTicker(30 * time.Second)
+		hub := service.GetHub()
+		client := hub.Subscribe(userID, c.Conn)
 		defer func() {
-			ticker.Stop()
+			hub.Unsubscribe(userID, client)
 			c.Close()
 		}()
-		for {
-			select {
-			case message, ok := <-client.Send:
-				if !ok {
-					c.WriteMessage(websocket.CloseMessage, []byte{})
+
+		// Send periodic pings to keep the connection alive
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+
+		done := make(chan struct{})
+		defer close(done)
+
+		go func() {
+			for {
+				select {
+				case <-ticker.C:
+					client.SendJSON(service.WSEvent{Event: "ping", Data: nil})
+				case <-done:
 					return
 				}
-				c.WriteMessage(websocket.TextMessage, message)
-			case <-ticker.C:
-				c.WriteMessage(websocket.PingMessage, nil)
+			}
+		}()
+
+		// Read loop — block until client disconnects
+		for {
+			_, _, err := c.ReadMessage()
+			if err != nil {
+				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseNormalClosure) {
+					slog.Warn("ws read error", "user_id", userID, "error", err)
+				}
+				break
 			}
 		}
-	}()
+	})
 
-	// Reader loop — handle collaboration messages
-	for {
-		_, msg, err := c.ReadMessage()
-		if err != nil {
-			break
-		}
-
-		var inbound wsInboundMessage
-		if err := json.Unmarshal(msg, &inbound); err != nil {
-			log.Printf("[WS] Invalid message from %s: %v", clientID, err)
-			continue
-		}
-
-		switch inbound.Type {
-		case "collab_cursor_update":
-			var p cursorPayload
-			if json.Unmarshal(inbound.Payload, &p) == nil && p.ProjectID != "" {
-				h.ws.BroadcastCursorUpdate(p.ProjectID, p.UserID, p.Username, p.FilePath, p.Line, p.Col, p.Color)
-			}
-
-		case "collab_selection_update":
-			var p selectionPayload
-			if json.Unmarshal(inbound.Payload, &p) == nil && p.ProjectID != "" {
-				h.ws.BroadcastSelectionUpdate(p.ProjectID, p.UserID, p.Username, p.FilePath, p.StartLine, p.StartCol, p.EndLine, p.EndCol, p.Color)
-			}
-
-		case "collab_edit":
-			var p editPayload
-			if json.Unmarshal(inbound.Payload, &p) == nil && p.ProjectID != "" {
-				h.ws.BroadcastEdit(p.ProjectID, p.UserID, p.Username, p.FilePath, p.Content)
-			}
-
-		case "collab_join":
-			var p joinPayload
-			if json.Unmarshal(inbound.Payload, &p) == nil && p.ProjectID != "" {
-				h.ws.BroadcastJoin(p.ProjectID, p.UserID, p.Username, p.Color)
-			}
-
-		case "collab_leave":
-			var p leavePayload
-			if json.Unmarshal(inbound.Payload, &p) == nil && p.ProjectID != "" {
-				h.ws.BroadcastLeave(p.ProjectID, p.UserID, p.Username)
-			}
-
-		default:
-			log.Printf("[WS] Unknown message type from %s: %s", clientID, inbound.Type)
-		}
-	}
-
-	h.ws.Unregister() <- client
+	// websocket.New returns a fiber.Handler that:
+	// 1. Checks for WebSocket upgrade request
+	// 2. If not a WS upgrade → returns 426 Upgrade Required
+	// 3. If WS upgrade → performs the upgrade and calls our handler above
+	api.Get("/ws", wsHandler)
 }

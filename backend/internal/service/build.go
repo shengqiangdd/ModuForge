@@ -410,6 +410,6 @@ func (s *BuildService) runBuild(taskID, projectID, filesHash, arch string) {
 
 func (s *BuildService) failBuild(ctx context.Context, taskID, log string) {
 	s.db.ExecContext(ctx,
-		`UPDATE build_tasks SET status=?, log=?, updated_at=datetime('now') WHERE id=?`,
+		`UPDATE build_tasks SET status=?, log=log || ?, updated_at=datetime('now') WHERE id=?`,
 		domain.BuildFailed, log, taskID)
 }

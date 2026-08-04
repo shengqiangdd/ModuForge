@@ -41,6 +41,16 @@ var (
 	reChmodSuggest   = regexp.MustCompile(`chmod\s+`)
 	reUiPrint        = regexp.MustCompile(`\bui_print\b`)
 	reAbort          = regexp.MustCompile(`\babort\b`)
+	// Universal checks
+	reJsEval         = regexp.MustCompile(`eval\s*\(`)
+	reInnerHTML      = regexp.MustCompile(`innerHTML\s*=`)
+	reDocumentWrite  = regexp.MustCompile(`document\.write\s*\(`)
+	rePyExec         = regexp.MustCompile(`exec\s*\(`)
+	rePickleLoads    = regexp.MustCompile(`pickle\.loads?\s*\(`)
+	reSubprocessShell = regexp.MustCompile(`subprocess\.call.*shell\s*=\s*True`)
+	reGoCmdConcat    = regexp.MustCompile(`exec\.Command.*\+`)
+	reHtmlInlineEvent = regexp.MustCompile(`on\w+\s*=`)
+	reConfigSecret   = regexp.MustCompile(`(?i)(password|secret|token)\s*[":]\s*['"][^'"]{8,}['"]`)
 )
 
 func (s *SecurityScanner) ScanFile(filename string, content string) SecurityScanResult {
@@ -64,70 +74,116 @@ func (s *SecurityScanner) ScanFile(filename string, content string) SecurityScan
 
 	wholeContent := content
 
-	if !strings.HasSuffix(filename, ".sh") {
-		goto calcScore
-	}
-
+	// ===== Universal checks (all file types) =====
 	for i, line := range lines {
 		lineNum := i + 1
-
-		if reChmod777.MatchString(line) {
-			addIssue("critical", "CHMOD_777", "chmod 777 grants excessive permissions, use 755 or 644", lineNum)
-		}
-		if reEvalWithVar.MatchString(line) {
-			addIssue("critical", "EVAL_VARIABLE", "eval with variable allows code injection", lineNum)
-		}
+		// Hardcoded secrets in any file
 		if reHardcodedKey.MatchString(line) {
 			addIssue("critical", "HARDCODED_SECRET", "hardcoded API key/token/secret detected", lineNum)
 		}
-		if reCurlPipeSh.MatchString(line) {
-			addIssue("critical", "CURL_PIPE_SH", "curl | sh downloads and executes remote code", lineNum)
+		// Dangerous patterns in JS/TS files
+		if strings.HasSuffix(filename, ".js") || strings.HasSuffix(filename, ".ts") || strings.HasSuffix(filename, ".jsx") || strings.HasSuffix(filename, ".tsx") {
+			if reJsEval.MatchString(line) {
+				addIssue("critical", "EVAL_USAGE", "eval() usage allows code injection", lineNum)
+			}
+			if reInnerHTML.MatchString(line) {
+				addIssue("warning", "INNERHTML", "innerHTML assignment may cause XSS", lineNum)
+			}
+			if reDocumentWrite.MatchString(line) {
+				addIssue("warning", "DOCUMENT_WRITE", "document.write() may cause XSS", lineNum)
+			}
 		}
-		if reRmRf.MatchString(line) {
-			addIssue("critical", "RM_RF_ROOT", "rm -rf / is extremely dangerous", lineNum)
+		// Dangerous patterns in Python files
+		if strings.HasSuffix(filename, ".py") {
+			if rePyExec.MatchString(line) {
+				addIssue("critical", "EXEC_USAGE", "exec() allows arbitrary code execution", lineNum)
+			}
+			if rePickleLoads.MatchString(line) {
+				addIssue("critical", "PICKLE_LOADS", "pickle deserialization can execute arbitrary code", lineNum)
+			}
+			if reSubprocessShell.MatchString(line) {
+				addIssue("warning", "SHELL_TRUE", "subprocess with shell=True may cause injection", lineNum)
+			}
 		}
-
-		matches := reUnquotedVar.FindAllString(line, -1)
-		for _, m := range matches {
-			addIssue("critical", "UNQUOTED_VARIABLE", fmt.Sprintf("unquoted variable %s may cause command injection", strings.TrimSpace(m)), lineNum)
+		// Dangerous patterns in Go files
+		if strings.HasSuffix(filename, ".go") {
+			if reGoCmdConcat.MatchString(line) {
+				addIssue("warning", "CMD_CONCAT", "string concatenation in exec.Command may cause injection", lineNum)
+			}
+		}
+		// Dangerous patterns in HTML files
+		if strings.HasSuffix(filename, ".html") || strings.HasSuffix(filename, ".htm") {
+			if reHtmlInlineEvent.MatchString(line) {
+				addIssue("info", "INLINE_EVENT", "inline event handlers detected, consider separation", lineNum)
+			}
+		}
+		// Dangerous patterns in config files
+		if strings.HasSuffix(filename, ".json") || strings.HasSuffix(filename, ".yaml") || strings.HasSuffix(filename, ".yml") {
+			if reConfigSecret.MatchString(line) {
+				addIssue("critical", "HARDCODED_SECRET", "hardcoded secret in config file", lineNum)
+			}
 		}
 	}
 
-	if !reMissingSetEuo.MatchString(wholeContent) {
-		addIssue("warning", "MISSING_SET_EUO", "missing 'set -euo pipefail' for safe error handling", 0)
-	}
+	// ===== Shell-specific checks =====
+	if strings.HasSuffix(filename, ".sh") {
+		for i, line := range lines {
+			lineNum := i + 1
 
-	if i := strings.Index(wholeContent, "\n"); i > 0 {
-		firstLine := wholeContent[:i]
-		if !reShebang.MatchString(firstLine) {
+			if reChmod777.MatchString(line) {
+				addIssue("critical", "CHMOD_777", "chmod 777 grants excessive permissions, use 755 or 644", lineNum)
+			}
+			if reEvalWithVar.MatchString(line) {
+				addIssue("critical", "EVAL_VARIABLE", "eval with variable allows code injection", lineNum)
+			}
+			if reCurlPipeSh.MatchString(line) {
+				addIssue("critical", "CURL_PIPE_SH", "curl | sh downloads and executes remote code", lineNum)
+			}
+			if reRmRf.MatchString(line) {
+				addIssue("critical", "RM_RF_ROOT", "rm -rf / is extremely dangerous", lineNum)
+			}
+
+			matches := reUnquotedVar.FindAllString(line, -1)
+			for _, m := range matches {
+				addIssue("warning", "UNQUOTED_VARIABLE", fmt.Sprintf("unquoted variable %s may cause command injection", strings.TrimSpace(m)), lineNum)
+			}
+		}
+
+		if !reMissingSetEuo.MatchString(wholeContent) {
+			addIssue("info", "MISSING_SET_EUO", "missing 'set -euo pipefail' for safe error handling", 0)
+		}
+
+		if i := strings.Index(wholeContent, "\n"); i > 0 {
+			firstLine := wholeContent[:i]
+			if !reShebang.MatchString(firstLine) {
+				addIssue("warning", "MISSING_SHEBANG", "missing shebang (e.g., #!/system/bin/sh)", 1)
+			}
+		} else if !reShebang.MatchString(wholeContent) {
 			addIssue("warning", "MISSING_SHEBANG", "missing shebang (e.g., #!/system/bin/sh)", 1)
 		}
-	} else if !reShebang.MatchString(wholeContent) {
-		addIssue("warning", "MISSING_SHEBANG", "missing shebang (e.g., #!/system/bin/sh)", 1)
-	}
 
-	if reWhich.MatchString(wholeContent) {
-		addIssue("warning", "USING_WHICH", "use 'command -v' instead of 'which' for portability", 0)
-	}
-
-	if strings.Contains(wholeContent, "mktemp") && !reTrapExit.MatchString(wholeContent) {
-		addIssue("warning", "MISSING_TRAP", "temporary files created with mktemp but no trap ... EXIT cleanup", 0)
-	}
-
-	if reChmodSuggest.MatchString(wholeContent) && !reChmod777.MatchString(wholeContent) {
-		addIssue("info", "FILE_PERMISSION", "verify file permissions are minimal required", 0)
-	}
-
-	if strings.Contains(wholeContent, "ui_print") || strings.Contains(wholeContent, "echo") {
-		if !reUiPrint.MatchString(wholeContent) {
-			addIssue("info", "USE_UI_PRINT", "use 'ui_print' for user messages in module install scripts", 0)
+		if reWhich.MatchString(wholeContent) {
+			addIssue("warning", "USING_WHICH", "use 'command -v' instead of 'which' for portability", 0)
 		}
-		if strings.Contains(wholeContent, "exit") && !reAbort.MatchString(wholeContent) {
-			addIssue("info", "USE_ABORT", "use 'abort' function instead of 'exit' for error handling in module scripts", 0)
+
+		if strings.Contains(wholeContent, "mktemp") && !reTrapExit.MatchString(wholeContent) {
+			addIssue("warning", "MISSING_TRAP", "temporary files created with mktemp but no trap ... EXIT cleanup", 0)
+		}
+
+		if reChmodSuggest.MatchString(wholeContent) && !reChmod777.MatchString(wholeContent) {
+			addIssue("info", "FILE_PERMISSION", "verify file permissions are minimal required", 0)
+		}
+
+		if strings.Contains(wholeContent, "ui_print") || strings.Contains(wholeContent, "echo") {
+			if !reUiPrint.MatchString(wholeContent) {
+				addIssue("info", "USE_UI_PRINT", "use 'ui_print' for user messages in module install scripts", 0)
+			}
+			if strings.Contains(wholeContent, "exit") && !reAbort.MatchString(wholeContent) {
+				addIssue("info", "USE_ABORT", "use 'abort' function instead of 'exit' for error handling in module scripts", 0)
+			}
 		}
 	}
 
-calcScore:
 	result.Issues = issueList
 
 	criticalCount := 0
@@ -145,11 +201,14 @@ calcScore:
 	}
 
 	score := 100
-	score -= criticalCount * 25
-	score -= warningCount * 10
-	score -= infoCount * 3
+	score -= criticalCount * 15
+	score -= warningCount * 2
+	score -= infoCount
 	if score < 0 {
 		score = 0
+	}
+	if criticalCount == 0 && score < 40 {
+		score = 40
 	}
 	result.Score = score
 
@@ -175,13 +234,19 @@ func (s *SecurityScanner) ScanFiles(files map[string]string) SecurityScanResult 
 	totalWarning := 0
 	totalInfo := 0
 
+	// Deduplicate by issue code across files (keep first occurrence)
+	seen := make(map[string]bool)
 	for filename, content := range files {
 		res := s.ScanFile(filename, content)
 		if !res.Safe {
 			combined.Safe = false
 		}
-		combined.Issues = append(combined.Issues, res.Issues...)
 		for _, issue := range res.Issues {
+			if seen[issue.Rule] {
+				continue
+			}
+			seen[issue.Rule] = true
+			combined.Issues = append(combined.Issues, issue)
 			switch issue.Severity {
 			case "critical":
 				totalCritical++
@@ -194,11 +259,15 @@ func (s *SecurityScanner) ScanFiles(files map[string]string) SecurityScanResult 
 	}
 
 	score := 100
-	score -= totalCritical * 25
-	score -= totalWarning * 10
-	score -= totalInfo * 3
+	score -= totalCritical * 15
+	score -= totalWarning * 2
+	score -= totalInfo
 	if score < 0 {
 		score = 0
+	}
+	// Don't show 0/100 for non-critical issues
+	if totalCritical == 0 && score < 40 {
+		score = 40
 	}
 	combined.Score = score
 

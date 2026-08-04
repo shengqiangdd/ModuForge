@@ -3,6 +3,7 @@ package service
 import (
 	"archive/zip"
 	"context"
+	"database/sql"
 	"fmt"
 	"io"
 	"os"
@@ -19,19 +20,47 @@ type ModuleFile struct {
 
 type ZipperService struct {
 	outputDir string
+	db        *sql.DB
 }
 
-func NewZipperService(outputDir string) *ZipperService {
+func NewZipperService(outputDir string, db *sql.DB) *ZipperService {
 	os.MkdirAll(outputDir, 0755)
-	return &ZipperService{outputDir: outputDir}
+	return &ZipperService{outputDir: outputDir, db: db}
 }
 
 var excludedPatterns = []string{
+	// Source code (do NOT include in module zip)
+	"src/",
+	"*.go",
+	"*.rs",
+	"*.c",
+	"*.h",
+	"*.cpp",
+	"*.py",
+	"*.java",
+	"*.kt",
+	// Build system
+	"build.sh",
+	"go.mod",
+	"go.sum",
+	"Cargo.toml",
+	"Cargo.lock",
+	"target/",
+	"Makefile",
+	// Build cache & artifacts
+	".build_cache/",
+	".build_cache.json",
+	".build_status/",
+	".build_status.json",
+	"build-cache/",
+	// Dev files
 	"node_modules/",
 	".git/",
 	".DS_Store",
 	"__pycache__/",
 	"*.tmp",
+	"*.xml",
+	"*.gradle",
 }
 
 func isExcluded(path string) bool {
@@ -75,18 +104,24 @@ func (s *ZipperService) BuildModuleZip(_ context.Context, _ string, files []Modu
 			continue
 		}
 
+		// Sanitize path to prevent path traversal
+		cleanPath := filepath.Clean(f.Path)
+		if strings.HasPrefix(cleanPath, "..") || filepath.IsAbs(cleanPath) {
+			continue // skip malicious paths
+		}
+
 		if f.IsDir {
-			if _, err := zw.Create(f.Path + "/"); err != nil {
-				return "", fmt.Errorf("create dir %s: %w", f.Path, err)
+			if _, err := zw.Create(cleanPath + "/"); err != nil {
+				return "", fmt.Errorf("create dir %s: %w", cleanPath, err)
 			}
 			continue
 		}
 
 		header := &zip.FileHeader{
-			Name:   f.Path,
+			Name:   cleanPath,
 			Method: zip.Deflate,
 		}
-		if strings.HasSuffix(f.Path, ".sh") || f.Path == "META-INF/com/google/android/update-binary" {
+		if strings.HasSuffix(cleanPath, ".sh") || cleanPath == "META-INF/com/google/android/update-binary" {
 			header.SetMode(0755)
 		} else {
 			header.SetMode(0644)
@@ -95,11 +130,11 @@ func (s *ZipperService) BuildModuleZip(_ context.Context, _ string, files []Modu
 
 		w, err := zw.CreateHeader(header)
 		if err != nil {
-			return "", fmt.Errorf("create file %s: %w", f.Path, err)
+			return "", fmt.Errorf("create file %s: %w", cleanPath, err)
 		}
 
 		if _, err := io.WriteString(w, f.Content); err != nil {
-			return "", fmt.Errorf("write file %s: %w", f.Path, err)
+			return "", fmt.Errorf("write file %s: %w", cleanPath, err)
 		}
 	}
 
@@ -186,6 +221,39 @@ exit 0
 	}
 
 	return nil
+}
+
+func (s *ZipperService) ExportModuleZip(projectID string) (string, error) {
+	rows, err := s.db.Query(
+		"SELECT path, content FROM project_files WHERE project_id = ? ORDER BY path",
+		projectID,
+	)
+	if err != nil {
+		return "", fmt.Errorf("read project files: %w", err)
+	}
+	defer rows.Close()
+
+	var files []ModuleFile
+	hasModuleProp := false
+	for rows.Next() {
+		var path, content string
+		if err := rows.Scan(&path, &content); err != nil {
+			continue
+		}
+		if path == "module.prop" {
+			hasModuleProp = true
+			if !strings.Contains(content, "id=") || !strings.Contains(content, "name=") || !strings.Contains(content, "version=") {
+				return "", fmt.Errorf("module.prop must contain id, name, and version fields")
+			}
+		}
+		files = append(files, ModuleFile{Path: path, Content: content})
+	}
+
+	if !hasModuleProp {
+		return "", fmt.Errorf("project must contain a module.prop file")
+	}
+
+	return s.BuildModuleZip(context.Background(), projectID, files)
 }
 
 func (s *ZipperService) GetAvailableDownloads() []string {

@@ -3,6 +3,7 @@ package database
 import (
 	"database/sql"
 	"fmt"
+	"log"
 
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/moduforge/backend/internal/config"
@@ -42,6 +43,12 @@ func tableExists(db *sql.DB, name string) bool {
 }
 
 func columnExists(db *sql.DB, table, col string) bool {
+	// Validate table name to prevent SQL injection (only allow alphanumeric + underscore)
+	for _, c := range table {
+		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_') {
+			return false
+		}
+	}
 	rows, err := db.Query(fmt.Sprintf(`PRAGMA table_info(%s)`, table))
 	if err != nil {
 		return false
@@ -99,6 +106,8 @@ func migrate(db *sql.DB) error {
 			target        TEXT NOT NULL,
 			log           TEXT DEFAULT '',
 			artifact_path TEXT,
+			trigger       TEXT NOT NULL DEFAULT 'manual',
+			commit_hash   TEXT NOT NULL DEFAULT '',
 			created_at    TEXT NOT NULL DEFAULT (datetime('now')),
 			updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
 		)`,
@@ -199,7 +208,40 @@ func migrate(db *sql.DB) error {
 		`INSERT OR IGNORE INTO ai_prompts (mode, content) VALUES ('generate', '')`,
 		`INSERT OR IGNORE INTO ai_prompts (mode, content) VALUES ('chat', '')`,
 		`INSERT OR IGNORE INTO ai_prompts (mode, content) VALUES ('repair', '')`,
-	}
+		`INSERT OR IGNORE INTO ai_prompts (mode, content) VALUES ('agent', '')`,
+
+		`CREATE TABLE IF NOT EXISTS adb_saved_devices (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			address TEXT NOT NULL UNIQUE,
+			name TEXT DEFAULT '',
+			last_connected_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		)`,
+
+		// AI Conversations persistence
+	`CREATE TABLE IF NOT EXISTS ai_conversations (
+		id TEXT PRIMARY KEY,
+		user_id TEXT NOT NULL,
+		title TEXT DEFAULT '',
+		mode TEXT DEFAULT '',
+		messages TEXT DEFAULT '[]',
+		model TEXT DEFAULT '',
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	)`,
+	`CREATE INDEX IF NOT EXISTS idx_ai_conversations_user ON ai_conversations(user_id)`,
+	// Individual conversation messages for multi-turn persistence
+	`CREATE TABLE IF NOT EXISTS conversation_messages (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		session_id TEXT NOT NULL,
+		user_id TEXT NOT NULL,
+		role TEXT NOT NULL,
+		content TEXT NOT NULL,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	)`,
+	`CREATE INDEX IF NOT EXISTS idx_conv_msg_session ON conversation_messages(session_id)`,
+	`CREATE INDEX IF NOT EXISTS idx_conv_msg_user ON conversation_messages(user_id)`,
+}
 
 	for _, m := range migrations {
 		if _, err := db.Exec(m); err != nil {
@@ -232,6 +274,17 @@ func migrate(db *sql.DB) error {
 	}
 	// Ensure the index exists (idempotent)
 	_, _ = db.Exec(`CREATE INDEX IF NOT EXISTS idx_ai_prompts_user ON ai_prompts(user_id)`)
+
+	// Add project_id column to ai_conversations if not exists
+	if _, err := db.Exec(`ALTER TABLE ai_conversations ADD COLUMN project_id TEXT DEFAULT ''`); err != nil {
+		// Column already exists or other error — log but don't crash
+		log.Printf("migration: alter ai_conversations add project_id: %v", err)
+	}
+
+	// Add agent_mode column to ai_conversations if not exists
+	if _, err := db.Exec(`ALTER TABLE ai_conversations ADD COLUMN agent_mode TEXT DEFAULT 'act'`); err != nil {
+		log.Printf("migration: alter ai_conversations add agent_mode: %v", err)
+	}
 
 	return nil
 }

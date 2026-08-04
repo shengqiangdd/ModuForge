@@ -13,10 +13,20 @@ import (
 
 // targetToImage maps build targets to their container image names.
 var targetToImage = map[string]string{
-	"magisk":   "moduforge/builder-magisk:latest",
-	"ksu":      "moduforge/builder-ksu:latest",
-	"apatch":   "moduforge/builder-apatch:latest",
+	"magisk":    "moduforge/builder-magisk:latest",
+	"ksu":       "moduforge/builder-ksu:latest",
+	"apatch":    "moduforge/builder-apatch:latest",
 	"universal": "moduforge/builder-magisk:latest",
+}
+
+// BuildResult holds the full result of a build operation.
+type BuildResult struct {
+	ArtifactPath   string               `json:"artifact_path"`
+	Incremental    *IncrementalResult   `json:"incremental,omitempty"`
+	RecompiledFiles []string             `json:"recompiled_files,omitempty"`
+	CacheHits      int                  `json:"cache_hits"`
+	CacheMisses    int                  `json:"cache_misses"`
+	Arch           string               `json:"arch"`
 }
 
 type Builder struct {
@@ -29,19 +39,161 @@ func NewBuilder(cfg *config.Config) *Builder {
 
 // Build 主入口，检查 Docker 可用性，有 Docker 则用容器，否则回退到本地 zip
 func (b *Builder) Build(ctx context.Context, projectDir, target, taskID string) (string, error) {
+	r, err := b.BuildWithResult(ctx, projectDir, target, taskID, "arm64", func(string) {})
+	if err != nil {
+		return "", err
+	}
+	return r.ArtifactPath, nil
+}
+
+// BuildWithLog 带日志回调的构建入口
+func (b *Builder) BuildWithLog(ctx context.Context, projectDir, target, taskID string, logFn func(string)) (string, error) {
+	r, err := b.BuildWithResult(ctx, projectDir, target, taskID, "arm64", logFn)
+	if err != nil {
+		return "", err
+	}
+	return r.ArtifactPath, nil
+}
+
+// BuildWithArch 带架构参数的构建入口
+func (b *Builder) BuildWithArch(ctx context.Context, projectDir, target, taskID, arch string, logFn func(string)) (string, error) {
+	r, err := b.BuildWithResult(ctx, projectDir, target, taskID, arch, logFn)
+	if err != nil {
+		return "", err
+	}
+	return r.ArtifactPath, nil
+}
+
+// BuildWithResult is the full build entry point with incremental + cache support.
+func (b *Builder) BuildWithResult(ctx context.Context, projectDir, target, taskID, arch string, logFn func(string)) (*BuildResult, error) {
+	arch = NormalizeArch(arch)
+	result := &BuildResult{Arch: arch}
+
 	if _, err := os.Stat(projectDir); os.IsNotExist(err) {
-		return "", fmt.Errorf("project dir not found: %s", projectDir)
+		return nil, fmt.Errorf("project dir not found: %s", projectDir)
 	}
 
 	artifactDir := filepath.Join(b.cfg.StoragePath, "artifacts", taskID)
 	if err := os.MkdirAll(artifactDir, 0755); err != nil {
-		return "", fmt.Errorf("create artifact dir: %w", err)
+		return nil, fmt.Errorf("create artifact dir: %w", err)
 	}
 
-	if b.dockerAvailable(ctx) {
-		return b.buildWithDocker(ctx, projectDir, target, artifactDir)
+	// Cleanup expired binary cache
+	if cleaned, err := CleanupExpiredCache(projectDir); err == nil && cleaned > 0 {
+		logFn(fmt.Sprintf("  🧹 Cleaned %d expired cache entries\n", cleaned))
 	}
-	return b.buildNative(ctx, projectDir, target, artifactDir)
+
+	// Check incremental build status
+	logFn(fmt.Sprintf("  📋 Checking incremental build (arch=%s)...\n", arch))
+	incr := CheckIncremental(projectDir, arch)
+	result.Incremental = incr
+
+	if incr.NeedsRebuild {
+		logFn(fmt.Sprintf("  📝 %s\n", incr.Reason))
+		if len(incr.ChangedFiles) > 0 {
+			logFn(fmt.Sprintf("  📄 Changed: %d file(s)\n", len(incr.ChangedFiles)))
+		}
+		if len(incr.NewFiles) > 0 {
+			logFn(fmt.Sprintf("  🆕 New: %d file(s)\n", len(incr.NewFiles)))
+		}
+	} else {
+		logFn("  ✅ No changes detected, using cached binaries\n")
+	}
+
+	// Compile Go files with arch support + binary cache
+	goFiles := b.DetectGoFiles(projectDir)
+	if len(goFiles) > 0 {
+		logFn(fmt.Sprintf("  Detected %d Go file(s), cross-compiling for android/%s...\n", len(goFiles), arch))
+		goResult, err := b.CompileGoFilesArch(ctx, projectDir, arch, incr, logFn)
+		if err != nil {
+			return nil, fmt.Errorf("go compilation failed: %w", err)
+		}
+		result.RecompiledFiles = append(result.RecompiledFiles, goResult.Recompiled...)
+		result.CacheHits += goResult.CacheHits
+		result.CacheMisses += goResult.CacheMisses
+	}
+
+	// Compile Rust projects with arch support + binary cache
+	rustDirs := b.DetectRustProjects(projectDir)
+	if len(rustDirs) > 0 {
+		logFn(fmt.Sprintf("  Detected %d Rust project(s)...\n", len(rustDirs)))
+		if err := InstallRustArch(ctx, arch, logFn); err != nil {
+			return nil, fmt.Errorf("rust installation failed: %w", err)
+		}
+		for _, dir := range rustDirs {
+			rustResult, err := CompileRustProjectArch(ctx, projectDir, dir, arch, incr, logFn)
+			if err != nil {
+				return nil, fmt.Errorf("rust compilation failed for %s: %w", dir, err)
+			}
+			result.RecompiledFiles = append(result.RecompiledFiles, rustResult.Recompiled...)
+			result.CacheHits += rustResult.CacheHits
+			result.CacheMisses += rustResult.CacheMisses
+		}
+	}
+
+	// Compile C/C++ files with NDK + arch support
+	cFiles := b.DetectCFiles(projectDir)
+	if len(cFiles) > 0 {
+		logFn(fmt.Sprintf("  Detected %d C/C++ file(s), cross-compiling with NDK...\n", len(cFiles)))
+		cResult, err := b.CompileCFilesArch(ctx, projectDir, arch, incr, logFn)
+		if err != nil {
+			return nil, fmt.Errorf("C/C++ compilation failed: %w", err)
+		}
+		result.RecompiledFiles = append(result.RecompiledFiles, cResult.Recompiled...)
+		result.CacheHits += cResult.CacheHits
+		result.CacheMisses += cResult.CacheMisses
+	}
+
+	// Update build cache after successful compilation
+	if err := UpdateBuildCacheAfterBuild(projectDir, arch, target); err != nil {
+		logFn(fmt.Sprintf("  ⚠️  Failed to update build cache: %v\n", err))
+	}
+
+	var artifactPath string
+	var err error
+	if b.dockerAvailable(ctx) {
+		artifactPath, err = b.buildWithDocker(ctx, projectDir, target, artifactDir)
+	} else {
+		artifactPath, err = b.buildNative(ctx, projectDir, target, artifactDir)
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	result.ArtifactPath = artifactPath
+	logFn(fmt.Sprintf("  📦 Cache stats: %d hits, %d misses\n", result.CacheHits, result.CacheMisses))
+
+	return result, nil
+}
+
+// detectGoFiles 检查项目中是否有 .go 文件
+func (b *Builder) DetectGoFiles(projectDir string) []string {
+	var goFiles []string
+	filepath.Walk(projectDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() {
+			return nil
+		}
+		if strings.HasSuffix(path, ".go") {
+			goFiles = append(goFiles, path)
+		}
+		return nil
+	})
+	return goFiles
+}
+
+// detectRustProjects 检查项目中是否有 Cargo.toml（Rust 项目）
+func (b *Builder) DetectRustProjects(projectDir string) []string {
+	var dirs []string
+	filepath.Walk(projectDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil
+		}
+		if !info.IsDir() && info.Name() == "Cargo.toml" {
+			dirs = append(dirs, filepath.Dir(path))
+		}
+		return nil
+	})
+	return dirs
 }
 
 // dockerAvailable 检查 Docker daemon 是否可访问
@@ -92,14 +244,29 @@ func (b *Builder) buildWithDocker(ctx context.Context, sourceDir, target, artifa
 	return outputZip, nil
 }
 
-// buildNative 本地 zip 打包（无 Docker 回退方案）
+// buildNative 本地 zip 打包（无 Docker 回退方案，排除源码只保留运行时文件）
 func (b *Builder) buildNative(ctx context.Context, sourceDir, target, artifactDir string) (string, error) {
 	outputZip := filepath.Join(artifactDir, "module.zip")
 
-	cmd := exec.CommandContext(ctx, "zip", "-r", outputZip, ".")
-	cmd.Dir = sourceDir
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return "", fmt.Errorf("zip failed: %s: %w", string(out), err)
+	// 使用 ZipModuleForBuild 排除源码目录，只打包编译后的二进制和shell脚本
+	if err := ZipModuleForBuild(sourceDir, outputZip); err != nil {
+		return "", fmt.Errorf("zip failed: %w", err)
 	}
 	return outputZip, nil
+}
+
+// GetSupportedArchitectures returns the list of supported build architectures.
+func GetSupportedArchitectures() []ArchInfo {
+	return SupportedArchitectures
+}
+
+// CompileResult holds compilation statistics.
+type CompileResult struct {
+	Recompiled []string
+	CacheHits  int
+	CacheMisses int
+}
+
+func logCompileSkip(logFn func(string), name, reason string) {
+	logFn(fmt.Sprintf("  ⏭️  %s: %s (using cached binary)\n", name, reason))
 }

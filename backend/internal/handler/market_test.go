@@ -8,7 +8,7 @@ import (
 
 func TestMarketHandler_ListModules(t *testing.T) {
 	svc := service.NewMarketService()
-	handler := NewMarketHandler(svc)
+	handler := NewMarketHandler(svc, "/tmp/test-storage")
 	if handler == nil {
 		t.Fatal("NewMarketHandler returned nil")
 	}
@@ -16,7 +16,7 @@ func TestMarketHandler_ListModules(t *testing.T) {
 
 func TestMarketHandler_Categories(t *testing.T) {
 	svc := service.NewMarketService()
-	handler := NewMarketHandler(svc)
+	handler := NewMarketHandler(svc, "/tmp/test-storage")
 
 	cats := handler.market.Categories()
 	if len(cats) == 0 {
@@ -26,7 +26,7 @@ func TestMarketHandler_Categories(t *testing.T) {
 
 func TestMarketHandler_TrendingModules(t *testing.T) {
 	svc := service.NewMarketService()
-	handler := NewMarketHandler(svc)
+	handler := NewMarketHandler(svc, "/tmp/test-storage")
 
 	modules := handler.market.TrendingModules(5)
 	if len(modules) == 0 {
@@ -36,7 +36,7 @@ func TestMarketHandler_TrendingModules(t *testing.T) {
 
 func TestMarketHandler_GetModule(t *testing.T) {
 	svc := service.NewMarketService()
-	handler := NewMarketHandler(svc)
+	handler := NewMarketHandler(svc, "/tmp/test-storage")
 
 	mod, err := handler.market.GetModule("system-prop-tweaks")
 	if err != nil {
@@ -49,7 +49,7 @@ func TestMarketHandler_GetModule(t *testing.T) {
 
 func TestMarketHandler_StarModule(t *testing.T) {
 	svc := service.NewMarketService()
-	handler := NewMarketHandler(svc)
+	handler := NewMarketHandler(svc, "/tmp/test-storage")
 
 	stars, err := handler.market.StarModule("system-prop-tweaks")
 	if err != nil {

@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 
@@ -46,17 +47,17 @@ func (h *AIStreamHandler) StreamChat(c fiber.Ctx) error {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 
-	// Stream events
-	for event := range ch {
-		data, _ := json.Marshal(event)
-		line := fmt.Sprintf("data: %s\n\n", string(data))
-		if _, err := c.Write([]byte(line)); err != nil {
-			return err
+	// Use SetBodyStreamWriter for real SSE streaming
+	c.RequestCtx().SetBodyStreamWriter(func(w *bufio.Writer) {
+		for event := range ch {
+			data, _ := json.Marshal(event)
+			line := fmt.Sprintf("data: %s\n\n", string(data))
+			w.WriteString(line)
+			w.Flush()
 		}
-	}
-
-	// Send done event
-	c.Write([]byte("data: {\"type\":\"done\",\"content\":\"\"}\n\n"))
+		w.WriteString("data: {\"type\":\"done\",\"content\":\"\"}\n\n")
+		w.Flush()
+	})
 
 	return nil
 }

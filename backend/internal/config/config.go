@@ -23,7 +23,13 @@ type Config struct {
 	OpenCodeApiKey  string // OpenCode Zen 和 Go 共用
 	XAIApiKey       string // xAI / Grok API key
 	OllamaEndpoint  string // Ollama 本地端点
-	DockerEndpoint  string // Docker 端点（空 = 不启用 Docker 构建）
+	DockerEndpoint    string // Docker 端点（空 = 不启用 Docker 构建）
+	ADBAddress        string // ADB 地址（空 = 不启用 ADB 健康检查）
+	WebhookSecret     string // Git webhook HMAC secret
+	GitHubWebhookSec  string // GitHub webhook secret
+	RateLimitPublic   float64 // 公共路由限流 (req/min)
+	RateLimitAuth     float64 // 认证路由限流 (req/min)
+	RateLimitAI       float64 // AI 路由限流 (req/min)
 }
 
 func Load() *Config {
@@ -45,7 +51,13 @@ func Load() *Config {
 		OpenCodeApiKey:  getEnv("OPENCODE_API_KEY", ""),
 		XAIApiKey:       getEnv("XAI_API_KEY", ""),
 		OllamaEndpoint:  getEnv("OLLAMA_ENDPOINT", "http://localhost:11434"),
-		DockerEndpoint:  getEnv("DOCKER_ENDPOINT", ""),
+		DockerEndpoint:    getEnv("DOCKER_ENDPOINT", ""),
+		ADBAddress:        getEnv("ADB_ADDRESS", ""),
+		WebhookSecret:     getEnv("WEBHOOK_SECRET", "change-me"),
+		GitHubWebhookSec:  getEnv("GITHUB_WEBHOOK_SECRET", ""),
+		RateLimitPublic:   100,
+		RateLimitAuth:     200,
+		RateLimitAI:       20,
 	}
 }
 

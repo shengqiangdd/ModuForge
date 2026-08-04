@@ -42,6 +42,13 @@ type ZipFileContent struct {
 	IsDir   bool   `json:"is_dir"`
 }
 
+const (
+	maxZipUploadSize   = 50 * 1024 * 1024 // 50MB max upload
+	maxZipEntries      = 1000             // max files in zip
+	maxZipEntrySize    = 5 * 1024 * 1024  // 5MB per file entry
+	maxTotalUncompressed = 100 * 1024 * 1024 // 100MB total uncompressed
+)
+
 func ParseModuleZip(c fiber.Ctx) error {
 	file, err := c.FormFile("file")
 	if err != nil {
@@ -52,14 +59,19 @@ func ParseModuleZip(c fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "file must be a .zip archive"})
 	}
 
+	// Enforce upload size limit
+	if file.Size > maxZipUploadSize {
+		return c.Status(400).JSON(fiber.Map{"error": "file too large, max 50MB"})
+	}
+
 	fh, err := file.Open()
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "failed to open uploaded file"})
 	}
 	defer fh.Close()
 
-	// Read entire file into memory
-	var raw []byte
+	// Read entire file into memory (bounded by maxZipUploadSize)
+	raw := make([]byte, 0, file.Size)
 	buf := make([]byte, 32768)
 	for {
 		n, err := fh.Read(buf)
@@ -81,8 +93,19 @@ func ParseModuleZip(c fiber.Ctx) error {
 
 	var module ModuleInfo
 	var files []ZipFileInfo
+	totalUncompressed := uint64(0)
 
-	for _, zf := range reader.File {
+	for i, zf := range reader.File {
+		// Limit number of entries
+		if i >= maxZipEntries {
+			return c.Status(400).JSON(fiber.Map{"error": "too many files in zip (max 1000)"})
+		}
+		// Track total uncompressed size to prevent zip bomb
+		totalUncompressed += zf.UncompressedSize64
+		if totalUncompressed > maxTotalUncompressed {
+			return c.Status(400).JSON(fiber.Map{"error": "uncompressed zip too large (max 100MB)"})
+		}
+
 		info := ZipFileInfo{
 			Path:  zf.Name,
 			Size:  int64(zf.UncompressedSize64),
@@ -91,6 +114,10 @@ func ParseModuleZip(c fiber.Ctx) error {
 		files = append(files, info)
 
 		if normalizePath(zf.Name) == "module.prop" && !zf.FileInfo().IsDir() {
+			// Limit individual file size
+			if zf.UncompressedSize64 > maxZipEntrySize {
+				continue
+			}
 			rc, err := zf.Open()
 			if err != nil {
 				continue
@@ -120,13 +147,18 @@ func ImportModuleZip(c fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "file must be a .zip archive"})
 	}
 
+	// Enforce upload size limit
+	if file.Size > maxZipUploadSize {
+		return c.Status(400).JSON(fiber.Map{"error": "file too large, max 50MB"})
+	}
+
 	fh, err := file.Open()
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "failed to open uploaded file"})
 	}
 	defer fh.Close()
 
-	var raw []byte
+	raw := make([]byte, 0, file.Size)
 	buf := make([]byte, 32768)
 	for {
 		n, err := fh.Read(buf)
@@ -149,8 +181,19 @@ func ImportModuleZip(c fiber.Ctx) error {
 	var module ModuleInfo
 	var contents []ZipFileContent
 	var fileList []ZipFileInfo
+	totalUncompressed := uint64(0)
 
-	for _, zf := range reader.File {
+	for i, zf := range reader.File {
+		// Limit number of entries
+		if i >= maxZipEntries {
+			return c.Status(400).JSON(fiber.Map{"error": "too many files in zip (max 1000)"})
+		}
+		// Track total uncompressed size to prevent zip bomb
+		totalUncompressed += zf.UncompressedSize64
+		if totalUncompressed > maxTotalUncompressed {
+			return c.Status(400).JSON(fiber.Map{"error": "uncompressed zip too large (max 100MB)"})
+		}
+
 		info := ZipFileInfo{
 			Path:  zf.Name,
 			Size:  int64(zf.UncompressedSize64),
@@ -160,6 +203,12 @@ func ImportModuleZip(c fiber.Ctx) error {
 
 		if zf.FileInfo().IsDir() {
 			contents = append(contents, ZipFileContent{Path: zf.Name, Content: "", IsDir: true})
+			continue
+		}
+
+		// Limit individual file size
+		if zf.UncompressedSize64 > maxZipEntrySize {
+			contents = append(contents, ZipFileContent{Path: zf.Name, Content: "[file too large, skipped]", IsDir: false})
 			continue
 		}
 

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/moduforge/backend/internal/domain"
 )
 
 type CollaborationService struct {
@@ -16,6 +17,8 @@ type CollaborationService struct {
 func NewCollaborationService(db *sql.DB) *CollaborationService {
 	return &CollaborationService{db: db}
 }
+
+func (s *CollaborationService) GetDB() *sql.DB { return s.db }
 
 type Collaborator struct {
 	ID        string     `json:"id"`
@@ -171,4 +174,102 @@ func (s *CollaborationService) ListEditSessions(ctx context.Context, projectID s
 func (s *CollaborationService) RemoveEditSession(ctx context.Context, sessionID string) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM edit_sessions WHERE id = ?`, sessionID)
 	return err
+}
+
+// ===== Team Members =====
+
+func (s *CollaborationService) AddTeamMember(ctx context.Context, projectID, userID, role, invitedBy string) (*domain.TeamMember, error) {
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO team_members (project_id, user_id, role, invited_by) VALUES (?, ?, ?, ?)`,
+		projectID, userID, role, invitedBy)
+	if err != nil {
+		return nil, err
+	}
+	var m domain.TeamMember
+	err = s.db.QueryRowContext(ctx,
+		`SELECT id, project_id, user_id, role, COALESCE(invited_by,''), created_at FROM team_members WHERE project_id=? AND user_id=?`,
+		projectID, userID,
+	).Scan(&m.ID, &m.ProjectID, &m.UserID, &m.Role, &m.InvitedBy, &m.CreatedAt)
+	return &m, err
+}
+
+func (s *CollaborationService) RemoveTeamMember(ctx context.Context, projectID, userID string) error {
+	_, err := s.db.ExecContext(ctx,
+		`DELETE FROM team_members WHERE project_id = ? AND user_id = ?`, projectID, userID)
+	return err
+}
+
+func (s *CollaborationService) GetTeamMembers(ctx context.Context, projectID string) ([]domain.TeamMember, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, project_id, user_id, role, COALESCE(invited_by,''), created_at FROM team_members WHERE project_id=?`, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var result []domain.TeamMember
+	for rows.Next() {
+		var m domain.TeamMember
+		rows.Scan(&m.ID, &m.ProjectID, &m.UserID, &m.Role, &m.InvitedBy, &m.CreatedAt)
+		result = append(result, m)
+	}
+	return result, nil
+}
+
+func (s *CollaborationService) UpdateMemberRole(ctx context.Context, projectID, userID, role string) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE team_members SET role=? WHERE project_id=? AND user_id=?`, role, projectID, userID)
+	return err
+}
+
+// role hierarchy: owner > admin > member > viewer
+var roleWeight = map[string]int{
+	"owner":  4,
+	"admin":  3,
+	"member": 2,
+	"viewer": 1,
+}
+
+func (s *CollaborationService) CheckPermission(ctx context.Context, projectID, userID string, minRole string) bool {
+	// Project owner always has full access
+	var ownerID string
+	err := s.db.QueryRowContext(ctx, `SELECT user_id FROM projects WHERE id=?`, projectID).Scan(&ownerID)
+	if err == nil && ownerID == userID {
+		return true
+	}
+
+	var role string
+	err = s.db.QueryRowContext(ctx,
+		`SELECT role FROM team_members WHERE project_id=? AND user_id=?`, projectID, userID).Scan(&role)
+	if err != nil {
+		return false
+	}
+	return roleWeight[role] >= roleWeight[minRole]
+}
+
+// ===== Audit Log =====
+
+func (s *CollaborationService) LogAudit(ctx context.Context, projectID, userID, action, details string) {
+	s.db.ExecContext(ctx,
+		`INSERT INTO audit_logs (project_id, user_id, action, details) VALUES (?, ?, ?, ?)`,
+		projectID, userID, action, details)
+}
+
+func (s *CollaborationService) GetAuditLogs(ctx context.Context, projectID string, limit, offset int) ([]domain.AuditLog, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, COALESCE(project_id,''), COALESCE(user_id,''), action, details, created_at FROM audit_logs WHERE project_id=? ORDER BY created_at DESC LIMIT ? OFFSET ?`,
+		projectID, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var result []domain.AuditLog
+	for rows.Next() {
+		var a domain.AuditLog
+		rows.Scan(&a.ID, &a.ProjectID, &a.UserID, &a.Action, &a.Details, &a.CreatedAt)
+		result = append(result, a)
+	}
+	return result, nil
 }

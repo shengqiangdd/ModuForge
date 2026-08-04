@@ -1,0 +1,792 @@
+openapi: "3.0.3"
+info:
+  title: ModuForge API
+  description: Backend API for ModuForge — Magisk/KernelSU/APatch module development platform
+  version: "2.0.0"
+  contact:
+    name: ModuForge Team
+    url: https://moduforge.app
+
+servers:
+  - url: /api/v1
+    description: API v1
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token obtained from /auth/login or /auth/register
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+      required: [error]
+
+    User:
+      type: object
+      properties:
+        id: { type: string }
+        username: { type: string }
+        email: { type: string }
+        role: { type: string }
+        created_at: { type: string, format: date-time }
+
+    MarketModule:
+      type: object
+      properties:
+        id: { type: string }
+        title: { type: string }
+        slug: { type: string }
+        description: { type: string }
+        category: { type: string, enum: [system, ui, audio, display, utility] }
+        tags: { type: string }
+        version: { type: string }
+        version_code: { type: integer }
+        author: { type: string }
+        license: { type: string }
+        cover_image: { type: string }
+        stars: { type: integer }
+        installs: { type: integer }
+        dependencies: { type: string }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        screenshots:
+          type: array
+          items:
+            $ref: '#/components/schemas/ModuleScreenshot'
+
+    ModuleScreenshot:
+      type: object
+      properties:
+        id: { type: integer }
+        module_id: { type: string }
+        url: { type: string }
+        sort_order: { type: integer }
+        created_at: { type: string, format: date-time }
+
+    MarketReview:
+      type: object
+      properties:
+        id: { type: string }
+        module_id: { type: string }
+        uid: { type: string }
+        username: { type: string }
+        rating: { type: integer, minimum: 1, maximum: 5 }
+        comment: { type: string }
+        created_at: { type: string, format: date-time }
+
+    ModuleVersion:
+      type: object
+      properties:
+        id: { type: string }
+        module_id: { type: string }
+        version: { type: string }
+        changelog: { type: string }
+        created_at: { type: string, format: date-time }
+
+    BuildTask:
+      type: object
+      properties:
+        id: { type: string }
+        project_id: { type: string }
+        status: { type: string, enum: [pending, running, completed, failed, cancelled] }
+        target: { type: string }
+        log: { type: string }
+        commit_hash: { type: string }
+        trigger: { type: string }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    Notification:
+      type: object
+      properties:
+        id: { type: integer }
+        user_id: { type: integer }
+        type: { type: string }
+        title: { type: string }
+        message: { type: string }
+        link: { type: string }
+        is_read: { type: boolean }
+        created_at: { type: string, format: date-time }
+
+    Activity:
+      type: object
+      properties:
+        id: { type: integer }
+        user_id: { type: integer }
+        project_id: { type: integer }
+        activity_type: { type: string }
+        description: { type: string }
+        created_at: { type: string, format: date-time }
+
+    Project:
+      type: object
+      properties:
+        id: { type: string }
+        user_id: { type: string }
+        name: { type: string }
+        module_type: { type: string }
+        description: { type: string }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    ProjectFile:
+      type: object
+      properties:
+        id: { type: integer }
+        project_id: { type: string }
+        path: { type: string }
+        content: { type: string }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+security:
+  - BearerAuth: []
+
+tags:
+  - name: Auth
+    description: 注册 / 登录
+  - name: Projects
+    description: 项目 CRUD
+  - name: Build
+    description: 构建系统
+  - name: Market
+    description: 模块市场
+  - name: AI
+    description: AI 助手
+  - name: ADB
+    description: 设备管理
+  - name: Notifications
+    description: 通知中心
+  - name: Activities
+    description: 活动流
+  - name: Backup
+    description: 备份与恢复
+  - name: Plugins
+    description: 插件系统
+  - name: Security
+    description: 安全扫描
+
+paths:
+  # ===== Auth =====
+  /auth/register:
+    post:
+      tags: [Auth]
+      summary: 注册
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                username: { type: string }
+                email: { type: string }
+                password: { type: string }
+              required: [username, email, password]
+      responses:
+        "200":
+          description: 注册成功 + JWT token
+        "400":
+          description: 请求无效
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: 登录
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email: { type: string }
+                password: { type: string }
+              required: [email, password]
+      responses:
+        "200":
+          description: 登录成功 + JWT token
+        "401":
+          description: 密码错误
+
+  # ===== Market =====
+  /market/modules:
+    get:
+      tags: [Market]
+      summary: 模块列表
+      parameters:
+        - in: query
+          name: query
+          schema: { type: string }
+          description: 搜索关键词
+        - in: query
+          name: category
+          schema: { type: string, enum: [system, ui, audio, display, utility] }
+        - in: query
+          name: sort
+          schema: { type: string, enum: [stars, installs, newest, title] }
+        - in: query
+          name: page
+          schema: { type: integer, default: 1 }
+        - in: query
+          name: per_page
+          schema: { type: integer, default: 20 }
+      responses:
+        "200":
+          description: 模块列表
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  modules:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/MarketModule'
+                  total: { type: integer }
+                  page: { type: integer }
+                  per_page: { type: integer }
+
+  /market/trending:
+    get:
+      tags: [Market]
+      summary: 热门模块
+      parameters:
+        - in: query
+          name: limit
+          schema: { type: integer, default: 10 }
+      responses:
+        "200":
+          description: 热门模块列表
+
+  /market/categories:
+    get:
+      tags: [Market]
+      summary: 分类列表
+      responses:
+        "200":
+          description: 分类数组
+
+  /market/module/{slug}:
+    get:
+      tags: [Market]
+      summary: 模块详情
+      parameters:
+        - in: path
+          name: slug
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: 模块详情（含截图）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MarketModule'
+        "404":
+          $ref: '#/components/schemas/Error'
+
+  /market/module/{slug}/reviews:
+    get:
+      tags: [Market]
+      summary: 评论列表
+      parameters:
+        - in: path
+          name: slug
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: 评论列表
+
+    post:
+      tags: [Market]
+      summary: 添加评论
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - in: path
+          name: slug
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                uid: { type: string }
+                username: { type: string }
+                rating: { type: integer, minimum: 1, maximum: 5 }
+                comment: { type: string }
+      responses:
+        "200":
+          description: 评论成功
+
+  /market/publish:
+    post:
+      tags: [Market]
+      summary: 发布模块
+      security: [{ BearerAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title: { type: string }
+                description: { type: string }
+                category: { type: string }
+                tags: { type: string }
+                version: { type: string }
+                version_code: { type: string }
+                changelog: { type: string }
+                cover_image: { type: string }
+                license: { type: string }
+                author: { type: string }
+                dependencies:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      id: { type: string }
+                      min_version: { type: string }
+                      optional: { type: boolean }
+      responses:
+        "200":
+          description: 发布成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MarketModule'
+
+  /market/module/{slug}/star:
+    post:
+      tags: [Market]
+      summary: 星标模块
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - in: path
+          name: slug
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: 星标数
+
+  /market/module/{slug}/versions:
+    get:
+      tags: [Market]
+      summary: 版本历史
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - in: path
+          name: slug
+          schema: { type: string }
+      responses:
+        "200":
+          description: 版本列表
+
+  /market/module/{slug}/rollback:
+    post:
+      tags: [Market]
+      summary: 回滚版本
+      security: [{ BearerAuth: [] }]
+
+  /market/module/{slug}/version:
+    post:
+      tags: [Market]
+      summary: 更新版本
+      security: [{ BearerAuth: [] }]
+
+  /market/module/{slug}/dependencies:
+    get:
+      tags: [Market]
+      summary: 依赖列表
+      responses:
+        "200":
+          description: 依赖和依赖树
+
+  /market/module/{slug}/check-deps:
+    post:
+      tags: [Market]
+      summary: 检查依赖冲突
+      responses:
+        "200":
+          description: 冲突结果
+
+  /market/module/{slug}/screenshots:
+    post:
+      tags: [Market]
+      summary: 上传截图
+      security: [{ BearerAuth: [] }]
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                screenshots:
+                  type: array
+                  items:
+                    type: string
+                    format: binary
+      responses:
+        "200":
+          description: 截图列表
+
+  /market/screenshots/{id}:
+    delete:
+      tags: [Market]
+      summary: 删除截图
+      security: [{ BearerAuth: [] }]
+
+  # ===== Build =====
+  /projects/{id}/build:
+    post:
+      tags: [Build]
+      summary: 创建构建
+      security: [{ BearerAuth: [] }]
+
+  /projects/{id}/build/auto:
+    post:
+      tags: [Build]
+      summary: 自动触发构建
+      security: [{ BearerAuth: [] }]
+
+  /builds/{id}:
+    get:
+      tags: [Build]
+      summary: 获取构建详情
+      security: [{ BearerAuth: [] }]
+
+  /builds/{id}/cancel:
+    post:
+      tags: [Build]
+      summary: 取消构建
+      security: [{ BearerAuth: [] }]
+
+  /builds/{id}/logs:
+    get:
+      tags: [Build]
+      summary: 构建日志流（SSE）
+      security: [{ BearerAuth: [] }]
+
+  /builds/{id}/download:
+    get:
+      tags: [Build]
+      summary: 下载构建产物
+      security: [{ BearerAuth: [] }]
+
+  # ===== Projects =====
+  /projects:
+    get:
+      tags: [Projects]
+      summary: 项目列表
+      security: [{ BearerAuth: [] }]
+      responses:
+        "200":
+          description: 项目列表
+    post:
+      tags: [Projects]
+      summary: 创建项目
+      security: [{ BearerAuth: [] }]
+
+  /projects/{id}:
+    get:
+      tags: [Projects]
+      summary: 项目详情
+      security: [{ BearerAuth: [] }]
+    put:
+      tags: [Projects]
+      summary: 更新项目
+      security: [{ BearerAuth: [] }]
+    delete:
+      tags: [Projects]
+      summary: 删除项目
+      security: [{ BearerAuth: [] }]
+
+  /projects/{id}/files:
+    get:
+      tags: [Projects]
+      summary: 文件列表
+      security: [{ BearerAuth: [] }]
+
+  /projects/{id}/files/{path}:
+    get:
+      tags: [Projects]
+      summary: 读取文件
+      security: [{ BearerAuth: [] }]
+    put:
+      tags: [Projects]
+      summary: 保存文件
+      security: [{ BearerAuth: [] }]
+
+  # ===== AI =====
+  /ai/generate:
+    post:
+      tags: [AI]
+      summary: AI 生成模块
+      security: [{ BearerAuth: [] }]
+
+  /ai/chat:
+    post:
+      tags: [AI]
+      summary: AI 对话
+      security: [{ BearerAuth: [] }]
+
+  /ai/repair:
+    post:
+      tags: [AI]
+      summary: AI 修复构建
+      security: [{ BearerAuth: [] }]
+
+  /ai/gather:
+    post:
+      tags: [AI]
+      summary: 需求收集
+      security: [{ BearerAuth: [] }]
+
+  /ai/stream:
+    post:
+      tags: [AI]
+      summary: 流式对话（SSE）
+      security: [{ BearerAuth: [] }]
+
+  /ai/prompts:
+    get:
+      tags: [AI]
+      summary: 获取提示词
+    put:
+      tags: [AI]
+      summary: 更新提示词
+      security: [{ BearerAuth: [] }]
+
+  /ai/history/{session_id}:
+    get:
+      tags: [AI]
+      summary: 获取对话历史
+      security: [{ BearerAuth: [] }]
+    delete:
+      tags: [AI]
+      summary: 删除对话历史
+      security: [{ BearerAuth: [] }]
+
+  /ai/memory:
+    get:
+      tags: [AI]
+      summary: 记忆列表
+      security: [{ BearerAuth: [] }]
+    delete:
+      tags: [AI]
+      summary: 清空所有记忆
+      security: [{ BearerAuth: [] }]
+
+  /ai/memory/{type}/{key}:
+    delete:
+      tags: [AI]
+      summary: 删除单条记忆
+      security: [{ BearerAuth: [] }]
+
+  # ===== Notifications =====
+  /notifications:
+    get:
+      tags: [Notifications]
+      summary: 通知列表
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - in: query
+          name: limit
+          schema: { type: integer, default: 20 }
+        - in: query
+          name: offset
+          schema: { type: integer, default: 0 }
+      responses:
+        "200":
+          description: 通知列表
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  notifications:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Notification'
+
+  /notifications/unread-count:
+    get:
+      tags: [Notifications]
+      summary: 未读通知数
+      security: [{ BearerAuth: [] }]
+      responses:
+        "200":
+          description: 未读计数
+
+  /notifications/{id}/read:
+    post:
+      tags: [Notifications]
+      summary: 标记单条已读
+      security: [{ BearerAuth: [] }]
+
+  /notifications/read-all:
+    post:
+      tags: [Notifications]
+      summary: 全部标记已读
+      security: [{ BearerAuth: [] }]
+
+  /notifications/{id}:
+    delete:
+      tags: [Notifications]
+      summary: 删除通知
+      security: [{ BearerAuth: [] }]
+
+  # ===== Activities =====
+  /activities:
+    get:
+      tags: [Activities]
+      summary: 用户活动流
+      security: [{ BearerAuth: [] }]
+      responses:
+        "200":
+          description: 活动列表
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  activities:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Activity'
+
+  /projects/{id}/activities:
+    get:
+      tags: [Activities]
+      summary: 项目活动流
+      security: [{ BearerAuth: [] }]
+
+  # ===== ADB =====
+  /adb/devices:
+    get:
+      tags: [ADB]
+      summary: 设备列表
+  /adb/check:
+    get:
+      tags: [ADB]
+      summary: 检测 ADB
+  /adb/modules:
+    get:
+      tags: [ADB]
+      summary: 已安装模块列表
+  /adb/modules/{name}:
+    get:
+      tags: [ADB]
+      summary: 模块详情
+  /adb/device-info:
+    get:
+      tags: [ADB]
+      summary: 设备信息
+  /adb/screenshot:
+    get:
+      tags: [ADB]
+      summary: 截图
+      security: [{ BearerAuth: [] }]
+  /adb/push:
+    post:
+      tags: [ADB]
+      summary: 推送文件
+      security: [{ BearerAuth: [] }]
+  /adb/install:
+    post:
+      tags: [ADB]
+      summary: 安装模块
+      security: [{ BearerAuth: [] }]
+  /adb/shell:
+    post:
+      tags: [ADB]
+      summary: 执行 Shell
+      security: [{ BearerAuth: [] }]
+  /adb/reboot:
+    post:
+      tags: [ADB]
+      summary: 重启设备
+      security: [{ BearerAuth: [] }]
+
+  # ===== Backup =====
+  /backup/export:
+    post:
+      tags: [Backup]
+      summary: 导出数据库
+      security: [{ BearerAuth: [] }]
+  /backup/import:
+    post:
+      tags: [Backup]
+      summary: 导入数据库
+      security: [{ BearerAuth: [] }]
+  /projects/{id}/export:
+    post:
+      tags: [Backup]
+      summary: 导出项目
+      security: [{ BearerAuth: [] }]
+  /projects/{id}/import:
+    post:
+      tags: [Backup]
+      summary: 导入项目
+      security: [{ BearerAuth: [] }]
+
+  # ===== LLM =====
+  /llm/providers:
+    get:
+      tags: [AI]
+      summary: 提供商列表
+  /llm/config:
+    get:
+      tags: [AI]
+      summary: 获取 LLM 配置
+      security: [{ BearerAuth: [] }]
+    post:
+      tags: [AI]
+      summary: 更新 LLM 配置
+      security: [{ BearerAuth: [] }]
+  /llm/provider-config:
+    put:
+      tags: [AI]
+      summary: 保存提供商配置
+      security: [{ BearerAuth: [] }]
+  /llm/refresh:
+    get:
+      tags: [AI]
+      summary: 刷新模型列表
+  /webhook/git:
+    post:
+      tags: [Build]
+      summary: Git Webhook
+      security: [{ BearerAuth: [] }]
+
+  # ===== Analytics =====
+  /analytics/build-stats:
+    get:
+      tags: [Build]
+      summary: 构建统计
+  /analytics/build-trends:
+    get:
+      tags: [Build]
+      summary: 构建趋势
+  /analytics/module-stats:
+    get:
+      tags: [Market]
+      summary: 市场统计
+  /analytics/system:
+    get:
+      tags: [Build]
+      summary: 系统信息

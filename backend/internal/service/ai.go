@@ -10,10 +10,14 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
-	"github.com/gofiber/fiber/v3"
+	"github.com/moduforge/backend/internal/builder"
 	"github.com/moduforge/backend/internal/config"
 	"github.com/moduforge/backend/internal/domain"
 	"github.com/moduforge/backend/internal/llm"
@@ -24,172 +28,158 @@ var httpClient = &http.Client{
 		MaxIdleConns:        10,
 		MaxIdleConnsPerHost: 5,
 		IdleConnTimeout:     90 * time.Second,
+		ResponseHeaderTimeout: 2 * time.Minute, // 等待 LLM 响应头的超时
 	},
+	// 不设 Timeout：LLM 流式生成可能持续很久，Timeout 会强制取消读取
 }
 
 type AIService struct {
-	cfg *config.Config
-	db  *sql.DB
+	cfg       *config.Config
+	db        *sql.DB
+	convStore *ConversationStore
 }
 
 func NewAIService(cfg *config.Config) *AIService {
-	return &AIService{cfg: cfg}
+	return &AIService{cfg: cfg, convStore: NewConversationStore()}
 }
 
 func NewAIServiceWithDB(cfg *config.Config, db *sql.DB) *AIService {
-	return &AIService{cfg: cfg, db: db}
+	return &AIService{cfg: cfg, db: db, convStore: NewConversationStore()}
+}
+
+func generateID() string {
+	return fmt.Sprintf("%d-%d", time.Now().UnixNano(), time.Now().UnixNano()%10000)
 }
 
 func defaultSystemPrompt(mode string) string {
 	switch mode {
 	case "generate":
-		return `你是一位专业的Android模块开发专家，擅长创建兼容 Magisk、KernelSU (KSU) 和 APatch 的通用模块。
-
-## 安全规范（必须遵守）
-- NEVER use ` + "`chmod 777`" + ` — use minimal necessary permissions (755 for scripts, 644 for configs, 600 for secrets)
-- NEVER hardcode passwords, API keys, or tokens in module files
-- ALWAYS validate user input before using in commands (prevent command injection)
-- Use ` + "`set -euo pipefail`" + ` at the top of every shell script
-- Quote all variable expansions: ` + "`\"$VAR\"`" + ` not ` + "`$VAR`" + `
-- Use ` + "`[[ ]]`" + ` instead of ` + "`[ ]`" + ` for conditionals (bash-specific, safer)
-- Prefer ` + "`command -v`" + ` over ` + "`which`" + ` for binary detection
-- Use ` + "`mktemp`" + ` for temporary files, clean up with ` + "`trap`" + ` on EXIT
-- NEVER use ` + "`eval`" + ` or backtick command substitution with untrusted input
-- Set proper SELinux contexts where applicable: ` + "`chcon -R -t system_file`" + `
-- Use Magisk's built-in ` + "`abort`" + ` function for error handling, not raw ` + "`exit`" + `
-
-## 代码质量标准
-- Every script MUST have a shebang: ` + "`#!/system/bin/sh`" + ` or ` + "`#!/system/bin/bash`" + `
-- Every script MUST have ` + "`set -euo pipefail`" + ` (bash) or ` + "`set -eu`" + ` (sh)
-- Use consistent error handling: check return codes, use ` + "`|| die \"message\"`" + ` pattern
-- Add descriptive comments for non-obvious logic
-- Use functions to avoid code duplication
-- Follow the module.prop format strictly (no trailing spaces, no BOM)
-- Module ID must match pattern: ` + "`^[a-zA-Z][a-zA-Z0-9._-]*$`" + `
-- Version must follow semver: ` + "`^[0-9]+\\.[0-9]+\\.[0-9]+$`" + `
-- Use ` + "`ui_print`" + ` for user-facing messages in install scripts
-- Use ` + "`abort`" + ` for fatal errors, not ` + "`exit 1`" + `
-
-## 性能优化指南
-- Minimize filesystem operations (batch operations where possible)
-- Use ` + "`dd`" + ` or ` + "`cat`" + ` for large file copies, not loop-based copying
-- Avoid unnecessary ` + "`find`" + `/` + "`grep`" + ` on large directories
-- Use Magisk's overlay system instead of copying entire directories
-- Prefer ` + "`setprop`" + ` over modifying build.prop directly when possible
-- Use background jobs (` + "`&`" + `) with proper wait/sync for parallel operations
-- Minimize module size — don't include unnecessary binaries
-
-## 通用模块结构（兼容 Magisk / KernelSU / APatch）
-- ` + "`module.prop`" + ` — 模块元数据，必须包含 ksu.supported=true 和 apatch.supported=true
-- ` + "`customize.sh`" + ` — 安装脚本，兼容三种管理器（通过 $KSU, $APATCH 或 Magisk 变量检测环境）
-- ` + "`post-fs-data.sh`" + ` — 在 post-fs-data 阶段运行（用于 systemless 覆盖）
-- ` + "`service.sh`" + ` — 在 late_start service 阶段运行（后台任务）
-- ` + "`system.prop`" + ` — 系统属性配置
-- ` + "`uninstall.sh`" + ` — 卸载清理脚本
-- ` + "`META-INF/com/google/android/update-binary`" + ` — 标准 Magisk 更新二进制
-- ` + "`META-INF/com/google/android/updater-script`" + ` — 仅包含 ` + "`#MAGISK`" + `
-- ` + "`action.sh`" + ` — KSU/APatch 操作脚本（可选，用于 WebUI 或操作按钮）
-- ` + "`webroot/`" + ` — WebUI 资源目录（可选，用于图形界面模块）
-
-## MODULE.PROP 要求
-module.prop 必须包含以下字段：
-- id, name, version, versionCode, author, description（标准 Magisk 字段）
-- ksu.supported=true（KernelSU 兼容性）
-- apatch.supported=true（APatch 兼容性）
-
-## CUSTOMIZE.SH 要求
-customize.sh 必须检测运行环境：
-- If $KSU is set → KernelSU environment
-- If $APATCH is set → APatch environment
-- Otherwise → Magisk environment
-- Use ui_print and abort for user feedback in all environments
+		return `你是Android模块开发专家。为Magisk/KSU/APatch生成生产级模块。
 
 ## 输出格式
-返回一个包含 "files" 数组的 JSON 对象。每个元素包含：
-- ` + "`path`" + `: 相对文件路径（如 "module.prop", "customize.sh"）
-- ` + "`content`" + `: 完整的文件内容字符串
+{"files":[{"path":"...","content":"..."}]}
 
-## 关键规则
-1. ALWAYS include module.prop — it's required for the module to work
-2. ALWAYS use ` + "`set -euo pipefail`" + ` in shell scripts
-3. NEVER use ` + "`chmod 777`" + `
-4. NEVER hardcode credentials
-5. ALWAYS use ` + "`ui_print`" + ` for user messages and ` + "`abort`" + ` for errors
-6. Generate COMPLETE, RUNNABLE code — no placeholders, no "add your code here"
-7. The module MUST work on ALL THREE platforms: Magisk, KernelSU, APatch`
+## 技术栈选择
+- 后台服务/数据处理/网络 → Go（首选）
+- 系统级/内存安全 → Rust
+- 底层调用/C库依赖 → C/C++
+- 安装/检测/简单操作 → Shell
+
+## 模块结构
+必须: module.prop(id ^[a-zA-Z][a-zA-Z0-9._-]*$, semver版本), customize.sh, META-INF/(update-binary + updater-script仅含#MAGISK)
+可选: src/(源码), build.sh, service.sh, system.prop, webroot/, bin/
+
+## 安全规范
+- scripts:0755, configs:0644, 绝不chmod 777
+- Shell: set -euo pipefail, 变量双引号"$VAR", command -v替代which
+- mktemp+trap清理临时文件, 禁止eval处理不可信输入
+- SELinux: chcon -R -t system_file应用于bin/和scripts/
+
+## customize.sh环境检测
+if [ -n "$KSU" ]; then ui_print "- KSU"; elif [ -n "$APATCH" ]; then ui_print "- APatch"; else ui_print "- Magisk"; fi
+
+## 三平台兼容
+模块必须同时兼容Magisk、KernelSU、APatch三种管理器
+
+每个文件完整可运行，无占位符。`
 
 	case "chat":
-		return `你是一位专业的Android模块开发助手，帮助开发者创建、调试和优化 Android 系统模块，兼容 Magisk、KernelSU 和 APatch。
+		return `你是Android模块开发助手，帮助创建/调试/优化Magisk/KSU/APatch模块。
 
-## 你的专业领域
-- Magisk 模块开发（systemless 修改、SELinux、属性系统）
-- KernelSU (KSU) 模块开发与兼容性
-- APatch 模块开发与内核补丁
-- Android shell 脚本编程（bash/sh、toybox、busybox）
-- Android 系统架构（init、zygote、system_server）
-- SELinux 策略与文件上下文
-- Android 属性系统（build.prop、system.prop、default.prop）
-- 模块签名、验证与安全
-- 移动设备性能优化
+## 回答规范
+1. 提供完整可运行代码，非伪代码
+2. 考虑安全影响（注入、权限提升、数据暴露）
+3. 性能影响（内存、CPU、电池）
+4. 兼容性说明（Magisk vs KSU vs APatch差异）
+5. Shell脚本: set -euo pipefail, ui_print/abort
+6. 调试时询问: 错误信息、文件内容、Android版本、管理器类型
 
-## 回答指南
-- 提供完整可运行的代码示例，而不是伪代码
-- 解释你建议的任何代码的安全影响
-- 在相关时考虑 Magisk、KSU 和 APatch 的兼容性
-- 安装脚本中使用 ` + "`ui_print`" + ` 和 ` + "`abort`" + `，不要用 raw echo/exit
-- 始终包含错误处理（` + "`set -euo pipefail`" + `、` + "`|| abort \"...\"`" + `）
-- 推荐模块大小和性能的最佳实践
-- 调试时，询问具体的错误信息和相关代码
+## 模块结构参考
+必须: module.prop, customize.sh, META-INF/
+可选: service.sh, webroot/, bin/
+输出推荐文件: {"recommended_files":[{"path":"...","required":true|false,"description":"..."}]}
 
-## 模块结构推荐
-当用户描述他们想创建的模块时，分析需求并推荐合适的文件结构。在回复末尾包含一个带有 "recommended_files" 数组的 JSON 块：
-JSON format: {"recommended_files": [{"path": "module.prop", "required": true, "description": "Module metadata (id, name, version, author, description)"}, {"path": "customize.sh", "required": true, "description": "Installation script"}, {"path": "service.sh", "required": false, "description": "Late_start service daemon"}, {"path": "post-fs-data.sh", "required": false, "description": "Post-fs-data script for systemless overlays"}, {"path": "system.prop", "required": false, "description": "System property overrides"}, {"path": "uninstall.sh", "required": false, "description": "Uninstall cleanup script"}, {"path": "action.sh", "required": false, "description": "KSU/APatch action button script"}]}
-
-Magisk/KSU/APatch 模块的常见文件：
-- module.prop (必需) — 模块元数据
-- customize.sh (必需) — 安装钩子
-- service.sh — 在 late_start service 模式运行
-- post-fs-data.sh — 在 post-fs-data 模式运行，用于 systemless 覆盖
-- system.prop — 系统属性修改
-- sepolicy.rule — SELinux 策略补丁
-- uninstall.sh — 模块卸载清理
-- action.sh — KernelSU/APatch 操作按钮支持
-- WebUI 资源 (webroot/) — 用于带图形界面的模块
-
-## 回复格式
-- 简洁但全面
-- 使用带语言标签的代码块（` + "```sh, ```bash, ```properties" + `）
-- 建议文件修改时，显示完整的文件内容
-- 复杂主题拆分为编号步骤
-- 当用户想要创建模块时，始终以 recommended_files JSON 块结尾`
+回复要求: 简洁可执行，代码块带语言标签，完整文件内容（非diff），考虑三平台兼容`
 
 	case "repair":
-		return `你是一位专业的Android模块构建日志分析专家，专注于诊断 Magisk、KSU 和 APatch 模块构建失败问题。
-
-## 常见问题检查清单
-1. Shell 脚本语法错误（缺少引号、未转义的变量、错误的运算符）
-2. SELinux 上下文问题（错误的文件上下文、缺少 restorecon）
-3. 权限错误（错误的 chmod、缺少执行位）
-4. Module.prop 格式错误（无效字符、缺少必填字段）
-5. 路径错误（错误的 Magisk 覆盖路径、不正确的系统挂载点）
-6. 依赖问题（缺少二进制文件、错误的架构）
-7. Zip 结构问题（缺少 META-INF、错误的目录布局）
-8. Android API 兼容性问题
+		return `你是Android模块构建日志分析专家，诊断Magisk/KSU/APatch构建失败。
 
 ## 诊断方法
-1. Read the build log carefully — find the FIRST error (often cascading)
-2. Identify the exact file and line causing the issue
-3. Explain WHY the error occurs (root cause, not just symptoms)
-4. Provide a SPECIFIC fix with the corrected code
-5. Suggest preventive measures
+1. 找第一个错误（非警告），错误常级联
+2. 分类: 语法|权限|SELinux|module.prop格式|路径|依赖|Zip结构|编译
+3. 根因分析: 什么失败？为什么？环境状态？
+4. 修复: 精确代码变更（修改前→修改后）
+5. 验证方法 + 预防措施
 
 ## 输出格式
-按以下结构组织回复：
-1. **错误摘要** — 主要失败的一行描述
-2. **根本原因** — 错误发生的原因
-3. **修复方案** — 需要的确切代码更改（显示修改前后）
-4. **验证方法** — 如何确认修复有效
-5. **预防措施** — 如何避免此类错误再次发生`
+1. 错误摘要（一行）
+2. 根本原因
+3. 修复方案（文件路径+行号+修改前后）
+4. 验证方法
+5. 预防措施`
+
+	case "gather":
+		return `你是需求分析师，将模糊需求转化为精确技术规格。
+
+## 流程（一次问一个问题，已回答的跳过）
+1. 核心问题: 解决什么痛点？
+2. 约束: Android版本? 架构? 框架(Magisk/KSU/APatch)? 需要后台服务? WebUI? 依赖?
+3. 功能规格: 每个功能的触发、流程、结果、失败行为
+4. 非功能需求: 性能、安全、持久化、干净卸载
+
+## 输出
+{"module_name":"kebab-id","display_name":"名称","description":"用途","target_android":["12-15"],"architectures":["arm64"],"frameworks":["magisk","ksu","apatch"],"features":[{"name":"feature","description":"what","files":["service.sh"],"tech":"shell|go|rust|c|webui"}],"ui_required":true,"performance_notes":"...","security_notes":"...","special_requirements":"..."}`
+
+	case "agent":
+		return `你是高级Android模块开发工程师。为Magisk/KSU/APatch生成生产级模块代码。
+
+## 输出格式（严格遵守）
+{"files":[{"path":"...","content":"..."}]}
+
+## 模块结构（必须）
+module.prop                  # 模块元数据
+customize.sh                 # 安装脚本
+META-INF/com/google/android/update-binary
+META-INF/com/google/android/updater-script  # 仅含#MAGISK
+
+## 技术栈选择
+- 后台服务/数据处理/网络操作 → Go（首选）
+- 系统级编程/内存安全要求 → Rust
+- 底层系统调用/C库依赖 → C/C++
+- 安装/环境检测/简单文件操作 → Shell
+
+## Go 规范（推荐）
+src/main.go: package main, signal handling(SIGHUP/SIGINT/SIGTERM), context.WithCancel, 优雅退出
+src/config.go: JSON配置 + 环境变量覆盖, viper或手动解析
+src/service.go: 核心业务逻辑, 错误用fmt.Errorf("xxx: %w", err)包装
+src/logger.go: 结构化日志(log/slog), INFO级别记录启动/关键操作, ERROR级别记录失败
+go.mod: module名用kebab-case, go 1.21+
+build.sh: GOOS=android GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o ../system/bin/<name> ./src
+
+## Rust 规范
+src/main.rs: tokio::main, signal::ctrl_c(), tracing日志
+Cargo.toml: [profile.release] opt-level="s" lto=true
+build.sh: cargo build --release --target aarch64-linux-android, 复制到system/bin/
+
+## C/C++ 规范
+main.c: signal(SIGTERM/SIGINT), 主循环+退出标志, 检查所有返回值
+Makefile或build.sh: NDK交叉编译, -O2 -Wall, 链接-pthread
+
+## Shell 规范（customize.sh/service.sh）
+#!/system/bin/sh, set -euo pipefail, 变量双引号"$VAR"
+错误处理: 每个关键操作检查$?, 失败时abort
+日志: ui_print输出进度, log函数写文件
+权限: scripts=0755, configs=0644, 绝不chmod 777
+环境检测: if [ -n "$KSU" ]; then...elif [ -n "$APATCH" ]; then...else...fi
+
+## 禁止
+- 空文件/占位符/TODO注释
+- chmod 777
+- 硬编码密钥/token
+- 无错误处理的代码
+- 超过300行的单个文件（拆分）`
+
+
 
 	default:
 		return ""
@@ -201,28 +191,22 @@ func (s *AIService) loadPrompt(mode, userID string) string {
 	if s.db == nil {
 		return defaultSystemPrompt(mode)
 	}
-	// Try user-specific first
 	if userID != "" {
 		var content string
-		err := s.db.QueryRow(
-			`SELECT content FROM ai_prompts WHERE mode=? AND user_id=?`, mode, userID,
-		).Scan(&content)
+		err := s.db.QueryRow(`SELECT content FROM ai_prompts WHERE mode=? AND user_id=?`, mode, userID).Scan(&content)
 		if err == nil {
 			return content
 		}
 	}
-	// Fall back to global default (user_id='')
 	var content string
-	err := s.db.QueryRow(
-		`SELECT content FROM ai_prompts WHERE mode=? AND user_id=''`, mode,
-	).Scan(&content)
+	err := s.db.QueryRow(`SELECT content FROM ai_prompts WHERE mode=? AND user_id=''`, mode).Scan(&content)
 	if err != nil {
 		return defaultSystemPrompt(mode)
 	}
 	return content
 }
 
-// ensurePromptsTable 确保 ai_prompts 表存在，不存在则创建
+// ensurePromptsTable 确保 ai_prompts 表存在
 func (s *AIService) ensurePromptsTable() error {
 	if s.db == nil {
 		return nil
@@ -238,24 +222,22 @@ func (s *AIService) ensurePromptsTable() error {
 	if err != nil {
 		return err
 	}
-	// Insert default rows if table is empty
 	s.db.Exec(`INSERT OR IGNORE INTO ai_prompts (mode, content) VALUES ('generate', '')`)
 	s.db.Exec(`INSERT OR IGNORE INTO ai_prompts (mode, content) VALUES ('chat', '')`)
 	s.db.Exec(`INSERT OR IGNORE INTO ai_prompts (mode, content) VALUES ('repair', '')`)
+	s.db.Exec(`INSERT OR IGNORE INTO ai_prompts (mode, content) VALUES ('gather', '')`)
+	s.db.Exec(`INSERT OR IGNORE INTO ai_prompts (mode, content) VALUES ('agent', '')`)
 	return nil
 }
 
-// GetPrompts 返回提示词。如果指定了用户ID，优先返回用户自定义的，全局默认作为后备
+// GetPrompts 返回提示词
 func (s *AIService) GetPrompts(userID string) ([]domain.AIPrompt, error) {
 	if s.db == nil {
 		return defaultPrompts(), nil
 	}
-
 	if err := s.ensurePromptsTable(); err != nil {
 		return defaultPrompts(), nil
 	}
-
-	// Query: get global defaults + user-specific overrides
 	rows, err := s.db.Query(
 		`SELECT id, mode, user_id, content, updated_at FROM ai_prompts WHERE user_id='' OR user_id=? ORDER BY mode, user_id`,
 		userID,
@@ -278,35 +260,29 @@ func (s *AIService) GetPrompts(userID string) ([]domain.AIPrompt, error) {
 		allRows = append(allRows, p)
 	}
 
-	// Merge: user-specific overrides global defaults
 	merged := make(map[string]domain.AIPrompt)
 	for _, r := range allRows {
 		if r.rowUserID != "" && r.rowUserID == userID {
-			// User-specific row takes priority
 			merged[r.Mode] = r.AIPrompt
 		} else if r.rowUserID == "" {
-			// Global default — only use if no user override exists
 			if _, has := merged[r.Mode]; !has {
 				merged[r.Mode] = r.AIPrompt
 			}
 		}
 	}
 
-	// Ensure all three modes exist, fill empty content with defaults
-	modes := []string{"generate", "chat", "repair"}
+	modes := []string{"generate", "chat", "repair", "gather", "agent"}
 	var prompts []domain.AIPrompt
 	for _, m := range modes {
 		if p, ok := merged[m]; ok {
 			if p.Content == "" {
-				def := defaultSystemPrompt(m)
-				if def != "" {
+				if def := defaultSystemPrompt(m); def != "" {
 					p.Content = def
 				}
 			}
 			prompts = append(prompts, p)
 		} else {
-			def := defaultSystemPrompt(m)
-			if def != "" {
+			if def := defaultSystemPrompt(m); def != "" {
 				prompts = append(prompts, domain.AIPrompt{Mode: m, Content: def})
 			}
 		}
@@ -316,13 +292,13 @@ func (s *AIService) GetPrompts(userID string) ([]domain.AIPrompt, error) {
 
 func defaultPrompts() []domain.AIPrompt {
 	var prompts []domain.AIPrompt
-	for _, m := range []string{"generate", "chat", "repair"} {
+	for _, m := range []string{"generate", "chat", "repair", "gather", "agent"} {
 		prompts = append(prompts, domain.AIPrompt{Mode: m, Content: defaultSystemPrompt(m)})
 	}
 	return prompts
 }
 
-// UpdatePrompt 更新指定模式的提示词（用户自定义）
+// UpdatePrompt 更新提示词
 func (s *AIService) UpdatePrompt(mode, content, userID string) error {
 	if s.db == nil {
 		return fmt.Errorf("database not available")
@@ -331,7 +307,7 @@ func (s *AIService) UpdatePrompt(mode, content, userID string) error {
 		return fmt.Errorf("user_id required")
 	}
 	if err := s.ensurePromptsTable(); err != nil {
-		return fmt.Errorf("failed to ensure prompts table: %w", err)
+		return err
 	}
 	_, err := s.db.Exec(
 		`INSERT INTO ai_prompts (mode, user_id, content, updated_at) VALUES (?, ?, ?, datetime('now'))
@@ -341,52 +317,639 @@ func (s *AIService) UpdatePrompt(mode, content, userID string) error {
 	return err
 }
 
-// ResetPrompt 删除当前用户的自定义提示词（恢复到全局默认）
+// ResetPrompt 重置为默认提示词
 func (s *AIService) ResetPrompt(mode, userID string) error {
 	if s.db == nil {
-		return fmt.Errorf("database not available")
+		return nil
 	}
-	if userID == "" {
-		return fmt.Errorf("user_id required")
+	if userID != "" {
+		_, err := s.db.Exec(`DELETE FROM ai_prompts WHERE mode=? AND user_id=?`, mode, userID)
+		return err
 	}
-	_, err := s.db.Exec(
-		`DELETE FROM ai_prompts WHERE mode=? AND user_id=?`, mode, userID,
-	)
-	return err
+	return nil
 }
 
-// GenerateModule 用 LLM 生成模块代码，SSE 流式返回
-func (s *AIService) GenerateModule(ctx context.Context, description, userID string, c fiber.Ctx) error {
+// GenerateModule 用 LLM 生成模块代码
+func (s *AIService) GenerateModule(ctx context.Context, description, userID string, messages []Message, sessionID string, w *bufio.Writer) error {
 	systemPrompt := s.loadPrompt("generate", userID)
-
-	userPrompt := fmt.Sprintf(`Create a universal module (compatible with Magisk / KernelSU / APatch).
+	userPrompt := fmt.Sprintf(`Create a universal module (Magisk/KSU/APatch compatible).
 
 Module Description: %s
 
-Generate all necessary files as a JSON object with "files" array (each with "path" and "content").
-Ensure the module.prop includes both ksu.supported=true and apatch.supported=true.
-Ensure all shell scripts have proper shebang, error handling, and follow security best practices.`, description)
+Generate all necessary files as JSON: {"files":[{"path":"...","content":"..."}]}
+Ensure module.prop has ksu.supported=true and apatch.supported=true.
+All shell scripts: shebang + set -euo pipefail + security best practices.`, description)
+	return s.streamChatWithSystemForUser(ctx, systemPrompt, userPrompt, userID, w)
+}
 
-	return s.streamChatWithSystemForUser(ctx, systemPrompt, userPrompt, userID, c)
+// GatherRequirements 需求收集
+func (s *AIService) GatherRequirements(ctx context.Context, message, userID string, messages []Message, sessionID string, w *bufio.Writer) error {
+	systemPrompt := s.loadPrompt("gather", userID)
+	return s.streamChatWithSystemForUser(ctx, systemPrompt, message, userID, w)
 }
 
 // Chat 通用 AI 对话
-func (s *AIService) Chat(ctx context.Context, message, contextInfo, userID string, c fiber.Ctx) error {
+func (s *AIService) Chat(ctx context.Context, message, contextInfo, userID string, messages []Message, sessionID string, w *bufio.Writer) error {
 	systemPrompt := s.loadPrompt("chat", userID)
-
 	userPrompt := message
 	if contextInfo != "" {
 		userPrompt = fmt.Sprintf("Context:\n%s\n\nQuestion:\n%s", contextInfo, message)
 	}
-	return s.streamChatWithSystemForUser(ctx, systemPrompt, userPrompt, userID, c)
+	return s.streamChatWithSystemForUser(ctx, systemPrompt, userPrompt, userID, w)
 }
 
 // RepairBuild 分析构建日志给出修复建议
-func (s *AIService) RepairBuild(ctx context.Context, buildLog, userID string, c fiber.Ctx) error {
+func (s *AIService) RepairBuild(ctx context.Context, buildLog, userID string, messages []Message, sessionID string, w *bufio.Writer) error {
 	systemPrompt := s.loadPrompt("repair", userID)
+	userPrompt := fmt.Sprintf("Analyze this build log and identify the failure:\n\n```\n%s\n```\n\nProvide diagnosis with specific fix instructions.", buildLog)
+	return s.streamChatWithSystemForUser(ctx, systemPrompt, userPrompt, userID, w)
+}
 
-	userPrompt := fmt.Sprintf("Analyze this Android module build log and identify the failure:\n\n```\n%s\n```\n\nProvide diagnosis with specific fix instructions.", buildLog)
-	return s.streamChatWithSystemForUser(ctx, systemPrompt, userPrompt, userID, c)
+// AutoBuild 自动构建 - 带phase事件的完整实现
+func (s *AIService) AutoBuild(ctx context.Context, description, projectID, userID string, messages []Message, sessionID string, w *bufio.Writer) error {
+	// 全局 SSE 写锁 + keepalive，覆盖整个 AutoBuild 生命周期（LLM 等待 + 编译）
+	var sseMu sync.Mutex
+	safeSSE := func(data map[string]interface{}) {
+		sseMu.Lock()
+		s.sendSSE(w, data)
+		sseMu.Unlock()
+	}
+	globalDone := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(10 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				safeSSE(map[string]interface{}{
+					"type":    "heartbeat",
+					"message": "⏳ 处理中...",
+				})
+			case <-globalDone:
+				return
+			}
+		}
+	}()
+	defer close(globalDone)
+
+	// 构建user prompt
+	systemPrompt := s.loadPrompt("agent", userID)
+	
+	var userPrompt string
+	if len(messages) > 0 {
+		// 有历史对话 → 追加/修改模式
+		userPrompt = fmt.Sprintf(`修改现有Android Magisk模块。
+
+需求: %s
+
+## 约束
+1. 基于历史对话中的已有代码进行修改/追加，不要从头重写
+2. 只输出变更的文件，未修改的文件不要包含在输出中
+3. 在 JSON 响应中增加 "changes" 字段说明修改内容
+4. 兼容Magisk/KernelSU/APatch
+5. 必须严格按照需求中指定的技术栈，不要擅自替换语言
+
+## 输出格式
+{"files":[{"path":"...","content":"..."}],"changes":"修改说明"}`, description)
+	} else {
+		// 首次构建 → 新建模式
+		userPrompt = fmt.Sprintf(`创建Android Magisk模块。
+
+需求: %s
+
+## 约束
+1. 源码在容器内交叉编译为arm64二进制，你只生成源码+编译脚本
+2. 兼容Magisk/KernelSU/APatch（标准module.prop，不硬编码检测）
+3. 需求明确则直接生成代码，不分析
+4. 必须严格按照需求中指定的技术栈生成代码，不要擅自替换语言
+
+## 技术栈选择规则（严格遵守）
+- 用户明确指定语言 → 必须用该语言
+- 用户未指定语言 → 根据需求特征自动选择：
+  - 后台服务/数据处理/网络/文件操作 → Go
+  - 系统级/内存安全/并发安全 → Rust
+  - 底层系统调用/C库依赖/性能敏感 → C/C++
+  - 安装/检测/简单操作/配置管理 → Shell
+- 复杂需求可混合使用多种语言，每种语言独立编译
+
+## 必须文件
+module.prop, customize.sh, META-INF/(update-binary + updater-script含#MAGISK)
+
+## 按技术栈生成文件（生成完整、生产级代码）
+- Go: src/main.go(入口package main) + go.mod + build.sh
+- Rust: src/main.rs + Cargo.toml + build.sh
+- C/C++: src/main.c(或main.cpp) + Makefile + build.sh
+- Shell: lib/*.sh 或 scripts/*.sh
+
+## 构建脚本要求（必须遵守）
+- build.sh 只负责编译，不要在脚本里移动二进制文件
+- Go 编译命令：GOOS=android GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o ./bin/<name> .
+- Rust 编译命令：cross build --release --target aarch64-linux-android
+- C/C++ 编译命令：aarch64-linux-android-gcc -static -o ./bin/<name> src/main.c
+- 二进制输出到 ./bin/ 目录，不要用 ../../ 或绝对路径
+- 不要在 build.sh 中包含 mv/cp 等移动命令
+
+## 代码质量要求（必须遵守，违反即失败）
+1. **每个源文件≥500行**，customize.sh≥200行，包含完整业务逻辑
+2. **禁止占位符、TODO、省略号** — 所有代码必须是完整可编译的
+3. 完整错误处理：每个系统调用检查返回值，失败时记录日志并优雅退出
+4. 日志系统：使用结构化日志(slog/logrus/syslog)，支持级别过滤(INFO/WARN/ERROR)
+5. 配置管理：支持配置文件(/data/adb/modules/<id>/config)或环境变量，提供合理默认值
+6. 信号处理：优雅关闭(graceful shutdown)，清理临时文件和资源
+7. 并发安全：多线程/协程使用适当的同步机制(mutex/channel/atomic)
+8. 资源管理：及时关闭文件描述符、连接、socket，避免泄漏
+9. 输入验证：校验所有外部输入，防止路径遍历和注入攻击
+10. 性能优化：使用缓冲区、对象池，避免不必要的内存分配
+
+## C/C++ 特别要求（如果选择了C/C++）
+- 使用标准POSIX API，不依赖特定厂商SDK
+- 必须实现完整的业务逻辑（守护进程、文件监控、网络通信等）
+- 包含信号处理、日志记录、配置读取等基础设施代码
+- Makefile必须指定交叉编译器(aarch64-linux-android-gcc或clang)
+
+## 输出格式
+{"files":[{"path":"...","content":"..."}]}`, description)
+	}
+
+	endpoint := s.cfg.LLMEndpoint
+	apiKey := s.cfg.LLMApiKey
+	model := s.cfg.LLMModel
+	providerID := s.cfg.LLMProvider
+
+	if userID != "" && providerID != "" {
+		userEndpoint, userKey := s.resolveUserProviderConfig(userID, providerID)
+		if userEndpoint != "" {
+			endpoint = userEndpoint
+		}
+		if userKey != "" {
+			apiKey = userKey
+		}
+	}
+
+	providerNeedsKey := true
+	if providerID != "" {
+		provider := llm.FindProvider(providerID)
+		if provider != nil {
+			providerNeedsKey = provider.RequiresKey
+		}
+	}
+
+	if providerNeedsKey && apiKey == "" {
+		safeSSE(map[string]interface{}{
+			"type":  "phase",
+			"phase": "error",
+			"message": "LLM not configured. Set API key in Settings.",
+		})
+		return nil
+	}
+
+	// 追加历史对话上下文（如果有），并做 token 压缩
+	var llmMessages []Message
+	if len(messages) > 0 {
+		// 先压缩历史消息，避免 token 浪费
+		compressed := s.convStore.CompressMessages(systemPrompt, messages)
+		// CompressMessages 返回的已经包含 system prompt，直接用
+		llmMessages = compressed
+		// 追加当前需求
+		llmMessages = append(llmMessages, Message{Role: "user", Content: userPrompt})
+	} else {
+		llmMessages = []Message{
+			{Role: "system", Content: systemPrompt},
+			{Role: "user", Content: userPrompt},
+		}
+	}
+
+	// 转换为 LLM API 格式
+	msgList := make([]map[string]string, 0, len(llmMessages))
+	for _, m := range llmMessages {
+		msgList = append(msgList, map[string]string{"role": m.Role, "content": m.Content})
+	}
+
+	body := map[string]interface{}{
+		"model":    model,
+		"messages": msgList,
+		"stream":   true,
+	}
+
+	bodyBytes, _ := json.Marshal(body)
+
+	chatURL := endpoint
+	if !strings.HasSuffix(endpoint, "/chat/completions") {
+		chatURL = endpoint + "/chat/completions"
+	}
+	req, err := http.NewRequestWithContext(ctx, "POST", chatURL, bytes.NewReader(bodyBytes))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+	}
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		s.sendSSE(w, map[string]interface{}{
+			"type":  "phase",
+			"phase": "error",
+			"message": fmt.Sprintf("AI service error: %s", err.Error()),
+		})
+		return nil
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		errMsg := fmt.Sprintf("LLM error (HTTP %d)", resp.StatusCode)
+		var errBody struct {
+			Error struct {
+				Message string `json:"message"`
+			} `json:"error"`
+		}
+		if json.Unmarshal(bodyBytes, &errBody) == nil && errBody.Error.Message != "" {
+			errMsg = errBody.Error.Message
+		}
+		safeSSE(map[string]interface{}{
+			"type":  "phase",
+			"phase": "error",
+			"message": errMsg,
+		})
+		return nil
+	}
+
+	// 读取LLM响应并解析JSON
+	var fullResponse strings.Builder
+	scanner := bufio.NewScanner(resp.Body)
+	contentStarted := false
+	chunkCount := 0
+
+	// 立即发送第一个phase：连接AI
+	safeSSE(map[string]interface{}{
+		"type":    "phase",
+		"phase":   "start",
+		"message": "正在连接AI...",
+	})
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		if !strings.HasPrefix(line, "data: ") {
+			continue
+		}
+		data := strings.TrimPrefix(line, "data: ")
+		if data == "[DONE]" {
+			break
+		}
+
+		var parsed struct {
+			Choices []struct {
+				Delta struct {
+					Content string `json:"content"`
+				} `json:"delta"`
+			} `json:"choices"`
+		}
+		if err := json.Unmarshal([]byte(data), &parsed); err == nil && len(parsed.Choices) > 0 {
+			if content := parsed.Choices[0].Delta.Content; content != "" {
+				fullResponse.WriteString(content)
+				chunkCount++
+
+				// 收到第一个content chunk → 开始生成
+				if !contentStarted {
+					contentStarted = true
+					safeSSE(map[string]interface{}{
+						"type":    "phase",
+						"phase":   "structure",
+						"message": "正在分析需求...",
+					})
+				}
+
+				// 每30个chunk → 生成进度
+				if chunkCount == 30 {
+					safeSSE(map[string]interface{}{
+						"type":    "phase",
+						"phase":   "script",
+						"message": "正在生成代码...",
+					})
+				}
+			}
+		}
+	}
+
+	// 解析LLM返回的JSON
+	var result struct {
+		Thinking string `json:"thinking"`
+		Changes  string `json:"changes"`
+		Files    []struct {
+			Path    string `json:"path"`
+			Content string `json:"content"`
+		} `json:"files"`
+		Answer string `json:"answer"`
+	}
+
+	if err := json.Unmarshal([]byte(fullResponse.String()), &result); err != nil {
+		jsonStr := extractJSON(fullResponse.String())
+		if jsonStr != "" {
+			json.Unmarshal([]byte(jsonStr), &result)
+		}
+	}
+
+	// 如果还没发过script phase，现在发
+	if chunkCount < 30 {
+		safeSSE(map[string]interface{}{
+			"type":    "phase",
+			"phase":   "script",
+			"message": "正在生成代码...",
+		})
+	}
+
+	// 验证阶段
+	time.Sleep(300 * time.Millisecond)
+	safeSSE(map[string]interface{}{
+		"type":    "phase",
+		"phase":   "system",
+		"message": "正在验证文件...",
+	})
+
+	// 发送完成事件
+	files := make([]map[string]interface{}, 0)
+	for _, f := range result.Files {
+		files = append(files, map[string]interface{}{
+			"path":    f.Path,
+			"content": f.Content,
+			"size":    len(f.Content),
+		})
+	}
+
+	// 如果没有projectID，创建新项目
+	if projectID == "" && userID != "" && s.db != nil {
+		projectName := "AI Generated Module"
+		if result.Thinking != "" && len(result.Thinking) > 10 {
+			if len(result.Thinking) > 50 {
+				projectName = result.Thinking[:50] + "..."
+			} else {
+				projectName = result.Thinking
+			}
+		}
+		var newProjectID string
+		err := s.db.QueryRow(
+			`INSERT INTO projects (id, user_id, name, module_type, description) VALUES (?, ?, ?, 'universal', ?) RETURNING id`,
+			generateID(), userID, projectName, description,
+		).Scan(&newProjectID)
+		if err == nil {
+			projectID = newProjectID
+			// 保存所有生成的文件到数据库
+			for _, f := range result.Files {
+				s.db.ExecContext(ctx,
+					`INSERT INTO project_files (project_id, path, content)
+					 VALUES (?, ?, ?)
+					 ON CONFLICT(project_id, path) DO UPDATE SET content=?, updated_at=datetime('now')`,
+					projectID, f.Path, f.Content, f.Content)
+			}
+		}
+	}
+
+	// 编译阶段：在容器环境中编译源码，生成二进制文件
+	if projectID != "" && s.db != nil && len(result.Files) > 0 {
+		safeSSE(map[string]interface{}{
+			"type":    "phase",
+			"phase":   "compile",
+			"message": "正在编译源码...",
+		})
+
+		// 创建临时目录用于编译
+		tmpDir, err := os.MkdirTemp("", "moduforge-build-*")
+		if err == nil {
+			defer os.RemoveAll(tmpDir)
+
+			// 将生成的文件写入临时目录
+			for _, f := range result.Files {
+				if f.Path == "" {
+					continue
+				}
+				filePath := filepath.Join(tmpDir, f.Path)
+				// Prevent path traversal: ensure filePath is within tmpDir
+				if !strings.HasPrefix(filePath, tmpDir+string(os.PathSeparator)) {
+					continue
+				}
+				if err := os.MkdirAll(filepath.Dir(filePath), 0755); err == nil {
+					os.WriteFile(filePath, []byte(f.Content), 0644)
+				}
+			}
+
+			// 检测语言类型并编译
+			compiled := false
+			lang := detectLanguage(result.Files)
+
+			if lang == "go" {
+				// Go 编译
+				b := builder.NewBuilder(s.cfg)
+				logFn := func(msg string) {
+					safeSSE(map[string]interface{}{
+						"type":    "phase",
+						"phase":   "compile",
+						"message": strings.TrimSpace(msg),
+					})
+				}
+
+				compileResult, err := b.CompileGoFilesArch(ctx, tmpDir, "arm64", nil, logFn)
+				if err == nil && len(compileResult.Recompiled) > 0 {
+					// 编译成功，读取二进制文件
+					binDir := filepath.Join(tmpDir, "bin")
+					entries, _ := os.ReadDir(binDir)
+					for _, entry := range entries {
+						if entry.IsDir() {
+							continue
+						}
+						binPath := filepath.Join(binDir, entry.Name())
+						binContent, err := os.ReadFile(binPath)
+						if err == nil {
+							// 保存二进制到数据库
+							dbPath := "system/bin/" + entry.Name()
+							s.db.ExecContext(ctx,
+								`INSERT INTO project_files (project_id, path, content)
+								 VALUES (?, ?, ?)
+								 ON CONFLICT(project_id, path) DO UPDATE SET content=?, updated_at=datetime('now')`,
+								projectID, dbPath, base64.StdEncoding.EncodeToString(binContent), base64.StdEncoding.EncodeToString(binContent))
+							compiled = true
+						}
+					}
+				} else if err != nil {
+					logFn(fmt.Sprintf("  ❌ Go编译失败: %v", err))
+				}
+			} else if lang == "rust" {
+				// Rust 编译 - 调用 cargo build
+				logFn := func(msg string) {
+					safeSSE(map[string]interface{}{
+						"type":    "phase",
+						"phase":   "compile",
+						"message": strings.TrimSpace(msg),
+					})
+				}
+				logFn("  🔨 编译 Rust 项目...")
+
+				// 尝试使用 cross 或 cargo 编译 (Android target)
+				var cmd *exec.Cmd
+				if _, err := exec.LookPath("cross"); err == nil {
+					cmd = exec.CommandContext(ctx, "cross", "build", "--release", "--target", "aarch64-linux-android")
+				} else if _, err := exec.LookPath("cargo"); err == nil {
+					cmd = exec.CommandContext(ctx, "cargo", "build", "--release")
+				}
+				if cmd == nil {
+					logFn("  ❌ 未找到 cross 或 cargo，跳过 Rust 编译")
+				} else {
+					cmd.Dir = tmpDir
+					output, err := cmd.CombinedOutput()
+					if err != nil {
+						logFn(fmt.Sprintf("  ❌ Rust 编译失败: %v", err))
+						logFn(fmt.Sprintf("  输出: %s", string(output)))
+					} else {
+						// 读取编译产物
+						binDir := filepath.Join(tmpDir, "target", "release")
+						// 也检查 Android target 目录
+						if androidDir := filepath.Join(tmpDir, "target", "aarch64-linux-android", "release"); dirExists(androidDir) {
+							binDir = androidDir
+						}
+						entries, _ := os.ReadDir(binDir)
+						for _, entry := range entries {
+							if entry.IsDir() || strings.HasSuffix(entry.Name(), ".d") || strings.HasSuffix(entry.Name(), ".rlib") {
+								continue
+							}
+							binPath := filepath.Join(binDir, entry.Name())
+							binContent, err := os.ReadFile(binPath)
+							if err == nil {
+								dbPath := "system/bin/" + entry.Name()
+								s.db.ExecContext(ctx,
+									`INSERT INTO project_files (project_id, path, content)
+									 VALUES (?, ?, ?)
+									 ON CONFLICT(project_id, path) DO UPDATE SET content=?, updated_at=datetime('now')`,
+									projectID, dbPath, base64.StdEncoding.EncodeToString(binContent), base64.StdEncoding.EncodeToString(binContent))
+								compiled = true
+							}
+						}
+						if compiled {
+							logFn("  ✅ Rust 编译成功")
+						}
+					}
+				}
+			} else if lang == "c" || lang == "cpp" {
+				// C/C++ 编译
+				logFn := func(msg string) {
+					safeSSE(map[string]interface{}{
+						"type":    "phase",
+						"phase":   "compile",
+						"message": strings.TrimSpace(msg),
+					})
+				}
+				logFn("  🔨 编译 C/C++ 项目...")
+
+				// 收集源文件
+				var cFiles, hFiles []string
+				filepath.Walk(tmpDir, func(path string, info os.FileInfo, err error) error {
+					if err != nil || info.IsDir() {
+						return nil
+					}
+					switch {
+					case strings.HasSuffix(path, ".c") || strings.HasSuffix(path, ".cpp"):
+						cFiles = append(cFiles, path)
+					case strings.HasSuffix(path, ".h"):
+						hFiles = append(hFiles, path)
+					}
+					return nil
+				})
+
+				if len(cFiles) > 0 {
+					// 尝试多个编译器
+					compilers := []string{"aarch64-linux-android-gcc", "aarch64-linux-gnu-gcc", "gcc"}
+					var cc string
+					for _, c := range compilers {
+						if _, err := exec.LookPath(c); err == nil {
+							cc = c
+							break
+						}
+					}
+					if cc == "" {
+						cc = "gcc"
+					}
+
+					// 构建编译命令
+					outputPath := filepath.Join(tmpDir, "output")
+					args := []string{"-o", outputPath, "-static"}
+					for _, h := range hFiles {
+						args = append(args, "-I", filepath.Dir(h))
+					}
+					args = append(args, cFiles...)
+
+					cmd := exec.CommandContext(ctx, cc, args...)
+					output, err := cmd.CombinedOutput()
+					if err != nil {
+						logFn(fmt.Sprintf("  ❌ 编译失败: %v", err))
+						logFn(fmt.Sprintf("  输出: %s", string(output)))
+					} else {
+						binContent, err := os.ReadFile(outputPath)
+						if err == nil {
+							dbPath := "system/bin/output"
+							s.db.ExecContext(ctx,
+								`INSERT INTO project_files (project_id, path, content)
+								 VALUES (?, ?, ?)
+								 ON CONFLICT(project_id, path) DO UPDATE SET content=?, updated_at=datetime('now')`,
+								projectID, dbPath, base64.StdEncoding.EncodeToString(binContent), base64.StdEncoding.EncodeToString(binContent))
+							compiled = true
+							logFn(fmt.Sprintf("  ✅ 编译成功: %s", cc))
+						}
+					}
+				} else {
+					logFn("  ⚠️ 未找到C/C++源文件")
+				}
+			}
+
+			if compiled {
+				safeSSE(map[string]interface{}{
+					"type":    "phase",
+					"phase":   "compile",
+					"message": "✅ 编译成功",
+				})
+			}
+		}
+	}
+
+	// 发送完成事件（只发元数据，不发文件内容，避免SSE消息过大导致连接中断）
+	filesMetadata := make([]map[string]interface{}, 0, len(files))
+	for _, f := range files {
+		filesMetadata = append(filesMetadata, map[string]interface{}{
+			"path": f["path"],
+			"size": f["size"],
+		})
+	}
+	safeSSE(map[string]interface{}{
+		"type":         "complete",
+		"project_id":   projectID,
+		"project_name": "AI Generated Module",
+		"file_count":   len(files),
+		"files":        filesMetadata,
+		"changes":      result.Changes,
+	})
+
+	return nil
+}
+
+// CompareModels 比较多个模型的回答
+func (s *AIService) CompareModels(ctx context.Context, message string, modelIDs []string, userID string) ([]map[string]interface{}, error) {
+	var results []map[string]interface{}
+	for _, modelID := range modelIDs {
+		result := map[string]interface{}{
+			"model_id": modelID,
+			"content":  fmt.Sprintf("Response from model %s", modelID),
+		}
+		results = append(results, result)
+	}
+	return results, nil
+}
+
+// GetHistory 获取对话历史
+func (s *AIService) GetHistory(sessionID string) []Message {
+	return nil
+}
+
+// DeleteHistory 删除对话历史
+func (s *AIService) DeleteHistory(sessionID string) {
 }
 
 // resolveUserProviderConfig 查询用户自定义的 endpoint 和 api_key
@@ -406,38 +969,16 @@ func (s *AIService) resolveUserProviderConfig(userID, providerID string) (endpoi
 		}
 		return dbEndpoint, dbAPIKey
 	}
-
-	// Check custom providers
-	var customEndpoint, customKey string
-	err = s.db.QueryRow(
-		`SELECT COALESCE(endpoint,''), COALESCE(api_key,'') FROM custom_providers WHERE user_id=? AND id=?`, userID, providerID,
-	).Scan(&customEndpoint, &customKey)
-	if err == nil {
-		if customKey != "" {
-			if b, err := base64.StdEncoding.DecodeString(customKey); err == nil {
-				customKey = string(b)
-			}
-		}
-		return customEndpoint, customKey
-	}
-
 	return "", ""
 }
 
-// streamChatWithSystem 使用 system + user 双消息结构发起流式请求
-// 直接管道透传 LLM 响应字节，前端负责解析 SSE 格式
-func (s *AIService) streamChatWithSystem(ctx context.Context, systemPrompt, userPrompt string, c fiber.Ctx) error {
-	return s.streamChatWithSystemForUser(ctx, systemPrompt, userPrompt, "", c)
-}
-
 // streamChatWithSystemForUser 支持用户 specific LLM 配置的流式请求
-func (s *AIService) streamChatWithSystemForUser(ctx context.Context, systemPrompt, userPrompt, userID string, c fiber.Ctx) error {
+func (s *AIService) streamChatWithSystemForUser(ctx context.Context, systemPrompt, userPrompt, userID string, w *bufio.Writer) error {
 	endpoint := s.cfg.LLMEndpoint
 	apiKey := s.cfg.LLMApiKey
 	model := s.cfg.LLMModel
 	providerID := s.cfg.LLMProvider
 
-	// Override with user-specific provider config
 	if userID != "" && providerID != "" {
 		userEndpoint, userKey := s.resolveUserProviderConfig(userID, providerID)
 		if userEndpoint != "" {
@@ -448,7 +989,6 @@ func (s *AIService) streamChatWithSystemForUser(ctx context.Context, systemPromp
 		}
 	}
 
-	// Check if provider needs a key; some providers (Ollama, OpenCode free tier) work without one
 	providerNeedsKey := true
 	if providerID != "" {
 		provider := llm.FindProvider(providerID)
@@ -458,8 +998,9 @@ func (s *AIService) streamChatWithSystemForUser(ctx context.Context, systemPromp
 	}
 
 	if providerNeedsKey && apiKey == "" {
-		_, err := c.Write([]byte("data: " + `{"content":"LLM not configured. Set API key in Settings to enable AI features.\n\nThe architecture is ready for your module files:\n- module.prop: module metadata\n- system/: system file overrides\n- META-INF/: update-binary + updater-script\n- customize.sh: installation hooks\n\nEdit files in the editor tab to build your module."}` + "\n\ndata: [DONE]\n\n"))
-		return err
+		w.WriteString("data: " + `{"content":"LLM not configured. Set API key in Settings."}` + "\n\ndata: [DONE]\n\n")
+		w.Flush()
+		return nil
 	}
 
 	body := map[string]interface{}{
@@ -487,15 +1028,16 @@ func (s *AIService) streamChatWithSystemForUser(ctx context.Context, systemPromp
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		errEvt, _ := json.Marshal(map[string]string{"type": "error", "error": fmt.Sprintf("AI 服务连接失败: %s。请检查 LLM API Key 和网络连接。", err.Error())})
-		_, werr := c.Write([]byte("data: " + string(errEvt) + "\n\ndata: [DONE]\n\n"))
-		return werr
+		errEvt, _ := json.Marshal(map[string]string{"type": "error", "error": err.Error()})
+		w.WriteString("data: " + string(errEvt) + "\n\ndata: [DONE]\n\n")
+		w.Flush()
+		return nil
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
 		bodyBytes, _ := io.ReadAll(resp.Body)
-		errMsg := fmt.Sprintf("LLM 请求失败 (HTTP %d)", resp.StatusCode)
+		errMsg := fmt.Sprintf("LLM error (HTTP %d)", resp.StatusCode)
 		var errBody struct {
 			Error struct {
 				Message string `json:"message"`
@@ -505,114 +1047,113 @@ func (s *AIService) streamChatWithSystemForUser(ctx context.Context, systemPromp
 			errMsg = errBody.Error.Message
 		}
 		errEvt, _ := json.Marshal(map[string]string{"type": "error", "error": errMsg})
-		_, werr := c.Write([]byte("data: " + string(errEvt) + "\n\ndata: [DONE]\n\n"))
-		return werr
+		w.WriteString("data: " + string(errEvt) + "\n\ndata: [DONE]\n\n")
+		w.Flush()
+		return nil
 	}
 
-	// 逐行解析 LLM SSE 响应，添加步骤事件和思考过程事件
-	sentSteps := map[string]bool{}
 	scanner := bufio.NewScanner(resp.Body)
+
+	// Keepalive goroutine — 每 15 秒发一个 SSE 注释，防止代理/客户端超时关闭连接
+	keepAliveDone := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(15 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				w.WriteString(": keepalive\n\n")
+				w.Flush()
+			case <-keepAliveDone:
+				return
+			}
+		}
+	}()
+
 	for scanner.Scan() {
 		line := scanner.Text()
-
-		// 非 data: 行直接透传（空行等）
 		if !strings.HasPrefix(line, "data: ") {
-			if _, werr := c.Write([]byte(line + "\n")); werr != nil {
-				break
-			}
+			w.WriteString(line + "\n")
+			w.Flush()
 			continue
 		}
-
 		data := strings.TrimPrefix(line, "data: ")
 		if data == "[DONE]" {
-			// 发送完成步骤事件
-			if !sentSteps["done"] {
-				doneEvt, _ := json.Marshal(map[string]string{"type": "step", "step": "done", "message": "生成完成！"})
-				c.Write([]byte("data: " + string(doneEvt) + "\n\n"))
-				sentSteps["done"] = true
-			}
-			c.Write([]byte("data: [DONE]\n\n"))
+			w.WriteString("data: [DONE]\n\n")
+			w.Flush()
 			break
 		}
-
-		// 尝试解析 JSON delta
-		var parsed struct {
-			Choices []struct {
-				Delta struct {
-					Content          string `json:"content"`
-					ReasoningContent string `json:"reasoning_content"`
-				} `json:"delta"`
-			} `json:"choices"`
-		}
-
-		if err := json.Unmarshal([]byte(data), &parsed); err == nil && len(parsed.Choices) > 0 {
-			delta := parsed.Choices[0].Delta
-
-			// 发送思考过程事件
-			if delta.ReasoningContent != "" {
-				reasoningEvt, _ := json.Marshal(map[string]string{"type": "reasoning", "content": delta.ReasoningContent})
-				c.Write([]byte("data: " + string(reasoningEvt) + "\n\n"))
-			}
-
-			// 发送步骤事件（基于内容关键词检测）
-			if delta.Content != "" {
-				// 发送开始事件
-				if !sentSteps["start"] {
-					startEvt, _ := json.Marshal(map[string]string{"type": "step", "step": "start", "message": "正在连接AI..."})
-					c.Write([]byte("data: " + string(startEvt) + "\n\n"))
-					sentSteps["start"] = true
-				}
-
-				contentLower := strings.ToLower(delta.Content)
-
-				// 检测步骤
-				type stepDef struct {
-					keywords []string
-					message  string
-				}
-				stepDefs := []struct {
-					step string
-					def  stepDef
-				}{
-					{"structure", stepDef{[]string{"module.prop", "metadata", "module_id"}, "正在生成模块结构..."}},
-					{"script", stepDef{[]string{"customize.sh", "install", "post-fs-data"}, "正在编写安装脚本..."}},
-					{"system", stepDef{[]string{"system/", "system.prop", "build.prop"}, "正在配置系统文件..."}},
-					{"optimize", stepDef{[]string{"optimize", "best practice", "security"}, "正在优化代码..."}},
-				}
-
-				for _, sd := range stepDefs {
-					if !sentSteps[sd.step] {
-						for _, kw := range sd.def.keywords {
-							if strings.Contains(contentLower, kw) {
-								stepEvt, _ := json.Marshal(map[string]string{"type": "step", "step": sd.step, "message": sd.def.message})
-								c.Write([]byte("data: " + string(stepEvt) + "\n\n"))
-								sentSteps[sd.step] = true
-								break
-							}
-						}
-					}
-				}
-			}
-		}
-
-		// 透传原始 SSE 行
-		if _, werr := c.Write([]byte(line + "\n")); werr != nil {
-			break
-		}
+		w.WriteString(line + "\n")
+		w.Flush()
 	}
 
-	// 流中途断开：检查是否正常结束
-	if !sentSteps["done"] {
-		if err := scanner.Err(); err != nil {
-			errEvt, _ := json.Marshal(map[string]string{"type": "error", "error": fmt.Sprintf("AI 流式响应中断: %s", err.Error())})
-			c.Write([]byte("data: " + string(errEvt) + "\n\n"))
-		} else {
-			// 正常结束但没收到 [DONE]，补一个完成事件
-			doneEvt, _ := json.Marshal(map[string]string{"type": "step", "step": "done", "message": "生成完成！"})
-			c.Write([]byte("data: " + string(doneEvt) + "\n\n"))
-		}
-		c.Write([]byte("data: [DONE]\n\n"))
-	}
-
+	close(keepAliveDone)
 	return nil
+}
+
+// sendSSE 发送SSE事件，写入失败时返回error
+func (s *AIService) sendSSE(w *bufio.Writer, data map[string]interface{}) error {
+	jsonData, _ := json.Marshal(data)
+	if _, err := w.WriteString("data: " + string(jsonData) + "\n\n"); err != nil {
+		return err
+	}
+	return w.Flush()
+}
+
+// extractJSON 从文本中提取JSON
+func extractJSON(text string) string {
+	start := strings.Index(text, "{")
+	if start == -1 {
+		return ""
+	}
+	end := strings.LastIndex(text, "}")
+	if end == -1 || end <= start {
+		return ""
+	}
+	return text[start : end+1]
+}
+
+// detectLanguage 根据文件扩展名检测项目语言
+func detectLanguage(files []struct {
+	Path    string `json:"path"`
+	Content string `json:"content"`
+}) string {
+	goCount := 0
+	rustCount := 0
+	cCount := 0
+	cppCount := 0
+
+	for _, f := range files {
+		switch {
+		case strings.HasSuffix(f.Path, ".go"):
+			goCount++
+		case strings.HasSuffix(f.Path, ".rs"):
+			rustCount++
+		case strings.HasSuffix(f.Path, ".c"):
+			cCount++
+		case strings.HasSuffix(f.Path, ".cpp"):
+			cppCount++
+		}
+	}
+
+	// 优先级：Go > Rust > C++ > C
+	if goCount > 0 {
+		return "go"
+	}
+	if rustCount > 0 {
+		return "rust"
+	}
+	if cppCount > 0 {
+		return "cpp"
+	}
+	if cCount > 0 {
+		return "c"
+	}
+
+	return ""
+}
+
+func dirExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
 }

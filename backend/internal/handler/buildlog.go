@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 
@@ -32,14 +33,16 @@ func (h *BuildLogHandler) GetBuildLog(c fiber.Ctx) error {
 	c.Set("Cache-Control", "no-cache")
 	c.Set("Connection", "keep-alive")
 	c.Set("Access-Control-Allow-Origin", "*")
+	c.Set("X-Accel-Buffering", "no")
 
-	for entry := range ch {
-		data, _ := json.Marshal(entry)
-		line := fmt.Sprintf("data: %s\n\n", string(data))
-		if _, err := c.Write([]byte(line)); err != nil {
-			return err
+	c.RequestCtx().SetBodyStreamWriter(func(w *bufio.Writer) {
+		for entry := range ch {
+			data, _ := json.Marshal(entry)
+			line := fmt.Sprintf("data: %s\n\n", string(data))
+			w.WriteString(line)
+			w.Flush()
 		}
-	}
+	})
 
 	return nil
 }

@@ -14,7 +14,7 @@ func NewZipperHandler(zipper *service.ZipperService) *ZipperHandler {
 }
 
 type BuildZipRequest struct {
-	ProjectID string            `json:"project_id"`
+	ProjectID string              `json:"project_id"`
 	Files     []service.ModuleFile `json:"files"`
 }
 
@@ -35,4 +35,13 @@ func (h *ZipperHandler) BuildZip(c fiber.Ctx) error {
 func (h *ZipperHandler) ListDownloads(c fiber.Ctx) error {
 	zips := h.zipper.GetAvailableDownloads()
 	return c.JSON(fiber.Map{"zips": zips})
+}
+
+func (h *ZipperHandler) ExportProjectZip(c fiber.Ctx) error {
+	projectID := c.Params("id")
+	zipPath, err := h.zipper.ExportModuleZip(projectID)
+	if err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.Download(zipPath)
 }

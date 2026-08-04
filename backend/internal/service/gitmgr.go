@@ -156,3 +156,128 @@ func (s *GitManagerService) GetCurrentHash(ctx context.Context, projectID string
 	}
 	return info, nil
 }
+
+// ===== Branch Management =====
+
+type BranchInfo struct {
+	Name      string `json:"name"`
+	IsCurrent bool   `json:"is_current"`
+	Hash      string `json:"hash"`
+}
+
+func (s *GitManagerService) ListBranches(ctx context.Context, projectID string) ([]BranchInfo, error) {
+	dir := s.projectDir(projectID)
+	if _, err := os.Stat(filepath.Join(dir, ".git")); os.IsNotExist(err) {
+		return []BranchInfo{}, nil
+	}
+
+	cmd := exec.CommandContext(ctx, "git", "branch", "-a", "--format=%(refname:short)|%(HEAD)")
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("git branch failed: %v", string(out))
+	}
+
+	var branches []BranchInfo
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		parts := strings.SplitN(line, "|", 2)
+		name := strings.TrimSpace(parts[0])
+		isCurrent := len(parts) > 1 && strings.TrimSpace(parts[1]) == "*"
+
+		// Get hash for each branch
+		hashCmd := exec.CommandContext(ctx, "git", "rev-parse", "refs/heads/"+name)
+		hashCmd.Dir = dir
+		hashOut, _ := hashCmd.CombinedOutput()
+		hash := strings.TrimSpace(string(hashOut))
+
+		branches = append(branches, BranchInfo{
+			Name:      name,
+			IsCurrent: isCurrent,
+			Hash:      hash,
+		})
+	}
+
+	if branches == nil {
+		branches = []BranchInfo{}
+	}
+	return branches, nil
+}
+
+func (s *GitManagerService) CreateBranch(ctx context.Context, projectID, branchName string) error {
+	dir := s.projectDir(projectID)
+	cmd := exec.CommandContext(ctx, "git", "branch", branchName)
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("git branch failed: %v", string(out))
+	}
+	return nil
+}
+
+func (s *GitManagerService) CheckoutBranch(ctx context.Context, projectID, branchName string) error {
+	dir := s.projectDir(projectID)
+	cmd := exec.CommandContext(ctx, "git", "checkout", branchName)
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("git checkout failed: %v", string(out))
+	}
+	return nil
+}
+
+func (s *GitManagerService) GetCurrentBranch(ctx context.Context, projectID string) (string, error) {
+	dir := s.projectDir(projectID)
+	cmd := exec.CommandContext(ctx, "git", "rev-parse", "--abbrev-ref", "HEAD")
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("git branch failed: %v", string(out))
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+func (s *GitManagerService) Push(ctx context.Context, projectID, remote, branch string) (string, error) {
+	dir := s.projectDir(projectID)
+	if remote == "" {
+		remote = "origin"
+	}
+	if branch == "" {
+		b, err := s.GetCurrentBranch(ctx, projectID)
+		if err != nil {
+			return "", err
+		}
+		branch = b
+	}
+	cmd := exec.CommandContext(ctx, "git", "push", remote, branch)
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return string(out), fmt.Errorf("git push failed: %v", string(out))
+	}
+	return string(out), nil
+}
+
+func (s *GitManagerService) Pull(ctx context.Context, projectID, remote, branch string) (string, error) {
+	dir := s.projectDir(projectID)
+	if remote == "" {
+		remote = "origin"
+	}
+	if branch == "" {
+		b, err := s.GetCurrentBranch(ctx, projectID)
+		if err != nil {
+			return "", err
+		}
+		branch = b
+	}
+	cmd := exec.CommandContext(ctx, "git", "pull", remote, branch)
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return string(out), fmt.Errorf("git pull failed: %v", string(out))
+	}
+	return string(out), nil
+}

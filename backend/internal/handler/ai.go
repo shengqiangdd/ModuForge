@@ -1,10 +1,16 @@
 package handler
 
 import (
+	"bufio"
 	"crypto/rand"
+	"database/sql"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
+	"net/http"
+	"strings"
+	"time"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/moduforge/backend/internal/config"
@@ -12,6 +18,8 @@ import (
 	"github.com/moduforge/backend/internal/llm"
 	"github.com/moduforge/backend/internal/service"
 )
+
+const maxMessagesPerRequest = 100
 
 func newUUID() string {
 	b := make([]byte, 16)
@@ -22,115 +30,344 @@ func newUUID() string {
 }
 
 type AIHandler struct {
-	svc *service.AIService
-	cfg *config.Config
-	db  *database.DB
+	svc         *service.AIService
+	cfg         *config.Config
+	db          *database.DB
+	memoryStore *service.MemoryStore
+	memV2       *service.MemoryV2Store
 }
 
 func NewAIHandler(svc *service.AIService, cfg *config.Config, db *database.DB) *AIHandler {
-	return &AIHandler{svc: svc, cfg: cfg, db: db}
+	return &AIHandler{svc: svc, cfg: cfg, db: db, memV2: service.NewMemoryV2Store(db.Conn)}
+}
+
+func (h *AIHandler) SetMemoryStore(ms *service.MemoryStore) {
+	h.memoryStore = ms
+}
+
+// autoLoadProjectContext loads all files from a project and returns them as context
+func (h *AIHandler) autoLoadProjectContext(projectID, uid string) string {
+	if h.db == nil {
+		return ""
+	}
+	db := h.db.Conn
+
+	// Verify project ownership
+	var name, ownerID string
+	err := db.QueryRow(`SELECT name, user_id FROM projects WHERE id=?`, projectID).Scan(&name, &ownerID)
+	if err != nil || ownerID != uid {
+		return ""
+	}
+
+	rows, err := db.Query(`SELECT path, content FROM project_files WHERE project_id=? ORDER BY path`, projectID)
+	if err != nil {
+		return ""
+	}
+	defer rows.Close()
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("Project: %s\n", name))
+	fileCount := 0
+	for rows.Next() {
+		var path, content string
+		if err := rows.Scan(&path, &content); err != nil {
+			continue
+		}
+		// Skip empty or oversized files
+		if content == "" || len(content) > 10240 {
+			continue
+		}
+		sb.WriteString(fmt.Sprintf("\n--- %s ---\n%s\n", path, content))
+		fileCount++
+		if fileCount >= 50 {
+			break
+		}
+	}
+	if fileCount == 0 {
+		return ""
+	}
+	return sb.String()
 }
 
 func (h *AIHandler) GenerateModule(c fiber.Ctx) error {
 	var req struct {
-		Description string `json:"description"`
+		Description     string            `json:"description"`
+		ProjectContext   string            `json:"project_context"`
+		ProjectID       string            `json:"project_id"`
+		Messages        []service.Message `json:"messages"`
+		SessionID       string            `json:"session_id"`
+		Provider        string            `json:"provider"`
+		Model           string            `json:"model"`
 	}
 	if err := c.Bind().JSON(&req); err != nil {
 		slog.Error("GenerateModule: bind failed", "error", err)
 		return BadRequest(c, "invalid request")
 	}
-	if req.Description == "" {
-		slog.Warn("GenerateModule: empty description")
-		return BadRequest(c, "description required")
+	if req.Description == "" && len(req.Messages) == 0 {
+		slog.Warn("GenerateModule: no input")
+		return BadRequest(c, "description or messages required")
 	}
-	if len(req.Description) > 500 {
+	if len(req.Description) > 5000 {
 		slog.Warn("GenerateModule: description too long", "len", len(req.Description))
-		return BadRequest(c, "description too long (max 500)")
+		return BadRequest(c, "description too long (max 5000)")
+	}
+	if len(req.Messages) > maxMessagesPerRequest {
+		return BadRequest(c, "messages too long (max 100)")
 	}
 
 	uid, _ := c.Locals("uid").(string)
-	slog.Info("GenerateModule", "description_len", len(req.Description), "uid", uid)
+
+	// Merge project context into description if available
+	description := req.Description
+	if req.ProjectContext != "" {
+		description = fmt.Sprintf("%s\n\n## Project Context:\n%s", description, req.ProjectContext)
+	} else if req.ProjectID != "" && uid != "" && h.db != nil {
+		if ctx := h.autoLoadProjectContext(req.ProjectID, uid); ctx != "" {
+			description = fmt.Sprintf("%s\n\n## Project Context:\n%s", description, ctx)
+		}
+	}
+
+	// Resolve LLM provider from request or fallback to global config
+	h.resolveProvider(req.Provider, req.Model)
+
+	slog.Info("GenerateModule", "description_len", len(description), "messages", len(req.Messages), "session_id", req.SessionID, "uid", uid)
 
 	c.Set("Content-Type", "text/event-stream")
 	c.Set("Cache-Control", "no-cache")
 	c.Set("X-Accel-Buffering", "no")
 
-	if err := h.svc.GenerateModule(c.Context(), req.Description, uid, c); err != nil {
-		return InternalError(c, err.Error())
+	c.RequestCtx().SetBodyStreamWriter(func(w *bufio.Writer) {
+		h.svc.GenerateModule(c.Context(), description, uid, req.Messages, req.SessionID, w)
+	})
+	return nil
+}
+
+// resolveProvider resolves LLM provider from request params or fallback to global config.
+// Non-destructive: saves and restores the original provider after resolution.
+func (h *AIHandler) resolveProvider(providerID, modelID string) {
+	if providerID == "" {
+		providerID = h.cfg.LLMProvider
 	}
+	if modelID == "" {
+		modelID = h.cfg.LLMModel
+	}
+	if providerID != "" {
+		savedProvider := h.cfg.LLMProvider
+		h.cfg.LLMProvider = providerID
+		if modelID != "" {
+			h.cfg.LLMModel = modelID
+		}
+		if p := llm.FindProvider(providerID); p != nil {
+			h.cfg.LLMEndpoint = p.Endpoint
+		}
+		h.cfg.LLMApiKey = h.cfg.EffectiveLLMKey()
+		slog.Info("resolveProvider", "provider", providerID, "model", modelID, "endpoint", h.cfg.LLMEndpoint, "has_key", h.cfg.LLMApiKey != "")
+		_ = savedProvider
+	}
+}
+
+func (h *AIHandler) GatherRequirements(c fiber.Ctx) error {
+	var req struct {
+		Message   string            `json:"message"`
+		Messages  []service.Message `json:"messages"`
+		SessionID string            `json:"session_id"`
+		Provider  string            `json:"provider"`
+		Model     string            `json:"model"`
+	}
+	if err := c.Bind().JSON(&req); err != nil {
+		slog.Error("GatherRequirements: bind failed", "error", err)
+		return BadRequest(c, "invalid request")
+	}
+	if req.Message == "" && len(req.Messages) == 0 {
+		slog.Warn("GatherRequirements: no input")
+		return BadRequest(c, "message or messages required")
+	}
+	if len(req.Message) > 2000 {
+		slog.Warn("GatherRequirements: message too long", "len", len(req.Message))
+		return BadRequest(c, "message too long (max 2000)")
+	}
+	if len(req.Messages) > maxMessagesPerRequest {
+		return BadRequest(c, "messages too long (max 100)")
+	}
+
+	uid, _ := c.Locals("uid").(string)
+
+	// Resolve LLM provider
+	h.resolveProvider(req.Provider, req.Model)
+
+	slog.Info("GatherRequirements", "message_len", len(req.Message), "messages", len(req.Messages), "session_id", req.SessionID, "uid", uid)
+
+	c.Set("Content-Type", "text/event-stream")
+	c.Set("Cache-Control", "no-cache")
+	c.Set("X-Accel-Buffering", "no")
+
+	c.RequestCtx().SetBodyStreamWriter(func(w *bufio.Writer) {
+		h.svc.GatherRequirements(c.Context(), req.Message, uid, req.Messages, req.SessionID, w)
+	})
 	return nil
 }
 
 func (h *AIHandler) Chat(c fiber.Ctx) error {
 	var req struct {
-		Message string `json:"message"`
-		Context string `json:"context"`
+		Message        string            `json:"message"`
+		Context        string            `json:"context"`
+		ProjectContext  string            `json:"project_context"`
+		ProjectID      string            `json:"project_id"`
+		Messages       []service.Message `json:"messages"`
+		SessionID      string            `json:"session_id"`
+		Provider       string            `json:"provider"`
+		Model          string            `json:"model"`
 	}
 	if err := c.Bind().JSON(&req); err != nil {
 		slog.Error("Chat: bind failed", "error", err)
 		return BadRequest(c, "invalid request")
 	}
-	if req.Message == "" {
-		slog.Warn("Chat: empty message")
-		return BadRequest(c, "message required")
+	if req.Message == "" && len(req.Messages) == 0 {
+		slog.Warn("Chat: no input")
+		return BadRequest(c, "message or messages required")
 	}
 	if len(req.Message) > 2000 {
 		slog.Warn("Chat: message too long", "len", len(req.Message))
 		return BadRequest(c, "message too long (max 2000)")
 	}
+	if len(req.Messages) > maxMessagesPerRequest {
+		return BadRequest(c, "messages too long (max 100)")
+	}
 
 	uid, _ := c.Locals("uid").(string)
-	slog.Info("Chat", "message_len", len(req.Message), "uid", uid)
+
+	// Merge project context: manual context takes precedence
+	contextInfo := req.Context
+	if req.ProjectContext != "" {
+		contextInfo = req.ProjectContext
+	} else if req.ProjectID != "" && uid != "" && h.db != nil {
+		// Auto-load project files as context
+		contextInfo = h.autoLoadProjectContext(req.ProjectID, uid)
+	}
+
+	// Resolve LLM provider from request or fallback to global config
+	// (same pattern as Agent handler — ensures free providers work without API key)
+	h.resolveProvider(req.Provider, req.Model)
+
+	slog.Info("Chat", "message_len", len(req.Message), "messages", len(req.Messages), "session_id", req.SessionID, "uid", uid, "has_context", contextInfo != "", "provider", req.Provider, "model", req.Model)
 
 	c.Set("Content-Type", "text/event-stream")
 	c.Set("Cache-Control", "no-cache")
 	c.Set("X-Accel-Buffering", "no")
 
-	if err := h.svc.Chat(c.Context(), req.Message, req.Context, uid, c); err != nil {
-		return InternalError(c, err.Error())
-	}
+	c.RequestCtx().SetBodyStreamWriter(func(w *bufio.Writer) {
+		h.svc.Chat(c.Context(), req.Message, contextInfo, uid, req.Messages, req.SessionID, w)
+	})
 	return nil
 }
 
 func (h *AIHandler) RepairBuild(c fiber.Ctx) error {
 	var req struct {
-		BuildLog string `json:"build_log"`
+		BuildLog  string            `json:"build_log"`
+		Messages  []service.Message `json:"messages"`
+		SessionID string            `json:"session_id"`
+		Provider  string            `json:"provider"`
+		Model     string            `json:"model"`
 	}
 	if err := c.Bind().JSON(&req); err != nil {
 		return BadRequest(c, "invalid request")
 	}
-	if req.BuildLog == "" {
-		return BadRequest(c, "build_log required")
+	if req.BuildLog == "" && len(req.Messages) == 0 {
+		return BadRequest(c, "build_log or messages required")
 	}
 	if len(req.BuildLog) > 50000 {
 		return BadRequest(c, "build_log too long (max 50000)")
 	}
+	if len(req.Messages) > maxMessagesPerRequest {
+		return BadRequest(c, "messages too long (max 100)")
+	}
 
 	uid, _ := c.Locals("uid").(string)
+
+	// Resolve LLM provider
+	h.resolveProvider(req.Provider, req.Model)
+
+	slog.Info("RepairBuild", "build_log_len", len(req.BuildLog), "messages", len(req.Messages), "session_id", req.SessionID, "uid", uid)
 
 	c.Set("Content-Type", "text/event-stream")
 	c.Set("Cache-Control", "no-cache")
 	c.Set("X-Accel-Buffering", "no")
 
-	if err := h.svc.RepairBuild(c.Context(), req.BuildLog, uid, c); err != nil {
+	c.RequestCtx().SetBodyStreamWriter(func(w *bufio.Writer) {
+		h.svc.RepairBuild(c.Context(), req.BuildLog, uid, req.Messages, req.SessionID, w)
+	})
+	return nil
+}
+
+// CompareModels 并发比较多个模型的回答
+func (h *AIHandler) CompareModels(c fiber.Ctx) error {
+	var req struct {
+		Message   string   `json:"message"`
+		ModelIDs  []string `json:"model_ids"`
+	}
+	if err := c.Bind().JSON(&req); err != nil {
+		return BadRequest(c, "invalid request")
+	}
+	if req.Message == "" {
+		return BadRequest(c, "message required")
+	}
+	if len(req.ModelIDs) < 2 {
+		return BadRequest(c, "at least 2 model_ids required")
+	}
+	if len(req.ModelIDs) > 6 {
+		return BadRequest(c, "max 6 model_ids")
+	}
+	if len(req.Message) > 2000 {
+		return BadRequest(c, "message too long (max 2000)")
+	}
+
+	uid, _ := c.Locals("uid").(string)
+
+	results, err := h.svc.CompareModels(c.Context(), req.Message, req.ModelIDs, uid)
+	if err != nil {
 		return InternalError(c, err.Error())
 	}
-	return nil
+	return c.JSON(fiber.Map{"results": results})
+}
+
+// GetHistory 返回指定 session 的对话历史
+func (h *AIHandler) GetHistory(c fiber.Ctx) error {
+	sessionID := c.Params("session_id")
+	if sessionID == "" {
+		return BadRequest(c, "session_id required")
+	}
+
+	messages := h.svc.GetHistory(sessionID)
+	if messages == nil {
+		return c.JSON(fiber.Map{"messages": []service.Message{}})
+	}
+	return c.JSON(fiber.Map{"messages": messages})
+}
+
+// DeleteHistory 删除指定 session 的对话历史
+func (h *AIHandler) DeleteHistory(c fiber.Ctx) error {
+	sessionID := c.Params("session_id")
+	if sessionID == "" {
+		return BadRequest(c, "session_id required")
+	}
+
+	h.svc.DeleteHistory(sessionID)
+	return c.JSON(fiber.Map{"status": "ok"})
 }
 
 // ListProviders 返回所有可用的 LLM 提供商和模型（合并用户配置）
 func (h *AIHandler) ListProviders(c fiber.Ctx) error {
 	uid, _ := c.Locals("uid").(string)
 
-	var userConfigs map[string]struct{ Endpoint, APIKey string }
+	var userConfigs map[string]struct{ Endpoint, APIKey, ModelsJSON string }
 	var customProviders []llm.Provider
 
 	if uid != "" && h.db != nil {
 		configs, err := h.db.GetProviderConfigs(uid)
 		if err == nil {
-			userConfigs = make(map[string]struct{ Endpoint, APIKey string })
+			userConfigs = make(map[string]struct{ Endpoint, APIKey, ModelsJSON string })
 			for _, pc := range configs {
-				userConfigs[pc.ID] = struct{ Endpoint, APIKey string }{Endpoint: pc.Endpoint, APIKey: pc.APIKey}
+				userConfigs[pc.ID] = struct{ Endpoint, APIKey, ModelsJSON string }{Endpoint: pc.Endpoint, APIKey: pc.APIKey, ModelsJSON: pc.ModelsJSON}
 			}
 		}
 
@@ -359,6 +596,114 @@ func (h *AIHandler) UpdateLLMConfig(c fiber.Ctx) error {
 	})
 }
 
+// ---------- Conversation Persistence ----------
+
+func (h *AIHandler) ListConversations(c fiber.Ctx) error {
+	uid, _ := c.Locals("uid").(string)
+	if uid == "" {
+		return Unauthorized(c, "authentication required")
+	}
+	convs, err := service.ListConversations(h.db.Conn, uid)
+	if err != nil {
+		slog.Error("ListConversations", "error", err)
+		return InternalError(c, "failed to list conversations")
+	}
+	if convs == nil {
+		convs = []service.ConversationSummary{}
+	}
+	return c.JSON(fiber.Map{"conversations": convs})
+}
+
+func (h *AIHandler) SaveConversation(c fiber.Ctx) error {
+	uid, _ := c.Locals("uid").(string)
+	if uid == "" {
+		return Unauthorized(c, "authentication required")
+	}
+	var req struct {
+		ID        string            `json:"id"`
+		Title     string            `json:"title"`
+		Mode      string            `json:"mode"`
+		Messages  []service.Message `json:"messages"`
+		Model     string            `json:"model"`
+		ProjectID string            `json:"project_id"`
+	}
+	if err := c.Bind().JSON(&req); err != nil {
+		return BadRequest(c, "invalid request")
+	}
+	if len(req.Messages) == 0 {
+		return BadRequest(c, "messages required")
+	}
+	savedID, err := service.SaveConversation(h.db.Conn, uid, req.ID, req.Title, req.Mode, req.Messages, req.Model, req.ProjectID)
+	if err != nil {
+		slog.Error("SaveConversation", "error", err)
+		return InternalError(c, "failed to save conversation")
+	}
+	return c.JSON(fiber.Map{"id": savedID, "status": "ok"})
+}
+
+func (h *AIHandler) GetConversation(c fiber.Ctx) error {
+	uid, _ := c.Locals("uid").(string)
+	if uid == "" {
+		return Unauthorized(c, "authentication required")
+	}
+	id := c.Params("id")
+	if id == "" {
+		return BadRequest(c, "id required")
+	}
+	data, err := service.LoadConversation(h.db.Conn, uid, id)
+	if err != nil {
+		slog.Error("GetConversation", "error", err)
+		return InternalError(c, "failed to load conversation")
+	}
+	if data == nil || data.Messages == nil {
+		data = &service.ConversationData{Messages: []service.Message{}, Mode: "", ProjectID: ""}
+	}
+	return c.JSON(fiber.Map{"messages": data.Messages, "mode": data.Mode, "project_id": data.ProjectID})
+}
+
+func (h *AIHandler) DeleteConversation(c fiber.Ctx) error {
+	uid, _ := c.Locals("uid").(string)
+	if uid == "" {
+		return Unauthorized(c, "authentication required")
+	}
+	id := c.Params("id")
+	if id == "" {
+		return BadRequest(c, "id required")
+	}
+	if err := service.DeleteConversation(h.db.Conn, uid, id); err != nil {
+		slog.Error("DeleteConversation", "error", err)
+		return InternalError(c, "failed to delete conversation")
+	}
+	return c.JSON(fiber.Map{"status": "ok"})
+}
+
+func (h *AIHandler) AutoBuild(c fiber.Ctx) error {
+	var req struct {
+		Description string            `json:"description"`
+		ProjectID   string            `json:"project_id"`
+		SessionID   string            `json:"session_id"`
+		Messages    []service.Message `json:"messages"`
+	}
+	if err := c.Bind().JSON(&req); err != nil {
+		return BadRequest(c, "invalid request")
+	}
+
+	if req.Description == "" {
+		return BadRequest(c, "description required")
+	}
+
+	uid, _ := c.Locals("uid").(string)
+
+	c.Set("Content-Type", "text/event-stream")
+	c.Set("Cache-Control", "no-cache")
+	c.Set("X-Accel-Buffering", "no")
+
+	c.RequestCtx().SetBodyStreamWriter(func(w *bufio.Writer) {
+		h.svc.AutoBuild(c.Context(), req.Description, req.ProjectID, uid, req.Messages, req.SessionID, w)
+	})
+	return nil
+}
+
 // ---------- Provider Config Management ----------
 
 func (h *AIHandler) SaveProviderConfig(c fiber.Ctx) error {
@@ -368,9 +713,10 @@ func (h *AIHandler) SaveProviderConfig(c fiber.Ctx) error {
 	}
 
 	var req struct {
-		ID       string `json:"id"`
-		Endpoint string `json:"endpoint"`
-		APIKey   string `json:"api_key"`
+		ID         string `json:"id"`
+		Endpoint   string `json:"endpoint"`
+		APIKey     string `json:"api_key"`
+		ModelsJSON string `json:"models_json"`
 	}
 	if err := c.Bind().JSON(&req); err != nil {
 		return BadRequest(c, "invalid request")
@@ -379,7 +725,7 @@ func (h *AIHandler) SaveProviderConfig(c fiber.Ctx) error {
 		return BadRequest(c, "provider id required")
 	}
 
-	if err := h.db.UpsertProviderConfig(uid, req.ID, req.Endpoint, req.APIKey); err != nil {
+	if err := h.db.UpsertProviderConfig(uid, req.ID, req.Endpoint, req.APIKey, req.ModelsJSON); err != nil {
 		slog.Error("SaveProviderConfig: upsert failed", "error", err)
 		return InternalError(c, "failed to save config")
 	}
@@ -529,4 +875,517 @@ func (h *AIHandler) DeleteCustomProvider(c fiber.Ctx) error {
 	}
 
 	return c.JSON(fiber.Map{"status": "ok"})
+}
+
+// ---------- AI Capability Scoring ----------
+
+// GetAICapability 返回当前配置的 AI 能力评分
+func (h *AIHandler) GetAICapability(c fiber.Ctx) error {
+	uid, _ := c.Locals("uid").(string)
+
+	var db *sql.DB
+	if h.db != nil {
+		db = h.db.Conn
+	}
+
+	score := service.EvaluateAICapability(h.cfg, db, uid)
+	return c.JSON(fiber.Map{"capability": score})
+}
+
+// GET /ai/memory — list all memory for the current user
+func (h *AIHandler) ListMemory(c fiber.Ctx) error {
+	if h.memoryStore == nil {
+		return InternalError(c, "memory store not available")
+	}
+	uid, _ := c.Locals("uid").(string)
+	if uid == "" {
+		return Unauthorized(c, "user not authenticated")
+	}
+	memType := c.Query("type")
+
+	var entries []service.MemoryEntry
+	var err error
+	if memType != "" {
+		entries, err = h.memoryStore.ListMemory(uid, memType)
+	} else {
+		entries, err = h.memoryStore.ListAllMemory(uid)
+	}
+	if err != nil {
+		return InternalError(c, "failed to list memory: "+err.Error())
+	}
+	if entries == nil {
+		entries = []service.MemoryEntry{}
+	}
+	return c.JSON(fiber.Map{"entries": entries})
+}
+
+// DELETE /ai/memory/:type/:key — delete a specific memory
+func (h *AIHandler) DeleteMemory(c fiber.Ctx) error {
+	if h.memoryStore == nil {
+		return InternalError(c, "memory store not available")
+	}
+	uid, _ := c.Locals("uid").(string)
+	if uid == "" {
+		return Unauthorized(c, "user not authenticated")
+	}
+	memType := c.Params("type")
+	key := c.Params("key")
+	if memType == "" || key == "" {
+		return BadRequest(c, "type and key are required")
+	}
+	if err := h.memoryStore.DeleteMemory(uid, memType, key); err != nil {
+		return InternalError(c, "failed to delete memory: "+err.Error())
+	}
+	return c.JSON(fiber.Map{"status": "ok"})
+}
+
+// DELETE /ai/memory — delete all memory for the current user
+func (h *AIHandler) ClearMemory(c fiber.Ctx) error {
+	if h.memoryStore == nil {
+		return InternalError(c, "memory store not available")
+	}
+	uid, _ := c.Locals("uid").(string)
+	if uid == "" {
+		return Unauthorized(c, "user not authenticated")
+	}
+	if err := h.memoryStore.DeleteAllMemory(uid); err != nil {
+		return InternalError(c, "failed to clear memory: "+err.Error())
+	}
+	return c.JSON(fiber.Map{"status": "ok"})
+}
+
+// ---------- Session-Based Conversation Messages ----------
+
+func (h *AIHandler) ListSessions(c fiber.Ctx) error {
+	uid, _ := c.Locals("uid").(string)
+	if uid == "" {
+		return Unauthorized(c, "authentication required")
+	}
+	sessions, err := service.ListUserSessions(h.db.Conn, uid)
+	if err != nil {
+		slog.Error("ListSessions", "error", err)
+		return InternalError(c, "failed to list sessions")
+	}
+	if sessions == nil {
+		sessions = []map[string]interface{}{}
+	}
+	return c.JSON(fiber.Map{"sessions": sessions})
+}
+
+func (h *AIHandler) GetSessionMessages(c fiber.Ctx) error {
+	uid, _ := c.Locals("uid").(string)
+	if uid == "" {
+		return Unauthorized(c, "authentication required")
+	}
+	sessionID := c.Params("session_id")
+	if sessionID == "" {
+		return BadRequest(c, "session_id required")
+	}
+	messages, mode, err := service.GetConversationMessages(h.db.Conn, sessionID, uid)
+	if err != nil {
+		slog.Error("GetSessionMessages", "error", err)
+		return InternalError(c, "failed to get messages")
+	}
+	if messages == nil {
+		messages = []service.ConversationMessage{}
+	}
+	// 获取 project_id 和 agent_mode
+	var projectID, agentMode string
+	h.db.Conn.QueryRow(`SELECT COALESCE(project_id, ''), COALESCE(agent_mode, 'act') FROM ai_conversations WHERE id=? AND user_id=?`, sessionID, uid).Scan(&projectID, &agentMode)
+	return c.JSON(fiber.Map{"messages": messages, "mode": mode, "project_id": projectID, "agent_mode": agentMode})
+}
+
+func (h *AIHandler) DeleteSession(c fiber.Ctx) error {
+	uid, _ := c.Locals("uid").(string)
+	if uid == "" {
+		return Unauthorized(c, "authentication required")
+	}
+	sessionID := c.Params("session_id")
+	if sessionID == "" {
+		return BadRequest(c, "session_id required")
+	}
+	if err := service.DeleteSessionMessages(h.db.Conn, sessionID, uid); err != nil {
+		slog.Error("DeleteSession", "error", err)
+		return InternalError(c, "failed to delete session")
+	}
+	return c.JSON(fiber.Map{"status": "ok"})
+}
+
+// ---------- Session Export ----------
+
+func (h *AIHandler) ExportSession(c fiber.Ctx) error {
+	uid, _ := c.Locals("uid").(string)
+	if uid == "" {
+		return Unauthorized(c, "authentication required")
+	}
+	sessionID := c.Params("session_id")
+	if sessionID == "" {
+		return BadRequest(c, "session_id required")
+	}
+	format := c.Query("format", "markdown")
+	switch format {
+	case "json":
+		data, err := service.ExportSessionAsJSON(h.db.Conn, sessionID, uid)
+		if err != nil {
+			return InternalError(c, "failed to export session")
+		}
+		c.Set("Content-Type", "application/json")
+		c.Set("Content-Disposition", fmt.Sprintf(`attachment; filename="session-%s.json"`, sessionID))
+		return c.Send(data)
+	default: // markdown
+		md, err := service.ExportSessionAsMarkdown(h.db.Conn, sessionID, uid)
+		if err != nil {
+			return InternalError(c, "failed to export session")
+		}
+		c.Set("Content-Type", "text/markdown; charset=utf-8")
+		c.Set("Content-Disposition", fmt.Sprintf(`attachment; filename="session-%s.md"`, sessionID))
+		return c.SendString(md)
+	}
+}
+
+// ---------- Session Search ----------
+
+func (h *AIHandler) SearchSessions(c fiber.Ctx) error {
+	uid, _ := c.Locals("uid").(string)
+	if uid == "" {
+		return Unauthorized(c, "authentication required")
+	}
+	query := c.Query("q", "")
+	if query == "" {
+		return BadRequest(c, "query required")
+	}
+	results, err := service.SearchSessionMessages(h.db.Conn, uid, query, 50)
+	if err != nil {
+		slog.Error("SearchSessions", "error", err)
+		return InternalError(c, "failed to search sessions")
+	}
+	if results == nil {
+		results = []map[string]interface{}{}
+	}
+	return c.JSON(fiber.Map{"results": results})
+}
+
+// ---------- Code Diff ----------
+
+func (h *AIHandler) ComputeDiff(c fiber.Ctx) error {
+	var req struct {
+		OldCode  string `json:"old_code"`
+		NewCode  string `json:"new_code"`
+		FilePath string `json:"file_path"`
+	}
+	if err := c.Bind().JSON(&req); err != nil {
+		return BadRequest(c, "invalid request")
+	}
+	if req.OldCode == "" && req.NewCode == "" {
+		return BadRequest(c, "old_code or new_code required")
+	}
+
+	oldLines := strings.Split(req.OldCode, "\n")
+	newLines := strings.Split(req.NewCode, "\n")
+
+	type DiffEntry struct {
+		Type string `json:"type"`
+		Line int    `json:"line"`
+		Old  string `json:"old,omitempty"`
+		New  string `json:"new,omitempty"`
+	}
+
+	var diffs []DiffEntry
+
+	maxLen := len(oldLines)
+	if len(newLines) > maxLen {
+		maxLen = len(newLines)
+	}
+
+	// Simple LCS-based diff
+	lcs := computeLCS(oldLines, newLines)
+	oi, ni := 0, 0
+	line := 1
+	for _, lcsIdx := range lcs {
+		for oi < lcsIdx[0] {
+			diffs = append(diffs, DiffEntry{Type: "remove", Line: line, Old: oldLines[oi]})
+			line++
+			oi++
+		}
+		for ni < lcsIdx[1] {
+			diffs = append(diffs, DiffEntry{Type: "add", Line: line, New: newLines[ni]})
+			line++
+			ni++
+		}
+		diffs = append(diffs, DiffEntry{Type: "context", Line: line, Old: oldLines[oi], New: newLines[ni]})
+		line++
+		oi++
+		ni++
+	}
+	for oi < len(oldLines) {
+		diffs = append(diffs, DiffEntry{Type: "remove", Line: line, Old: oldLines[oi]})
+		line++
+		oi++
+	}
+	for ni < len(newLines) {
+		diffs = append(diffs, DiffEntry{Type: "add", Line: line, New: newLines[ni]})
+		line++
+		ni++
+	}
+
+	return c.JSON(fiber.Map{
+		"diffs":    diffs,
+		"file_path": req.FilePath,
+		"old_lines": len(oldLines),
+		"new_lines": len(newLines),
+	})
+}
+
+// computeLCS finds the longest common subsequence of lines between two slices.
+func computeLCS(a, b []string) [][2]int {
+	m, n := len(a), len(b)
+	dp := make([][]int, m+1)
+	for i := range dp {
+		dp[i] = make([]int, n+1)
+	}
+	for i := 1; i <= m; i++ {
+		for j := 1; j <= n; j++ {
+			if a[i-1] == b[j-1] {
+				dp[i][j] = dp[i-1][j-1] + 1
+			} else if dp[i-1][j] > dp[i][j-1] {
+				dp[i][j] = dp[i-1][j]
+			} else {
+				dp[i][j] = dp[i][j-1]
+			}
+		}
+	}
+
+	// Backtrack to find matching pairs
+	var result [][2]int
+	i, j := m, n
+	for i > 0 && j > 0 {
+		if a[i-1] == b[j-1] {
+			result = append([][2]int{{i - 1, j - 1}}, result...)
+			i--
+			j--
+		} else if dp[i-1][j] > dp[i][j-1] {
+			i--
+		} else {
+			j--
+		}
+	}
+	return result
+}
+
+// ---------- Build Progress SSE ----------
+
+func (h *AIHandler) StreamBuildProgress(c fiber.Ctx) error {
+	id := c.Params("id")
+	if id == "" {
+		return BadRequest(c, "build id required")
+	}
+
+	c.Set("Content-Type", "text/event-stream")
+	c.Set("Cache-Control", "no-cache")
+	c.Set("X-Accel-Buffering", "no")
+
+ stages := []struct {
+		Stage    string
+		Duration int
+		Message  string
+	}{
+		{"compile", 2000, "正在编译源代码..."},
+		{"test", 3000, "正在运行测试..."},
+		{"package", 1500, "正在打包模块..."},
+	}
+
+	totalMs := 0
+	for _, s := range stages {
+		totalMs += s.Duration
+	}
+
+	elapsed := 0
+	for _, s := range stages {
+		steps := s.Duration / 500
+		if steps < 1 {
+			steps = 1
+		}
+		stepMs := s.Duration / steps
+		for i := 0; i < steps; i++ {
+			elapsed += stepMs
+			progress := elapsed * 100 / totalMs
+			if progress > 100 {
+				progress = 100
+			}
+			evt := fmt.Sprintf(`{"type":"progress","stage":"%s","progress":%d,"message":"%s"}`, s.Stage, progress, s.Message)
+			if _, err := c.Write([]byte("data: " + evt + "\n\n")); err != nil {
+				return err
+			}
+			time.Sleep(time.Duration(stepMs) * time.Millisecond)
+		}
+	}
+
+	completeEvt := `{"type":"progress","stage":"done","progress":100,"message":"构建完成！"}`
+	c.Write([]byte("data: " + completeEvt + "\n\n"))
+	c.Write([]byte("data: [DONE]\n\n"))
+	return nil
+}
+
+// ─── Memory V2 Handlers ───
+
+func (h *AIHandler) getUserID(c fiber.Ctx) string {
+	if uid, ok := c.Locals("user_id").(string); ok && uid != "" {
+		return uid
+	}
+	if uid, ok := c.Locals("uid").(string); ok && uid != "" {
+		return uid
+	}
+	return ""
+}
+
+func (h *AIHandler) GetProjectKnowledge(c fiber.Ctx) error {
+	uid := h.getUserID(c)
+	if uid == "" {
+		return Unauthorized(c, "authentication required")
+	}
+	pid := c.Params("project_id")
+	category := c.Query("category", "")
+	entries, err := h.memV2.ListKnowledge(uid, pid, category)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(entries)
+}
+
+func (h *AIHandler) SaveProjectKnowledge(c fiber.Ctx) error {
+	uid := h.getUserID(c)
+	if uid == "" {
+		return Unauthorized(c, "authentication required")
+	}
+	pid := c.Params("project_id")
+	var body struct {
+		Category string `json:"category"`
+		Key      string `json:"key"`
+		Value    string `json:"value"`
+	}
+	if err := c.Bind().JSON(&body); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "Invalid body"})
+	}
+	if body.Category == "" || body.Key == "" || body.Value == "" {
+		return c.Status(400).JSON(fiber.Map{"error": "category, key, value required"})
+	}
+	if err := h.memV2.SaveKnowledge(uid, pid, body.Category, body.Key, body.Value); err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(fiber.Map{"success": true})
+}
+
+func (h *AIHandler) DeleteProjectKnowledge(c fiber.Ctx) error {
+	uid := h.getUserID(c)
+	if uid == "" {
+		return Unauthorized(c, "authentication required")
+	}
+	pid := c.Params("project_id")
+	cat := c.Params("category")
+	key := c.Params("key")
+	if err := h.memV2.DeleteKnowledge(uid, pid, cat, key); err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(fiber.Map{"success": true})
+}
+
+func (h *AIHandler) GetProjectSummaries(c fiber.Ctx) error {
+	uid := h.getUserID(c)
+	if uid == "" {
+		return Unauthorized(c, "authentication required")
+	}
+	pid := c.Params("project_id")
+	summaries, err := h.memV2.GetProjectSummaries(uid, pid, 20)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(summaries)
+}
+
+func (h *AIHandler) GenerateSummary(c fiber.Ctx) error {
+	uid := h.getUserID(c)
+	if uid == "" {
+		return Unauthorized(c, "authentication required")
+	}
+	var body struct {
+		SessionID string `json:"session_id"`
+		ProjectID string `json:"project_id"`
+		Messages  string `json:"messages"`
+	}
+	if err := c.Bind().JSON(&body); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "Invalid body"})
+	}
+
+	// Call LLM to generate summary
+	prompt := "请简要总结以下对话的关键内容、做出的决定和改动的文件。用JSON格式返回：{\"summary\": \"...\", \"key_decisions\": [\"...\"], \"files_changed\": [\"...\"]}\n\n对话内容:\n" + body.Messages
+
+	resp, err := h.callLLMForSummary(prompt, "你是一个精准的对话总结器。只输出JSON，不要其他内容。")
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	// Parse LLM response
+	var result struct {
+		Summary      string   `json:"summary"`
+		KeyDecisions []string `json:"key_decisions"`
+		FilesChanged []string `json:"files_changed"`
+	}
+	json.Unmarshal([]byte(resp), &result)
+
+	if err := h.memV2.SaveSummary(uid, body.SessionID, body.ProjectID, result.Summary, result.KeyDecisions, result.FilesChanged); err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(result)
+}
+
+// callLLMForSummary makes a simple LLM API call for summary generation
+func (h *AIHandler) callLLMForSummary(prompt, systemPrompt string) (string, error) {
+	body := map[string]interface{}{
+		"model":      h.cfg.LLMModel,
+		"messages":   []map[string]string{{"role": "system", "content": systemPrompt}, {"role": "user", "content": prompt}},
+		"stream":     false,
+		"max_tokens": 4096,
+	}
+	bodyJSON, _ := json.Marshal(body)
+
+	endpoint := h.cfg.LLMEndpoint
+	if !strings.HasSuffix(endpoint, "/chat/completions") {
+		endpoint += "/chat/completions"
+	}
+
+	req, err := http.NewRequest("POST", endpoint, strings.NewReader(string(bodyJSON)))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if apiKey := h.cfg.EffectiveLLMKey(); apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+	}
+
+	client := &http.Client{Timeout: 60 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	respBody, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode >= 400 {
+		return "", fmt.Errorf("LLM API error %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	var result struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return "", err
+	}
+	if len(result.Choices) == 0 {
+		return "", fmt.Errorf("no choices in LLM response")
+	}
+	return result.Choices[0].Message.Content, nil
 }

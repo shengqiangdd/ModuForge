@@ -171,3 +171,69 @@ func (s *MarketService) TrendingModules(limit int) []*domain.MarketModule {
 	}
 	return trending
 }
+
+// Stub implementations for ModuleLister interface (used by in-memory MarketService)
+
+func (s *MarketService) GetModuleVersions(slug string) ([]*domain.ModuleVersion, error) {
+	return nil, nil
+}
+
+func (s *MarketService) RollbackModule(slug, version string) (*domain.MarketModule, error) {
+	return nil, fmt.Errorf("rollback not supported in memory mode")
+}
+
+func (s *MarketService) UpdateModuleVersion(slug, version, changelog string) (*domain.MarketModule, error) {
+	return nil, nil
+}
+
+func (s *MarketService) GetModuleDependencies(slug string) ([]domain.ModuleDependency, error) {
+	return nil, nil
+}
+
+func (s *MarketService) ResolveDependencies(slug string) (*domain.DependencyNode, error) {
+	return nil, nil
+}
+
+func (s *MarketService) CheckDependencyConflicts(slug string) ([]domain.Conflict, error) {
+	return nil, nil
+}
+
+func (s *MarketService) AddScreenshot(slug, url string) (*domain.ModuleScreenshot, error) {
+	return nil, nil
+}
+
+func (s *MarketService) GetScreenshots(slug string) ([]*domain.ModuleScreenshot, error) {
+	return nil, nil
+}
+
+func (s *MarketService) GetScreenshotsByModuleID(moduleID string) ([]*domain.ModuleScreenshot, error) {
+	return nil, nil
+}
+
+func (s *MarketService) DeleteScreenshot(id int64) error {
+	return nil
+}
+
+func (s *MarketService) UpdateModuleCoverImage(slug, coverURL string) error {
+	return nil
+}
+
+func (s *MarketService) CompareModules(slug1, slug2 string) (*domain.ModuleComparison, error) {
+	return nil, nil
+}
+
+func (s *MarketService) GetModuleDemo(slug string) (*domain.ModuleDemo, error) {
+	return nil, nil
+}
+
+func (s *MarketService) GetModuleHealth(slug string) (*HealthScore, error) {
+	return &HealthScore{Score: 100, Level: "good"}, nil
+}
+
+func (s *MarketService) SetModuleTags(slug string, tagIDs []int) error {
+	return nil
+}
+
+func (s *MarketService) GetModuleTags(slug string) ([]domain.ModuleTag, error) {
+	return nil, nil
+}

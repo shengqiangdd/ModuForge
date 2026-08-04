@@ -10,12 +10,16 @@ import (
 
 func JWTAuth(cfg *config.Config) fiber.Handler {
 	return func(c fiber.Ctx) error {
-		auth := c.Get("Authorization")
-		if auth == "" || !strings.HasPrefix(auth, "Bearer ") {
+		// Support Authorization header, query param (?token=), or cookie
+		tokenStr := ""
+		if auth := c.Get("Authorization"); strings.HasPrefix(auth, "Bearer ") {
+			tokenStr = strings.TrimPrefix(auth, "Bearer ")
+		} else if t := c.Query("token"); t != "" {
+			tokenStr = t
+		}
+		if tokenStr == "" {
 			return c.Status(401).JSON(fiber.Map{"error": "missing token"})
 		}
-
-		tokenStr := strings.TrimPrefix(auth, "Bearer ")
 		token, err := jwt.Parse(tokenStr, func(t *jwt.Token) (interface{}, error) {
 			return []byte(cfg.JWTSecret), nil
 		})

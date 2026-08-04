@@ -1,0 +1,592 @@
+package skills
+
+import (
+	"context"
+	"database/sql"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"regexp"
+	"strings"
+	"time"
+
+	"github.com/moduforge/backend/internal/builder"
+)
+
+type BuildModuleSkill struct {
+	projectPath string
+	db          *sql.DB
+}
+
+// compileTimeout is the maximum time allowed for a single compilation command.
+const compileTimeout = 5 * time.Minute
+
+// sourceInfo holds the results of a single-pass source detection walk.
+type sourceInfo struct {
+	hasCargo bool
+	cargoDir string
+	hasCpp   bool
+	hasGo    bool
+	goModDir string
+}
+
+func NewBuildModuleSkill(projectPath string) *BuildModuleSkill {
+	return &BuildModuleSkill{projectPath: projectPath}
+}
+
+func NewBuildModuleSkillWithDB(projectPath string, db *sql.DB) *BuildModuleSkill {
+	return &BuildModuleSkill{projectPath: projectPath, db: db}
+}
+
+// resolvePath 根据 project_id 解析实际文件路径（与 write_file 保持一致）
+func (s *BuildModuleSkill) resolvePath(projectID string) string {
+	return ResolveProjectPath(s.db, s.projectPath, projectID)
+}
+
+func (s *BuildModuleSkill) Name() string {
+	return "build_module"
+}
+
+func (s *BuildModuleSkill) Description() string {
+	return `Build the module: validate → compile → package.
+Input: {} or {"project_id": "..."}.
+Compiles source code (Rust/C/C++/Go), validates structure, then creates ZIP.
+Returns build log with success/failure status.`
+}
+
+func (s *BuildModuleSkill) Execute(ctx context.Context, input map[string]interface{}) (string, error) {
+	projectID, _ := input["project_id"].(string)
+	projectPath := s.resolvePath(projectID)
+
+	var log strings.Builder
+	log.WriteString("🔨 Build Module\n")
+	log.WriteString(fmt.Sprintf("📂 Project: %s\n\n", projectPath))
+
+	// ========== Phase 1: Structure Validation ==========
+	log.WriteString("── Phase 1: Structure Validation ──\n")
+	requiredFiles := []string{"module.prop", "META-INF/com/google/android/update-binary"}
+	var missingFiles []string
+	for _, f := range requiredFiles {
+		path := filepath.Join(projectPath, f)
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			missingFiles = append(missingFiles, f)
+		} else {
+			log.WriteString(fmt.Sprintf("  ✅ %s\n", f))
+		}
+	}
+
+	if len(missingFiles) > 0 {
+		for _, f := range missingFiles {
+			log.WriteString(fmt.Sprintf("  ❌ %s — missing\n", f))
+		}
+		log.WriteString(fmt.Sprintf("\n❌ Build failed: %d required files missing\n", len(missingFiles)))
+		return log.String(), fmt.Errorf("missing required files: %s", strings.Join(missingFiles, ", "))
+	}
+
+	// Check recommended files
+	if _, err := os.Stat(filepath.Join(projectPath, "customize.sh")); os.IsNotExist(err) {
+		log.WriteString("  ⚠️ customize.sh not found (recommended)\n")
+	} else {
+		log.WriteString("  ✅ customize.sh\n")
+	}
+
+	// ========== Phase 1.5: Sync source files from DB to disk ==========
+	log.WriteString("\n── Syncing source files to disk... ──\n")
+	if s.db != nil && projectID != "" {
+		rows, err := s.db.Query(`SELECT path, content FROM project_files WHERE project_id=?`, projectID)
+		if err == nil {
+			defer rows.Close()
+			synced := 0
+			for rows.Next() {
+				var path, content string
+				if err := rows.Scan(&path, &content); err != nil {
+					continue
+				}
+				fullPath := filepath.Join(projectPath, path)
+				dir := filepath.Dir(fullPath)
+				if err := os.MkdirAll(dir, 0755); err != nil {
+					continue
+				}
+				if err := os.WriteFile(fullPath, []byte(content), 0644); err != nil {
+					continue
+				}
+				synced++
+			}
+			log.WriteString(fmt.Sprintf("  ✅ Synced %d files from database\n", synced))
+		}
+	}
+
+	// ========== Phase 2: Source Compilation ==========
+	log.WriteString("\n── Phase 2: Source Compilation ──\n")
+	compileResult := s.compileSources(projectPath)
+	log.WriteString(compileResult)
+
+	// ========== Phase 3: Shell Script Validation ==========
+	log.WriteString("\n── Phase 3: Shell Script Validation ──\n")
+	shellValid := s.validateShellScripts(projectPath)
+	if shellValid {
+		log.WriteString("  ✅ All shell scripts passed syntax check\n")
+	} else {
+		log.WriteString("  ⚠️ Some shell scripts have syntax issues (see above)\n")
+	}
+
+	// ========== Phase 4: Package ==========
+	log.WriteString("\n── Phase 4: Package ──\n")
+	outputZIP := filepath.Join(filepath.Dir(projectPath), "output.zip")
+	if err := s.removeExisting(outputZIP); err != nil {
+		log.WriteString(fmt.Sprintf("  ⚠️ Could not remove old output: %v\n", err))
+	}
+	if err := builder.ZipDirExcluding(projectPath, outputZIP, builder.ModuleExcludePatterns); err != nil {
+		log.WriteString(fmt.Sprintf("  ❌ ZIP creation failed: %v\n", err))
+		return log.String(), fmt.Errorf("build failed: %v", err)
+	}
+
+	// Get zip size
+	if info, err := os.Stat(outputZIP); err == nil {
+		sizeMB := float64(info.Size()) / 1024 / 1024
+		log.WriteString(fmt.Sprintf("  ✅ %s (%.1f MB)\n", outputZIP, sizeMB))
+	} else {
+		log.WriteString(fmt.Sprintf("  ✅ %s\n", outputZIP))
+	}
+
+	log.WriteString("\n✅ Build complete!\n")
+	return log.String(), nil
+}
+
+// detectSources performs a single filepath.Walk to detect all source types
+// in the project, replacing multiple separate walks for Rust/C++/Go detection.
+func (s *BuildModuleSkill) detectSources(projectPath string) sourceInfo {
+	var info sourceInfo
+	_ = filepath.Walk(projectPath, func(path string, fi os.FileInfo, err error) error {
+		if err != nil || fi.IsDir() {
+			return nil
+		}
+		name := fi.Name()
+		ext := strings.ToLower(filepath.Ext(path))
+
+		// Rust: look for Cargo.toml
+		if !info.hasCargo && name == "Cargo.toml" {
+			info.hasCargo = true
+			info.cargoDir = filepath.Dir(path)
+		}
+
+		// C/C++: source files (.cpp, .c, .cc, .cxx)
+		if !info.hasCpp {
+			switch ext {
+			case ".cpp", ".c", ".cc", ".cxx":
+				info.hasCpp = true
+			}
+		}
+		// C/C++: build manifests at project root (Android.mk, CMakeLists.txt)
+		if !info.hasCpp && (name == "Android.mk" || name == "CMakeLists.txt") {
+			if rel, err := filepath.Rel(projectPath, filepath.Dir(path)); err == nil && rel == "." {
+				info.hasCpp = true
+			}
+		}
+
+		// Go: go.mod or .go files
+		if !info.hasGo {
+			if name == "go.mod" {
+				info.hasGo = true
+				info.goModDir = filepath.Dir(path)
+			} else if strings.HasSuffix(path, ".go") {
+				info.hasGo = true
+			}
+		}
+
+		return nil
+	})
+	return info
+}
+
+// compileSources 编译项目中的源代码
+func (s *BuildModuleSkill) compileSources(projectPath string) string {
+	var log strings.Builder
+	hasSources := false
+
+	// Single walk pass to detect all source types
+	sources := s.detectSources(projectPath)
+
+	// Compile Rust
+	if sources.hasCargo {
+		hasSources = true
+		log.WriteString("  🔧 Compiling Rust...\n")
+		result := s.compileRust(projectPath, sources.cargoDir)
+		log.WriteString(result)
+	}
+
+	// Compile C/C++
+	if sources.hasCpp {
+		hasSources = true
+		log.WriteString("  🔧 Compiling C/C++...\n")
+		result := s.compileCpp(projectPath)
+		log.WriteString(result)
+	}
+
+	// Compile Go
+	if sources.hasGo {
+		hasSources = true
+		log.WriteString("  🔧 Compiling Go...\n")
+		result := s.compileGo(projectPath)
+		log.WriteString(result)
+	}
+
+	if !hasSources {
+		log.WriteString("  ℹ️ No compiled sources found (shell-only module)\n")
+	}
+
+	return log.String()
+}
+
+// compileRust 编译 Rust 代码
+func (s *BuildModuleSkill) compileRust(projectPath string, cargoDir string) string {
+	cargoPath := findExec("cargo")
+	if cargoPath == "" {
+		return "  ⚠️ cargo not found, skipping Rust compilation\n"
+	}
+
+	// Try cross-compilation for Android first
+	// Find NDK clang - trimmed NDK uses /opt/android-ndk/bin/ directly
+	ndkClang := ""
+	candidates := []string{
+		"/opt/android-ndk/bin/aarch64-linux-android21-clang",
+		"/opt/android-ndk/bin/aarch64-linux-android-clang",
+		filepath.Join(os.Getenv("ANDROID_NDK"), "bin", "aarch64-linux-android21-clang"),
+		filepath.Join(os.Getenv("ANDROID_NDK"), "bin", "aarch64-linux-android-clang"),
+	}
+	for _, c := range candidates {
+		if _, err := os.Stat(c); err == nil {
+			ndkClang = c
+			break
+		}
+	}
+
+	// Create .cargo/config.toml with correct linker if NDK found
+	cargoConfig := filepath.Join(cargoDir, ".cargo", "config.toml")
+	if ndkClang != "" {
+		ndkDir := filepath.Dir(ndkClang)
+		os.MkdirAll(filepath.Dir(cargoConfig), 0755)
+		configContent := fmt.Sprintf(`[target.aarch64-linux-android]
+linker = "%s"
+`, filepath.Join(ndkDir, "aarch64-linux-android21-clang"))
+		os.WriteFile(cargoConfig, []byte(configContent), 0644)
+	}
+
+	// Use context with timeout to prevent hanging compilations
+	ctx, cancel := context.WithTimeout(context.Background(), compileTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "cargo", "build", "--release", "--target", "aarch64-linux-android")
+	cmd.Dir = cargoDir
+	cmd.Env = append(os.Environ(),
+		"CARGO_INCREMENTAL=1",
+		"CC_aarch64_linux_android="+ndkClang,
+		"CXX_aarch64_linux_android="+strings.Replace(ndkClang, "-clang", "-clang++", 1),
+		"CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="+ndkClang,
+	)
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		// Cross-compilation failed, fall back to host compilation for validation
+		outputStr := string(output)
+		if strings.Contains(outputStr, "linker") || strings.Contains(outputStr, "not found") || ndkClang == "" {
+			// Linker not found - try host compilation to validate code quality
+			ctxHost, cancelHost := context.WithTimeout(context.Background(), compileTimeout)
+			defer cancelHost()
+			cmdHost := exec.CommandContext(ctxHost, "cargo", "build", "--release")
+			cmdHost.Dir = cargoDir
+			outputHost, errHost := cmdHost.CombinedOutput()
+			if errHost != nil {
+				return fmt.Sprintf("  ❌ Rust build failed:\n%s\n", string(outputHost))
+			}
+			return fmt.Sprintf("  ✅ Rust build succeeded (host target, cross-compile skipped: linker not found)\n")
+		}
+		return fmt.Sprintf("  ❌ Rust build failed:\n%s\n", outputStr)
+	}
+
+	// Copy compiled binary to system/bin/
+	// Dynamic: read [[bin]] name from Cargo.toml, fallback to "androst"
+	binName := "androst"
+	cargoToml := filepath.Join(cargoDir, "Cargo.toml")
+	if data, err := os.ReadFile(cargoToml); err == nil {
+		content := string(data)
+		// Try [[bin]] name = "xxx"
+		if m := regexp.MustCompile(`(?m)^\[\[bin\]\]\s*\n\s*name\s*=\s*"([^"]+)"`).FindStringSubmatch(content); len(m) > 1 {
+			binName = m[1]
+		} else if m := regexp.MustCompile(`(?m)^name\s*=\s*"([^"]+)"`).FindStringSubmatch(content); len(m) > 1 {
+			binName = m[1]
+		}
+	}
+	// Also copy ALL binaries from target/release to system/bin/
+	releaseDir := filepath.Join(cargoDir, "target", "aarch64-linux-android", "release")
+	binDst := filepath.Join(projectPath, "system", "bin")
+	os.MkdirAll(binDst, 0755)
+	if entries, err := os.ReadDir(releaseDir); err == nil {
+		for _, e := range entries {
+			if e.IsDir() {
+				continue
+			}
+			info, err := e.Info()
+			if err != nil || info.Mode().Perm()&0111 == 0 {
+				continue // skip non-executable files
+			}
+			src := filepath.Join(releaseDir, e.Name())
+			dst := filepath.Join(binDst, e.Name())
+			if data, err := os.ReadFile(src); err == nil {
+				os.WriteFile(dst, data, 0755)
+			}
+		}
+	}
+	// Fallback: if specific binName not in system/bin, copy from target
+	specificBin := filepath.Join(releaseDir, binName)
+	if _, err := os.Stat(specificBin); err == nil {
+		dst := filepath.Join(binDst, binName)
+		if data, err := os.ReadFile(specificBin); err == nil {
+			os.WriteFile(dst, data, 0755)
+		}
+	}
+
+	return fmt.Sprintf("  ✅ Rust build succeeded (binaries copied to system/bin/)\n")
+}
+
+// compileCpp 编译 C/C++ 代码
+func (s *BuildModuleSkill) compileCpp(projectPath string) string {
+	// 查找 Android.mk 或 CMakeLists.txt
+	if s.hasFile(projectPath, "Android.mk") {
+		// Android.mk 需要 ndk-build
+		ndkBuild := findExec("ndk-build")
+		if ndkBuild == "" {
+			ndkBase := os.Getenv("ANDROID_NDK")
+			if ndkBase != "" {
+				ndkBuild = filepath.Join(ndkBase, "ndk-build")
+				if _, err := os.Stat(ndkBuild); err != nil {
+					ndkBuild = ""
+				}
+			}
+		}
+		if ndkBuild == "" {
+			return "  ⚠️ ndk-build not found, skipping Android.mk compilation\n"
+		}
+
+		cmd := exec.Command(ndkBuild, "-C", projectPath, "NDK_PROJECT_PATH="+projectPath)
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			return fmt.Sprintf("  ❌ ndk-build failed:\n%s\n", string(output))
+		}
+		return "  ✅ ndk-build succeeded\n"
+	}
+
+	// Fallback: 直接用 g++/clang++ 做语法检查
+	compiler := findCppCompiler()
+	if compiler == "" {
+		return "  ⚠️ No C++ compiler found, skipping compilation check\n"
+	}
+
+	var srcFiles []string
+	filepath.Walk(projectPath, func(path string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() {
+			return nil
+		}
+		ext := strings.ToLower(filepath.Ext(path))
+		if ext == ".cpp" || ext == ".c" || ext == ".cc" {
+			srcFiles = append(srcFiles, path)
+		}
+		return nil
+	})
+
+	if len(srcFiles) == 0 {
+		return "  ℹ️ No C/C++ source files found\n"
+	}
+
+	args := append([]string{"-std=c++17", "-fsyntax-only", "-Wall"}, srcFiles...)
+	cmd := exec.Command(compiler, args...)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Sprintf("  ❌ C++ syntax check failed:\n%s\n", string(output))
+	}
+
+	// Try to compile with NDK for Android ARM64
+	ndkClangpp := ""
+	candidates := []string{
+		"/opt/android-ndk/bin/aarch64-linux-android21-clang++",
+		"/opt/android-ndk/bin/aarch64-linux-android-clang++",
+	}
+	for _, c := range candidates {
+		if _, err := os.Stat(c); err == nil {
+			ndkClangpp = c
+			break
+		}
+	}
+
+	if ndkClangpp != "" {
+		// projectPath is like .../1785249992652501794-1864, need .../1785249992652501794-1864/system/bin/
+		binDst := filepath.Join(projectPath, "system", "bin", "andromon")
+		os.MkdirAll(filepath.Dir(binDst), 0755)
+
+		compileArgs := append([]string{"-std=c++17", "-O2", "-o", binDst}, srcFiles...)
+		cmdCompile := exec.Command(ndkClangpp, compileArgs...)
+		cmdCompile.Env = append(os.Environ(),
+			"SYSROOT=/opt/android-ndk/sysroot",
+		)
+		if output, err := cmdCompile.CombinedOutput(); err != nil {
+			return fmt.Sprintf("  ⚠️ C++ NDK compile failed: %s\n", string(output))
+		}
+		return "  ✅ C/C++ compiled and installed\n"
+	}
+
+	return "  ✅ C/C++ syntax check passed\n"
+}
+
+// compileGo 编译 Go 代码
+func (s *BuildModuleSkill) compileGo(projectPath string) string {
+	// Use /usr/local/go/bin/go if available (container environment)
+	goBin := "/usr/local/go/bin/go"
+	if _, err := os.Stat(goBin); os.IsNotExist(err) {
+		goBin = findExec("go")
+	}
+	if goBin == "" {
+		return "  ⚠️ go not found, skipping Go compilation\n"
+	}
+
+	// Find the directory containing go.mod (may be in a subdirectory like src/go/)
+	goModDir := projectPath
+	if !s.hasFile(projectPath, "go.mod") {
+		filepath.Walk(projectPath, func(path string, info os.FileInfo, err error) error {
+			if err != nil || info.IsDir() || goModDir != projectPath {
+				return nil
+			}
+			if info.Name() == "go.mod" {
+				goModDir = filepath.Dir(path)
+			}
+			return nil
+		})
+	}
+
+	// projectPath is always the project root — use it directly instead of
+	// computing from goModDir (which breaks when goModDir nesting depth varies)
+	binDst := filepath.Join(projectPath, "system", "bin", "androwui")
+	os.MkdirAll(filepath.Dir(binDst), 0755)
+
+	// Use context with timeout to prevent hanging compilations
+	ctx, cancel := context.WithTimeout(context.Background(), compileTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, goBin, "build", "-o", binDst, ".")
+	cmd.Dir = goModDir
+
+	// Auto-detect CGO: check for .c files or cgo imports
+	needsCGO := false
+	filepath.Walk(goModDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() || needsCGO {
+			return nil
+		}
+		ext := strings.ToLower(filepath.Ext(path))
+		if ext == ".c" || ext == ".h" {
+			needsCGO = true
+			return filepath.SkipDir
+		}
+		return nil
+	})
+
+	cgoEnabled := "0"
+	if needsCGO {
+		cgoEnabled = "1"
+	}
+	cmd.Env = append(os.Environ(),
+		"GOOS=android",
+		"GOARCH=arm64",
+		"CGO_ENABLED="+cgoEnabled,
+	)
+	output, err := cmd.CombinedOutput()
+	if ctx.Err() == context.DeadlineExceeded {
+		return fmt.Sprintf("  ❌ Go build timed out after %v\n", compileTimeout)
+	}
+	if err != nil {
+		return fmt.Sprintf("  ❌ Go build failed (dir=%s):\n%s\n", goModDir, string(output))
+	}
+	return fmt.Sprintf("  ✅ Go build succeeded (dir=%s)\n", goModDir)
+}
+
+// validateShellScripts 验证 shell 脚本语法
+func (s *BuildModuleSkill) validateShellScripts(projectPath string) bool {
+	allPass := true
+	scripts := []string{"customize.sh", "service.sh", "post-fs-data.sh", "uninstall.sh", "action.sh"}
+
+	for _, script := range scripts {
+		fullPath := filepath.Join(projectPath, script)
+		if _, err := os.Stat(fullPath); os.IsNotExist(err) {
+			continue
+		}
+
+		cmd := exec.Command("bash", "-n", fullPath)
+		if output, err := cmd.CombinedOutput(); err != nil {
+			fmt.Printf("  ❌ %s: %s\n", script, strings.TrimSpace(string(output)))
+			allPass = false
+		}
+	}
+
+	return allPass
+}
+
+// hasFile 检查文件是否存在
+func (s *BuildModuleSkill) hasFile(projectPath, name string) bool {
+	_, err := os.Stat(filepath.Join(projectPath, name))
+	return err == nil
+}
+
+// hasCppSources 检查是否有 C/C++ 源文件 (thin wrapper around detectSources)
+func (s *BuildModuleSkill) hasCppSources(projectPath string) bool {
+	return s.detectSources(projectPath).hasCpp
+}
+
+// hasGoSources 检查是否有 Go 源文件 (thin wrapper around detectSources)
+func (s *BuildModuleSkill) hasGoSources(projectPath string) bool {
+	return s.detectSources(projectPath).hasGo
+}
+
+// removeExisting 删除已有文件
+func (s *BuildModuleSkill) removeExisting(path string) error {
+	if _, err := os.Stat(path); err == nil {
+		return os.Remove(path)
+	}
+	return nil
+}
+
+// findExec 查找可执行文件
+func findExec(name string) string {
+	if path, err := exec.LookPath(name); err == nil {
+		return path
+	}
+	return ""
+}
+
+// findCppCompiler 查找 C++ 编译器
+func findCppCompiler() string {
+	for _, name := range []string{"g++", "clang++", "gcc", "cc"} {
+		if p := findExec(name); p != "" {
+			return p
+		}
+	}
+	// NDK
+	ndkBase := os.Getenv("ANDROID_NDK")
+	if ndkBase != "" {
+		candidates := []string{
+			filepath.Join(ndkBase, "bin", "clang++"),
+			filepath.Join(ndkBase, "bin", "clang"),
+		}
+		for _, c := range candidates {
+			if _, err := os.Stat(c); err == nil {
+				return c
+			}
+		}
+	}
+	return ""
+}
+
+func (s *BuildModuleSkill) Metadata() SkillMeta {
+	return SkillMeta{
+		ReadOnly:  false,
+		Essential: true,
+		NeedsDB:   true,
+		NeedsLLM:  false,
+	}
+}
