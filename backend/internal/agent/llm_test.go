@@ -6,12 +6,9 @@ import (
 
 func testToolCall(name, args string) LLMToolCall {
 	return LLMToolCall{
-		ID:   "call_1",
-		Type: "function",
-		Function: struct {
-			Name      string `json:"name"`
-			Arguments string `json:"arguments"`
-		}{Name: name, Arguments: args},
+		ID:       "call_1",
+		Type:     "function",
+		Function: ToolCallFunction{Name: name, Arguments: args},
 	}
 }
 

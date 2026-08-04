@@ -439,14 +439,17 @@ type LLMResponse struct {
 	FinishReason string        `json:"finish_reason,omitempty"` // "stop" or "length"
 }
 
+// ToolCallFunction holds the function details of a tool call.
+type ToolCallFunction struct {
+	Name      string `json:"name"`
+	Arguments string `json:"arguments"`
+}
+
 // LLMToolCall represents a single tool call returned by the LLM.
 type LLMToolCall struct {
-	ID       string `json:"id"`
-	Type     string `json:"type"`
-	Function struct {
-		Name      string `json:"name"`
-		Arguments string `json:"arguments"`
-	} `json:"function"`
+	ID       string           `json:"id"`
+	Type     string           `json:"type"`
+	Function ToolCallFunction `json:"function"`
 }
 
 func (r *AgentRunner) callLLMWithTools(ctx context.Context, messages []map[string]interface{}, tools []ToolDef, w SSEWriter, userID, reqProviderID, reqModel string, cfg RunConfig) (*LLMResponse, error) {
@@ -700,10 +703,10 @@ func (r *AgentRunner) parseStreamingResponse(ctx context.Context, resp *http.Res
 				toolCallMap[idx] = &LLMToolCall{
 					ID:   tc.ID,
 					Type: tc.Type,
-					Function: struct {
-						Name      string `json:"name"`
-						Arguments string `json:"arguments"`
-					}{Name: tc.Function.Name, Arguments: tc.Function.Arguments},
+					Function: ToolCallFunction{
+						Name:      tc.Function.Name,
+						Arguments: tc.Function.Arguments,
+					},
 				}
 			} else {
 				if tc.ID != "" {
@@ -727,14 +730,7 @@ func (r *AgentRunner) parseStreamingResponse(ctx context.Context, resp *http.Res
 	}
 	close(keepAliveDone)
 
-	if len(toolCallMap) > 0 {
-		toolCalls = make([]LLMToolCall, 0, len(toolCallMap))
-		for i := 0; i < len(toolCallMap); i++ {
-			if tc, ok := toolCallMap[i]; ok {
-				toolCalls = append(toolCalls, *tc)
-			}
-		}
-	}
+	toolCalls = mergeToolCalls(toolCallMap)
 
 	// Validate and repair tool calls from weak models
 	toolCalls = repairToolCalls(toolCalls)
@@ -745,6 +741,20 @@ func (r *AgentRunner) parseStreamingResponse(ctx context.Context, resp *http.Res
 		ToolCalls:    toolCalls,
 		FinishReason: finishReason,
 	}, nil
+}
+
+// mergeToolCalls flattens the per-index tool call map into an ordered slice.
+func mergeToolCalls(toolCallMap map[int]*LLMToolCall) []LLMToolCall {
+	if len(toolCallMap) == 0 {
+		return nil
+	}
+	toolCalls := make([]LLMToolCall, 0, len(toolCallMap))
+	for i := 0; i < len(toolCallMap); i++ {
+		if tc, ok := toolCallMap[i]; ok {
+			toolCalls = append(toolCalls, *tc)
+		}
+	}
+	return toolCalls
 }
 
 // repairToolCalls attempts to fix malformed tool call JSON from weak/free models.
@@ -771,80 +781,9 @@ func repairToolCalls(toolCalls []LLMToolCall) []LLMToolCall {
 		// Try to parse as JSON
 		var parsed map[string]interface{}
 		if err := json.Unmarshal([]byte(args), &parsed); err != nil {
-			// Attempt repair: common fixes for weak models
-			fixed := args
-
-			// Fix 1: Unescaped newlines in strings
-			fixed = strings.ReplaceAll(fixed, "\n", "\\n")
-			fixed = strings.ReplaceAll(fixed, "\r", "\\r")
-			fixed = strings.ReplaceAll(fixed, "\t", "\\t")
-
-			// Fix 2: Try to find JSON object boundaries
-			start := strings.Index(fixed, "{")
-			end := strings.LastIndex(fixed, "}")
-			if start >= 0 && end > start {
-				fixed = fixed[start : end+1]
-			}
-
-			// Fix 3: Try to fix trailing commas
-			fixed = strings.ReplaceAll(fixed, ",}", "}")
-			fixed = strings.ReplaceAll(fixed, ",]", "]")
-
-			// Fix 4: Fix unescaped quotes inside strings (common in code content)
-			// This is tricky - we need to be careful not to break valid JSON
-			// Only apply if the JSON still fails after other fixes
-
-			// Fix 5: Fix missing colons between key and value
-			fixed = strings.ReplaceAll(fixed, `"path" "`, `"path": "`)
-			fixed = strings.ReplaceAll(fixed, `"content" "`, `"content": "`)
-			fixed = strings.ReplaceAll(fixed, `"query" "`, `"query": "`)
-			fixed = strings.ReplaceAll(fixed, `"thought" "`, `"thought": "`)
-			fixed = strings.ReplaceAll(fixed, `"action" "`, `"action": "`)
-			fixed = strings.ReplaceAll(fixed, `"key" "`, `"key": "`)
-			fixed = strings.ReplaceAll(fixed, `"value" "`, `"value": "`)
-			fixed = strings.ReplaceAll(fixed, `"description" "`, `"description": "`)
-
-			// Fix 6: Fix single quotes instead of double quotes for keys
-			fixed = strings.ReplaceAll(fixed, "'path'", `"path"`)
-			fixed = strings.ReplaceAll(fixed, "'content'", `"content"`)
-			fixed = strings.ReplaceAll(fixed, "'query'", `"query"`)
-			fixed = strings.ReplaceAll(fixed, "'thought'", `"thought"`)
-			fixed = strings.ReplaceAll(fixed, "'action'", `"action"`)
-			fixed = strings.ReplaceAll(fixed, "'key'", `"key"`)
-			fixed = strings.ReplaceAll(fixed, "'value'", `"value"`)
-
-			// Try again
-			if err2 := json.Unmarshal([]byte(fixed), &parsed); err2 != nil {
-				// Fix 7: Try to extract the first valid JSON object from the string
-				// Some models prefix with explanatory text
-				idx := strings.Index(fixed, "{")
-				if idx > 0 {
-					candidate := fixed[idx:]
-					// Find matching closing brace
-					depth := 0
-					endIdx := -1
-					for i, ch := range candidate {
-						if ch == '{' {
-							depth++
-						} else if ch == '}' {
-							depth--
-							if depth == 0 {
-								endIdx = i + 1
-								break
-							}
-						}
-					}
-					if endIdx > 0 {
-						candidate = candidate[:endIdx]
-						if err3 := json.Unmarshal([]byte(candidate), &parsed); err3 == nil {
-							tc.Function.Arguments = candidate
-							repaired = append(repaired, tc)
-							continue
-						}
-					}
-				}
-
-				log.Printf("[Agent] cannot repair tool call JSON for %s: %v (original: %s)", tc.Function.Name, err2, args[:min(len(args), 100)])
+			fixed, repairErr := repairJSONArguments(args)
+			if repairErr != nil {
+				log.Printf("[Agent] cannot repair tool call JSON for %s: %v (original: %s)", tc.Function.Name, repairErr, args[:min(len(args), 100)])
 				// Skip this tool call - it's unrecoverable
 				continue
 			}
@@ -855,6 +794,84 @@ func repairToolCalls(toolCalls []LLMToolCall) []LLMToolCall {
 	}
 
 	return repaired
+}
+
+// repairJSONArguments applies a chain of progressively more aggressive fixes to
+// malformed tool-call argument JSON. Returns the fixed JSON or an error if all
+// repair attempts fail.
+func repairJSONArguments(args string) (string, error) {
+	fixed := args
+
+	// Fix 1: Unescaped newlines in strings
+	fixed = strings.ReplaceAll(fixed, "\n", "\\n")
+	fixed = strings.ReplaceAll(fixed, "\r", "\\r")
+	fixed = strings.ReplaceAll(fixed, "\t", "\\t")
+
+	// Fix 2: Try to find JSON object boundaries
+	start := strings.Index(fixed, "{")
+	end := strings.LastIndex(fixed, "}")
+	if start >= 0 && end > start {
+		fixed = fixed[start : end+1]
+	}
+
+	// Fix 3: Try to fix trailing commas
+	fixed = strings.ReplaceAll(fixed, ",}", "}")
+	fixed = strings.ReplaceAll(fixed, ",]", "]")
+
+	// Fix 4: Fix unescaped quotes inside strings (common in code content)
+	// This is tricky - we need to be careful not to break valid JSON
+	// Only apply if the JSON still fails after other fixes
+
+	// Fix 5: Fix missing colons between key and value
+	fixed = strings.ReplaceAll(fixed, `"path" "`, `"path": "`)
+	fixed = strings.ReplaceAll(fixed, `"content" "`, `"content": "`)
+	fixed = strings.ReplaceAll(fixed, `"query" "`, `"query": "`)
+	fixed = strings.ReplaceAll(fixed, `"thought" "`, `"thought": "`)
+	fixed = strings.ReplaceAll(fixed, `"action" "`, `"action": "`)
+	fixed = strings.ReplaceAll(fixed, `"key" "`, `"key": "`)
+	fixed = strings.ReplaceAll(fixed, `"value" "`, `"value": "`)
+	fixed = strings.ReplaceAll(fixed, `"description" "`, `"description": "`)
+
+	// Fix 6: Fix single quotes instead of double quotes for keys
+	fixed = strings.ReplaceAll(fixed, "'path'", `"path"`)
+	fixed = strings.ReplaceAll(fixed, "'content'", `"content"`)
+	fixed = strings.ReplaceAll(fixed, "'query'", `"query"`)
+	fixed = strings.ReplaceAll(fixed, "'thought'", `"thought"`)
+	fixed = strings.ReplaceAll(fixed, "'action'", `"action"`)
+	fixed = strings.ReplaceAll(fixed, "'key'", `"key"`)
+	fixed = strings.ReplaceAll(fixed, "'value'", `"value"`)
+
+	var parsed map[string]interface{}
+	if err := json.Unmarshal([]byte(fixed), &parsed); err != nil {
+		// Fix 7: Try to extract the first valid JSON object from the string
+		// Some models prefix with explanatory text
+		idx := strings.Index(fixed, "{")
+		if idx > 0 {
+			candidate := fixed[idx:]
+			// Find matching closing brace
+			depth := 0
+			endIdx := -1
+			for i, ch := range candidate {
+				if ch == '{' {
+					depth++
+				} else if ch == '}' {
+					depth--
+					if depth == 0 {
+						endIdx = i + 1
+						break
+					}
+				}
+			}
+			if endIdx > 0 {
+				candidate = candidate[:endIdx]
+				if err3 := json.Unmarshal([]byte(candidate), &parsed); err3 == nil {
+					return candidate, nil
+				}
+			}
+		}
+		return "", err
+	}
+	return fixed, nil
 }
 
 // resolveLLMConfig picks the right endpoint/apiKey/model for this request.

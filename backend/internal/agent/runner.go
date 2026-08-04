@@ -1667,10 +1667,7 @@ You are running WITHOUT a project context. This means:
 
 		// Execute tools: parallel for read-only AND different-file writes, sequential for same-file writes
 		var mu sync.Mutex
-		var results []struct {
-			tc     LLMToolCall
-			result string
-		}
+		var results []toolResult
 
 		// NEW: Analyze dependencies for better parallelism
 		r.depGraph.Reset()
@@ -1728,10 +1725,7 @@ You are running WITHOUT a project context. This means:
 					if cached := toolCache.get(task.skillName, task.skillInput); cached != "" {
 						debugLog("cache HIT (parallel) for %s", task.skillName)
 						mu.Lock()
-						results = append(results, struct {
-							tc     LLMToolCall
-							result string
-						}{tc: task.tc, result: cached})
+						appendToolResultToList(&results, task.tc, cached)
 						mu.Unlock()
 						w.WriteSSE(map[string]interface{}{
 							"type":    "step",
@@ -1748,10 +1742,7 @@ You are running WITHOUT a project context. This means:
 							if wc := r.getCachedWriteContent(sessionID, path); wc != "" {
 								debugLog("writeContentCache HIT for read_file: %s", path)
 								mu.Lock()
-								results = append(results, struct {
-									tc     LLMToolCall
-									result string
-								}{tc: task.tc, result: wc})
+								appendToolResultToList(&results, task.tc, wc)
 								mu.Unlock()
 								w.WriteSSE(map[string]interface{}{
 									"type":    "step",
@@ -1778,19 +1769,10 @@ You are running WITHOUT a project context. This means:
 					}
 
 					// Truncate large results
-					if len(result) > cfg.MaxResultLen {
-						if modelTier == TierFree {
-							result = smartSummarizeResult(result, task.skillName, cfg.MaxResultLen)
-						} else {
-							result = summarizeResult(result, cfg.MaxResultLen)
-						}
-					}
+					result = truncateResultForModel(result, task.skillName, modelTier, cfg.MaxResultLen)
 
 					mu.Lock()
-					results = append(results, struct {
-						tc     LLMToolCall
-						result string
-					}{tc: task.tc, result: result})
+					appendToolResultToList(&results, task.tc, result)
 					// Track parallel tool calls for loop detection
 					toolCallHistory[task.skillName]++
 					totalToolCalls++
@@ -2056,13 +2038,7 @@ You are running WITHOUT a project context. This means:
 			}
 
 			// Truncate large results
-			if len(result) > cfg.MaxResultLen {
-				if modelTier == TierFree {
-					result = smartSummarizeResult(result, st.skillName, cfg.MaxResultLen)
-				} else {
-					result = summarizeResult(result, cfg.MaxResultLen)
-				}
-			}
+			result = truncateResultForModel(result, st.skillName, modelTier, cfg.MaxResultLen)
 
 			w.WriteSSE(map[string]interface{}{
 				"type":    "step",
@@ -2072,10 +2048,7 @@ You are running WITHOUT a project context. This means:
 			})
 
 			mu.Lock()
-			results = append(results, struct {
-				tc     LLMToolCall
-				result string
-			}{tc: st.tc, result: result})
+			appendToolResultToList(&results, st.tc, result)
 			mu.Unlock()
 		}
 
@@ -2089,10 +2062,7 @@ You are running WITHOUT a project context. This means:
 						if res.tc.Function.Name == deduped[executedIdx].skillName &&
 							res.tc.Function.Arguments == deduped[executedIdx].tc.Function.Arguments {
 							mu.Lock()
-							results = append(results, struct {
-								tc     LLMToolCall
-								result string
-							}{tc: origTC, result: res.result})
+							appendToolResultToList(&results, origTC, res.result)
 							mu.Unlock()
 							debugLog("dedup: mapped skipped %s (id=%s) to executed result (id=%s)",
 								origTC.Function.Name, origTC.ID, res.tc.ID)
@@ -2152,74 +2122,7 @@ You are running WITHOUT a project context. This means:
 
 		// Add all results to conversation in order
 		// Optimization 18: Merge consecutive write_file results to save tokens
-		var pendingWriteFiles []struct {
-			tc     LLMToolCall
-			result string
-			path   string
-		}
-		flushWriteFiles := func() {
-			if len(pendingWriteFiles) == 0 {
-				return
-			}
-			if len(pendingWriteFiles) == 1 {
-				// Single write_file — add as-is
-				wf := pendingWriteFiles[0]
-				conversation = r.appendToolResult(conversation, sessionID, wf.tc.ID, wf.result)
-			} else {
-				// Multiple consecutive write_files — merge into summary
-				var paths []string
-				for _, wf := range pendingWriteFiles {
-					paths = append(paths, wf.path)
-				}
-				merged := fmt.Sprintf("✅ Successfully wrote %d files: %s",
-					len(pendingWriteFiles), strings.Join(paths, ", "))
-				// Add one merged result for the first tool_call_id, skip the rest
-				conversation = r.appendToolResult(conversation, sessionID, pendingWriteFiles[0].tc.ID, merged)
-				// For the remaining write_file calls, add empty acknowledges
-				for _, wf := range pendingWriteFiles[1:] {
-					conversation = r.appendToolResult(conversation, sessionID, wf.tc.ID, "(merged into previous result)")
-				}
-				debugLog("merged %d write_file results into one message (saved ~%d tokens)",
-					len(pendingWriteFiles), len(pendingWriteFiles)*50)
-			}
-			pendingWriteFiles = nil
-		}
-
-		for _, res := range results {
-			isWrite := res.tc.Function.Name == "write_file"
-			if isWrite {
-				// Extract path from the result or tool call
-				path := ""
-				if idx := strings.Index(res.result, "[project_id:"); idx >= 0 {
-					// Result contains project_id prefix, path is in the tool call
-					path = res.tc.Function.Arguments
-				}
-				// Try to get path from arguments
-				var args map[string]interface{}
-				if json.Unmarshal([]byte(res.tc.Function.Arguments), &args) == nil {
-					if p, ok := args["path"].(string); ok {
-						path = p
-					}
-				}
-				if path == "" {
-					path = fmt.Sprintf("file_%d", len(pendingWriteFiles))
-				}
-				pendingWriteFiles = append(pendingWriteFiles, struct {
-					tc     LLMToolCall
-					result string
-					path   string
-				}{tc: res.tc, result: res.result, path: path})
-				continue
-			}
-			// Non-write tool: flush pending writes first
-			flushWriteFiles()
-			conversation = r.appendToolResult(conversation, sessionID, res.tc.ID, res.result)
-
-			debugLog("tool=%s resultLen=%d uniqueOps=%d totalCalls=%d",
-				res.tc.Function.Name, len(res.result), len(uniqueOps), totalToolCalls)
-		}
-		// Flush any remaining write_file results
-		flushWriteFiles()
+		conversation = r.appendResultsToConversation(conversation, sessionID, results, uniqueOps, totalToolCalls)
 
 		// Optimization 24: Self-reflection — track failures and inject diagnostic prompts
 		// Update error tracking for each tool result
