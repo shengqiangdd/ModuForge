@@ -817,8 +817,8 @@
 {/if}
 
 {#if showPublishTemplate}
-  <div class="fixed inset-0 flex items-center justify-center z-50 p-4 animate-[fadeIn_0.15s_ease-out]" style="background: rgba(0,0,0,0.6); backdrop-filter: blur(8px)" onclick={() => showPublishTemplate = false}>
-    <div class="rounded-2xl max-w-md w-full border animate-[scaleIn_0.2s_ease-out]" style="background: var(--color-bg-elevated); border-color: var(--color-border); box-shadow: var(--shadow-xl)" onclick={(e) => e.stopPropagation()}>
+  <div class="fixed inset-0 flex items-center justify-center z-50 p-4 animate-[fadeIn_0.15s_ease-out]" style="background: rgba(0,0,0,0.6); backdrop-filter: blur(8px)" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) showPublishTemplate = false; }}>
+    <div class="rounded-2xl max-w-md w-full border animate-[scaleIn_0.2s_ease-out]" style="background: var(--color-bg-elevated); border-color: var(--color-border); box-shadow: var(--shadow-xl)" role="dialog" aria-modal="true" tabindex="-1">
       <div class="p-5 border-b flex items-center justify-between" style="border-color: var(--color-border)">
         <h3 class="text-lg font-bold text-[var(--color-text)]">发布模板</h3>
         <button class="p-2 rounded-xl hover:bg-[var(--color-surface)] transition-colors" onclick={() => showPublishTemplate = false}>
@@ -827,16 +827,16 @@
       </div>
       <div class="p-5 space-y-3">
         <div>
-          <label class="block text-sm font-medium mb-1">模板名称</label>
-          <input type="text" placeholder="e.g. System Prop Tweaks" class="w-full px-3 py-2 border border-[var(--color-border)] rounded-lg bg-[var(--color-bg)] text-[var(--color-text)]" bind:value={publishName} />
+          <label for="publish-name" class="block text-sm font-medium mb-1">模板名称</label>
+          <input id="publish-name" type="text" placeholder="e.g. System Prop Tweaks" class="w-full px-3 py-2 border border-[var(--color-border)] rounded-lg bg-[var(--color-bg)] text-[var(--color-text)]" bind:value={publishName} />
         </div>
         <div>
-          <label class="block text-sm font-medium mb-1">描述</label>
-          <textarea placeholder="描述此模板的功能..." class="w-full px-3 py-2 border border-[var(--color-border)] rounded-lg bg-[var(--color-bg)] text-[var(--color-text)] h-20 resize-none" bind:value={publishDesc}></textarea>
+          <label for="publish-desc" class="block text-sm font-medium mb-1">描述</label>
+          <textarea id="publish-desc" placeholder="描述此模板的功能..." class="w-full px-3 py-2 border border-[var(--color-border)] rounded-lg bg-[var(--color-bg)] text-[var(--color-text)] h-20 resize-none" bind:value={publishDesc}></textarea>
         </div>
         <div>
-          <label class="block text-sm font-medium mb-1">分类</label>
-          <select class="w-full px-3 py-2 border border-[var(--color-border)] rounded-lg bg-[var(--color-bg)] text-[var(--color-text)]" bind:value={publishCategory}>
+          <label for="publish-category" class="block text-sm font-medium mb-1">分类</label>
+          <select id="publish-category" class="w-full px-3 py-2 border border-[var(--color-border)] rounded-lg bg-[var(--color-bg)] text-[var(--color-text)]" bind:value={publishCategory}>
             <option value="">选择分类</option>
             <option value="system">系统</option>
             <option value="ui">界面</option>
@@ -877,25 +877,28 @@
   {:else}
     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 module-grid">
       {#each modules as mod, i}
-        <button
+        <div
+          role="button"
+          tabindex="0"
           class="market-card text-left p-5 group cursor-pointer relative overflow-hidden"
           style="animation-delay: {i * 50}ms"
           onclick={() => openDetail(mod)}
+          onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDetail(mod); } }}
         >
           <!-- Favorite button -->
-          <div class="absolute top-5 left-3 z-10" onclick={(e) => { e.stopPropagation(); toggleFavorite(mod); }}>
-            <span class="material-symbols-outlined text-lg p-1 rounded-full cursor-pointer transition-colors" style="color: {favoritedModules.has(mod.id) ? '#ef4444' : 'var(--color-text-muted)'}; background: {favoritedModules.has(mod.id) ? '#ef444420' : 'transparent'}" role="button" tabindex="-1">{favoritedModules.has(mod.id) ? 'favorite' : 'favorite_border'}</span>
-          </div>
+          <button class="absolute top-5 left-3 z-10" aria-label="收藏" onclick={(e) => { e.stopPropagation(); toggleFavorite(mod); }}>
+            <span class="material-symbols-outlined text-lg p-1 rounded-full cursor-pointer transition-colors" style="color: {favoritedModules.has(mod.id) ? '#ef4444' : 'var(--color-text-muted)'}; background: {favoritedModules.has(mod.id) ? '#ef444420' : 'transparent'}">{favoritedModules.has(mod.id) ? 'favorite' : 'favorite_border'}</span>
+          </button>
           <!-- Batch select checkbox -->
-          <div class="absolute top-5 right-16 z-10" onclick={(e) => { e.stopPropagation(); toggleSelect(mod.slug); }}>
+          <button class="absolute top-5 right-16 z-10" aria-label="选择" onclick={(e) => { e.stopPropagation(); toggleSelect(mod.slug); }}>
             <div class="w-4 h-4 rounded border-2 flex items-center justify-center transition-colors" style={selectedSlugs.has(mod.slug) ? 'background: var(--color-primary); border-color: var(--color-primary)' : 'border-color: var(--color-border); background: transparent'}>
               {#if selectedSlugs.has(mod.slug)}
                 <span class="material-symbols-outlined text-[10px] text-white">check</span>
               {/if}
             </div>
-          </div>
+          </button>
           <!-- Compare checkbox -->
-          <div class="absolute top-5 right-3 z-10" onclick={(e) => { e.stopPropagation(); toggleCompare(mod.slug); }}>
+          <button class="absolute top-5 right-3 z-10" aria-label="对比" onclick={(e) => { e.stopPropagation(); toggleCompare(mod.slug); }}>
             <div
               class="w-5 h-5 rounded border-2 flex items-center justify-center transition-colors"
               style={compareIds.has(mod.slug) ? 'background: var(--color-primary); border-color: var(--color-primary)' : 'border-color: var(--color-border); background: transparent'}
@@ -904,7 +907,7 @@
                 <span class="material-symbols-outlined text-[14px] text-white">check</span>
               {/if}
             </div>
-          </div>
+          </button>
           <!-- Hover gradient overlay -->
           <div class="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300" style="background: linear-gradient(135deg, rgba(139,92,246,0.05) 0%, rgba(6,182,212,0.03) 100%)"></div>
           
@@ -929,7 +932,7 @@
             </div>
             <p class="text-sm text-[var(--color-text-secondary)] line-clamp-2 leading-relaxed">{mod.description}</p>
           </div>
-        </button>
+        </div>
       {/each}
     </div>
   {/if}
@@ -937,8 +940,8 @@
 
 <!-- Detail Modal -->
 {#if selectedModule}
-  <div class="fixed inset-0 flex items-center justify-center z-50 p-4 animate-[fadeIn_0.15s_ease-out]" style="background: rgba(0,0,0,0.6); backdrop-filter: blur(8px)" onclick={() => selectedModule = null}>
-    <div class="rounded-2xl max-w-2xl w-full max-h-[85vh] overflow-auto border animate-[scaleIn_0.2s_ease-out]" style="background: var(--color-bg-elevated); border-color: var(--color-border); box-shadow: var(--shadow-xl)" onclick={(e) => e.stopPropagation()}>
+  <div class="fixed inset-0 flex items-center justify-center z-50 p-4 animate-[fadeIn_0.15s_ease-out]" style="background: rgba(0,0,0,0.6); backdrop-filter: blur(8px)" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) selectedModule = null; }}>
+    <div class="rounded-2xl max-w-2xl w-full max-h-[85vh] overflow-auto border animate-[scaleIn_0.2s_ease-out]" style="background: var(--color-bg-elevated); border-color: var(--color-border); box-shadow: var(--shadow-xl)" role="dialog" aria-modal="true" tabindex="-1">
       <div class="p-6 border-b" style="border-color: var(--color-border)">
         <div class="flex items-start justify-between">
           <div>
@@ -961,7 +964,9 @@
         {#if selectedModule.screenshots && selectedModule.screenshots.length > 0}
           <div class="mt-4">
             <div class="relative rounded-xl overflow-hidden">
-                <img src={selectedModule.screenshots[galleryIndex]?.url} alt="截图" class="w-full h-48 object-cover cursor-pointer" onclick={() => fullscreenScreenshot = selectedModule!.screenshots![galleryIndex]?.url} />
+                <button class="block w-full" onclick={() => fullscreenScreenshot = selectedModule!.screenshots![galleryIndex]?.url}>
+                  <img src={selectedModule.screenshots[galleryIndex]?.url} alt="截图" class="w-full h-48 object-cover cursor-pointer" />
+                </button>
                 {#if selectedModule.screenshots.length > 1}
                   <button class="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full flex items-center justify-center bg-black/40 text-white" onclick={(e) => { e.stopPropagation(); galleryIndex = galleryIndex > 0 ? galleryIndex - 1 : selectedModule!.screenshots!.length - 1; }}><span class="material-symbols-outlined text-[18px]">chevron_left</span></button>
                   <button class="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full flex items-center justify-center bg-black/40 text-white" onclick={(e) => { e.stopPropagation(); galleryIndex = galleryIndex < selectedModule!.screenshots!.length - 1 ? galleryIndex + 1 : 0; }}><span class="material-symbols-outlined text-[18px]">chevron_right</span></button>
@@ -970,7 +975,7 @@
             {#if selectedModule.screenshots.length > 1}
               <div class="flex gap-1.5 mt-2 overflow-x-auto pb-1">
                 {#each selectedModule.screenshots as ss, i}
-                  <div class="w-12 h-8 rounded overflow-hidden flex-shrink-0 cursor-pointer border-2 transition-colors" style="border-color: {i === galleryIndex ? 'var(--color-primary)' : 'transparent'}" onclick={() => galleryIndex = i}>
+                  <div role="button" tabindex="0" class="w-12 h-8 rounded overflow-hidden flex-shrink-0 cursor-pointer border-2 transition-colors" style="border-color: {i === galleryIndex ? 'var(--color-primary)' : 'transparent'}" onclick={() => galleryIndex = i} onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); galleryIndex = i; } }}>
                     <img src={ss.url} alt="" class="w-full h-full object-cover" />
                   </div>
                 {/each}
@@ -1269,8 +1274,8 @@
 
 <!-- Batch Results Modal -->
 {#if showBatchResults}
-  <div class="fixed inset-0 flex items-center justify-center z-50 p-4 animate-[fadeIn_0.15s_ease-out]" style="background: rgba(0,0,0,0.6); backdrop-filter: blur(8px)" onclick={() => showBatchResults = false}>
-    <div class="rounded-2xl max-w-md w-full border animate-[scaleIn_0.2s_ease-out]" style="background: var(--color-bg-elevated); border-color: var(--color-border); box-shadow: var(--shadow-xl)" onclick={(e) => e.stopPropagation()}>
+  <div class="fixed inset-0 flex items-center justify-center z-50 p-4 animate-[fadeIn_0.15s_ease-out]" style="background: rgba(0,0,0,0.6); backdrop-filter: blur(8px)" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) showBatchResults = false; }}>
+    <div class="rounded-2xl max-w-md w-full border animate-[scaleIn_0.2s_ease-out]" style="background: var(--color-bg-elevated); border-color: var(--color-border); box-shadow: var(--shadow-xl)" role="dialog" aria-modal="true" tabindex="-1">
       <div class="p-5 border-b flex items-center justify-between" style="border-color: var(--color-border)">
         <h3 class="text-lg font-bold text-[var(--color-text)]">批量操作结果</h3>
         <button class="p-1 rounded hover:bg-[var(--color-surface)] transition-colors" onclick={() => showBatchResults = false}>
@@ -1299,15 +1304,15 @@
 
 <!-- Fullscreen Screenshot -->
 {#if fullscreenScreenshot}
-  <div class="fixed inset-0 z-[60] flex items-center justify-center p-4" style="background: rgba(0,0,0,0.85)" onclick={() => fullscreenScreenshot = null}>
-    <img src={fullscreenScreenshot} alt="截图" class="max-w-full max-h-full object-contain" onclick={(e) => e.stopPropagation()} />
+  <div class="fixed inset-0 z-[60] flex items-center justify-center p-4" style="background: rgba(0,0,0,0.85)" role="presentation" onclick={() => fullscreenScreenshot = null}>
+    <img src={fullscreenScreenshot} alt="截图" class="max-w-full max-h-full object-contain" role="presentation" onclick={(e) => e.stopPropagation()} />
   </div>
 {/if}
 
 <!-- Version History Modal -->
 {#if showVersions}
-  <div class="fixed inset-0 flex items-center justify-center z-50 p-4 animate-[fadeIn_0.15s_ease-out]" style="background: rgba(0,0,0,0.6); backdrop-filter: blur(8px)" onclick={() => { showVersions = false; }}>
-    <div class="rounded-2xl max-w-lg w-full max-h-[70vh] overflow-auto border animate-[scaleIn_0.2s_ease-out]" style="background: var(--color-bg-elevated); border-color: var(--color-border); box-shadow: var(--shadow-xl)" onclick={(e) => e.stopPropagation()}>
+  <div class="fixed inset-0 flex items-center justify-center z-50 p-4 animate-[fadeIn_0.15s_ease-out]" style="background: rgba(0,0,0,0.6); backdrop-filter: blur(8px)" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) showVersions = false; }}>
+    <div class="rounded-2xl max-w-lg w-full max-h-[70vh] overflow-auto border animate-[scaleIn_0.2s_ease-out]" style="background: var(--color-bg-elevated); border-color: var(--color-border); box-shadow: var(--shadow-xl)" role="dialog" aria-modal="true" tabindex="-1">
       <div class="p-5 border-b flex items-center justify-between" style="border-color: var(--color-border)">
         <h3 class="text-lg font-bold text-[var(--color-text)]">版本历史</h3>
         <button class="p-2 rounded-xl hover:bg-[var(--color-surface)] transition-colors" onclick={() => showVersions = false}>
@@ -1358,8 +1363,8 @@
 
 <!-- Version Update Dialog -->
 {#if showVersionUpdate}
-  <div class="fixed inset-0 flex items-center justify-center z-50 p-4 animate-[fadeIn_0.15s_ease-out]" style="background: rgba(0,0,0,0.6); backdrop-filter: blur(8px)" onclick={() => { showVersionUpdate = false; }}>
-    <div class="rounded-2xl max-w-md w-full border animate-[scaleIn_0.2s_ease-out]" style="background: var(--color-bg-elevated); border-color: var(--color-border); box-shadow: var(--shadow-xl)" onclick={(e) => e.stopPropagation()}>
+  <div class="fixed inset-0 flex items-center justify-center z-50 p-4 animate-[fadeIn_0.15s_ease-out]" style="background: rgba(0,0,0,0.6); backdrop-filter: blur(8px)" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) showVersionUpdate = false; }}>
+    <div class="rounded-2xl max-w-md w-full border animate-[scaleIn_0.2s_ease-out]" style="background: var(--color-bg-elevated); border-color: var(--color-border); box-shadow: var(--shadow-xl)" role="dialog" aria-modal="true" tabindex="-1">
       <div class="p-5 border-b flex items-center justify-between" style="border-color: var(--color-border)">
         <h3 class="text-lg font-bold text-[var(--color-text)]">发布新版本</h3>
         <button class="p-2 rounded-xl hover:bg-[var(--color-surface)] transition-colors" onclick={() => showVersionUpdate = false}>
@@ -1368,12 +1373,12 @@
       </div>
       <div class="p-5 space-y-4">
         <div>
-          <label class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1.5">版本代码</label>
-          <input type="text" class="input-field" placeholder="1.1.0" bind:value={newVersionCode} />
+          <label for="version-code" class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1.5">版本代码</label>
+          <input id="version-code" type="text" class="input-field" placeholder="1.1.0" bind:value={newVersionCode} />
         </div>
         <div>
-          <label class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1.5">更新日志</label>
-          <textarea class="input-field resize-none" rows="3" placeholder="描述本次更新内容..." bind:value={newChangelog}></textarea>
+          <label for="version-changelog" class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1.5">更新日志</label>
+          <textarea id="version-changelog" class="input-field resize-none" rows="3" placeholder="描述本次更新内容..." bind:value={newChangelog}></textarea>
         </div>
         <div class="flex justify-end gap-3 pt-2">
           <button class="btn-ghost" onclick={() => showVersionUpdate = false}>取消</button>
@@ -1392,8 +1397,8 @@
 
 <!-- Comparison Modal -->
 {#if compareResult}
-  <div class="fixed inset-0 flex items-center justify-center z-50 p-4 animate-[fadeIn_0.15s_ease-out]" style="background: rgba(0,0,0,0.6); backdrop-filter: blur(8px)" onclick={() => compareResult = null}>
-    <div class="rounded-2xl max-w-3xl w-full max-h-[85vh] overflow-auto border animate-[scaleIn_0.2s_ease-out]" style="background: var(--color-bg-elevated); border-color: var(--color-border); box-shadow: var(--shadow-xl)" onclick={(e) => e.stopPropagation()}>
+  <div class="fixed inset-0 flex items-center justify-center z-50 p-4 animate-[fadeIn_0.15s_ease-out]" style="background: rgba(0,0,0,0.6); backdrop-filter: blur(8px)" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) compareResult = null; }}>
+    <div class="rounded-2xl max-w-3xl w-full max-h-[85vh] overflow-auto border animate-[scaleIn_0.2s_ease-out]" style="background: var(--color-bg-elevated); border-color: var(--color-border); box-shadow: var(--shadow-xl)" role="dialog" aria-modal="true" tabindex="-1">
       <div class="p-5 border-b flex items-center justify-between" style="border-color: var(--color-border)">
         <h3 class="text-lg font-bold text-[var(--color-text)]">模块对比</h3>
         <button class="p-2 rounded-xl hover:bg-[var(--color-surface)] transition-colors" onclick={() => compareResult = null}>
@@ -1468,8 +1473,8 @@
 
 <!-- Install to Device Modal -->
 {#if showInstallModal}
-  <div class="fixed inset-0 z-50 flex items-center justify-center p-4" style="background: rgba(0,0,0,0.6); backdrop-filter: blur(8px)" onclick={() => { if (!installing) showInstallModal = false; }}>
-    <div class="rounded-2xl w-full max-w-md border animate-[scaleIn_0.2s_ease-out]" style="background: var(--color-bg-elevated); border-color: var(--color-border); box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5)" onclick={(e) => e.stopPropagation()}>
+  <div class="fixed inset-0 z-50 flex items-center justify-center p-4" style="background: rgba(0,0,0,0.6); backdrop-filter: blur(8px)" role="presentation" onclick={(e) => { if (e.target === e.currentTarget && !installing) showInstallModal = false; }}>
+    <div class="rounded-2xl w-full max-w-md border animate-[scaleIn_0.2s_ease-out]" style="background: var(--color-bg-elevated); border-color: var(--color-border); box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5)" role="dialog" aria-modal="true" tabindex="-1">
       <!-- Header -->
       <div class="p-5 border-b flex items-center gap-3" style="border-color: var(--color-border)">
         <div class="w-10 h-10 rounded-xl flex items-center justify-center" style="background: var(--gradient-brand)">
@@ -1568,8 +1573,8 @@
 
 <!-- Module Demo Modal -->
 {#if showDemo}
-  <div class="fixed inset-0 flex items-center justify-center z-50 p-4 animate-[fadeIn_0.15s_ease-out]" style="background: rgba(0,0,0,0.6); backdrop-filter: blur(8px)" onclick={closeDemo}>
-    <div class="rounded-2xl max-w-lg w-full max-h-[90vh] overflow-auto border animate-[scaleIn_0.2s_ease-out]" style="background: var(--color-bg-elevated); border-color: var(--color-border); box-shadow: var(--shadow-xl)" onclick={(e) => e.stopPropagation()}>
+  <div class="fixed inset-0 flex items-center justify-center z-50 p-4 animate-[fadeIn_0.15s_ease-out]" style="background: rgba(0,0,0,0.6); backdrop-filter: blur(8px)" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) closeDemo(); }}>
+    <div class="rounded-2xl max-w-lg w-full max-h-[90vh] overflow-auto border animate-[scaleIn_0.2s_ease-out]" style="background: var(--color-bg-elevated); border-color: var(--color-border); box-shadow: var(--shadow-xl)" role="dialog" aria-modal="true" tabindex="-1">
       <div class="p-5 border-b flex items-center justify-between" style="border-color: var(--color-border)">
         <h3 class="text-lg font-bold text-[var(--color-text)] flex items-center gap-2">
           <span class="material-symbols-outlined text-[20px] text-purple-500">preview</span>

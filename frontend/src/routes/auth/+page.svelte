@@ -377,8 +377,8 @@ let passwordStrength = $derived(getPasswordStrength(password));
               <p class="text-sm mt-1" style="color: var(--color-text-secondary)">输入注册邮箱，我们将发送重置码</p>
             </div>
             <div>
-              <label class="block text-sm font-medium mb-1.5" style="color: var(--color-text-secondary)">邮箱</label>
-              <input type="email" class="input-field" placeholder="you@example.com" bind:value={forgotEmail} />
+              <label for="forgot-email" class="block text-sm font-medium mb-1.5" style="color: var(--color-text-secondary)">邮箱</label>
+              <input id="forgot-email" type="email" class="input-field" placeholder="you@example.com" bind:value={forgotEmail} />
             </div>
             <button type="button" class="auth-submit w-full py-3.5 rounded-xl font-semibold text-sm text-white disabled:opacity-50 min-h-[52px]" onclick={requestForgotCode} disabled={loading || !forgotEmail}>
               {loading ? '发送中...' : '发送重置码'}
@@ -393,25 +393,25 @@ let passwordStrength = $derived(getPasswordStrength(password));
               <p class="text-sm mt-1" style="color: var(--color-text-secondary)">输入验证码和新密码</p>
             </div>
             <div>
-              <label class="block text-sm font-medium mb-1.5" style="color: var(--color-text-secondary)">验证码</label>
-              <input type="text" inputmode="numeric" pattern="[0-9]*" maxlength="6" class="input-field text-center text-xl tracking-[0.5em] font-mono" placeholder="000000" bind:value={forgotCode} />
+              <label for="forgot-code" class="block text-sm font-medium mb-1.5" style="color: var(--color-text-secondary)">验证码</label>
+              <input id="forgot-code" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="6" class="input-field text-center text-xl tracking-[0.5em] font-mono" placeholder="000000" bind:value={forgotCode} />
             </div>
             <div>
-              <label class="block text-sm font-medium mb-1.5" style="color: var(--color-text-secondary)">新密码</label>
-              <input type="password" class="input-field" placeholder="至少 6 位" bind:value={forgotNewPassword} />
+              <label for="forgot-new-password" class="block text-sm font-medium mb-1.5" style="color: var(--color-text-secondary)">新密码</label>
+              <input id="forgot-new-password" type="password" class="input-field" placeholder="至少 6 位" bind:value={forgotNewPassword} />
             </div>
             <div>
-              <label class="block text-sm font-medium mb-1.5" style="color: var(--color-text-secondary)">确认密码</label>
-              <input type="password" class="input-field" placeholder="再次输入新密码" bind:value={forgotConfirmPassword} />
+              <label for="forgot-confirm-password" class="block text-sm font-medium mb-1.5" style="color: var(--color-text-secondary)">确认密码</label>
+              <input id="forgot-confirm-password" type="password" class="input-field" placeholder="再次输入新密码" bind:value={forgotConfirmPassword} />
             </div>
             <button type="button" class="auth-submit w-full py-3.5 rounded-xl font-semibold text-sm text-white disabled:opacity-50 min-h-[52px]" onclick={submitForgotCode} disabled={loading || forgotCode.length !== 6}>
               {loading ? '重置中...' : '重置密码'}
             </button>
-            <button type="button" class="w-full text-center text-sm text-[var(--color-text-muted)] transition-colors" disabled={loading}>
+            <button type="button" class="w-full text-center text-sm text-[var(--color-text-muted)] transition-colors" disabled={loading} onclick={() => { if (forgotCooldown <= 0) requestForgotCode(); }}>
               {#if forgotCooldown > 0}
                 重新发送 ({forgotCooldown}s)
               {:else}
-                <span class="hover:text-[var(--color-primary)]" onclick={requestForgotCode}>重新发送验证码</span>
+                重新发送验证码
               {/if}
             </button>
             <button type="button" class="w-full text-center text-sm text-[var(--color-text-muted)] hover:text-[var(--color-primary)] transition-colors" onclick={backToLogin}>返回登录</button>
@@ -566,19 +566,12 @@ let passwordStrength = $derived(getPasswordStrength(password));
       var(--shadow-xl),
       inset 0 1px 0 rgba(139,92,246,0.1);
   }
-  [data-theme="light"] .auth-card {
-    background: color-mix(in srgb, var(--color-bg-elevated) 90%, transparent);
-    box-shadow: 
-      var(--shadow-xl),
-      inset 0 1px 0 rgba(255,255,255,0.8);
-  }
 
   /* Grid dot pattern */
   .auth-grid {
     background-image: radial-gradient(circle, rgba(139,92,246,0.15) 1px, transparent 1px);
     background-size: 24px 24px;
   }
-  [data-theme="light"] .auth-grid { opacity: 0.3 !important; }
 
   /* Floating orbs animation */
   .auth-orb-1 { top: -15%; right: -10%; animation: float1 20s ease-in-out infinite; }

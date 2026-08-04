@@ -593,7 +593,7 @@
     <!-- Mobile Header (hidden on AI page for fullscreen) -->
     {#if current !== 'ai'}
     <header class="md:hidden flex items-center justify-between px-4 h-14 border-b flex-shrink-0 glass" style="border-color: var(--color-border)">
-      <div class="flex items-center gap-2.5" onclick={() => navigate('projects')}>
+      <div class="flex items-center gap-2.5" role="button" tabindex="0" onclick={() => navigate('projects')} onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate('projects'); } }}>
         <div class="w-7 h-7 rounded-lg flex items-center justify-center" style="background: var(--gradient-brand)">
           <span class="material-symbols-outlined text-white text-sm">extension</span>
         </div>
@@ -652,9 +652,12 @@
               <!-- Existing Projects -->
               {#each filteredProjects as project (project.id)}
                 <div
+                  role="button"
+                  tabindex="0"
                   class="project-card rounded-2xl border p-5 cursor-pointer group relative overflow-hidden"
                   style="background: var(--color-bg-elevated); border-color: var(--color-border)"
                   onclick={() => navigate('editor', project.id)}
+                  onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate('editor', project.id); } }}
                 >
                   <!-- Hover gradient -->
                   <div class="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300" style="background: linear-gradient(135deg, rgba(139,92,246,0.05) 0%, rgba(6,182,212,0.03) 100%)"></div>
@@ -686,15 +689,15 @@
 
       <!-- Create Project Modal -->
       {#if showCreateModal}
-        <div class="fixed inset-0 z-50 flex items-center justify-center p-4 animate-[fadeIn_0.15s_ease-out]" style="background: rgba(0,0,0,0.6); backdrop-filter: blur(8px)" onclick={() => showCreateModal = false}>
+        <div class="fixed inset-0 z-50 flex items-center justify-center p-4 animate-[fadeIn_0.15s_ease-out]" style="background: rgba(0,0,0,0.6); backdrop-filter: blur(8px)" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) showCreateModal = false; }}>
           <div class="w-full max-w-md rounded-2xl shadow-xl p-6 border animate-[scaleIn_0.2s_ease-out]"
                style="background: var(--color-bg-elevated); border-color: var(--color-border)"
-               onclick={(e) => e.stopPropagation()}>
+               role="dialog" aria-modal="true" tabindex="-1">
             <h3 class="text-lg font-bold mb-4" style="color: var(--color-text)">{$t('project.new')}</h3>
             <div class="space-y-4">
               <div>
-                <label class="block text-sm font-medium mb-1.5" style="color: var(--color-text-secondary)">项目名称</label>
-                <input type="text" bind:value={newProjectName} placeholder="My Awesome Module"
+                <label for="new-project-name" class="block text-sm font-medium mb-1.5" style="color: var(--color-text-secondary)">项目名称</label>
+                <input id="new-project-name" type="text" bind:value={newProjectName} placeholder="My Awesome Module"
                        class="input-field" />
               </div>
               <div class="flex items-center gap-1.5 px-2 py-1 rounded-md w-fit" style="background: var(--color-primary-light); color: var(--color-primary)">
@@ -702,8 +705,8 @@
                 <span class="text-[10px] font-medium">Universal · Magisk + KSU + APatch</span>
               </div>
               <div>
-                <label class="block text-sm font-medium mb-1.5" style="color: var(--color-text-secondary)">描述</label>
-                <textarea bind:value={newProjectDesc} placeholder="Optional description..." rows="3"
+                <label for="new-project-desc" class="block text-sm font-medium mb-1.5" style="color: var(--color-text-secondary)">描述</label>
+                <textarea id="new-project-desc" bind:value={newProjectDesc} placeholder="Optional description..." rows="3"
                           class="input-field resize-none"></textarea>
               </div>
             </div>
@@ -726,10 +729,10 @@
           </div>
         {:else if routeComponent}
           {#key routeKey}
-            <svelte:component this={routeComponent}
+            <routeComponent
               {projectId}
               onNavigate={(route: string, id?: string) => navigate(route as Route, id)}
-            />
+            ></routeComponent>
           {/key}
         {/if}
       </div>
@@ -762,9 +765,10 @@
   {/if}
 
   {#if mobileMenuOpen && current !== 'ai'}
-    <div class="fixed inset-0 z-50 md:hidden" onclick={() => mobileMenuOpen = false}>
+    <div class="fixed inset-0 z-50 md:hidden" role="presentation" onclick={() => mobileMenuOpen = false}>
       <div class="absolute bottom-16 left-2 right-2 rounded-2xl border shadow-2xl p-4 grid grid-cols-3 gap-3"
            style="background: var(--color-bg-elevated); border-color: var(--color-border)"
+           role="presentation"
            onclick={(e) => e.stopPropagation()}>
         {#each [
           { id: 'dashboard', icon: 'monitoring', label: '仪表盘' },

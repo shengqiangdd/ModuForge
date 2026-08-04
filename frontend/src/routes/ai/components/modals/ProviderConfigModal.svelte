@@ -29,8 +29,8 @@ let providerName = $derived(providers.find(p => p.id === selectedProviderID)?.na
 </script>
 
 {#if show}
-  <div class="fixed inset-0 z-50 flex items-center justify-center p-4" style="background: rgba(0,0,0,0.6); backdrop-filter: blur(8px);" onclick={onClose}>
-    <div class="bg-[var(--color-bg)] rounded-2xl p-6 w-full max-w-md border border-[var(--color-border)] shadow-2xl" onclick={(e) => e.stopPropagation()} role="dialog">
+  <div class="fixed inset-0 z-50 flex items-center justify-center p-4" style="background: rgba(0,0,0,0.6); backdrop-filter: blur(8px);" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+    <div class="bg-[var(--color-bg)] rounded-2xl p-6 w-full max-w-md border border-[var(--color-border)] shadow-2xl" role="dialog" tabindex="-1">
       <div class="flex items-center gap-3 mb-5">
         <div class="w-8 h-8 rounded-xl flex items-center justify-center" style="background: linear-gradient(135deg, rgba(6,182,212,0.15), rgba(139,92,246,0.15))">
           <span class="material-symbols-outlined text-[16px]" style="color: var(--color-info)">tune</span>
@@ -42,12 +42,12 @@ let providerName = $derived(providers.find(p => p.id === selectedProviderID)?.na
       </div>
       <div class="space-y-4">
         <div>
-          <label class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1">Base URL</label>
-          <input type="text" class="w-full px-3 py-2 rounded-xl text-sm border border-[var(--color-border)] bg-[var(--color-bg)] text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-primary-500/30" value={configEndpoint} oninput={(e) => onEndpointChange((e.target as HTMLInputElement).value)} placeholder="https://api.openai.com/v1/chat/completions" />
+          <label for="provider-base-url" class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1">Base URL</label>
+          <input id="provider-base-url" type="text" class="w-full px-3 py-2 rounded-xl text-sm border border-[var(--color-border)] bg-[var(--color-bg)] text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-primary-500/30" value={configEndpoint} oninput={(e) => onEndpointChange((e.target as HTMLInputElement).value)} placeholder="https://api.openai.com/v1/chat/completions" />
         </div>
         <div>
-          <label class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1">API Key</label>
-          <input type="password" class="w-full px-3 py-2 rounded-xl text-sm border border-[var(--color-border)] bg-[var(--color-bg)] text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-primary-500/30" value={configApiKey} oninput={(e) => onApiKeyChange((e.target as HTMLInputElement).value)} placeholder="sk-..." />
+          <label for="provider-api-key" class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1">API Key</label>
+          <input id="provider-api-key" type="password" class="w-full px-3 py-2 rounded-xl text-sm border border-[var(--color-border)] bg-[var(--color-bg)] text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-primary-500/30" value={configApiKey} oninput={(e) => onApiKeyChange((e.target as HTMLInputElement).value)} placeholder="sk-..." />
           <p class="text-xs text-[var(--color-text-muted)] mt-1">密钥加密存储在服务器端</p>
         </div>
       </div>

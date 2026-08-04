@@ -1,5 +1,5 @@
 <script lang="ts">
-  let { open = false, title = '确认', message = '', confirmText = '确认', cancelText = '取消', variant = 'primary', onConfirm = () => {}, onCancel = () => {} }: {
+  let { open = $bindable(false), title = '确认', message = '', confirmText = '确认', cancelText = '取消', variant = 'primary', onConfirm = () => {}, onCancel = () => {} }: {
     open?: boolean;
     title?: string;
     message?: string;
@@ -10,24 +10,21 @@
     onCancel?: () => void;
   } = $props();
 
-  let visible = $state(open);
-  $effect(() => { visible = open; });
-
   function handleConfirm() {
-    visible = false;
+    open = false;
     onConfirm();
   }
 
   function handleCancel() {
-    visible = false;
+    open = false;
     onCancel();
   }
 </script>
 
-{#if visible}
-  <div class="confirm-overlay fixed inset-0 z-50 flex items-center justify-center p-4" onclick={handleCancel} role="dialog" aria-modal="true" aria-labelledby="confirm-title">
+{#if open}
+  <div class="confirm-overlay fixed inset-0 z-50 flex items-center justify-center p-4" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) handleCancel(); }}>
     <div class="confirm-backdrop absolute inset-0"></div>
-    <div class="confirm-dialog relative w-full max-w-md rounded-2xl shadow-2xl border overflow-hidden animate-[scaleIn_0.2s_ease-out]" onclick={(e) => e.stopPropagation()}>
+    <div class="confirm-dialog relative w-full max-w-md rounded-2xl shadow-2xl border overflow-hidden animate-[scaleIn_0.2s_ease-out]" role="dialog" aria-modal="true" aria-labelledby="confirm-title" tabindex="-1">
       <!-- Header -->
       <div class="confirm-header px-6 pt-6 pb-4" class:danger={variant === 'danger'}>
         <div class="flex items-center gap-3">

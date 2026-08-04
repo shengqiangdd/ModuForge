@@ -38,8 +38,8 @@
   }
 </script>
 
-<div class="overlay" onclick={onClose} role="dialog" aria-modal="true">
-  <div class="panel" onclick={(e) => e.stopPropagation()} role="document">
+<div class="overlay" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+  <div class="panel" role="dialog" aria-modal="true" tabindex="-1">
     <div class="panel-header">
       <h2 class="panel-title">操作历史</h2>
       <button class="close-btn" onclick={onClose} aria-label="关闭">

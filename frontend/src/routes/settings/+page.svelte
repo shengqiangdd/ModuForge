@@ -1385,28 +1385,28 @@ import { getToken } from '$lib/api/client';
         </div>
       </div>
       <div>
-        <label class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1">用户名</label>
-        <input type="text" class="input-field" bind:value={username} disabled />
+        <label for="profile-username" class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1">用户名</label>
+        <input id="profile-username" type="text" class="input-field" bind:value={username} disabled />
       </div>
       <div>
-        <label class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1">邮箱</label>
-        <input type="email" class="input-field" bind:value={email} disabled />
+        <label for="profile-email" class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1">邮箱</label>
+        <input id="profile-email" type="email" class="input-field" bind:value={email} disabled />
       </div>
       <div>
-        <label class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1">显示名称</label>
-        <input type="text" class="input-field" placeholder="输入显示名称" bind:value={displayName} />
+        <label for="profile-display-name" class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1">显示名称</label>
+        <input id="profile-display-name" type="text" class="input-field" placeholder="输入显示名称" bind:value={displayName} />
       </div>
       <div>
-        <label class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1">个人简介</label>
-        <textarea class="input-field" rows="3" placeholder="介绍一下自己" bind:value={bio}></textarea>
+        <label for="profile-bio" class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1">个人简介</label>
+        <textarea id="profile-bio" class="input-field" rows="3" placeholder="介绍一下自己" bind:value={bio}></textarea>
       </div>
       <div>
-        <label class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1">所在地</label>
-        <input type="text" class="input-field" placeholder="城市, 国家" bind:value={location} />
+        <label for="profile-location" class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1">所在地</label>
+        <input id="profile-location" type="text" class="input-field" placeholder="城市, 国家" bind:value={location} />
       </div>
       <div>
-        <label class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1">网站</label>
-        <input type="url" class="input-field" placeholder="https://example.com" bind:value={website} />
+        <label for="profile-website" class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1">网站</label>
+        <input id="profile-website" type="url" class="input-field" placeholder="https://example.com" bind:value={website} />
       </div>
       <button type="button" class="auth-submit px-6 py-2.5 rounded-xl font-semibold text-sm text-white disabled:opacity-50" onclick={saveProfile} disabled={savingProfile}>
         {savingProfile ? '保存中...' : '保存'}
@@ -1429,46 +1429,46 @@ import { getToken } from '$lib/api/client';
     <div class="space-y-4">
       <div class="grid grid-cols-2 gap-4">
         <div>
-          <label class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1">SMTP 主机</label>
-          <input type="text" class="input-field" placeholder="smtp.example.com" bind:value={smtpHost} />
+          <label for="smtp-host" class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1">SMTP 主机</label>
+          <input id="smtp-host" type="text" class="input-field" placeholder="smtp.example.com" bind:value={smtpHost} />
         </div>
         <div>
-          <label class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1">端口</label>
-          <input type="number" class="input-field" placeholder="587" bind:value={smtpPort} />
-        </div>
-      </div>
-      <div class="grid grid-cols-2 gap-4">
-        <div>
-          <label class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1">用户名</label>
-          <input type="text" class="input-field" placeholder="user@example.com" bind:value={smtpUser} />
-        </div>
-        <div>
-          <label class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1">密码</label>
-          <input type="password" class="input-field" placeholder="SMTP 密码" bind:value={smtpPass} />
+          <label for="smtp-port" class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1">端口</label>
+          <input id="smtp-port" type="number" class="input-field" placeholder="587" bind:value={smtpPort} />
         </div>
       </div>
       <div class="grid grid-cols-2 gap-4">
         <div>
-          <label class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1">发件人名称</label>
-          <input type="text" class="input-field" placeholder="ModuForge" bind:value={smtpFromName} />
+          <label for="smtp-user" class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1">用户名</label>
+          <input id="smtp-user" type="text" class="input-field" placeholder="user@example.com" bind:value={smtpUser} />
         </div>
         <div>
-          <label class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1">发件人地址</label>
-          <input type="email" class="input-field" placeholder="noreply@example.com" bind:value={smtpFrom} />
+          <label for="smtp-pass" class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1">密码</label>
+          <input id="smtp-pass" type="password" class="input-field" placeholder="SMTP 密码" bind:value={smtpPass} />
         </div>
       </div>
       <div class="grid grid-cols-2 gap-4">
         <div>
-          <label class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1">加密方式</label>
-          <select class="input-field" bind:value={smtpUseTLS}>
+          <label for="smtp-from-name" class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1">发件人名称</label>
+          <input id="smtp-from-name" type="text" class="input-field" placeholder="ModuForge" bind:value={smtpFromName} />
+        </div>
+        <div>
+          <label for="smtp-from" class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1">发件人地址</label>
+          <input id="smtp-from" type="email" class="input-field" placeholder="noreply@example.com" bind:value={smtpFrom} />
+        </div>
+      </div>
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <label for="smtp-use-tls" class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1">加密方式</label>
+          <select id="smtp-use-tls" class="input-field" bind:value={smtpUseTLS}>
             <option value={0}>无加密（不推荐）</option>
             <option value={1}>STARTTLS（端口 587）</option>
             <option value={2}>SSL/TLS（端口 465）</option>
           </select>
         </div>
         <div>
-          <label class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1">启用状态</label>
-          <select class="input-field" bind:value={smtpIsActive}>
+          <label for="smtp-is-active" class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1">启用状态</label>
+          <select id="smtp-is-active" class="input-field" bind:value={smtpIsActive}>
             <option value={0}>禁用</option>
             <option value={1}>启用</option>
           </select>
@@ -1529,13 +1529,13 @@ import { getToken } from '$lib/api/client';
     <div class="space-y-4">
       <div class="grid grid-cols-2 gap-4">
         <div>
-          <label class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1">最大迭代次数</label>
-          <input type="number" class="input-field" min="1" max="100" bind:value={agentMaxIterations} />
+          <label for="agent-max-iterations" class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1">最大迭代次数</label>
+          <input id="agent-max-iterations" type="number" class="input-field" min="1" max="100" bind:value={agentMaxIterations} />
           <p class="text-xs mt-1" style="color: var(--color-text-muted)">Agent 单次任务最多执行步骤数（1-100）</p>
         </div>
         <div>
-          <label class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1">技能结果最大长度</label>
-          <input type="number" class="input-field" min="500" max="100000" step="1000" bind:value={agentMaxResultLen} />
+          <label for="agent-max-result-len" class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1">技能结果最大长度</label>
+          <input id="agent-max-result-len" type="number" class="input-field" min="500" max="100000" step="1000" bind:value={agentMaxResultLen} />
           <p class="text-xs mt-1" style="color: var(--color-text-muted)">单次技能返回内容最大字符数（500-100000）</p>
         </div>
       </div>
@@ -2250,16 +2250,16 @@ import { getToken } from '$lib/api/client';
     {#if showChangePassword}
       <div class="mt-3 p-4 rounded-xl space-y-3" style="background: var(--color-surface);">
         <div>
-          <label class="block text-xs font-medium text-[var(--color-text-secondary)] mb-1">当前密码</label>
-          <input type="password" class="input-field w-full" placeholder="输入当前密码" bind:value={oldPassword} />
+          <label for="old-password" class="block text-xs font-medium text-[var(--color-text-secondary)] mb-1">当前密码</label>
+          <input id="old-password" type="password" class="input-field w-full" placeholder="输入当前密码" bind:value={oldPassword} />
         </div>
         <div>
-          <label class="block text-xs font-medium text-[var(--color-text-secondary)] mb-1">新密码</label>
-          <input type="password" class="input-field w-full" placeholder="至少 8 位" bind:value={newPassword} />
+          <label for="new-password" class="block text-xs font-medium text-[var(--color-text-secondary)] mb-1">新密码</label>
+          <input id="new-password" type="password" class="input-field w-full" placeholder="至少 8 位" bind:value={newPassword} />
         </div>
         <div>
-          <label class="block text-xs font-medium text-[var(--color-text-secondary)] mb-1">确认新密码</label>
-          <input type="password" class="input-field w-full" placeholder="再次输入新密码" bind:value={confirmPassword}
+          <label for="confirm-password" class="block text-xs font-medium text-[var(--color-text-secondary)] mb-1">确认新密码</label>
+          <input id="confirm-password" type="password" class="input-field w-full" placeholder="再次输入新密码" bind:value={confirmPassword}
             onkeydown={(e) => { if (e.key === 'Enter') changePassword(); }} />
         </div>
         <div class="flex items-center gap-3 pt-1">
@@ -2321,10 +2321,12 @@ import { getToken } from '$lib/api/client';
         {#each (showAllSkills ? allSkills : allSkills.slice(0, 6)) as skill}
           <div class="rounded-xl overflow-hidden" style="border: 1px solid var(--color-border);">
             <!-- Skill header - click to expand -->
-            <button
-              type="button"
-              class="w-full flex items-center gap-2.5 p-2.5 text-left hover:bg-[var(--color-surface-secondary)] transition-colors"
+            <div
+              role="button"
+              tabindex="0"
+              class="w-full flex items-center gap-2.5 p-2.5 text-left hover:bg-[var(--color-surface-secondary)] transition-colors cursor-pointer"
               onclick={() => expandedSkillId = expandedSkillId === skill.id ? null : skill.id}
+              onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); expandedSkillId = expandedSkillId === skill.id ? null : skill.id; } }}
             >
               <span class="material-symbols-outlined text-[16px] text-[var(--color-text-muted)]">
                 {expandedSkillId === skill.id ? 'expand_more' : 'chevron_right'}
@@ -2341,12 +2343,12 @@ import { getToken } from '$lib/api/client';
                 <p class="text-xs truncate max-w-md" style="color: var(--color-text-muted)">{skill.description}</p>
               </div>
               {#if !skill.is_builtin}
-                <div class="flex items-center gap-1" onclick={(e) => e.stopPropagation()}>
-                  <button class="text-[10px] px-2 py-1 rounded hover:bg-[var(--color-surface)]" style="color: var(--color-text-muted)" onclick={() => openEditSkill(skill)}>编辑</button>
-                  <button class="text-[10px] px-2 py-1 rounded hover:bg-[var(--color-error-light)]" style="color: var(--color-error)" onclick={() => deleteSkill(skill.id)}>删除</button>
+                <div class="flex items-center gap-1">
+                  <button class="text-[10px] px-2 py-1 rounded hover:bg-[var(--color-surface)]" style="color: var(--color-text-muted)" onclick={(e) => { e.stopPropagation(); openEditSkill(skill); }}>编辑</button>
+                  <button class="text-[10px] px-2 py-1 rounded hover:bg-[var(--color-error-light)]" style="color: var(--color-error)" onclick={(e) => { e.stopPropagation(); deleteSkill(skill.id); }}>删除</button>
                 </div>
               {/if}
-            </button>
+            </div>
             <!-- Expanded content - show prompt or description -->
             {#if expandedSkillId === skill.id}
               <div class="px-3 pb-3 pt-1" style="border-top: 1px solid var(--color-border)">
@@ -2470,8 +2472,8 @@ import { getToken } from '$lib/api/client';
 
 <!-- Provider Config Modal -->
 {#if configModalProvider}
-  <div class="fixed inset-0 z-[60] flex items-center justify-center p-4" style="background: rgba(0,0,0,0.6); backdrop-filter: blur(8px);" onclick={closeConfigModal}>
-    <div class="card p-6 w-full max-w-md" onclick={(e) => e.stopPropagation()} role="dialog">
+  <div class="fixed inset-0 z-[60] flex items-center justify-center p-4" style="background: rgba(0,0,0,0.6); backdrop-filter: blur(8px);" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) closeConfigModal(); }}>
+    <div class="card p-6 w-full max-w-md" role="dialog" tabindex="-1">
       <div class="flex items-center gap-3 mb-5">
         <div class="w-8 h-8 rounded-xl flex items-center justify-center" style="background: var(--gradient-brand-subtle)">
           <span class="material-symbols-outlined text-[16px]" style="color: var(--color-primary)">settings</span>
@@ -2483,12 +2485,12 @@ import { getToken } from '$lib/api/client';
       </div>
       <div class="space-y-4">
         <div>
-          <label class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1">API Endpoint</label>
-          <input type="text" class="input-field" bind:value={configEndpoint} placeholder="https://api.openai.com/v1/chat/completions" />
+          <label for="config-endpoint" class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1">API Endpoint</label>
+          <input id="config-endpoint" type="text" class="input-field" bind:value={configEndpoint} placeholder="https://api.openai.com/v1/chat/completions" />
         </div>
         <div>
-          <label class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1">API Key</label>
-          <input type="password" class="input-field" bind:value={configApiKey} placeholder="sk-..." />
+          <label for="config-api-key" class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1">API Key</label>
+          <input id="config-api-key" type="password" class="input-field" bind:value={configApiKey} placeholder="sk-..." />
           <p class="text-xs text-[var(--color-text-muted)] mt-1">密钥加密存储在服务器</p>
         </div>
       </div>
@@ -2502,8 +2504,8 @@ import { getToken } from '$lib/api/client';
 
 <!-- Models Modal -->
 {#if showModelsModal && modelsModalProvider}
-  <div class="fixed inset-0 z-[60] flex items-center justify-center p-4" style="background: rgba(0,0,0,0.6); backdrop-filter: blur(8px);" onclick={closeModelsModal}>
-    <div class="card w-full max-w-2xl max-h-[80vh] flex flex-col" onclick={(e) => e.stopPropagation()} role="dialog">
+  <div class="fixed inset-0 z-[60] flex items-center justify-center p-4" style="background: rgba(0,0,0,0.6); backdrop-filter: blur(8px);" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) closeModelsModal(); }}>
+    <div class="card w-full max-w-2xl max-h-[80vh] flex flex-col" role="dialog" tabindex="-1">
       <div class="flex items-center justify-between p-5 pb-0">
         <div class="flex items-center gap-3">
           <div class="w-9 h-9 rounded-xl flex items-center justify-center" style="background: var(--color-info-light)">
@@ -2624,8 +2626,8 @@ import { getToken } from '$lib/api/client';
 
 <!-- All Providers Modal -->
 {#if showAllProvidersModal}
-  <div class="fixed inset-0 z-50 flex items-center justify-center p-4" style="background: rgba(0,0,0,0.6); backdrop-filter: blur(8px);" onclick={() => showAllProvidersModal = false}>
-    <div class="card w-full max-w-3xl max-h-[80vh] flex flex-col" onclick={(e) => e.stopPropagation()} role="dialog">
+  <div class="fixed inset-0 z-50 flex items-center justify-center p-4" style="background: rgba(0,0,0,0.6); backdrop-filter: blur(8px);" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) showAllProvidersModal = false; }}>
+    <div class="card w-full max-w-3xl max-h-[80vh] flex flex-col" role="dialog" tabindex="-1">
       <div class="flex items-center justify-between p-5 pb-0">
         <div class="flex items-center gap-3">
           <div class="w-9 h-9 rounded-xl flex items-center justify-center" style="background: var(--color-info-light)">
@@ -2678,8 +2680,8 @@ import { getToken } from '$lib/api/client';
 
 <!-- Custom Provider Modal -->
 {#if showCustomModal}
-  <div class="fixed inset-0 z-50 flex items-center justify-center p-4" style="background: rgba(0,0,0,0.6); backdrop-filter: blur(8px);" onclick={closeCustomModal}>
-    <div class="card p-6 w-full max-w-md" onclick={(e) => e.stopPropagation()} role="dialog">
+  <div class="fixed inset-0 z-50 flex items-center justify-center p-4" style="background: rgba(0,0,0,0.6); backdrop-filter: blur(8px);" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) closeCustomModal(); }}>
+    <div class="card p-6 w-full max-w-md" role="dialog" tabindex="-1">
       <div class="flex items-center gap-3 mb-5">
         <div class="w-8 h-8 rounded-xl flex items-center justify-center" style="background: var(--color-success-light)">
           <span class="material-symbols-outlined text-[16px]" style="color: var(--color-success)">dns</span>
@@ -2691,20 +2693,20 @@ import { getToken } from '$lib/api/client';
       </div>
       <div class="space-y-4">
         <div>
-          <label class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1">名称</label>
-          <input type="text" class="input-field" bind:value={customForm.name} placeholder="My Provider" />
+          <label for="custom-name" class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1">名称</label>
+          <input id="custom-name" type="text" class="input-field" bind:value={customForm.name} placeholder="My Provider" />
         </div>
         <div>
-          <label class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1">API Endpoint</label>
-          <input type="text" class="input-field" bind:value={customForm.endpoint} placeholder="https://api.example.com/v1/chat/completions" />
+          <label for="custom-endpoint" class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1">API Endpoint</label>
+          <input id="custom-endpoint" type="text" class="input-field" bind:value={customForm.endpoint} placeholder="https://api.example.com/v1/chat/completions" />
         </div>
         <div>
-          <label class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1">API Key</label>
-          <input type="password" class="input-field" bind:value={customForm.api_key} placeholder="sk-..." />
+          <label for="custom-api-key" class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1">API Key</label>
+          <input id="custom-api-key" type="password" class="input-field" bind:value={customForm.api_key} placeholder="sk-..." />
         </div>
         <div>
           <div class="flex items-center justify-between mb-1">
-            <label class="text-sm font-medium text-[var(--color-text-secondary)]">模型列表</label>
+            <span class="text-sm font-medium text-[var(--color-text-secondary)]">模型列表</span>
             <button class="text-xs text-[var(--color-primary)] hover:underline flex items-center gap-0.5" onclick={addCustomModel}>
               <span class="material-symbols-outlined text-[14px]">add</span> 添加模型
             </button>
@@ -2739,8 +2741,8 @@ import { getToken } from '$lib/api/client';
 
 <!-- Custom Skill Modal -->
 {#if showSkillModal}
-  <div class="fixed inset-0 z-50 flex items-center justify-center p-4" style="background: rgba(0,0,0,0.6); backdrop-filter: blur(8px);" onclick={() => showSkillModal = false}>
-    <div class="card p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto" onclick={(e) => e.stopPropagation()} role="dialog">
+  <div class="fixed inset-0 z-50 flex items-center justify-center p-4" style="background: rgba(0,0,0,0.6); backdrop-filter: blur(8px);" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) showSkillModal = false; }}>
+    <div class="card p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto" role="dialog" tabindex="-1">
       <div class="flex items-center gap-3 mb-5">
         <div class="w-8 h-8 rounded-xl flex items-center justify-center" style="background: var(--color-primary-light)">
           <span class="material-symbols-outlined text-[16px]" style="color: var(--color-primary)">smart_toy</span>
@@ -2752,20 +2754,20 @@ import { getToken } from '$lib/api/client';
       </div>
       <div class="space-y-4">
         <div>
-          <label class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1">名称</label>
-          <input type="text" class="input-field" bind:value={skillForm.name} placeholder="技能名称" />
+          <label for="skill-name" class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1">名称</label>
+          <input id="skill-name" type="text" class="input-field" bind:value={skillForm.name} placeholder="技能名称" />
         </div>
         <div>
-          <label class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1">描述</label>
-          <input type="text" class="input-field" bind:value={skillForm.description} placeholder="简要描述技能功能" />
+          <label for="skill-description" class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1">描述</label>
+          <input id="skill-description" type="text" class="input-field" bind:value={skillForm.description} placeholder="简要描述技能功能" />
         </div>
         <div>
-          <label class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1">提示词模板</label>
-          <textarea class="input-field resize-none" rows="5" bind:value={skillForm.prompt} placeholder="使用 {'{input}'} 表示用户输入位置"></textarea>
+          <label for="skill-prompt" class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1">提示词模板</label>
+          <textarea id="skill-prompt" class="input-field resize-none" rows="5" bind:value={skillForm.prompt} placeholder="使用 {'{input}'} 表示用户输入位置"></textarea>
         </div>
         <div>
-          <label class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1">输入 Schema (JSON)</label>
-            <textarea class="input-field resize-none font-mono text-xs" rows="3" bind:value={skillForm.input_schema} placeholder={`{"type": "object", "properties": {"input": {"type": "string"}}}`}></textarea>
+          <label for="skill-schema" class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1">输入 Schema (JSON)</label>
+            <textarea id="skill-schema" class="input-field resize-none font-mono text-xs" rows="3" bind:value={skillForm.input_schema} placeholder={`{"type": "object", "properties": {"input": {"type": "string"}}}`}></textarea>
         </div>
         <div class="flex items-center gap-2">
           <input type="checkbox" id="skill-public" bind:checked={skillForm.is_public} />
@@ -2773,7 +2775,7 @@ import { getToken } from '$lib/api/client';
         </div>
         {#if editingSkill}
           <div class="border-t pt-4" style="border-color: var(--color-border);">
-            <label class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1">测试运行</label>
+            <span class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1">测试运行</span>
             <div class="flex gap-2 mb-2">
               <input type="text" class="input-field flex-1" bind:value={testInput} placeholder="输入测试内容" />
               <button class="btn-primary text-sm px-3 py-1.5" onclick={() => editingSkill && testSkill(editingSkill.id)} disabled={!editingSkill || testingSkillId === editingSkill?.id || !testInput}>
@@ -2798,8 +2800,8 @@ import { getToken } from '$lib/api/client';
 
 <!-- Schedule Modal -->
 {#if showScheduleModal}
-  <div class="fixed inset-0 z-50 flex items-center justify-center p-4" style="background: rgba(0,0,0,0.6); backdrop-filter: blur(8px);" onclick={() => showScheduleModal = false}>
-    <div class="card p-6 w-full max-w-md" onclick={(e) => e.stopPropagation()} role="dialog">
+  <div class="fixed inset-0 z-50 flex items-center justify-center p-4" style="background: rgba(0,0,0,0.6); backdrop-filter: blur(8px);" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) showScheduleModal = false; }}>
+    <div class="card p-6 w-full max-w-md" role="dialog" tabindex="-1">
       <div class="flex items-center gap-3 mb-5">
         <div class="w-8 h-8 rounded-xl flex items-center justify-center" style="background: var(--color-info-light)">
           <span class="material-symbols-outlined text-[16px]" style="color: var(--color-info)">schedule</span>
@@ -2811,20 +2813,20 @@ import { getToken } from '$lib/api/client';
       </div>
       <div class="space-y-4">
         <div>
-          <label class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1">名称</label>
-          <input type="text" class="input-field" bind:value={scheduleForm.name} placeholder="每日备份" />
+          <label for="schedule-name" class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1">名称</label>
+          <input id="schedule-name" type="text" class="input-field" bind:value={scheduleForm.name} placeholder="每日备份" />
         </div>
         <div>
-          <label class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1">频率</label>
-          <select class="input-field" bind:value={scheduleForm.frequency}>
+          <label for="schedule-frequency" class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1">频率</label>
+          <select id="schedule-frequency" class="input-field" bind:value={scheduleForm.frequency}>
             <option value="daily">每日</option>
             <option value="weekly">每周</option>
             <option value="monthly">每月</option>
           </select>
         </div>
         <div>
-          <label class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1">保留份数</label>
-          <input type="number" class="input-field" bind:value={scheduleForm.keep_count} min="1" max="365" />
+          <label for="schedule-keep-count" class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1">保留份数</label>
+          <input id="schedule-keep-count" type="number" class="input-field" bind:value={scheduleForm.keep_count} min="1" max="365" />
         </div>
       </div>
       <div class="flex items-center justify-end gap-3 mt-6">
@@ -2882,9 +2884,6 @@ import { getToken } from '$lib/api/client';
     }
     .add-model-form {
       flex-direction: column !important;
-    }
-    .add-model-form .input-field {
-      min-width: 100% !important;
     }
     .custom-provider-item {
       flex-wrap: wrap !important;

@@ -158,10 +158,13 @@
   {:else}
     <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
       {#each items as item}
-        <button
-          class="text-left p-4 rounded-xl border transition-all hover:border-[var(--color-primary)]"
+        <div
+          role="button"
+          tabindex="0"
+          class="text-left p-4 rounded-xl border transition-all hover:border-[var(--color-primary)] cursor-pointer"
           style="border-color: {selectedItem?.id === item.id ? 'var(--color-primary)' : 'var(--color-border)'}; background: {selectedItem?.id === item.id ? 'var(--color-primary-light)' : 'var(--color-bg-elevated)'}"
           onclick={() => selectedItem = selectedItem?.id === item.id ? null : item}
+          onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectedItem = selectedItem?.id === item.id ? null : item; } }}
         >
           <div class="flex items-center justify-between mb-1">
             <h3 class="font-semibold text-[var(--color-text)]">{item.term}</h3>
@@ -188,7 +191,7 @@
               {/if}
             </div>
           {/if}
-        </button>
+        </div>
       {/each}
     </div>
   {/if}
@@ -196,8 +199,8 @@
 
 <!-- Edit/Create Modal -->
 {#if showForm}
-  <div class="fixed inset-0 z-50 flex items-center justify-center p-4" style="background: rgba(0,0,0,0.6); backdrop-filter: blur(8px);" onclick={() => showForm = false}>
-    <div class="card p-6 w-full max-w-lg" onclick={(e) => e.stopPropagation()} role="dialog">
+  <div class="fixed inset-0 z-50 flex items-center justify-center p-4" style="background: rgba(0,0,0,0.6); backdrop-filter: blur(8px);" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) showForm = false; }}>
+    <div class="card p-6 w-full max-w-lg" role="dialog" tabindex="-1">
       <div class="flex items-center gap-3 mb-5">
         <div class="w-8 h-8 rounded-xl flex items-center justify-center" style="background: var(--color-info-light)">
           <span class="material-symbols-outlined text-[16px]" style="color: var(--color-info)">menu_book</span>
@@ -208,16 +211,16 @@
       </div>
       <div class="space-y-4">
         <div>
-          <label class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1">术语</label>
-          <input type="text" class="input-field" bind:value={formTerm} placeholder="e.g., ADB" />
+          <label for="glossary-term" class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1">术语</label>
+          <input id="glossary-term" type="text" class="input-field" bind:value={formTerm} placeholder="e.g., ADB" />
         </div>
         <div>
-          <label class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1">定义</label>
-          <textarea class="input-field resize-none" rows="3" bind:value={formDef} placeholder="定义..."></textarea>
+          <label for="glossary-def" class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1">定义</label>
+          <textarea id="glossary-def" class="input-field resize-none" rows="3" bind:value={formDef} placeholder="定义..."></textarea>
         </div>
         <div>
-          <label class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1">分类</label>
-          <select class="input-field" bind:value={formCat}>
+          <label for="glossary-cat" class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1">分类</label>
+          <select id="glossary-cat" class="input-field" bind:value={formCat}>
             <option value="general">通用</option>
             <option value="dev">开发</option>
             <option value="security">安全</option>
@@ -225,8 +228,8 @@
           </select>
         </div>
         <div>
-          <label class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1">相关术语（逗号分隔）</label>
-          <input type="text" class="input-field" bind:value={formRelated} placeholder="ADB, Shell, Debug" />
+          <label for="glossary-related" class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1">相关术语（逗号分隔）</label>
+          <input id="glossary-related" type="text" class="input-field" bind:value={formRelated} placeholder="ADB, Shell, Debug" />
         </div>
       </div>
       <div class="flex items-center justify-end gap-3 mt-6">

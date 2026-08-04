@@ -138,17 +138,17 @@
 
     <div class="space-y-5">
       <div>
-        <label class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1.5">标题 *</label>
-        <input type="text" class="input-field" placeholder="My Awesome Module" bind:value={title} />
+        <label for="pub-title" class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1.5">标题 *</label>
+        <input id="pub-title" type="text" class="input-field" placeholder="My Awesome Module" bind:value={title} />
       </div>
 
       <div>
-        <label class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1.5">描述 *</label>
-        <textarea class="input-field resize-none" rows="4" placeholder="详细描述你的模块功能..." bind:value={description}></textarea>
+        <label for="pub-desc" class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1.5">描述 *</label>
+        <textarea id="pub-desc" class="input-field resize-none" rows="4" placeholder="详细描述你的模块功能..." bind:value={description}></textarea>
       </div>
 
       <div>
-        <label class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1.5">分类</label>
+        <span class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1.5">分类</span>
         <div class="grid grid-cols-5 gap-2">
           {#each categoryOptions as opt}
             <button
@@ -165,32 +165,32 @@
       </div>
 
       <div>
-        <label class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1.5">标签</label>
-        <input type="text" class="input-field" placeholder="tag1, tag2, tag3" bind:value={tags} />
+        <label for="pub-tags" class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1.5">标签</label>
+        <input id="pub-tags" type="text" class="input-field" placeholder="tag1, tag2, tag3" bind:value={tags} />
         <p class="text-xs text-[var(--color-text-muted)] mt-1">用逗号分隔多个标签</p>
       </div>
 
       <div>
-        <label class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1.5">版本号（显示用）</label>
-        <input type="text" class="input-field" placeholder="v1.0" bind:value={version} />
+        <label for="pub-version" class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1.5">版本号（显示用）</label>
+        <input id="pub-version" type="text" class="input-field" placeholder="v1.0" bind:value={version} />
       </div>
 
       <div>
-        <label class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1.5">版本代码（数字）</label>
-        <input type="text" class="input-field" placeholder="1.0.0" bind:value={versionCode} />
+        <label for="pub-version-code" class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1.5">版本代码（数字）</label>
+        <input id="pub-version-code" type="text" class="input-field" placeholder="1.0.0" bind:value={versionCode} />
         <p class="text-xs text-[var(--color-text-muted)] mt-1">语义化版本号，用于版本比较和回滚</p>
       </div>
 
       <div>
-        <label class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1.5">更新日志</label>
-        <textarea class="input-field resize-none" rows="3" placeholder="描述本次更新的内容..." bind:value={changelog}></textarea>
+        <label for="pub-changelog" class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1.5">更新日志</label>
+        <textarea id="pub-changelog" class="input-field resize-none" rows="3" placeholder="描述本次更新的内容..." bind:value={changelog}></textarea>
       </div>
 
       <div>
-        <label class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1.5">封面图</label>
+        <label for="pub-cover-url" class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1.5">封面图</label>
         <div class="flex gap-3 items-start">
           <div class="flex-1">
-            <input type="text" class="input-field mb-2" placeholder="封面图片 URL" bind:value={coverImage} oninput={() => coverPreview = coverImage} />
+            <input id="pub-cover-url" type="text" class="input-field mb-2" placeholder="封面图片 URL" bind:value={coverImage} oninput={() => coverPreview = coverImage} />
             <input type="file" accept="image/*" class="text-xs" onchange={handleCoverUpload} />
           </div>
           {#if coverPreview}
@@ -202,10 +202,10 @@
       </div>
 
       <div>
-        <label class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1.5">截图（最多 5 张，每张 ≤ 2MB）</label>
+        <span class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1.5">截图（最多 5 张，每张 ≤ 2MB）</span>
         <div class="flex flex-wrap gap-2 mb-2">
           {#each screenshots as ss, i}
-            <div class="relative group"
+            <div class="relative group" role="presentation"
                  draggable="true"
                  ondragstart={(e) => handleDragStart(e, i)}
                  ondragover={(e) => handleDragOver(e, i)}
@@ -235,16 +235,16 @@
       </div>
 
       <div>
-        <label class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1.5">License</label>
-        <select class="input-field" bind:value={license}>
+        <label for="pub-license" class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1.5">License</label>
+        <select id="pub-license" class="input-field" bind:value={license}>
           {#each licenseOptions as opt}<option value={opt}>{opt}</option>{/each}
         </select>
       </div>
 
       <div>
-        <label class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1.5">依赖模块</label>
+        <label for="pub-dep-search" class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1.5">依赖模块</label>
         <div class="relative mb-2">
-          <input type="text" class="input-field" placeholder="搜索模块添加依赖..." bind:value={depSearch} oninput={() => searchModules(depSearch)} />
+          <input id="pub-dep-search" type="text" class="input-field" placeholder="搜索模块添加依赖..." bind:value={depSearch} oninput={() => searchModules(depSearch)} />
           {#if searchResults.length > 0}
             <div class="absolute z-10 left-0 right-0 top-full mt-1 rounded-xl border" style="background: var(--color-surface); border-color: var(--color-border); box-shadow: 0 4px 16px rgba(0,0,0,0.15)">
               {#each searchResults as mod}

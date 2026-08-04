@@ -11,7 +11,7 @@ let {
   onClose: () => void;
 } = $props();
 
-let selectedFile = $state<string | null>(files.length > 0 ? files[0].path : null);
+let selectedFile = $state<string | null>(null);
 let webUIMode = $state(false);
 let hasWebUI = $derived(checkWebUIFiles(files));
 let webUIHTML = $derived(hasWebUI ? getWebUIPreviewHTML(files) : '');
@@ -30,8 +30,8 @@ $effect(() => {
 </script>
 
 {#if show}
-  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onclick={() => { onClose(); webUIMode = false; }}>
-    <div class="bg-[var(--color-bg)] rounded-2xl shadow-2xl w-full max-w-4xl max-h-[85vh] flex flex-col border border-[var(--color-border)]" onclick={(e) => e.stopPropagation()}>
+  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) { onClose(); webUIMode = false; } }}>
+    <div class="bg-[var(--color-bg)] rounded-2xl shadow-2xl w-full max-w-4xl max-h-[85vh] flex flex-col border border-[var(--color-border)]" role="dialog" aria-modal="true" tabindex="-1">
       <div class="flex items-center justify-between px-6 py-4 border-b border-[var(--color-border)]">
         <div class="flex items-center gap-2">
           {#if hasWebUI && webUIMode}

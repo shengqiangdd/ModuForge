@@ -27,16 +27,16 @@ let {
 </script>
 
 {#if show}
-  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onclick={onClose}>
-    <div class="bg-[var(--color-bg)] rounded-2xl shadow-2xl w-full max-w-md border border-[var(--color-border)] max-h-[85vh] flex flex-col" onclick={(e) => e.stopPropagation()}>
+  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+    <div class="bg-[var(--color-bg)] rounded-2xl shadow-2xl w-full max-w-md border border-[var(--color-border)] max-h-[85vh] flex flex-col" role="dialog" aria-modal="true" tabindex="-1">
       <div class="px-6 py-4 border-b border-[var(--color-border)]">
         <h3 class="text-lg font-semibold text-[var(--color-text)]">导入到项目</h3>
       </div>
       <div class="px-6 py-4 space-y-4 overflow-y-auto flex-1">
         <p class="text-sm text-[var(--color-text-secondary)]">选择目标项目，导入 {importFiles.length} 个文件</p>
         <div>
-          <label class="block text-sm font-medium mb-1.5 text-[var(--color-text-secondary)]">目标项目</label>
-          <select class="w-full px-3 py-2 rounded-xl text-sm border border-[var(--color-border)] bg-[var(--color-bg)] text-[var(--color-text)]" value={selectedImportProject} onchange={(e) => onProjectChange((e.target as HTMLSelectElement).value)}>
+          <label for="import-target-project" class="block text-sm font-medium mb-1.5 text-[var(--color-text-secondary)]">目标项目</label>
+          <select id="import-target-project" class="w-full px-3 py-2 rounded-xl text-sm border border-[var(--color-border)] bg-[var(--color-bg)] text-[var(--color-text)]" value={selectedImportProject} onchange={(e) => onProjectChange((e.target as HTMLSelectElement).value)}>
             {#each importProjects as p}
               <option value={p.id}>{p.name}</option>
             {/each}

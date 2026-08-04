@@ -54,8 +54,8 @@
   });
 </script>
 
-<div class="overlay" onclick={onClose} role="dialog" aria-modal="true">
-  <div class="panel" onclick={(e) => e.stopPropagation()} role="document">
+<div class="overlay" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+  <div class="panel" role="dialog" aria-modal="true" tabindex="-1">
     <div class="panel-header">
       <h2 class="panel-title">快捷键</h2>
       <button class="close-btn" onclick={onClose} aria-label="关闭">
@@ -67,14 +67,16 @@
         <div class="category">
           <h3 class="category-title">{cat.name}</h3>
           <table class="shortcut-table">
-            {#each cat.shortcuts as sc}
-              <tr>
-                <td class="keys-cell">
-                  <kbd class="key-badge">{sc.keys}</kbd>
-                </td>
-                <td class="desc-cell">{sc.desc}</td>
-              </tr>
-            {/each}
+            <tbody>
+              {#each cat.shortcuts as sc}
+                <tr>
+                  <td class="keys-cell">
+                    <kbd class="key-badge">{sc.keys}</kbd>
+                  </td>
+                  <td class="desc-cell">{sc.desc}</td>
+                </tr>
+              {/each}
+            </tbody>
           </table>
         </div>
       {/each}

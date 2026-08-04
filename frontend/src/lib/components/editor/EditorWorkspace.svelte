@@ -604,7 +604,7 @@
     </aside>
 
     {#if sidebarOpen}
-      <div class="fixed inset-0 bg-black/20 z-10 max-md:block md:hidden" onclick={() => sidebarOpen = false}></div>
+      <div class="fixed inset-0 bg-black/20 z-10 max-md:block md:hidden" role="presentation" onclick={() => sidebarOpen = false}></div>
     {/if}
 
     <!-- Main Editor Area + Panels (wrapped in flex column) -->
@@ -704,8 +704,11 @@
               >
                 <span>{tab.split('/').pop()}</span>
                 <span
+                  role="button"
+                  tabindex="-1"
                   class="material-symbols-outlined text-[12px] p-0.5 rounded hover:bg-black/10 transition-colors"
                   onclick={(e) => { e.stopPropagation(); closeTab(tab); }}
+                  onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); closeTab(tab); } }}
                 >close</span>
               </button>
             {/each}
@@ -779,8 +782,8 @@
 
 <!-- Security Panel Modal -->
 {#if showSecurityPanel}
-  <div class="fixed inset-0 z-50 flex items-center justify-center" style="background: rgba(0,0,0,0.4); backdrop-filter: blur(4px);" onclick={() => showSecurityPanel = false}>
-    <div class="w-[480px] max-h-[80vh] rounded-xl shadow-2xl border border-[var(--color-border)] overflow-hidden bg-[var(--color-bg)]" onclick={(e) => e.stopPropagation()}>
+  <div class="fixed inset-0 z-50 flex items-center justify-center" style="background: rgba(0,0,0,0.4); backdrop-filter: blur(4px);" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) showSecurityPanel = false; }}>
+    <div class="w-[480px] max-h-[80vh] rounded-xl shadow-2xl border border-[var(--color-border)] overflow-hidden bg-[var(--color-bg)]" role="dialog" aria-modal="true" tabindex="-1">
       <div class="flex items-center justify-between px-4 py-3 border-b border-[var(--color-border)]" style="background: var(--color-bg-elevated)">
         <div class="flex items-center gap-2">
           <span class="material-symbols-outlined text-[18px]" style="color: {getSecurityColor()}">{getSecurityIcon()}</span>
@@ -826,6 +829,7 @@
 {#if showTerminal}
   <div class="fixed bottom-0 left-0 right-0 z-40 border-t border-[var(--color-border)]" style="height: {terminalHeight}px;">
     <div
+      role="presentation"
       class="terminal-resize-handle cursor-row-resize flex-shrink-0 h-1 hover:bg-[var(--color-primary)] transition-colors"
       onmousedown={(e) => {
         e.preventDefault();
@@ -855,8 +859,8 @@
 
 <!-- File Search Overlay (Ctrl+P) -->
 {#if showFileSearch}
-  <div class="fixed inset-0 z-50 flex items-start justify-center pt-24" style="background: rgba(0,0,0,0.4); backdrop-filter: blur(4px);" onclick={closeFileSearch}>
-    <div class="w-96 rounded-xl shadow-2xl border border-[var(--color-border)] overflow-hidden bg-[var(--color-bg)]" onclick={(e) => e.stopPropagation()}>
+  <div class="fixed inset-0 z-50 flex items-start justify-center pt-24" style="background: rgba(0,0,0,0.4); backdrop-filter: blur(4px);" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) closeFileSearch(); }}>
+    <div class="w-96 rounded-xl shadow-2xl border border-[var(--color-border)] overflow-hidden bg-[var(--color-bg)]" role="presentation" onclick={(e) => e.stopPropagation()}>
       <div class="px-3 py-2 border-b border-[var(--color-border)]">
         <input
           bind:this={fileSearchInput}
@@ -866,7 +870,6 @@
           value={fileSearchQuery}
           oninput={onFileSearchInput}
           onkeydown={handleFileSearchKeydown}
-          autofocus
         />
       </div>
       {#if filteredFiles.length > 0}

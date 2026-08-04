@@ -42,6 +42,7 @@
   {#if open}
     <div
       class="absolute top-full mt-2 right-0 w-44 bg-[var(--color-bg-elevated)] rounded-xl shadow-elevated-lg border border-[var(--color-border)] py-1.5 z-50 animate-[scaleIn_0.15s_ease-out]"
+      role="presentation"
       onclick={(e) => e.stopPropagation()}
     >
       {#each languages as lang}

@@ -1177,7 +1177,7 @@ import { filterStepsByRound } from './lib/rounds';
   });
 </script>
 
-<div class="flex h-full ai-page" onkeydown={(e) => {
+<div class="flex h-full ai-page" role="presentation" onkeydown={(e) => {
   // Don't trigger shortcuts when typing in inputs
   const tag = (e.target as HTMLElement)?.tagName;
   if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement)?.contentEditable === 'true') return;

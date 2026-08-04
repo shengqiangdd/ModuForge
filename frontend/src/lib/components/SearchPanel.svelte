@@ -60,13 +60,15 @@
 <div
   class="fixed inset-0 z-50 flex items-start justify-center pt-[15vh]"
   style="background: rgba(0,0,0,0.5); backdrop-filter: blur(4px)"
-  onclick={onClose}
-  role="dialog"
+  role="presentation"
+  onclick={(e) => { if (e.target === e.currentTarget) onClose(); }}
 >
   <div
     class="w-full max-w-xl rounded-2xl shadow-2xl border overflow-hidden"
     style="background: var(--color-bg-elevated); border-color: var(--color-border);"
-    onclick={(e) => e.stopPropagation()}
+    role="dialog"
+    aria-modal="true"
+    tabindex="-1"
   >
     <div class="flex items-center gap-3 px-4 py-3 border-b" style="border-color: var(--color-border);">
       <span class="material-symbols-outlined text-[20px]" style="color: var(--color-text-muted)">search</span>

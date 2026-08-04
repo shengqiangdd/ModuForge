@@ -33,7 +33,7 @@
     diffLabel?: string;
   } = $props();
 
-  let container: HTMLDivElement;
+  let container = $state<HTMLDivElement>();
   let view: EditorView;
   let isDirty = $state(false);
   let showSearch = $state(false);
@@ -94,7 +94,7 @@
     searchResults = [];
   }
 
-  let lastValue = $state(value);
+  let lastValue = $state('');
 
   onMount(() => {
     const state = EditorState.create({
@@ -215,8 +215,8 @@
 
   <!-- File Search Overlay (Ctrl+P) -->
   {#if showSearch}
-    <div class="absolute inset-0 z-10 flex items-start justify-center pt-16" style="background: rgba(0,0,0,0.4); backdrop-filter: blur(4px);" onclick={() => closeSearch()}>
-      <div class="w-96 rounded-xl shadow-2xl border border-gray-700 overflow-hidden" style="background: #1e1e2e;" onclick={(e) => e.stopPropagation()}>
+    <div class="absolute inset-0 z-10 flex items-start justify-center pt-16" style="background: rgba(0,0,0,0.4); backdrop-filter: blur(4px);" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) closeSearch(); }}>
+      <div class="w-96 rounded-xl shadow-2xl border border-gray-700 overflow-hidden" style="background: #1e1e2e;" role="presentation" onclick={(e) => e.stopPropagation()}>
         <div class="px-3 py-2 border-b border-gray-700">
           <input
             bind:this={searchInput}

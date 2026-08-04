@@ -17,8 +17,8 @@
   let loading = $state(true);
   let showAddModal = $state(false);
   let selectedWidgetType = $state('');
-  let dragIdx: number | null = null;
-  let dropIdx: number | null = null;
+  let dragIdx = $state<number | null>(null);
+  let dropIdx = $state<number | null>(null);
   let autoRefresh = $state(true);
   let autoRefreshTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -258,7 +258,7 @@
     <div class={gridCols}>
       {#each visibleWidgets as w, i}
         {#if w.is_visible}
-          <div class="card p-5 relative group"
+          <div role="presentation" class="card p-5 relative group"
             style="{w.width > 1 ? 'grid-column: span ' + Math.min(w.width, 2) : ''}"
             draggable="true"
             ondragstart={(e) => handleDragStart(e, i)}
@@ -431,7 +431,7 @@
                 <div class="grid grid-cols-2 gap-2 mb-3">
                   {#each Object.entries(healthData.checks || {}) as [key, check]}
                     {@const checkStatus = (check as any).status}
-                    <div class="p-2 rounded-lg cursor-pointer hover:opacity-80 transition-opacity" style="background: var(--color-surface);" onclick={() => loadHealthDetail()}>
+                    <div role="button" tabindex="0" class="p-2 rounded-lg cursor-pointer hover:opacity-80 transition-opacity" style="background: var(--color-surface);" onclick={() => loadHealthDetail()} onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); loadHealthDetail(); } }}>
                       <div class="flex items-center justify-between mb-0.5">
                         <span class="text-[10px] font-medium" style="color: var(--color-text-secondary)">{key}</span>
                         <span class="w-1.5 h-1.5 rounded-full" style="background: {checkStatus === 'ok' ? 'var(--color-success)' : checkStatus === 'warning' ? 'var(--color-warning)' : 'var(--color-error)'}"></span>
@@ -466,8 +466,8 @@
 
 <!-- Add Widget Modal -->
 {#if showAddModal}
-  <div class="fixed inset-0 flex items-center justify-center z-50 p-4 animate-[fadeIn_0.15s_ease-out]" style="background: rgba(0,0,0,0.6); backdrop-filter: blur(8px)" onclick={() => showAddModal = false}>
-    <div class="rounded-2xl max-w-md w-full border animate-[scaleIn_0.2s_ease-out]" style="background: var(--color-bg-elevated); border-color: var(--color-border); box-shadow: var(--shadow-xl)" onclick={(e) => e.stopPropagation()}>
+  <div class="fixed inset-0 flex items-center justify-center z-50 p-4 animate-[fadeIn_0.15s_ease-out]" style="background: rgba(0,0,0,0.6); backdrop-filter: blur(8px)" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) showAddModal = false; }}>
+    <div class="rounded-2xl max-w-md w-full border animate-[scaleIn_0.2s_ease-out]" style="background: var(--color-bg-elevated); border-color: var(--color-border); box-shadow: var(--shadow-xl)" role="dialog" aria-modal="true" tabindex="-1">
       <div class="p-5 border-b flex items-center justify-between" style="border-color: var(--color-border)">
         <h3 class="text-lg font-bold text-[var(--color-text)]">添加 Widget</h3>
         <button class="p-1 rounded hover:bg-[var(--color-surface)] transition-colors" onclick={() => showAddModal = false}>
@@ -498,8 +498,8 @@
 
 <!-- Health Detail Modal -->
 {#if showHealthDetail}
-  <div class="fixed inset-0 flex items-center justify-center z-50 p-4 animate-[fadeIn_0.15s_ease-out]" style="background: rgba(0,0,0,0.6); backdrop-filter: blur(8px)" onclick={() => showHealthDetail = false}>
-    <div class="rounded-2xl max-w-lg w-full border animate-[scaleIn_0.2s_ease-out] max-h-[80vh] overflow-hidden flex flex-col" style="background: var(--color-bg-elevated); border-color: var(--color-border); box-shadow: var(--shadow-xl)" onclick={(e) => e.stopPropagation()}>
+  <div class="fixed inset-0 flex items-center justify-center z-50 p-4 animate-[fadeIn_0.15s_ease-out]" style="background: rgba(0,0,0,0.6); backdrop-filter: blur(8px)" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) showHealthDetail = false; }}>
+    <div class="rounded-2xl max-w-lg w-full border animate-[scaleIn_0.2s_ease-out] max-h-[80vh] overflow-hidden flex flex-col" style="background: var(--color-bg-elevated); border-color: var(--color-border); box-shadow: var(--shadow-xl)" role="dialog" aria-modal="true" tabindex="-1">
       <div class="p-5 border-b flex items-center justify-between" style="border-color: var(--color-border)">
         <div class="flex items-center gap-3">
           <div class="w-8 h-8 rounded-lg flex items-center justify-center" style="background: var(--color-success-light)">

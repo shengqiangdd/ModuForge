@@ -90,7 +90,7 @@
   {:else}
     <div class="space-y-3">
       {#each logs as log}
-        <div class="card p-4 cursor-pointer hover:shadow-md transition-shadow" onclick={() => selectedLog = log}>
+        <div role="button" tabindex="0" class="card p-4 cursor-pointer hover:shadow-md transition-shadow" onclick={() => selectedLog = log} onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectedLog = log; } }}>
           <div class="flex items-center gap-3">
             <div class="w-2 h-2 rounded-full flex-shrink-0" style="background: {severityColor(log.error_type)}"></div>
             <div class="flex-1 min-w-0">
@@ -114,8 +114,8 @@
 
 <!-- Detail Modal -->
 {#if selectedLog}
-  <div class="fixed inset-0 flex items-center justify-center z-50 p-4" style="background: rgba(0,0,0,0.6); backdrop-filter: blur(8px)" onclick={() => selectedLog = null}>
-    <div class="rounded-2xl max-w-2xl w-full max-h-[80vh] overflow-auto border" style="background: var(--color-bg-elevated); border-color: var(--color-border)" onclick={(e) => e.stopPropagation()}>
+  <div class="fixed inset-0 flex items-center justify-center z-50 p-4" style="background: rgba(0,0,0,0.6); backdrop-filter: blur(8px)" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) selectedLog = null; }}>
+    <div class="rounded-2xl max-w-2xl w-full max-h-[80vh] overflow-auto border" style="background: var(--color-bg-elevated); border-color: var(--color-border)" role="dialog" aria-modal="true" tabindex="-1">
       <div class="p-5 border-b flex items-center justify-between" style="border-color: var(--color-border)">
         <h3 class="text-lg font-bold text-[var(--color-text)]">{selectedLog.error_type}</h3>
         <button class="p-2 rounded-xl hover:bg-[var(--color-surface)]" onclick={() => selectedLog = null}>

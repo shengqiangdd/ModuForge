@@ -15,7 +15,7 @@
 </script>
 
 {#if show}
-  <div class="shortcut-overlay" role="dialog" aria-label="快捷键" onkeydown={handleKeydown}>
+  <div class="shortcut-overlay" role="dialog" aria-label="快捷键" tabindex="-1" onkeydown={handleKeydown}>
     <div class="shortcut-card">
       <div class="header">
         <h3>⌨️ 快捷键</h3>

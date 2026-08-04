@@ -3,7 +3,7 @@
     skillName = '',
     content = '',
     files = [],
-    expanded = false,
+    expanded = $bindable(false),
     onToggle,
     onInsertFile,
   }: {
@@ -15,20 +15,19 @@
     onInsertFile?: (file: { path: string; content: string }) => void;
   } = $props();
 
-  let isExpanded = $state(expanded);
   let needsExpand = $derived(
     (content && (content.split('\n').length > 5 || content.length > 300))
   );
 
   function toggleExpand() {
-    isExpanded = !isExpanded;
+    expanded = !expanded;
     onToggle?.();
   }
 </script>
 
 {#if content}
   <div
-    class="text-[10px] mt-0.5 whitespace-pre-wrap step-result-content {isExpanded ? 'expanded' : ''}"
+    class="text-[10px] mt-0.5 whitespace-pre-wrap step-result-content {expanded ? 'expanded' : ''}"
     style="color: var(--color-text-secondary);"
   >
     {content}
@@ -39,7 +38,7 @@
       style="color: var(--color-primary);"
       onclick={toggleExpand}
     >
-      {isExpanded ? '收起' : '展开全部'}
+      {expanded ? '收起' : '展开全部'}
     </button>
   {/if}
 {/if}

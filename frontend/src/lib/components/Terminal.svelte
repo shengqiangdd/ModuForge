@@ -103,7 +103,7 @@
       {/if}
     </div>
   </div>
-  <div class="terminal-body" bind:this={outputEl} onclick={focus}>
+  <div class="terminal-body" bind:this={outputEl} role="presentation" onclick={focus}>
     {#each output as line}
       <div class="terminal-line">{line}</div>
     {/each}

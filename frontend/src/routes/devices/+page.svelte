@@ -107,7 +107,7 @@
   let currentPath = $state('/sdcard/');
   let uploading = $state(false);
   let uploadTarget = $state('');
-  let fileInput: HTMLInputElement;
+  let fileInput = $state<HTMLInputElement | null>(null);
   let dragOver = $state(false);
   let newFolderName = $state('');
   let renameTarget = $state('');
@@ -957,7 +957,7 @@
           {#each savedDevices as sd}
             <button class="saved-device-chip" onclick={() => selectSavedDevice(sd.address)}>
               <span class="text-xs">{sd.address}</span>
-              <span class="delete-chip" onclick={(e) => { e.stopPropagation(); showConfirm('移除设备', `确定要移除设备 ${sd.address} 吗？`, 'danger', () => deleteSavedDevice(sd.id)); }}>×</span>
+              <span role="button" tabindex="-1" class="delete-chip" onclick={(e) => { e.stopPropagation(); showConfirm('移除设备', `确定要移除设备 ${sd.address} 吗？`, 'danger', () => deleteSavedDevice(sd.id)); }} onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); showConfirm('移除设备', `确定要移除设备 ${sd.address} 吗？`, 'danger', () => deleteSavedDevice(sd.id)); } }}>×</span>
             </button>
           {/each}
         </div>
@@ -1249,8 +1249,8 @@
 
       <!-- Module Detail Modal (1.6) -->
       {#if showModuleDetail && selectedModuleDetail}
-        <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onclick={() => showModuleDetail = false}>
-          <div class="bg-[var(--color-bg)] rounded-2xl p-6 w-full max-w-lg border border-[var(--color-border)] shadow-2xl" onclick={(e) => e.stopPropagation()}>
+        <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) showModuleDetail = false; }}>
+          <div class="bg-[var(--color-bg)] rounded-2xl p-6 w-full max-w-lg border border-[var(--color-border)] shadow-2xl" role="dialog" aria-modal="true" tabindex="-1">
             <div class="flex items-center justify-between mb-4">
               <h3 class="text-lg font-bold text-[var(--color-text)]">{selectedModuleDetail.name}</h3>
               <button class="p-1 rounded-lg hover:bg-[var(--color-surface)]" onclick={() => showModuleDetail = false}>
@@ -1341,6 +1341,7 @@
         <!-- Drag & Drop Zone -->
         <div
           class="relative"
+          role="presentation"
           ondragover={handleDragOver}
           ondragleave={handleDragLeave}
           ondrop={handleDrop}
@@ -1359,7 +1360,7 @@
               {#if renamePath === file.path}
                 <input type="text" class="input-field text-xs flex-1" bind:value={renameTarget}
                   onkeydown={(e: KeyboardEvent) => { if (e.key === 'Enter') renameFile(file.path); if (e.key === 'Escape') { renamePath = ''; renameTarget = ''; } }}
-                  onblur={() => { if (renameTarget !== file.name) renameFile(file.path); else { renamePath = ''; renameTarget = ''; } }} autofocus />
+                  onblur={() => { if (renameTarget !== file.name) renameFile(file.path); else { renamePath = ''; renameTarget = ''; } }} />
               {:else}
                 <button
                   class="flex-1 text-left truncate"

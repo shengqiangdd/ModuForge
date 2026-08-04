@@ -6,7 +6,7 @@
     content,
     codeKey,
     lineCount = 0,
-    collapsed = false,
+    collapsed = $bindable(false),
     onCopy,
   }: {
     language?: string;
@@ -17,9 +17,8 @@
     onCopy?: (text: string) => void;
   } = $props();
 
-  let collapsedState = $state(collapsed);
-  let defaultCollapsed = $derived(lineCount > 50 && !collapsedState);
-  let isCollapsed = $derived(collapsedState || defaultCollapsed);
+  let defaultCollapsed = $derived(lineCount > 50 && !collapsed);
+  let isCollapsed = $derived(collapsed || defaultCollapsed);
 
   function handleCopy() {
     if (onCopy) {
@@ -34,7 +33,7 @@
   }
 
   function toggleCollapse() {
-    collapsedState = !collapsedState;
+    collapsed = !collapsed;
   }
 </script>
 

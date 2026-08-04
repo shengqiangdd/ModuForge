@@ -167,5 +167,5 @@
 </style>
 
 {#if open}
-  <div class="fixed inset-0 z-40" onclick={() => open = false}></div>
+  <div class="fixed inset-0 z-40" role="presentation" onclick={() => open = false}></div>
 {/if}

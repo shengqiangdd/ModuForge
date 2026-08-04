@@ -181,7 +181,7 @@
 
   <!-- Test Type Selection -->
   <div class="mb-6">
-    <label class="text-sm font-medium text-[var(--color-text-secondary)] mb-3 block">测试类型</label>
+    <span class="text-sm font-medium text-[var(--color-text-secondary)] mb-3 block">测试类型</span>
     <div class="flex gap-2">
       {#each ['shell', 'unit', 'integration'] as type}
         <button

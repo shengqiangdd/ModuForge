@@ -11,7 +11,7 @@
     fitWidth?: number;
   } = $props();
 
-  let canvasEl: HTMLCanvasElement | null = null;
+  let canvasEl = $state<HTMLCanvasElement | null>(null);
   let ws: WebSocket | null = null;
   let connected = $state(false);
   let deviceWidth = $state(1080);

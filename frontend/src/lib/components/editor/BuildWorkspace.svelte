@@ -356,7 +356,7 @@
 
     <!-- Architecture Selection -->
     <div class="mb-6">
-      <label class="text-sm font-medium text-[var(--color-text-secondary)] mb-3 block">目标架构</label>
+      <span class="text-sm font-medium text-[var(--color-text-secondary)] mb-3 block">目标架构</span>
       <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
         {#each targets as t}
           <button
@@ -387,7 +387,7 @@
 
     <!-- Trigger Mode -->
     <div class="mb-6">
-      <label class="text-sm font-medium text-[var(--color-text-secondary)] mb-3 block">触发方式</label>
+      <span class="text-sm font-medium text-[var(--color-text-secondary)] mb-3 block">触发方式</span>
       <div class="grid grid-cols-3 gap-2">
         {#each triggerModes as mode (mode)}
             {@const icons = { manual: 'build', git: 'cloud_upload', schedule: 'schedule' }}
@@ -416,12 +416,12 @@
         <p class="text-xs text-[var(--color-text-muted)] mb-3">配置 Git 仓库地址和分支，Webhook 收到 push 事件时自动触发构建。</p>
         <div class="space-y-3">
           <div>
-            <label class="text-xs font-medium text-[var(--color-text-secondary)] mb-1 block">仓库地址</label>
-            <input type="text" class="input-field w-full text-sm" placeholder="https://github.com/user/repo.git" bind:value={gitConfig.url} />
+            <label for="git-url" class="text-xs font-medium text-[var(--color-text-secondary)] mb-1 block">仓库地址</label>
+            <input id="git-url" type="text" class="input-field w-full text-sm" placeholder="https://github.com/user/repo.git" bind:value={gitConfig.url} />
           </div>
           <div>
-            <label class="text-xs font-medium text-[var(--color-text-secondary)] mb-1 block">监听分支</label>
-            <input type="text" class="input-field w-full text-sm" placeholder="main" bind:value={gitConfig.branch} />
+            <label for="git-branch" class="text-xs font-medium text-[var(--color-text-secondary)] mb-1 block">监听分支</label>
+            <input id="git-branch" type="text" class="input-field w-full text-sm" placeholder="main" bind:value={gitConfig.branch} />
           </div>
           <div class="flex items-center justify-between">
             <span class="text-xs text-[var(--color-text-muted)]">Webhook URL: <code class="text-[var(--color-primary)]">POST /api/v1/webhook/git</code></span>
@@ -442,20 +442,20 @@
         </div>
         <div class="space-y-3">
           <div>
-            <label class="text-xs font-medium text-[var(--color-text-secondary)] mb-1 block">Cron 表达式</label>
-            <input type="text" class="input-field w-full text-sm" placeholder="0 2 * * *" bind:value={scheduleConfig.cron} />
+            <label for="schedule-cron" class="text-xs font-medium text-[var(--color-text-secondary)] mb-1 block">Cron 表达式</label>
+            <input id="schedule-cron" type="text" class="input-field w-full text-sm" placeholder="0 2 * * *" bind:value={scheduleConfig.cron} />
             <p class="text-[10px] text-[var(--color-text-muted)] mt-1">分 时 日 月 周 | 例: 每天凌晨2点 → 0 2 * * *</p>
           </div>
           <div class="grid grid-cols-2 gap-3">
             <div>
-              <label class="text-xs font-medium text-[var(--color-text-secondary)] mb-1 block">目标平台</label>
-              <select class="input-field w-full text-sm" bind:value={scheduleConfig.target}>
+              <label for="schedule-target" class="text-xs font-medium text-[var(--color-text-secondary)] mb-1 block">目标平台</label>
+              <select id="schedule-target" class="input-field w-full text-sm" bind:value={scheduleConfig.target}>
                 <option value="universal">通用</option>
               </select>
             </div>
             <div>
-              <label class="text-xs font-medium text-[var(--color-text-secondary)] mb-1 block">架构</label>
-              <select class="input-field w-full text-sm" bind:value={scheduleConfig.arch}>
+              <label for="schedule-arch" class="text-xs font-medium text-[var(--color-text-secondary)] mb-1 block">架构</label>
+              <select id="schedule-arch" class="input-field w-full text-sm" bind:value={scheduleConfig.arch}>
                 <option value="arm64">arm64</option>
                 <option value="arm">arm</option>
                 <option value="x86_64">x86_64</option>
@@ -673,8 +673,11 @@
           {#each buildHistory as task}
             {@const cfg = statusConfig[task.status] || statusConfig.pending}
             <div
+              role="button"
+              tabindex="0"
               class="p-3 rounded-xl border cursor-pointer transition-colors"
               style="border-color: var(--color-border); background: var(--color-bg-elevated)"
+              onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); (e.currentTarget as HTMLElement).click(); } }}
               onclick={() => {
                 taskId = task.id;
                 status = task.status;

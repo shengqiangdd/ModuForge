@@ -13,8 +13,8 @@ let {
 </script>
 
 {#if show}
-  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onclick={onClose}>
-    <div class="bg-[var(--color-bg)] rounded-2xl shadow-2xl w-full max-w-lg border border-[var(--color-border)]" onclick={(e) => e.stopPropagation()}>
+  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+    <div class="bg-[var(--color-bg)] rounded-2xl shadow-2xl w-full max-w-lg border border-[var(--color-border)]" role="dialog" aria-modal="true" tabindex="-1">
       <div class="flex items-center justify-between px-6 py-4 border-b border-[var(--color-border)]">
         <div class="flex items-center gap-2">
           <span class="material-symbols-outlined text-primary-600">speed</span>
