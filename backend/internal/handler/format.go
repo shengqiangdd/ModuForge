@@ -118,7 +118,11 @@ func (h *FormatHandler) FormatProject(c fiber.Ctx) error {
 		}
 
 		if formatted != content {
-			h.db.Exec(`UPDATE project_files SET content=? WHERE project_id=? AND path=?`, formatted, projectID, path)
+			if _, err := h.db.Exec(`UPDATE project_files SET content=? WHERE project_id=? AND path=?`, formatted, projectID, path); err != nil {
+				failed++
+				results = append(results, FormatResult{File: path, Status: "failed", Error: err.Error()})
+				continue
+			}
 		}
 		success++
 		results = append(results, FormatResult{File: path, Status: "ok"})

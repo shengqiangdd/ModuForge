@@ -2,6 +2,7 @@ package handler
 
 import (
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/gofiber/fiber/v3"
@@ -48,6 +49,22 @@ func InternalError(c fiber.Ctx, msg string) error {
 
 func ValidationError(c fiber.Ctx, msg string) error {
 	return ErrorResponse(c, 422, msg, ErrCodeValidation)
+}
+
+// currentUserID returns the authenticated user ID stored in locals,
+// handling string/int64/float64 representations, or "" if absent.
+func currentUserID(c fiber.Ctx) string {
+	if uid := c.Locals("user_id"); uid != nil {
+		switch n := uid.(type) {
+		case string:
+			return n
+		case int64:
+			return strconv.FormatInt(n, 10)
+		case float64:
+			return strconv.FormatInt(int64(n), 10)
+		}
+	}
+	return ""
 }
 
 // ValidateProjectName checks project name constraints.

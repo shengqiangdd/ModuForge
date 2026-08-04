@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -290,13 +289,4 @@ func (h *CollaborationWS) GetCollaborationStatus(c fiber.Ctx) error {
 		"online_users": onlineUsers,
 		"sessions":     sessions,
 	})
-}
-
-func parseProjectID(c fiber.Ctx) string {
-	return c.Params("id")
-}
-
-func parseInt64Collab(s string) int64 {
-	v, _ := strconv.ParseInt(s, 10, 64)
-	return v
 }

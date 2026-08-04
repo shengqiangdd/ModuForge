@@ -10,29 +10,6 @@ import (
 	"github.com/moduforge/backend/internal/service"
 )
 
-// pr (protected route) registers a route with auth middleware chain.
-// Fiber v3 Group("") causes middleware leakage, so we inline middleware per-route.
-func pr(api fiber.Router, method, path string, handlers ...fiber.Handler) {
-	chain := []fiber.Handler{
-		middleware.APIKeyAuth(nil), // placeholder, set at call time
-	}
-	_ = chain // unused in this version
-}
-
-// We use a different approach: closures that capture the middleware.
-func reg(api fiber.Router, method, path string, authMW fiber.Handler, handler fiber.Handler) {
-	switch method {
-	case "GET":
-		api.Get(path, authMW, handler)
-	case "POST":
-		api.Post(path, authMW, handler)
-	case "PUT":
-		api.Put(path, authMW, handler)
-	case "DELETE":
-		api.Delete(path, authMW, handler)
-	}
-}
-
 func reg3(api fiber.Router, method, path string, mw1, mw2, mw3 fiber.Handler, handler fiber.Handler) {
 	switch method {
 	case "GET":

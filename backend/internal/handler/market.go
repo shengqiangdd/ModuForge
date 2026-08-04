@@ -384,7 +384,9 @@ func (h *MarketHandler) DeleteChangelog(c fiber.Ctx) error {
 	if err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid id"})
 	}
-	h.db.Exec("DELETE FROM module_changelogs WHERE id = ?", id)
+	if _, err := h.db.Exec("DELETE FROM module_changelogs WHERE id = ?", id); err != nil {
+		return InternalError(c, err.Error())
+	}
 	return c.JSON(fiber.Map{"ok": true})
 }
 

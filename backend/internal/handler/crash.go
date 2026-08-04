@@ -131,11 +131,16 @@ func (h *CrashHandler) Delete(c fiber.Ctx) error {
 	if err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid id"})
 	}
-	h.db.Exec("DELETE FROM crash_logs WHERE id = ?", id)
+	_, err = h.db.Exec("DELETE FROM crash_logs WHERE id = ?", id)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
 	return c.JSON(fiber.Map{"ok": true})
 }
 
 func (h *CrashHandler) ClearAll(c fiber.Ctx) error {
-	h.db.Exec("DELETE FROM crash_logs")
+	if _, err := h.db.Exec("DELETE FROM crash_logs"); err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
 	return c.JSON(fiber.Map{"ok": true})
 }

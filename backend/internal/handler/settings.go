@@ -141,14 +141,18 @@ func (h *SettingsHandler) UpdateAgentConfig(c fiber.Ctx) error {
 		if v < 1 || v > 200 {
 			return ValidationError(c, "迭代次数范围: 1-200")
 		}
-		h.db.Exec("INSERT OR REPLACE INTO agent_settings (key, value, updated_at) VALUES (?, ?, datetime('now'))", "max_iterations", v)
+		if _, err := h.db.Exec("INSERT OR REPLACE INTO agent_settings (key, value, updated_at) VALUES (?, ?, datetime('now'))", "max_iterations", v); err != nil {
+			return InternalError(c, err.Error())
+		}
 	}
 	if req.MaxResultLen != nil {
 		v := *req.MaxResultLen
 		if v < 500 || v > 100000 {
 			return ValidationError(c, "结果长度范围: 500-100000")
 		}
-		h.db.Exec("INSERT OR REPLACE INTO agent_settings (key, value, updated_at) VALUES (?, ?, datetime('now'))", "max_result_len", v)
+		if _, err := h.db.Exec("INSERT OR REPLACE INTO agent_settings (key, value, updated_at) VALUES (?, ?, datetime('now'))", "max_result_len", v); err != nil {
+			return InternalError(c, err.Error())
+		}
 	}
 
 	return c.JSON(fiber.Map{"ok": true, "message": "配置已保存"})

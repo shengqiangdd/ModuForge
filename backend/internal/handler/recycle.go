@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"os"
-	"strconv"
 
 	"github.com/gofiber/fiber/v3"
 )
@@ -18,12 +17,7 @@ func NewRecycleHandler(db *sql.DB) *RecycleHandler {
 }
 
 func (h *RecycleHandler) userID(c fiber.Ctx) string {
-	if uid := c.Locals("user_id"); uid != nil {
-		if s, ok := uid.(string); ok && s != "" {
-			return s
-		}
-	}
-	return ""
+	return currentUserID(c)
 }
 
 func (h *RecycleHandler) List(c fiber.Ctx) error {
@@ -75,12 +69,17 @@ func (h *RecycleHandler) Restore(c fiber.Ctx) error {
 	}
 	if itemType == "project" {
 		var data map[string]interface{}
-		json.Unmarshal([]byte(itemData), &data)
-		h.db.Exec("UPDATE projects SET deleted_at = NULL WHERE id = ? AND user_id = ?", itemID, uid)
+		if err := json.Unmarshal([]byte(itemData), &data); err == nil {
+			if _, err := h.db.Exec("UPDATE projects SET deleted_at = NULL WHERE id = ? AND user_id = ?", itemID, uid); err != nil {
+				return InternalError(c, err.Error())
+			}
+		}
 	} else if itemType == "module" {
 		// Restore module logic
 	}
-	h.db.Exec("DELETE FROM recycle_bin WHERE user_id = ? AND item_type = ? AND item_id = ?", uid, itemType, itemID)
+	if _, err := h.db.Exec("DELETE FROM recycle_bin WHERE user_id = ? AND item_type = ? AND item_id = ?", uid, itemType, itemID); err != nil {
+		return InternalError(c, err.Error())
+	}
 	return c.JSON(fiber.Map{"ok": true, "name": itemName})
 }
 
@@ -107,7 +106,9 @@ func (h *RecycleHandler) PermanentlyDelete(c fiber.Ctx) error {
 		}
 	}
 
-	h.db.Exec("DELETE FROM recycle_bin WHERE user_id = ? AND item_type = ? AND item_id = ?", uid, itemType, itemID)
+	if _, err := h.db.Exec("DELETE FROM recycle_bin WHERE user_id = ? AND item_type = ? AND item_id = ?", uid, itemType, itemID); err != nil {
+		return InternalError(c, err.Error())
+	}
 	return c.JSON(fiber.Map{"ok": true})
 }
 
@@ -134,7 +135,9 @@ func (h *RecycleHandler) ClearAll(c fiber.Ctx) error {
 		rows.Close()
 	}
 
-	h.db.Exec("DELETE FROM recycle_bin WHERE user_id = ?", uid)
+	if _, err := h.db.Exec("DELETE FROM recycle_bin WHERE user_id = ?", uid); err != nil {
+		return InternalError(c, err.Error())
+	}
 	return c.JSON(fiber.Map{"ok": true})
 }
 
@@ -180,9 +183,4 @@ func (h *RecycleHandler) cascadeDeleteProject(projectID string) {
 
 func (h *RecycleHandler) CleanupExpiredItems() {
 	h.db.Exec("DELETE FROM recycle_bin WHERE expires_at <= datetime('now')")
-}
-
-// parseInt64 is kept for parsing URL params like notification/item IDs.
-func parseInt64FromStr(s string) (int64, error) {
-	return strconv.ParseInt(s, 10, 64)
 }

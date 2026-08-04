@@ -33,17 +33,7 @@ type Widget struct {
 // userID returns the user_id as a string (UUID).
 // Users.id is TEXT (UUID), so dashboard_widgets.user_id must match.
 func (h *DashboardHandler) userID(c fiber.Ctx) string {
-	if uid := c.Locals("user_id"); uid != nil {
-		switch n := uid.(type) {
-		case string:
-			return n
-		case int64:
-			return strconv.FormatInt(n, 10)
-		case float64:
-			return strconv.FormatInt(int64(n), 10)
-		}
-	}
-	return ""
+	return currentUserID(c)
 }
 
 func (h *DashboardHandler) ListWidgets(c fiber.Ctx) error {
@@ -202,7 +192,9 @@ func (h *DashboardHandler) DeleteWidget(c fiber.Ctx) error {
 	if err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid widget id"})
 	}
-	h.db.Exec("DELETE FROM dashboard_widgets WHERE user_id = ? AND id = ?", uid, id)
+	if _, err := h.db.Exec("DELETE FROM dashboard_widgets WHERE user_id = ? AND id = ?", uid, id); err != nil {
+		return InternalError(c, err.Error())
+	}
 	return c.JSON(fiber.Map{"ok": true})
 }
 

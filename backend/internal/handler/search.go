@@ -59,13 +59,17 @@ func (h *SearchHistoryHandler) DeleteHistory(c fiber.Ctx) error {
 
 	idStr := c.Params("id")
 	if idStr == "" || idStr == "all" {
-		h.db.Exec("DELETE FROM search_history WHERE user_id = ?", uid)
+		if _, err := h.db.Exec("DELETE FROM search_history WHERE user_id = ?", uid); err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
 	} else {
 		id, err := strconv.ParseInt(idStr, 10, 64)
 		if err != nil {
 			return c.Status(400).JSON(fiber.Map{"error": "invalid id"})
 		}
-		h.db.Exec("DELETE FROM search_history WHERE id = ? AND user_id = ?", id, uid)
+		if _, err := h.db.Exec("DELETE FROM search_history WHERE id = ? AND user_id = ?", id, uid); err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
 	}
 	return c.JSON(fiber.Map{"ok": true})
 }
@@ -76,7 +80,9 @@ func (h *SearchHistoryHandler) ClearHistory(c fiber.Ctx) error {
 		return Unauthorized(c, "unauthorized")
 	}
 	uid := userID.(string)
-	h.db.Exec("DELETE FROM search_history WHERE user_id = ?", uid)
+	if _, err := h.db.Exec("DELETE FROM search_history WHERE user_id = ?", uid); err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
 	return c.JSON(fiber.Map{"ok": true})
 }
 

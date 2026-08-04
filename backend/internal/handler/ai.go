@@ -1092,11 +1092,6 @@ func (h *AIHandler) ComputeDiff(c fiber.Ctx) error {
 
 	var diffs []DiffEntry
 
-	maxLen := len(oldLines)
-	if len(newLines) > maxLen {
-		maxLen = len(newLines)
-	}
-
 	// Simple LCS-based diff
 	lcs := computeLCS(oldLines, newLines)
 	oi, ni := 0, 0

@@ -75,8 +75,12 @@ func (h *TagsHandler) Delete(c fiber.Ctx) error {
 	if err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid id"})
 	}
-	h.db.Exec("DELETE FROM module_tag_relations WHERE tag_id = ?", id)
-	h.db.Exec("DELETE FROM module_tags WHERE id = ?", id)
+	if _, err := h.db.Exec("DELETE FROM module_tag_relations WHERE tag_id = ?", id); err != nil {
+		return InternalError(c, err.Error())
+	}
+	if _, err := h.db.Exec("DELETE FROM module_tags WHERE id = ?", id); err != nil {
+		return InternalError(c, err.Error())
+	}
 	return c.JSON(fiber.Map{"ok": true})
 }
 
