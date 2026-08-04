@@ -1,0 +1,364 @@
+/* ProgressIndicator.css - Styles for progress visualization */
+
+.progress-container {
+  margin: 8px 0;
+  padding: 12px;
+  background: #f8fafc;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+}
+
+.progress-bar-container {
+  margin-bottom: 12px;
+}
+
+.progress-bar-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: #64748b;
+  margin-bottom: 4px;
+}
+
+.progress-bar {
+  height: 6px;
+  background: #e2e8f0;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  background: #3b82f6;
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.tool-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tool-call-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  background: white;
+  border-radius: 6px;
+  border: 1px solid #e2e8f0;
+  transition: all 0.2s ease;
+}
+
+.tool-call-item:hover {
+  border-color: #cbd5e1;
+}
+
+.tool-call-item.running {
+  border-color: #3b82f6;
+  background: #eff6ff;
+}
+
+.tool-call-item.success {
+  border-color: #10b981;
+}
+
+.tool-call-item.error {
+  border-color: #ef4444;
+  background: #fef2f2;
+}
+
+.tool-call-icon {
+  font-size: 16px;
+  width: 24px;
+  text-align: center;
+}
+
+.tool-call-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.tool-call-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: #1e293b;
+}
+
+.tool-call-path {
+  font-size: 11px;
+  color: #64748b;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tool-call-duration {
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.tool-call-status {
+  font-size: 14px;
+}
+
+.spinner {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.current-step {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 8px;
+  background: #eff6ff;
+  border-radius: 6px;
+  font-size: 13px;
+  color: #1e40af;
+}
+
+/* UndoRedoPanel.css */
+
+.undo-redo-container {
+  position: relative;
+}
+
+.undo-redo-toggle {
+  padding: 6px 12px;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.undo-redo-toggle:hover {
+  background: #e2e8f0;
+}
+
+.undo-redo-panel {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  width: 320px;
+  max-height: 400px;
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  z-index: 100;
+  overflow: hidden;
+}
+
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.panel-header h4 {
+  margin: 0;
+  font-size: 14px;
+  color: #1e293b;
+}
+
+.panel-header button {
+  background: none;
+  border: none;
+  font-size: 18px;
+  cursor: pointer;
+  color: #64748b;
+}
+
+.checkpoint-list {
+  max-height: 340px;
+  overflow-y: auto;
+}
+
+.checkpoint-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid #f1f5f9;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.checkpoint-item:hover {
+  background: #f8fafc;
+}
+
+.checkpoint-item.selected {
+  background: #eff6ff;
+}
+
+.checkpoint-icon {
+  font-size: 16px;
+}
+
+.checkpoint-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.checkpoint-path {
+  font-size: 13px;
+  color: #1e293b;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.checkpoint-time {
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.checkpoint-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.undo-btn, .redo-btn {
+  padding: 4px 8px;
+  font-size: 11px;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  background: white;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.undo-btn:hover {
+  background: #fef3c7;
+  border-color: #f59e0b;
+}
+
+.redo-btn:hover {
+  background: #dbeafe;
+  border-color: #3b82f6;
+}
+
+/* ConfirmDialog.css */
+
+.confirm-dialog-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.confirm-dialog {
+  background: white;
+  border-radius: 12px;
+  width: 400px;
+  max-width: 90%;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+  overflow: hidden;
+}
+
+.confirm-dialog.danger {
+  border: 2px solid #ef4444;
+}
+
+.dialog-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.dialog-icon {
+  font-size: 24px;
+}
+
+.dialog-header h3 {
+  margin: 0;
+  font-size: 16px;
+  color: #1e293b;
+}
+
+.dialog-body {
+  padding: 16px;
+}
+
+.dialog-body p {
+  margin: 0 0 12px 0;
+  color: #475569;
+  line-height: 1.5;
+}
+
+.dialog-details {
+  margin: 0;
+  padding-left: 20px;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.dialog-details li {
+  margin-bottom: 4px;
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 16px;
+  background: #f8fafc;
+  border-top: 1px solid #e2e8f0;
+}
+
+.cancel-btn {
+  padding: 8px 16px;
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.cancel-btn:hover {
+  background: #f1f5f9;
+}
+
+.confirm-btn {
+  padding: 8px 16px;
+  background: #3b82f6;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.confirm-btn:hover {
+  background: #2563eb;
+}
+
+.confirm-btn.danger {
+  background: #ef4444;
+}
+
+.confirm-btn.danger:hover {
+  background: #dc2626;
+}

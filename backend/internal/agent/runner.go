@@ -148,6 +148,12 @@ type AgentRunner struct {
 	writeContentCache sync.Map // sessionID -> map[string]string (path -> content)
 	// Optimization 1: Session access time tracking for TTL-based cleanup
 	sessionAccessTimes sync.Map // sessionID -> time.Time (last access timestamp)
+
+	// NEW: Enhanced modules
+	auditLog       *AuditLog
+	permChecker    *PermissionChecker
+	sessionPersist *SessionPersistence
+	depGraph       *DependencyGraph
 }
 
 func NewAgentRunner(registry *SkillRegistry, apiKey, endpoint, model string, db *sql.DB) *AgentRunner {
@@ -159,6 +165,11 @@ func NewAgentRunner(registry *SkillRegistry, apiKey, endpoint, model string, db 
 		db:           db,
 		convStore:    service.NewConversationStore(),
 		toolDefCache: make(map[string][]ToolDef),
+		// Initialize new modules
+		auditLog:       NewAuditLog(""),
+		permChecker:    NewPermissionChecker(),
+		sessionPersist: NewSessionPersistence(""),
+		depGraph:       NewDependencyGraph(),
 	}
 	go r.startSessionCacheCleanup()
 	return r
@@ -1799,7 +1810,7 @@ You are running WITHOUT a project context. This means:
 		}
 		tasks = deduped
 
-		// Execute tools: parallel for read-only, sequential for write/side-effect
+		// Execute tools: parallel for read-only AND different-file writes, sequential for same-file writes
 		var mu sync.Mutex
 		var results []struct {
 			tc     LLMToolCall
@@ -1814,6 +1825,26 @@ You are running WITHOUT a project context. This means:
 				parallelTasks = append(parallelTasks, t)
 			} else {
 				sequentialTasks = append(sequentialTasks, t)
+			}
+		}
+
+		// Optimization: Group write tasks by file path for parallel execution
+		// Different files can be written in parallel
+		fileGroups := make(map[string][]toolTask)
+		var writeOrder []string
+		for _, t := range sequentialTasks {
+			if t.skillName == "write_file" || t.skillName == "edit_file" {
+				path := ""
+				if p, ok := t.skillInput["path"].(string); ok {
+					path = p
+				}
+				if _, exists := fileGroups[path]; !exists {
+					writeOrder = append(writeOrder, path)
+				}
+				fileGroups[path] = append(fileGroups[path], t)
+			} else {
+				// Non-write tools go directly to sequential
+				parallelTasks = append(parallelTasks, t)
 			}
 		}
 
