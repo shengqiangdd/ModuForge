@@ -245,6 +245,7 @@ func (s *GrepSearchSkill) Metadata() SkillMeta {
 	return SkillMeta{
 		ReadOnly:  true,
 		Essential: false,
+		Core:      true,
 		NeedsDB:   false,
 		NeedsLLM:  false,
 	}

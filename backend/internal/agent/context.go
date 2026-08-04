@@ -669,74 +669,24 @@ Example: "I updated ipc.rs to fix libc::open type mismatch. Build passes."
 		sb.WriteString(`## KEY TOOLS (full schema in tools parameter)
 - read_file(path) → read file content
 - write_file(path, content) → write COMPLETE file (auto-creates dirs)
-- edit_file(path, old_text, new_text) → find-and-replace in file (MORE EFFICIENT than write_file for small changes)
-- grep_search(pattern, project_id) → search code across all files (like grep -rn)
-- glob_search(pattern, project_id) → find files by name pattern (e.g., "*.go")
-- bash(command, project_id) → run shell commands (build, test, git, etc.)
+- edit_file(path, old_text, new_text) → find-and-replace (preferred for small changes)
+- grep_search(pattern) → search code across all files (like grep -rn)
+- glob_search(pattern) → find files by name (e.g., "**/*.go")
+- bash(command) → run shell commands (build, test, git)
 - build_module(project_id) → compile + package ZIP
-- web_search(query) → search the web
-- todo_manager(action, ...) → manage task lists (create/read/update/complete)
-- task_delegator(action, ...) → spawn sub-agents for parallel work
-- context_manager(action, ...) → manage memory and context (remember/search/compress)
-- skill_registry(action, ...) → manage skills (list/enable/disable/configure)
-- memory_v2(action, ...) → enhanced memory with semantic search (store/recall/search/consolidate)
-- skill_manager(action, ...) → skill versions and dependencies (version/dependencies/rollback)
-- self_reflection(action, ...) → diagnose failures and extract lessons (diagnose/adapt/pattern)
-- session_summary(action, ...) → compress sessions into reusable knowledge (create/list/get)
 
-## FILE OPERATIONS
-- write_file creates parent dirs automatically. Do NOT call create_dir first.
-- write_file({"path": "src/main.rs", "content": "..."}) — full file content required.
-- edit_file is MORE EFFICIENT for small changes — use it instead of write_file when modifying <30% of a file.
-- read_file only reads what you need. Do NOT read all files upfront.
-- Use grep_search to find code patterns instead of reading files blindly.
-- Use glob_search to discover file structure instead of list_dir.
+## FILE RULES
+- edit_file for changes <30% of file (MOST common)
+- write_file for new files or complete rewrites ONLY
+- grep_search BEFORE read_file (locate code first)
+- After writing, ALWAYS call build_module
 
-## TASK MANAGEMENT
-For complex tasks with multiple steps, use todo_manager to track progress:
-1. Create a todo list: todo_manager({"action": "create", "title": "Task Name", "items": [...]})
-2. Mark items as you complete them: todo_manager({"action": "complete_item", "item_id": "..."})
-3. Read progress: todo_manager({"action": "read", "todo_id": "..."})
-
-## CONTEXT & MEMORY
-Use memory_v2 for advanced memory management with semantic search:
-- Store important decisions: memory_v2({"action": "store", "content": "Use REST API", "category": "semantic", "importance": 8, "tags": ["api", "design"]})
-- Recall relevant memories: memory_v2({"action": "recall", "category": "semantic"})
-- Search by meaning: memory_v2({"action": "search", "query": "API design patterns"})
-- Consolidate old memories: memory_v2({"action": "consolidate"})
-
-## MODULE BUILD WORKFLOW
-1. Use grep_search/glob_search to understand project structure
-2. Use read_file to read files you need to modify
-3. Fix/create code with edit_file (small changes) or write_file (new/complete files)
-4. Call build_module to compile and validate
-5. If errors: use bash("cat -n path/to/file") to inspect, fix with edit_file, rebuild (max 3 times)
-6. Report what you actually did
-
-## SKILL MANAGEMENT
-Use skill_manager for version control and dependencies:
-- Create version: skill_manager({"action": "version", "skill_name": "my_skill", "version": "1.0.0", "changelog": "Initial release"})
-- Check dependencies: skill_manager({"action": "check_compatibility", "skill_name": "my_skill"})
-- Rollback: skill_manager({"action": "rollback", "skill_name": "my_skill", "target_version": "1.0.0"})
-
-## SELF-REFLECTION & ERROR RECOVERY
-When a tool call fails repeatedly, use self_reflection to diagnose and adapt:
-- Diagnose: self_reflection({"action": "diagnose", "task_id": "feature_x", "error": "compile error", "attempt": 2})
-- Adapt strategy: self_reflection({"action": "adapt", "task_id": "feature_x", "lesson": "needed to update imports", "strategy": "check imports before build"})
-- Check patterns: self_reflection({"action": "pattern", "task_id": "feature_x"})
-
-## SESSION SUMMARY
-After completing a significant task, summarize the session:
-- Create: session_summary({"action": "create", "session_id": "current", "summary": "Implemented X", "decisions": ["Used Y pattern"], "files_changed": ["main.go"]})
-- Review past: session_summary({"action": "list"})
-
-## EFFICIENCY RULES
-- Use edit_file for changes <30% of file content (saves tokens, preserves context)
-- Use grep_search before read_file to find relevant code first
-- Use bash for build/test/git operations instead of manual file manipulation
-- Batch multiple write_file calls when creating multiple files
-- Use todo_manager for multi-step tasks to avoid losing track
-- Use memory_v2 to remember important decisions across sessions
+## WORKFLOW
+1. grep_search → find relevant code
+2. read_file → understand context
+3. edit_file → make changes (or write_file for new files)
+4. build_module → verify compilation
+5. Report: files changed + build status
 
 CRITICAL: You are evaluated on whether you ACTUALLY WROTE FILES and VERIFIED THE BUILD.
 A plan without execution is a failure. Analysis without modification is a failure.

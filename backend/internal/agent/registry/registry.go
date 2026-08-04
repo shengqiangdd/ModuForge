@@ -22,6 +22,7 @@ import (
 type SkillMeta struct {
 	ReadOnly  bool // safe in Plan mode (no side effects)
 	Essential bool // essential for free models (must be included)
+	Core      bool // core tool for ALL models (reduces tool bloat)
 	NeedsDB   bool // requires database connection
 	NeedsLLM  bool // requires LLM API key/endpoint
 	MinTier   int  // minimum model tier (0=free, 1=mid, 2=strong); 0 = all tiers
@@ -155,6 +156,22 @@ func (r *SkillRegistry) EssentialToolsForFree() map[string]bool {
 	for _, s := range r.skills {
 		if mp, ok := s.(MetadataProvider); ok {
 			if mp.Metadata().Essential {
+				m[s.Name()] = true
+			}
+		}
+	}
+	return m
+}
+
+// CoreTools returns the set of skill names that are core for ALL models.
+// Core tools are always exposed regardless of model tier, reducing tool bloat.
+func (r *SkillRegistry) CoreTools() map[string]bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	m := make(map[string]bool)
+	for _, s := range r.skills {
+		if mp, ok := s.(MetadataProvider); ok {
+			if mp.Metadata().Core {
 				m[s.Name()] = true
 			}
 		}

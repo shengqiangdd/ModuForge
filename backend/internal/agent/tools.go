@@ -26,11 +26,13 @@ func (r *AgentRunner) buildToolDefinitionsForMode(mode AgentMode, modelName stri
 	// Derive skill sets from metadata (no hardcoded maps)
 	readOnlySkills := r.registry.ReadOnlySkills()
 	essentialToolsFree := r.registry.EssentialToolsForFree()
+	coreTools := r.registry.CoreTools()
 
 	// For free models, only expose essential tools (if any are marked)
 	// If no skills implement MetadataProvider, expose all tools for free models too
 	isFree := resolveModelTier(modelName) == TierFree
 	hasEssentialMetadata := len(essentialToolsFree) > 0
+	hasCoreTools := len(coreTools) > 0
 
 	for _, s := range skills {
 		// In Plan mode, only expose read-only tools
@@ -41,6 +43,12 @@ func (r *AgentRunner) buildToolDefinitionsForMode(mode AgentMode, modelName stri
 		// For free models with essential metadata, skip non-essential tools
 		// For free models without essential metadata, expose all tools
 		if isFree && hasEssentialMetadata && !essentialToolsFree[s.Name()] {
+			continue
+		}
+
+		// Core tool filtering: if core tools are defined, only expose core + read-only tools
+		// This reduces tool bloat for ALL models (not just free tier)
+		if hasCoreTools && !coreTools[s.Name()] && !readOnlySkills[s.Name()] {
 			continue
 		}
 
@@ -58,6 +66,7 @@ func (r *AgentRunner) buildToolDefinitionsForMode(mode AgentMode, modelName stri
 
 		switch s.Name() {
 		case "read_file":
+			def.Function.Description = "Read file content. ALWAYS use grep_search first to find relevant code, then read only what you need."
 			def.Function.Parameters["properties"] = map[string]interface{}{
 				"path":       map[string]interface{}{"type": "string", "description": "File path to read"},
 				"start_line": map[string]interface{}{"type": "integer", "description": "First line (1-based, optional)"},
@@ -65,6 +74,7 @@ func (r *AgentRunner) buildToolDefinitionsForMode(mode AgentMode, modelName stri
 			}
 			def.Function.Parameters["required"] = []string{"path"}
 		case "write_file":
+			def.Function.Description = "Write COMPLETE file content. Use ONLY for new files or complete rewrites. For small changes, prefer edit_file."
 			def.Function.Parameters["properties"] = map[string]interface{}{
 				"path":    map[string]interface{}{"type": "string", "description": "File path to write"},
 				"content": map[string]interface{}{"type": "string", "description": "Complete file content"},
@@ -130,6 +140,41 @@ func (r *AgentRunner) buildToolDefinitionsForMode(mode AgentMode, modelName stri
 				"query": map[string]interface{}{"type": "string", "description": "Search query"},
 			}
 			def.Function.Parameters["required"] = []string{"query"}
+		case "edit_file":
+			def.Function.Description = "Make targeted edits to an existing file. Use this for MOST changes (preferred over write_file for modifications <30% of file). Specify exact old_text to find and new_text to replace."
+			def.Function.Parameters["properties"] = map[string]interface{}{
+				"path":     map[string]interface{}{"type": "string", "description": "File path to edit"},
+				"old_text": map[string]interface{}{"type": "string", "description": "Exact text to find (must match exactly)"},
+				"new_text": map[string]interface{}{"type": "string", "description": "Replacement text"},
+			}
+			def.Function.Parameters["required"] = []string{"path", "old_text", "new_text"}
+		case "grep_search":
+			def.Function.Description = "Search code patterns across all project files (like grep -rn). Use BEFORE read_file to find relevant code."
+			def.Function.Parameters["properties"] = map[string]interface{}{
+				"pattern":         map[string]interface{}{"type": "string", "description": "Search pattern (regex supported)"},
+				"include_pattern": map[string]interface{}{"type": "string", "description": "File filter glob (e.g. *.go)"},
+				"context_lines":   map[string]interface{}{"type": "integer", "description": "Context lines before/after match"},
+				"is_regex":        map[string]interface{}{"type": "boolean", "description": "Treat pattern as regex"},
+			}
+			def.Function.Parameters["required"] = []string{"pattern"}
+		case "glob_search":
+			def.Function.Description = "Find files by name pattern (e.g., *.go, **/*.rs). Use to discover project structure."
+			def.Function.Parameters["properties"] = map[string]interface{}{
+				"pattern": map[string]interface{}{"type": "string", "description": "Glob pattern (use ** for recursive)"},
+			}
+			def.Function.Parameters["required"] = []string{"pattern"}
+		case "bash":
+			def.Function.Description = "Execute shell commands. Use for: build (go build, cargo build), test (go test, cargo test), git, file inspection (cat, ls, find)."
+			def.Function.Parameters["properties"] = map[string]interface{}{
+				"command": map[string]interface{}{"type": "string", "description": "Shell command to execute"},
+			}
+			def.Function.Parameters["required"] = []string{"command"}
+		case "build_module":
+			def.Function.Description = "Compile and package the project into a ZIP. ALWAYS call after writing code to verify it compiles."
+			def.Function.Parameters["properties"] = map[string]interface{}{
+				"project_id": map[string]interface{}{"type": "string", "description": "Project ID to build"},
+			}
+			def.Function.Parameters["required"] = []string{"project_id"}
 		case "memory_manager":
 			def.Function.Parameters["properties"] = map[string]interface{}{
 				"action": map[string]interface{}{"type": "string", "description": "Action: list/get/update/delete/search"},

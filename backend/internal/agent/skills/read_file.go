@@ -262,6 +262,7 @@ func (s *ReadFileSkill) Metadata() SkillMeta {
 	return SkillMeta{
 		ReadOnly:  true,
 		Essential: true,
+		Core:      true,
 		NeedsDB:   true,
 		NeedsLLM:  false,
 	}

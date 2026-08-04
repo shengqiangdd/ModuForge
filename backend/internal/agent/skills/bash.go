@@ -142,6 +142,7 @@ func (s *BashSkill) Metadata() SkillMeta {
 	return SkillMeta{
 		ReadOnly:  false,
 		Essential: false,
+		Core:      true,
 		NeedsDB:   false,
 		NeedsLLM:  false,
 	}
