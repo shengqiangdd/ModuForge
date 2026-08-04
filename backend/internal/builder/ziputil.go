@@ -91,31 +91,6 @@ var ModuleExcludePatterns = []string{
 	"*.gradle",
 }
 
-// shouldExcludePath checks if a relative path matches any exclusion pattern.
-func shouldExcludePath(relPath string) bool {
-	lower := strings.ToLower(relPath)
-	for _, pat := range ModuleExcludePatterns {
-		if strings.HasSuffix(pat, "/") {
-			// Directory pattern: path starts with it
-			if strings.HasPrefix(lower, pat) {
-				return true
-			}
-		} else if strings.Contains(pat, "*") {
-			// Glob pattern: match filename suffix
-			suffix := strings.TrimPrefix(pat, "*")
-			if strings.HasSuffix(lower, suffix) {
-				return true
-			}
-		} else {
-			// Exact filename match
-			if lower == strings.ToLower(pat) || strings.HasSuffix(lower, "/"+strings.ToLower(pat)) {
-				return true
-			}
-		}
-	}
-	return false
-}
-
 // ZipModuleForBuild zips a module directory for build output,
 // excluding source code and build artifacts — only runtime files are included.
 func ZipModuleForBuild(sourceDir, outputZip string) error {

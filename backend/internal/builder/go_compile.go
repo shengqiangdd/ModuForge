@@ -487,7 +487,7 @@ func (b *Builder) CompileGoFilesArch(ctx context.Context, projectDir, arch strin
 
 		// Need to compile
 		envExtra := []string{
-			fmt.Sprintf("GOOS=android"),
+			"GOOS=android",
 			fmt.Sprintf("GOARCH=%s", goarch),
 			"CGO_ENABLED=0",
 		}

@@ -284,9 +284,3 @@ func readCargoPackageName(cargoDir string) string {
 	}
 	return ""
 }
-
-// hasCargoProject checks if a directory contains Cargo.toml
-func hasCargoProject(dir string) bool {
-	_, err := os.Stat(filepath.Join(dir, "Cargo.toml"))
-	return err == nil
-}

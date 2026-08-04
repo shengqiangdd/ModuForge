@@ -193,9 +193,7 @@ func CheckIncremental(projectDir string, arch string) *IncrementalResult {
 
 		// Expand: all files in changed dirs are considered changed
 		var expandedChanged []string
-		for _, f := range result.ChangedFiles {
-			expandedChanged = append(expandedChanged, f)
-		}
+		expandedChanged = append(expandedChanged, result.ChangedFiles...)
 		seen := make(map[string]bool)
 		for _, f := range result.ChangedFiles {
 			seen[f] = true

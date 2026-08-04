@@ -356,9 +356,7 @@ func (b *Builder) CompileCFilesArch(ctx context.Context, projectDir string, arch
 	}
 
 	// Add ALL source files (single compilation unit)
-	for _, f := range srcFiles {
-		args = append(args, f)
-	}
+	args = append(args, srcFiles...)
 
 	compileCtx, compileCancel := context.WithTimeout(ctx, 120*time.Second)
 	cmd := exec.CommandContext(compileCtx, clangBin, args...)
