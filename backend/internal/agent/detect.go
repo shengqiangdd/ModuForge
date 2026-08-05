@@ -10,15 +10,25 @@ import (
 )
 
 // claimsFileModification checks if the text claims to have modified files.
+// P0-2: Enhanced to detect more patterns and include edit_file/write_file_batch.
 func claimsFileModification(text string) bool {
 	lower := strings.ToLower(text)
 
 	// Strong signal: explicitly claims to have written/saved/modified files
 	strongClaims := []string{
-		"已修改", "已写入", "已保存", "已更新", "已创建",
+		"已修改", "已写入", "已保存", "已更新", "已创建", "已完成",
 		"have modified", "have written", "have saved", "have created",
 		"i modified", "i wrote", "i saved", "i created", "i updated",
-		"修改了文件", "写入了文件", "保存了文件",
+		"修改了文件", "写入了文件", "保存了文件", "更新了文件",
+		"我修改了", "我写入了", "我保存了", "我创建了", "我更新了",
+		"修改完成", "写入完成", "保存完成", "更新完成", "创建完成",
+		"successfully modified", "successfully wrote", "successfully saved",
+		"files modified", "files written", "file updated", "file created",
+		// P0-2: Add patterns for plans/intentions that should be executed
+		"will modify", "will write", "will create", "will update",
+		"需要修改", "需要写入", "需要创建", "需要更新",
+		"将要修改", "将要写入", "将要创建", "将要更新",
+		"计划修改", "计划写入", "计划创建", "计划更新",
 	}
 	hasStrongClaim := false
 	for _, s := range strongClaims {
@@ -37,15 +47,18 @@ func claimsFileModification(text string) bool {
 		strings.Contains(lower, ".html") || strings.Contains(lower, ".css") ||
 		strings.Contains(lower, ".js") || strings.Contains(lower, ".ts") ||
 		strings.Contains(lower, ".sql") || strings.Contains(lower, ".c") ||
-		strings.Contains(lower, "makefile") || strings.Contains(lower, ".py")
+		strings.Contains(lower, "makefile") || strings.Contains(lower, ".py") ||
+		strings.Contains(lower, "src/") || strings.Contains(lower, "lib/") ||
+		strings.Contains(lower, "main.rs") || strings.Contains(lower, "lib.rs")
 
 	return hasStrongClaim && hasFile
 }
 
 // detectLoop detects repetitive tool call patterns and returns an intervention message.
+// P0-1: Enhanced stagnation detection with stricter thresholds for read_file loops.
 func detectLoop(toolCallHistory map[string]int, uniqueOps map[string]bool, totalCalls int) string {
-	// Total call budget — hard limit (reduced from 12 to 8)
-	if totalCalls >= 8 {
+	// Total call budget — hard limit (reduced from 8 to 6 for faster termination)
+	if totalCalls >= 6 {
 		return fmt.Sprintf("Made %d tool calls total. You must stop using tools and provide your final answer now. Summarize what you accomplished.", totalCalls)
 	}
 
@@ -64,18 +77,23 @@ func detectLoop(toolCallHistory map[string]int, uniqueOps map[string]bool, total
 		}
 
 		// read_file: special case — allow batch reads of different files
+		// P0-1: Much stricter thresholds to prevent dead loops
 		if skill == "read_file" {
-			// Same file read 2+ times = loop (reduced from 3)
+			// Same file read 2+ times = loop (reduced from 2 to 2, but now triggers immediately)
 			if uniqueCount <= 1 && count >= 2 {
 				return "Reading the same file repeatedly. This is a loop. STOP reading. Use write_file/edit_file to make changes, or provide your final answer."
 			}
-			// Many reads but few unique targets = loop (reduced from 6 to 4)
-			if count >= 4 && uniqueCount <= 2 {
+			// Many reads but few unique targets = loop (reduced from 4 to 3)
+			if count >= 3 && uniqueCount <= 2 {
 				return fmt.Sprintf("You have called read_file %d times on only %d unique targets. This is a repetitive loop. STOP reading files. Provide your final answer now, or use write_file/edit_file to create/modify files.", count, uniqueCount)
 			}
-		} else {
-			// Other skills: 4+ calls = likely loop (reduced from 6)
+			// P0-1: Additional check — if read_file is called 4+ times regardless of unique targets
 			if count >= 4 {
+				return fmt.Sprintf("You have called read_file %d times. This is excessive. STOP reading files and start writing code immediately.", count)
+			}
+		} else {
+			// Other skills: 3+ calls = likely loop (reduced from 4)
+			if count >= 3 {
 				return fmt.Sprintf("Skill '%s' called %d times. This indicates a loop. STOP calling this skill. Try a different approach or provide your final answer.", skill, count)
 			}
 		}

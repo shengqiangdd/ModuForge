@@ -167,3 +167,128 @@ func (al *AuditLog) Close() {
 	defer al.mu.Unlock()
 	// All writes are immediate, nothing to flush
 }
+
+// Optimization 51: Performance Metrics
+// Tracks key performance indicators for LLM calls, tool execution, and token usage
+type PerformanceMetrics struct {
+	mu sync.Mutex
+
+	// LLM metrics
+	LLMCallCount      int64         `json:"llm_call_count"`
+	LLMTotalDuration  time.Duration `json:"llm_total_duration"`
+	LLMCallDurations  []time.Duration
+	LLMTokenUsage     int64 `json:"llm_token_usage"`
+
+	// Tool execution metrics
+	ToolCallCount     int64         `json:"tool_call_count"`
+	ToolTotalDuration time.Duration `json:"tool_total_duration"`
+	ToolCallDurations []time.Duration
+
+	// Agent iteration metrics
+	IterationCount    int64         `json:"iteration_count"`
+	TotalRunDuration  time.Duration `json:"total_run_duration"`
+
+	// Error metrics
+	ErrorCount        int64 `json:"error_count"`
+	RetryCount        int64 `json:"retry_count"`
+}
+
+// NewPerformanceMetrics creates a new performance metrics tracker.
+func NewPerformanceMetrics() *PerformanceMetrics {
+	return &PerformanceMetrics{
+		LLMCallDurations:  make([]time.Duration, 0, 100),
+		ToolCallDurations: make([]time.Duration, 0, 100),
+	}
+}
+
+// RecordLLMCall records an LLM call duration.
+func (pm *PerformanceMetrics) RecordLLMCall(duration time.Duration) {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+	pm.LLMCallCount++
+	pm.LLMTotalDuration += duration
+	pm.LLMCallDurations = append(pm.LLMCallDurations, duration)
+	// Keep last 100 durations
+	if len(pm.LLMCallDurations) > 100 {
+		pm.LLMCallDurations = pm.LLMCallDurations[1:]
+	}
+}
+
+// RecordToolCall records a tool call duration.
+func (pm *PerformanceMetrics) RecordToolCall(duration time.Duration) {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+	pm.ToolCallCount++
+	pm.ToolTotalDuration += duration
+	pm.ToolCallDurations = append(pm.ToolCallDurations, duration)
+	// Keep last 100 durations
+	if len(pm.ToolCallDurations) > 100 {
+		pm.ToolCallDurations = pm.ToolCallDurations[1:]
+	}
+}
+
+// RecordIteration records an iteration completion.
+func (pm *PerformanceMetrics) RecordIteration() {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+	pm.IterationCount++
+}
+
+// RecordError records an error occurrence.
+func (pm *PerformanceMetrics) RecordError() {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+	pm.ErrorCount++
+}
+
+// RecordRetry records a retry occurrence.
+func (pm *PerformanceMetrics) RecordRetry() {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+	pm.RetryCount++
+}
+
+// GetSummary returns a summary of performance metrics.
+func (pm *PerformanceMetrics) GetSummary() map[string]interface{} {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+
+	summary := map[string]interface{}{
+		"llm_call_count":      pm.LLMCallCount,
+		"llm_total_duration":  pm.LLMTotalDuration.Milliseconds(),
+		"tool_call_count":     pm.ToolCallCount,
+		"tool_total_duration": pm.ToolTotalDuration.Milliseconds(),
+		"iteration_count":     pm.IterationCount,
+		"error_count":         pm.ErrorCount,
+		"retry_count":         pm.RetryCount,
+	}
+
+	// Calculate average durations
+	if pm.LLMCallCount > 0 {
+		summary["llm_avg_duration"] = pm.LLMTotalDuration.Milliseconds() / pm.LLMCallCount
+	}
+	if pm.ToolCallCount > 0 {
+		summary["tool_avg_duration"] = pm.ToolTotalDuration.Milliseconds() / pm.ToolCallCount
+	}
+
+	// Calculate P95 duration
+	if len(pm.LLMCallDurations) > 0 {
+		sorted := make([]time.Duration, len(pm.LLMCallDurations))
+		copy(sorted, pm.LLMCallDurations)
+		// Simple sort for P95
+		for i := 0; i < len(sorted); i++ {
+			for j := i + 1; j < len(sorted); j++ {
+				if sorted[i] > sorted[j] {
+					sorted[i], sorted[j] = sorted[j], sorted[i]
+				}
+			}
+		}
+		p95Idx := int(float64(len(sorted)) * 0.95)
+		if p95Idx >= len(sorted) {
+			p95Idx = len(sorted) - 1
+		}
+		summary["llm_p95_duration"] = sorted[p95Idx].Milliseconds()
+	}
+
+	return summary
+}

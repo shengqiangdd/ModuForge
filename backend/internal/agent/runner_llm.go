@@ -38,18 +38,22 @@ func (r *AgentRunner) handleLLMCallError(ctx context.Context, w SSEWriter, cfg R
 			w.WriteSSE(map[string]interface{}{
 				"type":    "step",
 				"step":    "think",
-				"content": "📋 上下文过长，已自动压缩，正在重试...",
+				"content": "上下文过长，已自动压缩，正在重试...",
 			})
 		}
 	}
-	// Backoff: 1s, 2s, 4s (exponential)
+	// Optimization 49: Exponential backoff with max cap (2s, 4s, 8s max)
 	backoff := time.Duration(1<<(consecutiveErrors-1)) * time.Second
+	const maxBackoff = 8 * time.Second
+	if backoff > maxBackoff {
+		backoff = maxBackoff
+	}
 	log.Printf("[Agent] LLM error (attempt %d): %v, retrying in %v...", consecutiveErrors, err, backoff)
 	// Notify frontend before sleeping so safety timer resets
 	w.WriteSSE(map[string]interface{}{
 		"type":    "step",
 		"step":    "think",
-		"content": fmt.Sprintf("⚠️ LLM 调用失败 (attempt %d/%d)，%v 后重试...", consecutiveErrors, 3, backoff),
+		"content": fmt.Sprintf("LLM 调用失败 (attempt %d/%d)，%v 后重试...", consecutiveErrors, 3, backoff),
 	})
 	// Keepalive during sleep — send real data events, not just comments
 	// Some proxies/CDNs drop connections with only SSE comments

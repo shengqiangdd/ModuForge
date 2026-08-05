@@ -60,6 +60,23 @@ func (r *AgentRunner) smartCompressHistory(ctx context.Context, history []servic
 		return history
 	}
 
+	// Optimization 48: Try sliding window compaction first (zero LLM cost)
+	// This is faster and cheaper than incremental or LLM compaction
+	slidingCompacted := r.slidingWindowCompact(ctx, history, w, cfg)
+	if len(slidingCompacted) > 0 {
+		newTotal := 0
+		for _, m := range slidingCompacted {
+			newTotal += len(m.Content)
+		}
+		if newTotal <= maxHistoryChars {
+			log.Printf("[Agent] sliding window compaction: %d msgs → %d msgs (was %d chars, now %d)", len(history), len(slidingCompacted), total, newTotal)
+			return fixToolCallsInHistory(slidingCompacted)
+		}
+		// Still too large, use as input for incremental compaction
+		history = slidingCompacted
+		total = newTotal
+	}
+
 	// Phase 1: Incremental compaction — summarize oldest messages progressively
 	compacted := r.incrementalCompactHistory(ctx, history, w, cfg, total)
 	if len(compacted) > 0 {
@@ -227,6 +244,102 @@ func (r *AgentRunner) incrementalCompactHistory(ctx context.Context, history []s
 	})
 	result = append(result, history[splitIdx:]...)
 
+	return result
+}
+
+// Optimization 48: Sliding Window Compaction
+// Automatically keeps the last N rounds of conversation in full,
+// while summarizing earlier messages. This provides a balance between
+// context preservation and token efficiency.
+func (r *AgentRunner) slidingWindowCompact(ctx context.Context, history []service.Message, w SSEWriter, cfg RunConfig) []service.Message {
+	const keepRounds = 5 // Keep last 5 user-assistant rounds
+	const maxMessages = keepRounds * 2 + 1 // 5 rounds + system message
+
+	if len(history) <= maxMessages {
+		return history // Already within window
+	}
+
+	// Find split point: keep last maxMessages messages
+	splitIdx := len(history) - maxMessages
+	toCompact := history[:splitIdx]
+	recentMessages := history[splitIdx:]
+
+	// Build compressed summary of old messages
+	var summary strings.Builder
+	summary.WriteString("[对话窗口压缩] 早期对话已压缩，保留最近5轮完整对话\n\n")
+
+	// Track key facts
+	var fileChanges []string
+	var errors []string
+	var decisions []string
+
+	for _, msg := range toCompact {
+		content := msg.Content
+		if content == "" {
+			continue
+		}
+
+		// Extract key information
+		if isFileChangeResult(content) {
+			if fc := extractFileChange(content); fc != "" {
+				fileChanges = append(fileChanges, fc)
+			}
+		} else if strings.HasPrefix(content, "Error:") || strings.HasPrefix(content, "❌") {
+			if len(content) > 150 {
+				content = content[:150]
+			}
+			errors = append(errors, content)
+		} else if containsDecision(content) {
+			if len(content) > 200 {
+				content = content[:200]
+			}
+			decisions = append(decisions, content)
+		}
+	}
+
+	// Build summary
+	if len(fileChanges) > 0 {
+		summary.WriteString(fmt.Sprintf("已修改文件 (%d):\n", len(fileChanges)))
+		limit := len(fileChanges)
+		if limit > 10 {
+			limit = 10
+		}
+		for _, fc := range fileChanges[:limit] {
+			summary.WriteString(fmt.Sprintf("  - %s\n", fc))
+		}
+	}
+
+	if len(errors) > 0 {
+		summary.WriteString(fmt.Sprintf("遇到的错误 (%d):\n", len(errors)))
+		limit := len(errors)
+		if limit > 5 {
+			limit = 5
+		}
+		for _, e := range errors[:limit] {
+			summary.WriteString(fmt.Sprintf("  - %s\n", e))
+		}
+	}
+
+	if len(decisions) > 0 {
+		summary.WriteString(fmt.Sprintf("关键决策 (%d):\n", len(decisions)))
+		limit := len(decisions)
+		if limit > 5 {
+			limit = 5
+		}
+		for _, d := range decisions[:limit] {
+			summary.WriteString(fmt.Sprintf("  - %s\n", d))
+		}
+	}
+
+	// Build result: summary + recent messages
+	result := make([]service.Message, 0, len(recentMessages)+1)
+	result = append(result, service.Message{
+		Role:    "system",
+		Content: summary.String(),
+	})
+	result = append(result, recentMessages...)
+
+	log.Printf("[Agent] slidingWindow: compacted %d messages to %d (+ summary)", len(history), len(result))
 	return result
 }
 
@@ -585,10 +698,13 @@ func (r *AgentRunner) heuristicCompactConversation(conversation []map[string]int
 // callLLMSummary sends a one-shot summary request to the LLM and returns the
 // streamed content. Shared by compactConversation and compactHistoryViaLLM.
 func (r *AgentRunner) callLLMSummary(ctx context.Context, cfg RunConfig, summaryPrompt []map[string]string) (string, error) {
-	endpoint, apiKey, model := r.resolveLLMConfig(cfg.UserID, "", "", cfg)
+	// Use resolveLLMConfig with the provider ID to load API key from database
+	endpoint, apiKey, model := r.resolveLLMConfig(cfg.UserID, cfg.ProviderID, "", cfg)
 	if !strings.HasSuffix(endpoint, "/chat/completions") {
 		endpoint = endpoint + "/chat/completions"
 	}
+
+	log.Printf("[Agent] callLLMSummary: endpoint=%s model=%s apiKeyLen=%d providerID=%s", endpoint, model, len(apiKey), cfg.ProviderID)
 
 	body := map[string]interface{}{
 		"model":    model,
@@ -611,11 +727,15 @@ func (r *AgentRunner) callLLMSummary(ctx context.Context, cfg RunConfig, summary
 
 	resp, err := llmHTTPClient.Do(req)
 	if err != nil {
+		log.Printf("[Agent] callLLMSummary: HTTP error: %v", err)
 		return "", err
 	}
 	defer resp.Body.Close()
 
-	return streamSSEContent(resp), nil
+	log.Printf("[Agent] callLLMSummary: response status=%d", resp.StatusCode)
+	result := streamSSEContent(resp)
+	log.Printf("[Agent] callLLMSummary: result length=%d", len(result))
+	return result, nil
 }
 
 // streamSSEContent parses a streaming chat-completions SSE body and concatenates

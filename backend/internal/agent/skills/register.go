@@ -22,6 +22,10 @@ func init() {
 	registry.RegisterFactory("write_file_batch", func(d *registry.Deps) registry.Skill {
 		return NewWriteFileBatchSkill(d.StoragePath+"/projects", d.DB)
 	})
+	// P1-3: Batch edit for atomic multi-file editing
+	registry.RegisterFactory("batch_edit_file", func(d *registry.Deps) registry.Skill {
+		return NewBatchEditFileSkill(d.StoragePath+"/projects", d.DB)
+	})
 	registry.RegisterFactory("list_dir", func(d *registry.Deps) registry.Skill { return NewListDirSkill(d.DB) })
 	registry.RegisterFactory("delete_file", func(d *registry.Deps) registry.Skill {
 		return NewDeleteFileSkill(d.StoragePath+"/projects", d.DB)

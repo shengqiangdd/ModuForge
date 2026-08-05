@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -918,7 +919,90 @@ func repairJSONArguments(args string) (string, error) {
 }
 
 // resolveLLMConfig picks the right endpoint/apiKey/model for this request.
-// Priority: RunConfig (handler-resolved) > llm_providers DB > llm_config DB > runner defaults
+// Priority: RunConfig (handler-resolved) > provider_configs DB > llm_providers DB > llm_config DB > runner defaults
+// Optimization 46: Buffer pool for JSON serialization
+// Reuses byte buffers to reduce GC pressure during high-frequency SSE writes
+var jsonBufferPool = sync.Pool{
+	New: func() interface{} {
+		buf := make([]byte, 0, 4096) // pre-allocate 4KB
+		return &buf
+	},
+}
+
+// marshalJSONToBuffer marshals data to JSON using a pooled buffer
+func marshalJSONToBuffer(data map[string]interface{}) ([]byte, error) {
+	bufp := jsonBufferPool.Get().(*[]byte)
+	buf := (*bufp)[:0]
+	// Use json.Marshal and copy to pooled buffer
+	result, err := json.Marshal(data)
+	if err != nil {
+		jsonBufferPool.Put(bufp)
+		return nil, err
+	}
+	buf = append(buf[:0], result...)
+	*bufp = buf
+	jsonBufferPool.Put(bufp)
+	return result, nil
+}
+
+// Optimization 47: Batched SSE writer
+// Collects multiple SSE events and writes them in a single flush to reduce syscall overhead
+type batchedSSEWriter struct {
+	delegate SSEWriter
+	buf      strings.Builder
+	count    int
+}
+
+func newBatchedSSEWriter(delegate SSEWriter) *batchedSSEWriter {
+	return &batchedSSEWriter{delegate: delegate}
+}
+
+func (b *batchedSSEWriter) WriteSSE(data map[string]interface{}) error {
+	jsonBytes, err := marshalJSONToBuffer(data)
+	if err != nil {
+		return err
+	}
+	b.buf.WriteString("data: ")
+	b.buf.Write(jsonBytes)
+	b.buf.WriteString("\n\n")
+	b.count++
+	// Flush every 5 events or when buffer is large
+	if b.count >= 5 || b.buf.Len() > 16384 {
+		return b.Flush()
+	}
+	return nil
+}
+
+func (b *batchedSSEWriter) WriteSSEPlain(data string) error {
+	b.buf.WriteString("data: ")
+	b.buf.WriteString(data)
+	b.buf.WriteString("\n\n")
+	b.count++
+	return b.Flush() // Always flush plain data (e.g., [DONE])
+}
+
+func (b *batchedSSEWriter) WriteSSEComment(comment string) error {
+	b.buf.WriteString(": ")
+	b.buf.WriteString(comment)
+	b.buf.WriteString("\n\n")
+	b.count++
+	return nil // Comments don't need immediate flush
+}
+
+func (b *batchedSSEWriter) Flush() error {
+	if b.buf.Len() == 0 {
+		return nil
+	}
+	err := b.delegate.WriteSSEPlain(b.buf.String())
+	b.buf.Reset()
+	b.count = 0
+	return err
+}
+
+func (b *batchedSSEWriter) IsDisconnected() bool {
+	return b.delegate.IsDisconnected()
+}
+
 func (r *AgentRunner) resolveLLMConfig(userID, reqProviderID, reqModel string, cfg ...RunConfig) (string, string, string) {
 	// If RunConfig has pre-resolved values, use them directly
 	if len(cfg) > 0 && cfg[0].LLMEndpoint != "" {
@@ -928,7 +1012,22 @@ func (r *AgentRunner) resolveLLMConfig(userID, reqProviderID, reqModel string, c
 		if reqModel != "" {
 			model = reqModel
 		}
-		log.Printf("[Agent] resolveLLMConfig: using RunConfig endpoint=%s model=%s", endpoint, model)
+		// If API key is empty, try to load from provider_configs table
+		if apiKey == "" && reqProviderID != "" && r.db != nil {
+			var encKey string
+			err := r.db.QueryRow(
+				"SELECT api_key FROM provider_configs WHERE id=? AND user_id=?",
+				reqProviderID, userID,
+			).Scan(&encKey)
+			if err == nil && encKey != "" {
+				// Decode the base64-encoded key
+				if b, err := base64.StdEncoding.DecodeString(encKey); err == nil {
+					apiKey = string(b)
+					log.Printf("[Agent] resolveLLMConfig: loaded API key from provider_configs for provider=%s", reqProviderID)
+				}
+			}
+		}
+		log.Printf("[Agent] resolveLLMConfig: using RunConfig endpoint=%s model=%s apiKey_len=%d", endpoint, model, len(apiKey))
 		return endpoint, apiKey, model
 	}
 

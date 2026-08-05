@@ -119,6 +119,7 @@ type RunConfig struct {
 	MaxIterations   int
 	MaxResultLen    int
 	Mode            AgentMode // "plan" or "act" — controls tool availability
+	ProviderID      string    // provider ID (e.g., "opencode-go") for DB lookups
 	LLMEndpoint     string    // resolved endpoint (from handler, overrides DB lookup)
 	LLMApiKey       string    // resolved API key
 	LLMModel        string    // resolved model ID
@@ -153,6 +154,9 @@ type AgentRunner struct {
 	permChecker    *PermissionChecker
 	sessionPersist *SessionPersistence
 	depGraph       *DependencyGraph
+
+	// Optimization 51: Performance metrics tracking
+	perfMetrics *PerformanceMetrics
 }
 
 func NewAgentRunner(registry *SkillRegistry, apiKey, endpoint, model string, db *sql.DB) *AgentRunner {
@@ -169,6 +173,7 @@ func NewAgentRunner(registry *SkillRegistry, apiKey, endpoint, model string, db 
 		permChecker:    NewPermissionChecker(),
 		sessionPersist: NewSessionPersistence(""),
 		depGraph:       NewDependencyGraph(),
+		perfMetrics:    NewPerformanceMetrics(),
 	}
 	go r.startSessionCacheCleanup()
 	return r
@@ -198,13 +203,146 @@ type TaskDecomposer struct {
 
 // Subtask represents a piece of a larger task.
 type Subtask struct {
-	ID           string
-	Description  string
-	Status       string   // pending, in_progress, completed, failed
-	Dependencies []string // IDs of subtasks that must complete first
+	ID           string   `json:"id"`
+	Description  string   `json:"description"`
+	Status       string   `json:"status"` // pending, in_progress, completed, failed
+	Dependencies []string `json:"dependencies"`
+	Files        []string `json:"files,omitempty"`    // involved files
+	Progress     int      `json:"progress,omitempty"` // 0-100
+	StartedAt    int64    `json:"started_at,omitempty"`
+	CompletedAt  int64    `json:"completed_at,omitempty"`
+	RetryCount   int      `json:"retry_count,omitempty"`
+}
+
+// decomposeWithLLM asks the LLM to break down a complex task into structured subtasks.
+// Returns nil if LLM is unavailable or fails.
+func (r *AgentRunner) decomposeWithLLM(ctx context.Context, task string, projectContext string, cfg RunConfig) []Subtask {
+	prompt := fmt.Sprintf(`Analyze the following task and break it into a list of concrete subtasks.
+Return ONLY a JSON array (no markdown, no explanation). Each element must have:
+- "id": short lowercase snake_case identifier (e.g. "analyze", "create_file", "verify")
+- "description": one-line Chinese description of what to do
+- "dependencies": array of id strings that must complete first (empty array if none)
+- "files": array of file paths likely involved (empty array if unknown)
+
+Task: %s
+
+Project context: %s
+
+Return the JSON array now:`, task, projectContext)
+
+	summaryPrompt := []map[string]string{
+		{"role": "system", "content": "You are a task planning assistant. Output only valid JSON arrays."},
+		{"role": "user", "content": prompt},
+	}
+
+	result, err := r.callLLMSummary(ctx, cfg, summaryPrompt)
+	if err != nil {
+		log.Printf("[Agent] LLM task decomposition failed: %v", err)
+		return nil
+	}
+
+	// Debug: log raw LLM response
+	log.Printf("[Agent] LLM task decomposition raw response (len=%d): %s", len(result), result)
+
+	// Try to extract JSON array from response
+	result = strings.TrimSpace(result)
+	// Strip markdown code fences if present
+	if idx := strings.Index(result, "```"); idx >= 0 {
+		result = strings.TrimPrefix(result[idx:], "```")
+		result = strings.TrimPrefix(result, "json\n")
+		result = strings.TrimPrefix(result, "json\r\n")
+		if endIdx := strings.LastIndex(result, "```"); endIdx >= 0 {
+			result = result[:endIdx]
+		}
+		result = strings.TrimSpace(result)
+	}
+
+	var raw []struct {
+		ID           string   `json:"id"`
+		Description  string   `json:"description"`
+		Dependencies []string `json:"dependencies"`
+		Files        []string `json:"files"`
+	}
+	if err := json.Unmarshal([]byte(result), &raw); err != nil {
+		log.Printf("[Agent] LLM task decomposition parse failed: %v (raw=%s)", err, result)
+		return nil
+	}
+
+	if len(raw) == 0 {
+		return nil
+	}
+
+	subtasks := make([]Subtask, 0, len(raw))
+	for i, r := range raw {
+		id := r.ID
+		if id == "" {
+			id = fmt.Sprintf("step_%d", i)
+		}
+		subtasks = append(subtasks, Subtask{
+			ID:           id,
+			Description:  r.Description,
+			Status:       "pending",
+			Dependencies: r.Dependencies,
+			Files:        r.Files,
+		})
+	}
+
+	// Validate dependencies reference existing IDs
+	idSet := make(map[string]bool)
+	for _, s := range subtasks {
+		idSet[s.ID] = true
+	}
+	for i := range subtasks {
+		validDeps := subtasks[i].Dependencies[:0]
+		for _, dep := range subtasks[i].Dependencies {
+			if idSet[dep] {
+				validDeps = append(validDeps, dep)
+			}
+		}
+		subtasks[i].Dependencies = validDeps
+	}
+
+	log.Printf("[Agent] LLM decomposed task into %d subtasks", len(subtasks))
+	return subtasks
+}
+
+// isComplexTask determines whether a task warrants LLM decomposition.
+// Simple tasks (single action, short) are handled by keyword fallback.
+func isComplexTask(task string) bool {
+	taskLower := strings.ToLower(task)
+	// Short tasks are not complex
+	if len(task) < 15 {
+		return false
+	}
+	// Tasks with multiple action verbs are complex
+	actionCount := 0
+	for _, kw := range []string{"and", "then", "also", "additionally", "同时", "并且", "然后", "接着",
+		"create", "implement", "fix", "refactor", "add", "build", "optimize", "migrate",
+		"实现", "创建", "修复", "重构", "优化", "迁移", "添加", "构建"} {
+		if strings.Contains(taskLower, kw) {
+			actionCount++
+		}
+	}
+	if actionCount >= 2 {
+		return true
+	}
+	// Tasks with enumeration markers (、) suggesting multiple items
+	if strings.Count(task, "\u3001") >= 2 {
+		return true
+	}
+	// Tasks mentioning "包含" (containing) with multiple features
+	if strings.Contains(taskLower, "\u5305\u542b") || strings.Contains(taskLower, "include") {
+		return true
+	}
+	// Long tasks are likely complex
+	if len(task) > 80 {
+		return true
+	}
+	return false
 }
 
 // DecomposeTask breaks a complex task into subtasks.
+// Optimization 50: Enhanced task decomposition with more patterns and dependency tracking
 func (td *TaskDecomposer) DecomposeTask(task string, projectContext string) []Subtask {
 	subtasks := make([]Subtask, 0)
 
@@ -275,6 +413,76 @@ func (td *TaskDecomposer) DecomposeTask(task string, projectContext string) []Su
 		subtasks = append(subtasks, Subtask{
 			ID:           "verify",
 			Description:  "验证重构结果",
+			Status:       "pending",
+			Dependencies: []string{"execute"},
+		})
+	}
+
+	// Optimization 50: New patterns for common tasks
+	// Pattern: "test X" -> analyze, write tests, run tests
+	if strings.Contains(taskLower, "test") || strings.Contains(taskLower, "测试") {
+		subtasks = append(subtasks, Subtask{
+			ID:          "analyze",
+			Description: "分析需要测试的代码",
+			Status:      "pending",
+		})
+		subtasks = append(subtasks, Subtask{
+			ID:           "write_tests",
+			Description:  "编写测试用例",
+			Status:       "pending",
+			Dependencies: []string{"analyze"},
+		})
+		subtasks = append(subtasks, Subtask{
+			ID:           "run_tests",
+			Description:  "运行测试并验证",
+			Status:       "pending",
+			Dependencies: []string{"write_tests"},
+		})
+	}
+
+	// Pattern: "document X" -> analyze, write docs, review
+	if strings.Contains(taskLower, "document") || strings.Contains(taskLower, "文档") || strings.Contains(taskLower, "readme") {
+		subtasks = append(subtasks, Subtask{
+			ID:          "analyze",
+			Description: "分析代码结构和功能",
+			Status:      "pending",
+		})
+		subtasks = append(subtasks, Subtask{
+			ID:           "write_docs",
+			Description:  "编写文档",
+			Status:       "pending",
+			Dependencies: []string{"analyze"},
+		})
+		subtasks = append(subtasks, Subtask{
+			ID:           "review",
+			Description:  "审查文档质量",
+			Status:       "pending",
+			Dependencies: []string{"write_docs"},
+		})
+	}
+
+	// Pattern: "migrate X" -> analyze, plan, execute, verify
+	if strings.Contains(taskLower, "migrate") || strings.Contains(taskLower, "迁移") || strings.Contains(taskLower, "升级") {
+		subtasks = append(subtasks, Subtask{
+			ID:          "analyze",
+			Description: "分析迁移需求和影响",
+			Status:      "pending",
+		})
+		subtasks = append(subtasks, Subtask{
+			ID:           "plan",
+			Description:  "制定迁移计划",
+			Status:       "pending",
+			Dependencies: []string{"analyze"},
+		})
+		subtasks = append(subtasks, Subtask{
+			ID:           "execute",
+			Description:  "执行迁移",
+			Status:       "pending",
+			Dependencies: []string{"plan"},
+		})
+		subtasks = append(subtasks, Subtask{
+			ID:           "verify",
+			Description:  "验证迁移结果",
 			Status:       "pending",
 			Dependencies: []string{"execute"},
 		})
@@ -1277,9 +1485,11 @@ You are running WITHOUT a project context. This means:
 		toolConsecutiveIdentical: make(map[string]int),
 	}
 	writeFileCalled := false
+	anyWriteCalled := false // P0-2: Track if any write tool was called
 	// P1-2: Dynamic limits based on project complexity
-	baseMaxReadFilePerTurn := 30
-	baseMaxWriteFilePerTurn := 15
+	// P0-1: Reduced base limits to prevent excessive reads
+	baseMaxReadFilePerTurn := 15
+	baseMaxWriteFilePerTurn := 10
 	maxWriteFilePerTurn := baseMaxWriteFilePerTurn
 	maxReadFilePerTurn := baseMaxReadFilePerTurn
 	checkpoints := make([]FileCheckpoint, 0) // file change history for undo
@@ -1287,6 +1497,9 @@ You are running WITHOUT a project context. This means:
 	answerSent := false
 	var lastLLMResp *LLMResponse
 	startTime := time.Now() // NEW: Track total execution time
+
+	// Optimization 51: Reset performance metrics for this run
+	runPerfMetrics := NewPerformanceMetrics()
 
 	// Optimization 1: Session-scoped tool result cache (persists across Run() calls)
 	toolCache := r.getSessionCache(sessionID)
@@ -1316,10 +1529,43 @@ You are running WITHOUT a project context. This means:
 
 	// P2-1: Task decomposer for complex tasks
 	taskDecomposer := &TaskDecomposer{db: r.db}
-	subtasks := taskDecomposer.DecomposeTask(task, cfg.ProjectContext)
+	var subtasks []Subtask
+	// Try LLM-based decomposition first for complex tasks, fallback to keyword matching
+	if isComplexTask(task) {
+		llmSubtasks := r.decomposeWithLLM(ctx, task, cfg.ProjectContext, cfg)
+		if len(llmSubtasks) > 0 {
+			subtasks = llmSubtasks
+		} else {
+			subtasks = taskDecomposer.DecomposeTask(task, cfg.ProjectContext)
+		}
+	} else {
+		subtasks = taskDecomposer.DecomposeTask(task, cfg.ProjectContext)
+	}
 	currentSubtask := taskDecomposer.GetNextSubtask(subtasks)
 	if currentSubtask != nil {
 		log.Printf("[Agent] task decomposed into %d subtasks, starting: %s", len(subtasks), currentSubtask.Description)
+	}
+
+	// SSE: Send task plan to frontend
+	if len(subtasks) > 0 {
+		w.WriteSSE(map[string]interface{}{
+			"type":     "step",
+			"step":     "task_plan",
+			"content":  fmt.Sprintf("任务分解完成，共 %d 个子任务", len(subtasks)),
+			"subtasks": subtasks,
+		})
+		// Mark first subtask as in_progress and notify
+		if currentSubtask != nil {
+			currentSubtask.Status = "in_progress"
+			currentSubtask.StartedAt = time.Now().UnixMilli()
+			w.WriteSSE(map[string]interface{}{
+				"type":       "step",
+				"step":       "task_progress",
+				"subtask_id": currentSubtask.ID,
+				"status":     "in_progress",
+				"content":    currentSubtask.Description,
+			})
+		}
 	}
 
 	// P2-2: Quality verifier
@@ -1384,13 +1630,15 @@ You are running WITHOUT a project context. This means:
 			}
 		}
 
-		// Progress event — show iteration progress with percentage
-		progressPct := float64(iter+1) / float64(cfg.MaxIterations) * 100
-		w.WriteSSE(map[string]interface{}{
-			"type":    "step",
-			"step":    "think",
-			"content": fmt.Sprintf("思考中 (第 %d/%d 轮, %.0f%%)...", iter+1, cfg.MaxIterations, progressPct),
-		})
+		// Optimization: Only show progress event every 3 iterations to reduce SSE noise
+		if iter%3 == 0 || iter == cfg.MaxIterations-1 {
+			progressPct := float64(iter+1) / float64(cfg.MaxIterations) * 100
+			w.WriteSSE(map[string]interface{}{
+				"type":    "step",
+				"step":    "think",
+				"content": fmt.Sprintf("思考中 (第 %d/%d 轮, %.0f%%)...", iter+1, cfg.MaxIterations, progressPct),
+			})
+		}
 
 		// Per-iteration timeout: create a child context with shorter deadline
 		// This prevents a single slow LLM call or tool execution from consuming
@@ -1404,10 +1652,15 @@ You are running WITHOUT a project context. This means:
 		// Optimization 2: Prefilter conversation to remove waste
 		prefiltered := prefilterConversation(conversation)
 
+		// Optimization 51: Record LLM call duration
+		llmStartTime := time.Now()
 		llmResp, err := r.callLLMWithTools(iterCtx, prefiltered, toolDefs, w, cfg.UserID, reqProviderID, reqModel, cfg)
+		llmDuration := time.Since(llmStartTime)
+		runPerfMetrics.RecordLLMCall(llmDuration)
 		close(llmDone)
 		lastLLMResp = llmResp
 		if err != nil {
+			runPerfMetrics.RecordError()
 			var abortErr error
 			conversation, consecutiveErrors, abortErr = r.handleLLMCallError(ctx, w, cfg, conversation, consecutiveErrors, err)
 			if abortErr != nil {
@@ -1417,8 +1670,8 @@ You are running WITHOUT a project context. This means:
 		}
 		consecutiveErrors = 0
 
-		debugLog("iter=%d mode=%s role=%s contentLen=%d toolCalls=%d",
-			iter+1, cfg.Mode, llmResp.Role, len(llmResp.Content), len(llmResp.ToolCalls))
+		debugLog("iter=%d mode=%s role=%s contentLen=%d toolCalls=%d llmDuration=%v",
+			iter+1, cfg.Mode, llmResp.Role, len(llmResp.Content), len(llmResp.ToolCalls), llmDuration)
 
 		// ── Case 1: Final answer ──
 		if llmResp.Role == "assistant" && len(llmResp.ToolCalls) == 0 {
@@ -1439,7 +1692,30 @@ You are running WITHOUT a project context. This means:
 			// P2-1: Mark subtask as completed if applicable
 			if currentSubtask != nil {
 				currentSubtask.Status = "completed"
+				currentSubtask.CompletedAt = time.Now().UnixMilli()
+				currentSubtask.Progress = 100
+				// SSE: Notify subtask completion
+				w.WriteSSE(map[string]interface{}{
+					"type":       "step",
+					"step":       "task_progress",
+					"subtask_id": currentSubtask.ID,
+					"status":     "completed",
+					"content":    currentSubtask.Description,
+					"progress":   100,
+				})
 				currentSubtask = taskDecomposer.GetNextSubtask(subtasks)
+				// SSE: Notify next subtask start
+				if currentSubtask != nil {
+					currentSubtask.Status = "in_progress"
+					currentSubtask.StartedAt = time.Now().UnixMilli()
+					w.WriteSSE(map[string]interface{}{
+						"type":       "step",
+						"step":       "task_progress",
+						"subtask_id": currentSubtask.ID,
+						"status":     "in_progress",
+						"content":    currentSubtask.Description,
+					})
+				}
 			}
 
 			// Auto-retry if answer was truncated by max_tokens
@@ -1481,14 +1757,30 @@ You are running WITHOUT a project context. This means:
 				})
 				answerSent = true
 			} else {
-				// Check if answer claims modification without calling write_file
-				if claimsFileModification(answer) && !writeFileCalled && iter < cfg.MaxIterations-1 {
-					log.Printf("[Agent] answer claims modification but write_file not called")
-					conversation = appendRoleMessage(conversation, "assistant", answer)
+			// P0-2: Enhanced declaration-execution consistency check
+			// Check if answer claims modification without calling write_file/edit_file/write_file_batch
+			if claimsFileModification(answer) && !writeFileCalled && !anyWriteCalled && iter < cfg.MaxIterations-1 {
+				log.Printf("[Agent] answer claims modification but no write tool called (writeFileCalled=%v, anyWriteCalled=%v)", writeFileCalled, anyWriteCalled)
+				conversation = appendRoleMessage(conversation, "assistant", answer)
+				conversation = appendRoleMessage(conversation, "user",
+					"你提到修改了文件但没有调用 write_file/edit_file。请立即调用 write_file 保存所有更改，或者直接回答。这是最后的机会。")
+				// P0-2: Force one more iteration but mark that we've warned
+				writeFileCalled = false // Reset to allow one more attempt
+				continue
+			}
+			// P0-2: Additional check — if answer lists files but no writes happened
+			if iter >= 2 && !anyWriteCalled && !answerSent {
+				// Check if answer mentions specific file paths
+				containsFilePath := strings.Contains(answer, "src/") || strings.Contains(answer, "lib/") ||
+					strings.Contains(answer, ".rs") || strings.Contains(answer, ".go") ||
+					strings.Contains(answer, ".js") || strings.Contains(answer, ".ts")
+				if containsFilePath {
+					log.Printf("[Agent] answer mentions file paths but no writes happened")
 					conversation = appendRoleMessage(conversation, "user",
-						"你提到修改了文件但没有调用 write_file。请调用 write_file 保存更改，或者直接回答。")
+						"你的回答提到了文件路径，但没有实际调用 write_file。请调用 write_file 创建或修改文件，然后给出最终答案。")
 					continue
 				}
+			}
 				w.WriteSSE(map[string]interface{}{
 					"type":    "step",
 					"step":    "answer",
@@ -1542,115 +1834,49 @@ You are running WITHOUT a project context. This means:
 		var mu sync.Mutex
 		var results []toolResult
 
-		// Execute parallel tasks concurrently
+		// Optimization 45: Worker pool for bounded concurrency
+		// Instead of spawning unbounded goroutines, use a worker pool with max 8 workers
+		// to prevent resource exhaustion and improve cache locality
+		const maxParallelWorkers = 8
 		if len(plan.parallelTasks) > 0 {
-			var wg sync.WaitGroup
-			for _, pt := range plan.parallelTasks {
-				wg.Add(1)
-				go func(task toolTask) {
-					defer wg.Done()
-					incGoroutines()
-					defer decGoroutines()
-					checkGoroutineLeak()
-					// Notify frontend
-					w.WriteSSE(map[string]interface{}{
-						"type":  "step",
-						"step":  "skill_call",
-						"skill": task.skillName,
-						"input": task.skillInput,
-					})
+			// Use worker pool if we have more tasks than workers
+			if len(plan.parallelTasks) > maxParallelWorkers {
+				taskCh := make(chan toolTask, len(plan.parallelTasks))
+				var wg sync.WaitGroup
 
-					// Check cache first
-					if cached := toolCache.get(task.skillName, task.skillInput); cached != "" {
-						debugLog("cache HIT (parallel) for %s", task.skillName)
-						mu.Lock()
-						appendToolResultToList(&results, task.tc, cached)
-						mu.Unlock()
-						w.WriteSSE(map[string]interface{}{
-							"type":    "step",
-							"step":    "skill_result",
-							"skill":   task.skillName,
-							"content": cached,
-						})
-						return
-					}
-
-					// Optimization 17: Check write-content cache for read_file
-					if task.skillName == "read_file" {
-						if path, ok := task.skillInput["path"].(string); ok {
-							if wc := r.getCachedWriteContent(sessionID, path); wc != "" {
-								debugLog("writeContentCache HIT for read_file: %s", path)
-								mu.Lock()
-								appendToolResultToList(&results, task.tc, wc)
-								mu.Unlock()
-								w.WriteSSE(map[string]interface{}{
-									"type":    "step",
-									"step":    "skill_result",
-									"skill":   task.skillName,
-									"content": wc,
-								})
-								return
-							}
-							// Check read_file content cache
-							if rc := r.getCachedReadFile(sessionID, path); rc != "" {
-								debugLog("readFileCache HIT for read_file: %s", path)
-								mu.Lock()
-								appendToolResultToList(&results, task.tc, rc)
-								mu.Unlock()
-								w.WriteSSE(map[string]interface{}{
-									"type":    "step",
-									"step":    "skill_result",
-									"skill":   task.skillName,
-									"content": rc,
-								})
-								return
-							}
+				// Start workers
+				for workerIdx := 0; workerIdx < maxParallelWorkers; workerIdx++ {
+					wg.Add(1)
+					go func() {
+						defer wg.Done()
+						for task := range taskCh {
+							incGoroutines()
+							executeParallelTask(task, r, ctx, w, toolCache, sessionID, &mu, &results, m, modelTier, cfg)
+							decGoroutines()
 						}
-					}
+					}()
+				}
 
-					// Execute with timeout
-					toolTimeout := toolTimeoutForName(task.skillName)
-					toolCtx, toolCancel := context.WithTimeout(ctx, toolTimeout)
-					defer toolCancel()
-					result, err := r.executeSkill(toolCtx, task.skillName, task.skillInput)
-					if toolCtx.Err() == context.DeadlineExceeded {
-						result = fmt.Sprintf("⚠️ Tool execution timed out after %v", toolTimeout)
-					} else if err != nil {
-						result = fmt.Sprintf("Error: %v", err)
-					} else {
-						toolCache.put(task.skillName, task.skillInput, result)
-						// Cache read_file results for reuse within session
-						if task.skillName == "read_file" {
-							if path, ok := task.skillInput["path"].(string); ok {
-								r.cacheReadFile(sessionID, path, result)
-							}
-						}
-					}
-
-					// Truncate large results
-					result = truncateResultForModel(result, task.skillName, modelTier, cfg.MaxResultLen)
-
-					mu.Lock()
-					appendToolResultToList(&results, task.tc, result)
-					// Track parallel tool calls for loop detection
-					m.toolCallHistory[task.skillName]++
-					m.totalToolCalls++
-					opKey := task.skillName
-					if path, ok := task.skillInput["path"].(string); ok {
-						opKey = task.skillName + ":" + path
-					}
-					m.uniqueOps[opKey] = true
-					mu.Unlock()
-
-					w.WriteSSE(map[string]interface{}{
-						"type":    "step",
-						"step":    "skill_result",
-						"skill":   task.skillName,
-						"content": result,
-					})
-				}(pt)
+				// Send tasks to workers
+				for _, pt := range plan.parallelTasks {
+					taskCh <- pt
+				}
+				close(taskCh)
+				wg.Wait()
+			} else {
+				// Few tasks: use simple goroutine-per-task (less overhead)
+				var wg sync.WaitGroup
+				for _, pt := range plan.parallelTasks {
+					wg.Add(1)
+					go func(task toolTask) {
+						defer wg.Done()
+						incGoroutines()
+						executeParallelTask(task, r, ctx, w, toolCache, sessionID, &mu, &results, m, modelTier, cfg)
+						decGoroutines()
+					}(pt)
+				}
+				wg.Wait()
 			}
-			wg.Wait()
 		}
 
 	// Execute sequential tasks (write/side-effect tools)
@@ -1798,6 +2024,36 @@ You are running WITHOUT a project context. This means:
 				}
 			} else {
 				m.toolConsecutiveErrors[st.skillName] = 0 // reset on success
+			}
+
+			// P2-1: Track subtask progress based on tool execution
+			if currentSubtask != nil && err != nil {
+				currentSubtask.RetryCount++
+				// Mark subtask as failed after 3 retries
+				if currentSubtask.RetryCount >= 3 {
+					currentSubtask.Status = "failed"
+					w.WriteSSE(map[string]interface{}{
+						"type":       "step",
+						"step":       "task_progress",
+						"subtask_id": currentSubtask.ID,
+						"status":     "failed",
+						"content":    currentSubtask.Description,
+						"error":      err.Error(),
+					})
+					// Try to move to next subtask
+					currentSubtask = taskDecomposer.GetNextSubtask(subtasks)
+					if currentSubtask != nil {
+						currentSubtask.Status = "in_progress"
+						currentSubtask.StartedAt = time.Now().UnixMilli()
+						w.WriteSSE(map[string]interface{}{
+							"type":       "step",
+							"step":       "task_progress",
+							"subtask_id": currentSubtask.ID,
+							"status":     "in_progress",
+							"content":    currentSubtask.Description,
+						})
+					}
+				}
 			}
 
 			// Track edit_file failures for confidence check
@@ -1967,7 +2223,117 @@ You are running WITHOUT a project context. This means:
 	// Clean up write-content cache for this session (tool result cache persists)
 	r.writeContentCache.Delete(sessionID)
 	r.readFileCache.Delete(sessionID)
+
+	// Optimization 51: Log performance summary
+	totalDuration := time.Since(startTime)
+	runPerfMetrics.TotalRunDuration = totalDuration
+	perfSummary := runPerfMetrics.GetSummary()
+	log.Printf("[Agent:Performance] Session=%s Duration=%v LLM_Calls=%d Tool_Calls=%d Errors=%d Retries=%d",
+		sessionID, totalDuration, perfSummary["llm_call_count"], perfSummary["tool_call_count"],
+		perfSummary["error_count"], perfSummary["retry_count"])
+
 	return nil
+}
+
+// executeParallelTask executes a single parallel tool task with caching, timeout, and result tracking.
+// This function is used by both the worker pool and goroutine-per-task approaches.
+func executeParallelTask(task toolTask, r *AgentRunner, ctx context.Context, w SSEWriter, toolCache *toolResultCache, sessionID string, mu *sync.Mutex, results *[]toolResult, m *runMetrics, modelTier ModelTier, cfg RunConfig) {
+	// Notify frontend
+	w.WriteSSE(map[string]interface{}{
+		"type":  "step",
+		"step":  "skill_call",
+		"skill": task.skillName,
+		"input": task.skillInput,
+	})
+
+	// Check cache first
+	if cached := toolCache.get(task.skillName, task.skillInput); cached != "" {
+		debugLog("cache HIT (parallel) for %s", task.skillName)
+		mu.Lock()
+		appendToolResultToList(results, task.tc, cached)
+		mu.Unlock()
+		w.WriteSSE(map[string]interface{}{
+			"type":    "step",
+			"step":    "skill_result",
+			"skill":   task.skillName,
+			"content": cached,
+		})
+		return
+	}
+
+	// Optimization 17: Check write-content cache for read_file
+	if task.skillName == "read_file" {
+		if path, ok := task.skillInput["path"].(string); ok {
+			if wc := r.getCachedWriteContent(sessionID, path); wc != "" {
+				debugLog("writeContentCache HIT for read_file: %s", path)
+				mu.Lock()
+				appendToolResultToList(results, task.tc, wc)
+				mu.Unlock()
+				w.WriteSSE(map[string]interface{}{
+					"type":    "step",
+					"step":    "skill_result",
+					"skill":   task.skillName,
+					"content": wc,
+				})
+				return
+			}
+			// Check read_file content cache
+			if rc := r.getCachedReadFile(sessionID, path); rc != "" {
+				debugLog("readFileCache HIT for read_file: %s", path)
+				mu.Lock()
+				appendToolResultToList(results, task.tc, rc)
+				mu.Unlock()
+				w.WriteSSE(map[string]interface{}{
+					"type":    "step",
+					"step":    "skill_result",
+					"skill":   task.skillName,
+					"content": rc,
+				})
+				return
+			}
+		}
+	}
+
+	// Execute with timeout
+	toolTimeout := toolTimeoutForName(task.skillName)
+	toolCtx, toolCancel := context.WithTimeout(ctx, toolTimeout)
+	defer toolCancel()
+	result, err := r.executeSkill(toolCtx, task.skillName, task.skillInput)
+	if toolCtx.Err() == context.DeadlineExceeded {
+		result = fmt.Sprintf("⚠️ Tool execution timed out after %v", toolTimeout)
+	} else if err != nil {
+		result = fmt.Sprintf("Error: %v", err)
+	} else {
+		toolCache.put(task.skillName, task.skillInput, result)
+		// Cache read_file results for reuse within session
+		if task.skillName == "read_file" {
+			if path, ok := task.skillInput["path"].(string); ok {
+				r.cacheReadFile(sessionID, path, result)
+			}
+		}
+	}
+
+	// Truncate large results
+	result = truncateResultForModel(result, task.skillName, modelTier, cfg.MaxResultLen)
+
+	mu.Lock()
+	appendToolResultToList(results, task.tc, result)
+	// Track parallel tool calls for loop detection
+	m.toolCallHistory[task.skillName]++
+	m.totalToolCalls++
+	opKey := task.skillName
+	if path, ok := task.skillInput["path"].(string); ok {
+		opKey = task.skillName + ":" + path
+	}
+	m.uniqueOps[opKey] = true
+	mu.Unlock()
+
+	w.WriteSSE(map[string]interface{}{
+		"type":    "step",
+		"step":    "skill_result",
+		"skill":   task.skillName,
+		"content": result,
+	})
 }
 
 // ═══════════════════════════════════════════════════════════════════

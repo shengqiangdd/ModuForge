@@ -102,6 +102,7 @@ func (h *AgentHandler) Run(c fiber.Ctx) error {
 	// This ensures agent uses the correct endpoint/apiKey, not just the provider ID
 	provider := llm.FindProvider(req.ProviderID)
 	if provider != nil {
+		runCfg.ProviderID = req.ProviderID
 		runCfg.LLMEndpoint = provider.Endpoint
 		runCfg.LLMModel = req.Model
 		// Always resolve the API key for this provider from env/config,
@@ -122,6 +123,7 @@ func (h *AgentHandler) Run(c fiber.Ctx) error {
 		log.Printf("[Agent] resolved provider=%s endpoint=%s model=%s max_tokens=%d", req.ProviderID, runCfg.LLMEndpoint, runCfg.LLMModel, runCfg.MaxOutputTokens)
 	} else {
 		// Fallback: use the in-memory config (set by UpdateLLMConfig)
+		runCfg.ProviderID = req.ProviderID
 		runCfg.LLMEndpoint = h.cfg.LLMEndpoint
 		runCfg.LLMModel = h.cfg.LLMModel
 		runCfg.LLMApiKey = h.cfg.EffectiveLLMKey()

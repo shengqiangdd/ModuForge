@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"hash/fnv"
 	"log"
+	"regexp"
 	"strings"
 )
 
@@ -261,6 +262,9 @@ func (p *toolResultProcessor) process(iter int, conversation []map[string]interf
 			isError := strings.HasPrefix(res.result, "Error:") || strings.HasPrefix(res.result, "❌")
 			buildReady := strings.Contains(res.result, `"build_ready":true`)
 
+			// Parse and emit build progress events to frontend
+			emitBuildProgress(p.w, res.result)
+
 			if buildReady || !isError {
 				// Build succeeded - inject completion prompt with next steps
 				log.Printf("[Agent] build_module completed successfully (build_ready=%v), injecting completion prompt", buildReady)
@@ -277,9 +281,9 @@ func (p *toolResultProcessor) process(iter int, conversation []map[string]interf
 				nextStepsPrompt := buildNextStepsPrompt(res.result)
 				conversation = appendRoleMessage(conversation, "system", nextStepsPrompt)
 			} else {
-				// Build failed - inject intelligent fix prompt
-				log.Printf("[Agent] build_module failed, injecting intelligent fix prompt")
-				fixPrompt := buildErrorFixPrompt(res.result)
+				// Build failed - inject auto-fix prompt with specific error guidance
+				log.Printf("[Agent] build_module failed, injecting auto-fix prompt")
+				fixPrompt := buildAutoFixPrompt(res.result)
 				conversation = appendRoleMessage(conversation, "system", fixPrompt)
 			}
 		}
@@ -406,6 +410,62 @@ func (p *toolResultProcessor) process(iter int, conversation []map[string]interf
 	return conversation, false, nil
 }
 
+// emitBuildProgress parses [BUILD_PROGRESS] markers from build output and emits SSE events.
+func emitBuildProgress(w SSEWriter, buildOutput string) {
+	lines := strings.Split(buildOutput, "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "[BUILD_PROGRESS]") {
+			continue
+		}
+
+		// Parse key=value pairs from [BUILD_PROGRESS] phase=xxx status=xxx ...
+		attrs := make(map[string]string)
+		parts := strings.Fields(line)
+		for _, part := range parts {
+			if kv := strings.SplitN(part, "=", 2); len(kv) == 2 {
+				attrs[kv[0]] = kv[1]
+			}
+		}
+
+		phase, _ := attrs["phase"]
+		status, _ := attrs["status"]
+
+		// Map phase names to human-readable labels
+		phaseLabel := phase
+		switch phase {
+		case "init":
+			phaseLabel = "初始化"
+		case "incremental":
+			phaseLabel = "增量检查"
+		case "validate":
+			phaseLabel = "结构验证"
+		case "compile":
+			phaseLabel = "源码编译"
+		case "shellcheck":
+			phaseLabel = "脚本检查"
+		case "package":
+			phaseLabel = "打包压缩"
+		}
+
+		content := fmt.Sprintf("🔨 %s: %s", phaseLabel, status)
+		if pct, ok := attrs["pct"]; ok {
+			content += fmt.Sprintf(" (%s%%)", pct)
+		}
+		if reason, ok := attrs["reason"]; ok {
+			content += fmt.Sprintf(" [%s]", reason)
+		}
+
+		w.WriteSSE(map[string]interface{}{
+			"type":    "step",
+			"step":    "build_progress",
+			"phase":   phase,
+			"status":  status,
+			"content": content,
+		})
+	}
+}
+
 // buildNextStepsPrompt generates a prompt for what to do after a successful build.
 func buildNextStepsPrompt(buildOutput string) string {
 	hasZip := strings.Contains(buildOutput, ".zip")
@@ -430,68 +490,176 @@ func buildNextStepsPrompt(buildOutput string) string {
 	return strings.Join(parts, "\n")
 }
 
-// buildErrorFixPrompt generates an intelligent fix prompt based on build errors.
-func buildErrorFixPrompt(buildOutput string) string {
+// buildAutoFixPrompt generates an auto-fix prompt that instructs the Agent to fix errors.
+func buildAutoFixPrompt(buildOutput string) string {
+	errorTypes := classifyBuildErrors(buildOutput)
+	parsedErrors := extractErrorLocations(buildOutput)
+
 	parts := []string{
-		"❌ Build failed. Here's how to fix it:",
+		"❌ Build failed. You MUST fix the errors automatically.",
+		"",
+		"📋 AUTO-FIX WORKFLOW:",
+		"  1. Analyze the errors below",
+		"  2. For each error with a file:line location:",
+		"     a. Use read_file to read the specific file around that line",
+		"     b. Use edit_file to fix the issue",
+		"  3. After fixing ALL errors, call build_module to verify",
+		"  4. If new errors appear, repeat steps 2-3",
 		"",
 	}
 
-	// Parse error types from build output
-	errorTypes := classifyBuildErrors(buildOutput)
+	if len(parsedErrors) > 0 {
+		parts = append(parts, fmt.Sprintf("Found %d specific error(s) to fix:", len(parsedErrors)))
+		parts = append(parts, "")
+		for i, pe := range parsedErrors {
+			loc := ""
+			if pe.file != "" {
+				loc = fmt.Sprintf(" in %s:%d", pe.file, pe.line)
+			}
+			parts = append(parts, fmt.Sprintf("  %d. [%s]%s: %s", i+1, pe.errorType, loc, pe.message))
+		}
+		parts = append(parts, "")
+	}
 
-	if len(errorTypes) == 0 {
-		parts = append(parts, "Could not classify the specific error type.")
-		parts = append(parts, "📋 General approach:")
-		parts = append(parts, "  1. Read the error message above carefully")
-		parts = append(parts, "  2. Identify the file and line number mentioned")
-		parts = append(parts, "  3. Use read_file to read that specific file")
-		parts = append(parts, "  4. Use edit_file to fix the issue")
-		parts = append(parts, "  5. Call build_module again to verify")
-	} else {
-		parts = append(parts, fmt.Sprintf("Detected %d error type(s): %s", len(errorTypes), strings.Join(errorTypes, ", ")))
+	if len(errorTypes) > 0 {
+		parts = append(parts, fmt.Sprintf("Error categories: %s", strings.Join(errorTypes, ", ")))
 		parts = append(parts, "")
 
 		if containsErrorType(errorTypes, "missing_import") {
-			parts = append(parts, "🔧 Missing import/package:")
-			parts = append(parts, "  - Check the imports section of the file")
-			parts = append(parts, "  - For Go: add the import and run 'go mod tidy'")
-			parts = append(parts, "  - For Rust: check Cargo.toml dependencies")
+			parts = append(parts, "🔧 Fix missing imports:")
+			parts = append(parts, "  - Add the missing import statement to the file")
+			parts = append(parts, "  - For Go: also run 'go mod tidy' if it's a new dependency")
+			parts = append(parts, "  - For Rust: add the dependency to Cargo.toml")
 			parts = append(parts, "")
 		}
 		if containsErrorType(errorTypes, "undefined") {
-			parts = append(parts, "🔧 Undefined variable/function:")
-			parts = append(parts, "  - Check if the variable is declared")
-			parts = append(parts, "  - Check if the function exists in the imported package")
-			parts = append(parts, "  - Check for typos in variable/function names")
+			parts = append(parts, "🔧 Fix undefined references:")
+			parts = append(parts, "  - Check if the variable/function is declared in the same file or package")
+			parts = append(parts, "  - Check if it's imported from the correct package")
+			parts = append(parts, "  - Check for typos")
 			parts = append(parts, "")
 		}
 		if containsErrorType(errorTypes, "type_mismatch") {
-			parts = append(parts, "🔧 Type mismatch:")
-			parts = append(parts, "  - Check function signatures and expected types")
-			parts = append(parts, "  - Ensure variables match the expected types")
-			parts = append(parts, "  - Check for type conversions needed")
+			parts = append(parts, "🔧 Fix type mismatches:")
+			parts = append(parts, "  - Check the expected type from the function signature")
+			parts = append(parts, "  - Add type conversion if needed")
 			parts = append(parts, "")
 		}
 		if containsErrorType(errorTypes, "syntax") {
-			parts = append(parts, "🔧 Syntax error:")
-			parts = append(parts, "  - Check brackets, parentheses, and semicolons")
-			parts = append(parts, "  - Verify Go/C++/Rust syntax rules")
-			parts = append(parts, "")
-		}
-		if containsErrorType(errorTypes, "linker") {
-			parts = append(parts, "🔧 Linker error:")
-			parts = append(parts, "  - This is usually a cross-compilation issue, not a code issue")
-			parts = append(parts, "  - Host validation should still work")
-			parts = append(parts, "  - Focus on fixing code errors first")
+			parts = append(parts, "🔧 Fix syntax errors:")
+			parts = append(parts, "  - Check for missing brackets, semicolons, or keywords")
+			parts = append(parts, "  - Verify language-specific syntax rules")
 			parts = append(parts, "")
 		}
 	}
 
-	parts = append(parts, "⚠️ Important: After fixing, call build_module again to verify the fix.")
-	parts = append(parts, "Do NOT repeatedly read files without making changes.")
+	parts = append(parts, "⚠️ CRITICAL: Do NOT just read files. You MUST use edit_file to fix each error.")
+	parts = append(parts, "⚠️ After fixing, ALWAYS call build_module to verify your fixes worked.")
+	parts = append(parts, "⚠️ Do NOT give up. Keep fixing until the build succeeds.")
 
 	return strings.Join(parts, "\n")
+}
+
+// parsedError holds an extracted error location from build output.
+type parsedError struct {
+	file      string
+	line      int
+	message   string
+	errorType string
+}
+
+// extractErrorLocations parses build output to find specific error locations.
+func extractErrorLocations(output string) []parsedError {
+	var errors []parsedError
+	lines := strings.Split(output, "\n")
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+
+		// Go error: file:line:col: message
+		if m := regexp.MustCompile(`(.+\.go):(\d+):\d+:\s*(.+)`).FindStringSubmatch(line); len(m) > 3 {
+			errType := "unknown"
+			msg := strings.ToLower(m[3])
+			switch {
+			case strings.Contains(msg, "undefined") || strings.Contains(msg, "undeclared"):
+				errType = "undefined"
+			case strings.Contains(msg, "cannot use") || strings.Contains(msg, "type"):
+				errType = "type_mismatch"
+			case strings.Contains(msg, "syntax error"):
+				errType = "syntax"
+			case strings.Contains(msg, "cannot find package"):
+				errType = "missing_import"
+			}
+			errors = append(errors, parsedError{
+				file:      m[1],
+				line:      atoi(m[2]),
+				message:   m[3],
+				errorType: errType,
+			})
+			continue
+		}
+
+		// Rust error: error[E0XXX]: message --> file:line:col
+		if m := regexp.MustCompile(`error\[(E\d+)\]:\s*(.+)`).FindStringSubmatch(line); len(m) > 2 {
+			errType := "unknown"
+			code := m[1]
+			switch {
+			case strings.Contains(code, "0412") || strings.Contains(code, "0432") || strings.Contains(code, "0433"):
+				errType = "missing_import"
+			case strings.Contains(code, "0596") || strings.Contains(code, "0599") || strings.Contains(code, "0609"):
+				errType = "undefined"
+			case strings.Contains(code, "0308") || strings.Contains(code, "0305"):
+				errType = "type_mismatch"
+			case strings.Contains(code, "0001") || strings.Contains(code, "0002") || strings.Contains(code, "0003"):
+				errType = "syntax"
+			}
+			errors = append(errors, parsedError{
+				message:   m[2],
+				errorType: errType,
+			})
+			continue
+		}
+
+		// C++ error: file:line:col: error: message
+		if m := regexp.MustCompile(`(.+\.(cpp|c|cc|cxx|h)):(\d+):\d+:\s*(?:error|warning):\s*(.+)`).FindStringSubmatch(line); len(m) > 4 {
+			errType := "unknown"
+			msg := strings.ToLower(m[4])
+			switch {
+			case strings.Contains(msg, "undeclared") || strings.Contains(msg, "was not declared"):
+				errType = "undefined"
+			case strings.Contains(msg, "no matching function") || strings.Contains(msg, "cannot convert"):
+				errType = "type_mismatch"
+			case strings.Contains(msg, "expected") || strings.Contains(msg, "unexpected"):
+				errType = "syntax"
+			case strings.Contains(msg, "fatal error: ") || strings.Contains(msg, "no such file"):
+				errType = "missing_import"
+			}
+			errors = append(errors, parsedError{
+				file:      m[1],
+				line:      atoi(m[3]),
+				message:   m[4],
+				errorType: errType,
+			})
+		}
+	}
+
+	return errors
+}
+
+// atoi is a simple string-to-int converter.
+func atoi(s string) int {
+	n := 0
+	for _, c := range s {
+		if c >= '0' && c <= '9' {
+			n = n*10 + int(c-'0')
+		} else {
+			break
+		}
+	}
+	return n
 }
 
 // classifyBuildErrors extracts error types from build output.
@@ -514,10 +682,10 @@ func classifyBuildErrors(output string) []string {
 	if strings.Contains(outputLower, "undefined") || strings.Contains(outputLower, "undeclared") || strings.Contains(outputLower, "was not declared") {
 		checkAndAdd("undefined")
 	}
-	if strings.Contains(outputLower, "cannot use") || strings.Contains(outputLower, "type mismatch") || strings.Contains(outputLower, "type ") && strings.Contains(outputLower, "expected") {
+	if strings.Contains(outputLower, "cannot use") || strings.Contains(outputLower, "type mismatch") || (strings.Contains(outputLower, "type ") && strings.Contains(outputLower, "expected")) {
 		checkAndAdd("type_mismatch")
 	}
-	if strings.Contains(outputLower, "syntax error") || strings.Contains(outputLower, "expected") && strings.Contains(outputLower, "unexpected") {
+	if strings.Contains(outputLower, "syntax error") || (strings.Contains(outputLower, "expected") && strings.Contains(outputLower, "unexpected")) {
 		checkAndAdd("syntax")
 	}
 	if strings.Contains(outputLower, "linker") || strings.Contains(outputLower, "undefined reference") || strings.Contains(outputLower, "cannot find -l") {

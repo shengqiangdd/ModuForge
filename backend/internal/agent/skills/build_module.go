@@ -205,13 +205,43 @@ Returns build log with success/failure status.`
 func (s *BuildModuleSkill) Execute(ctx context.Context, input map[string]interface{}) (string, error) {
 	projectID, _ := input["project_id"].(string)
 	projectPath := s.resolvePath(projectID)
+	enableIncremental, _ := input["incremental"].(bool)
 
 	var log strings.Builder
 	log.WriteString("🔨 Build Module\n")
 	log.WriteString(fmt.Sprintf("📂 Project: %s\n\n", projectPath))
 
+	// Emit progress marker for frontend
+	log.WriteString("[BUILD_PROGRESS] phase=init status=starting\n")
+
+	// ========== Phase 0: Incremental Build Check ==========
+	if enableIncremental {
+		log.WriteString("\n── Phase 0: Incremental Check ──\n")
+		log.WriteString("[BUILD_PROGRESS] phase=incremental status=checking\n")
+		incResult := builder.CheckIncremental(projectPath, "arm64")
+		if !incResult.NeedsRebuild {
+			log.WriteString("  ✅ No changes detected since last build — skipping compilation\n")
+			log.WriteString("  ℹ️ Use incremental=false to force full rebuild\n")
+			log.WriteString("[BUILD_PROGRESS] phase=incremental status=skipped reason=no_changes\n")
+			// Still need to package
+		} else {
+			log.WriteString(fmt.Sprintf("  📝 Changes: %s\n", incResult.Reason))
+			if len(incResult.ChangedFiles) > 0 {
+				log.WriteString(fmt.Sprintf("     Changed: %d files\n", len(incResult.ChangedFiles)))
+			}
+			if len(incResult.NewFiles) > 0 {
+				log.WriteString(fmt.Sprintf("     New: %d files\n", len(incResult.NewFiles)))
+			}
+			if len(incResult.RemovedFiles) > 0 {
+				log.WriteString(fmt.Sprintf("     Removed: %d files\n", len(incResult.RemovedFiles)))
+			}
+			log.WriteString("[BUILD_PROGRESS] phase=incremental status=changes_detected\n")
+		}
+	}
+
 	// ========== Phase 1: Structure Validation ==========
-	log.WriteString("── Phase 1: Structure Validation ──\n")
+	log.WriteString("\n── Phase 1: Structure Validation ──\n")
+	log.WriteString("[BUILD_PROGRESS] phase=validate status=starting\n")
 	requiredFiles := []string{"module.prop", "META-INF/com/google/android/update-binary"}
 	var missingFiles []string
 	for _, f := range requiredFiles {
@@ -228,6 +258,7 @@ func (s *BuildModuleSkill) Execute(ctx context.Context, input map[string]interfa
 			log.WriteString(fmt.Sprintf("  ❌ %s — missing\n", f))
 		}
 		log.WriteString(fmt.Sprintf("\n❌ Build failed: %d required files missing\n", len(missingFiles)))
+		log.WriteString("[BUILD_PROGRESS] phase=validate status=failed\n")
 		return log.String(), fmt.Errorf("missing required files: %s", strings.Join(missingFiles, ", "))
 	}
 
@@ -237,6 +268,7 @@ func (s *BuildModuleSkill) Execute(ctx context.Context, input map[string]interfa
 	} else {
 		log.WriteString("  ✅ customize.sh\n")
 	}
+	log.WriteString("[BUILD_PROGRESS] phase=validate status=done\n")
 
 	// ========== Phase 1.5: Sync source files from DB to disk ==========
 	log.WriteString("\n── Syncing source files to disk... ──\n")
@@ -266,27 +298,51 @@ func (s *BuildModuleSkill) Execute(ctx context.Context, input map[string]interfa
 
 	// ========== Phase 2: Source Compilation ==========
 	log.WriteString("\n── Phase 2: Source Compilation ──\n")
+	log.WriteString("[BUILD_PROGRESS] phase=compile status=starting\n")
 	compileResult := s.compileSources(projectPath)
 	log.WriteString(compileResult.log)
+	if compileResult.buildSuccess {
+		log.WriteString("[BUILD_PROGRESS] phase=compile status=done\n")
+	} else {
+		log.WriteString(fmt.Sprintf("[BUILD_PROGRESS] phase=compile status=failed errors=%d\n", len(compileResult.errors)))
+	}
 
 	// ========== Phase 3: Shell Script Validation ==========
 	log.WriteString("\n── Phase 3: Shell Script Validation ──\n")
+	log.WriteString("[BUILD_PROGRESS] phase=shellcheck status=starting\n")
 	shellValid := s.validateShellScripts(projectPath)
 	if shellValid {
 		log.WriteString("  ✅ All shell scripts passed syntax check\n")
 	} else {
 		log.WriteString("  ⚠️ Some shell scripts have syntax issues (see above)\n")
 	}
+	log.WriteString("[BUILD_PROGRESS] phase=shellcheck status=done\n")
 
 	// ========== Phase 4: Package ==========
 	log.WriteString("\n── Phase 4: Package ──\n")
+	log.WriteString("[BUILD_PROGRESS] phase=package status=starting\n")
 	outputZIP := filepath.Join(filepath.Dir(projectPath), "output.zip")
 	if err := s.removeExisting(outputZIP); err != nil {
 		log.WriteString(fmt.Sprintf("  ⚠️ Could not remove old output: %v\n", err))
 	}
-	if err := builder.ZipDirExcluding(projectPath, outputZIP, builder.ModuleExcludePatterns); err != nil {
-		log.WriteString(fmt.Sprintf("  ❌ ZIP creation failed: %v\n", err))
-		return log.String(), fmt.Errorf("build failed: %v", err)
+
+	// Use progress-aware zip
+	zipErr := builder.ZipDirExcludingWithProgress(projectPath, outputZIP, builder.ModuleExcludePatterns,
+		func(current, total int, currentFile string) {
+			if current%10 == 0 || current == total {
+				pct := 0
+				if total > 0 {
+					pct = current * 100 / total
+				}
+				log.WriteString(fmt.Sprintf("[BUILD_PROGRESS] phase=package status=zipping current=%d total=%d pct=%d file=%s\n",
+					current, total, pct, currentFile))
+			}
+		})
+
+	if zipErr != nil {
+		log.WriteString(fmt.Sprintf("  ❌ ZIP creation failed: %v\n", zipErr))
+		log.WriteString("[BUILD_PROGRESS] phase=package status=failed\n")
+		return log.String(), fmt.Errorf("build failed: %v", zipErr)
 	}
 
 	// Get zip size
@@ -295,6 +351,14 @@ func (s *BuildModuleSkill) Execute(ctx context.Context, input map[string]interfa
 		log.WriteString(fmt.Sprintf("  ✅ %s (%.1f MB)\n", outputZIP, sizeMB))
 	} else {
 		log.WriteString(fmt.Sprintf("  ✅ %s\n", outputZIP))
+	}
+	log.WriteString("[BUILD_PROGRESS] phase=package status=done\n")
+
+	// ========== Update Build Cache ==========
+	if compileResult.buildSuccess {
+		if err := builder.UpdateBuildCacheAfterBuild(projectPath, "arm64", "android"); err != nil {
+			log.WriteString(fmt.Sprintf("  ⚠️ Could not update build cache: %v\n", err))
+		}
 	}
 
 	// ========== Build Result ==========

@@ -83,9 +83,6 @@ func (r *AgentRunner) buildSystemPromptForModeUncached(mode AgentMode) string {
 - Break tasks into clear, actionable steps with file lists
 - Identify risks and edge cases
 
-## CHAIN-OF-THOUGHT
-Before calling any tool, think through the problem step by step. Explain your reasoning briefly before each action.
-
 ## OUTPUT FORMAT
 Your FINAL answer (when done using tools) MUST be clean Markdown inside <answer> tags:
 <answer>
@@ -108,76 +105,69 @@ Do NOT output raw tool call syntax. Summarize tool results instead of repeating 
 2. After writing code, you MUST call build_module to verify it compiles. No exceptions.
 3. Your FINAL answer lists files you ACTUALLY wrote, not files you plan to write.
 
-## CHAIN-OF-THOUGHT
-Before calling any tool, think through the problem step by step. Explain your reasoning briefly before each action.
-
 ## WORKFLOW (follow this order, never skip steps)
 1. read_file → understand current state
 2. write_file → create/modify each file (COMPLETE content, not snippets)
 3. build_module → verify compilation
 4. If build fails: read error, fix with write_file, rebuild (max 3 retries)
-5. test_module → validate module files (module.prop, shell scripts); if test files exist (*_test.go, *_test.rs, *_spec.js, etc.) run them via bash (go test ./... / cargo test / npm test)
-6. If tests fail: read error, fix with write_file, rebuild and retest
-7. Answer: "I modified X files: [list]. Build status: [pass/fail]. Tests: [pass/fail]."
+5. test_module → validate module files; if test files exist run them
+6. Answer: "I modified X files: [list]. Build status: [pass/fail]. Tests: [pass/fail]."
 
 ## ANTI-PATTERNS (NEVER do these)
 - Outputting a "plan" without calling write_file
 - Listing "missing files" without creating them
-- Saying "需要创建 X" without write_file
 - Reading files and only outputting analysis
 - Skipping build_module after writing code
-- Claiming tests pass without running them
 
 ## OUTPUT FORMAT
-Final answer must be clean Markdown. NO raw tool syntax, NO JSON, NO "Executing tool..." lines.
+Final answer must be clean Markdown. NO raw tool syntax, NO JSON.
 Example: "I updated ipc.rs to fix libc::open type mismatch. Build passes."
 `)
 	}
 
-	// NOTE: Tool names are already provided via the `tools` parameter in the API call.
-	// Listing them again in the system prompt wastes ~2000 tokens and confuses small models.
-	// Only include a compact reference for the most commonly misused tools.
 	if mode == ModeAct {
-		sb.WriteString(`## KEY TOOLS (full schema in tools parameter)
+		sb.WriteString(`## KEY TOOLS
 - read_file(path) → read file content
 - write_file(path, content) → write COMPLETE file (auto-creates dirs)
 - edit_file(path, old_text, new_text) → find-and-replace (preferred for small changes)
 - write_file_batch(files) → write many files in one transaction
-- grep_search(pattern) → search code across all files (like grep -rn)
-- glob_search(pattern) → find files by name (e.g., "**/*.go")
-- list_dir(path) → list files in a directory (project structure)
-- bash(command) → run shell commands (build, test, git) — e.g. go test ./..., cargo test
+- grep_search(pattern) → search code across all files
+- glob_search(pattern) → find files by name
+- list_dir(path) → list files in a directory
+- bash(command) → run shell commands (build, test, git)
 - build_module(project_id) → compile + package ZIP
-- test_module(files, test_type) → validate module files (module.prop, shell syntax, permissions)
-- delete_file(path) / delete_dir(path) / move_file(source, destination) → file management
+- test_module(files, test_type) → validate module files
 
 ## TOOL RULES
 - edit_file for changes <30% of file (MOST common)
 - write_file for new files or complete rewrites ONLY
 - ALWAYS read_file BEFORE edit_file/write_file
-- grep_search/glob_search help locate code; read_file directly is fine when you already know the path
 - After writing, ALWAYS call build_module
-- If tests exist, run test_module and language tests (go test/cargo test) after a successful build
 - build_module fails? Read error → fix → rebuild (max 3 retries)
-
-## WORKFLOW
-1. grep_search → find relevant code (or read_file directly if the path is known)
-2. read_file → understand context
-3. edit_file → make changes (or write_file for new files)
-4. build_module → verify compilation
-5. test_module → validate module files; run language tests if test files exist
-6. Report: files changed + build status + test status
 
 ## CODE STYLE
 - Match the existing style of the files you modify
-- Go: gofmt format, run go vet; keep functions small with meaningful names
-- Rust: rustfmt format (cargo fmt), consider cargo clippy
-- Shell: follow POSIX /bin/sh style for Magisk scripts, quote variables ("$VAR")
+- Go: gofmt format, run go vet
+- Rust: rustfmt format (cargo fmt)
+- Shell: follow POSIX /bin/sh style for Magisk scripts
 - JavaScript/TypeScript: prettier/eslint conventions
-- Never leave dead code, debug prints, or TODO stubs behind
 
-CRITICAL: You are evaluated on whether you ACTUALLY WROTE FILES, VERIFIED THE BUILD, AND RAN THE TESTS.
-A plan without execution is a failure. Analysis without modification is a failure.
+## TASK DECOMPOSITION (for complex tasks)
+When you receive a complex task with multiple steps:
+1. First, mentally list all subtasks and their dependencies
+2. Execute subtasks in dependency order
+3. Report progress on each subtask as you complete it
+4. If a subtask fails, analyze the root cause before retrying
+
+## QUALITY STANDARDS
+- Code must be readable: use meaningful variable names, consistent formatting
+- Code must be maintainable: avoid magic numbers, extract constants
+- Code must have error handling: check return values, handle edge cases
+- Code should be testable: prefer pure functions, inject dependencies
+- Follow SOLID principles where applicable
+- Follow DRY (Don't Repeat Yourself) principle
+
+CRITICAL: You are evaluated on whether you ACTUALLY WROTE FILES AND VERIFIED THE BUILD.
 `)
 	}
 
@@ -292,6 +282,12 @@ func prefilterConversation(conversation []map[string]interface{}) []map[string]i
 	// Keep last 10 messages in full, compress older ones to essential info only
 	if len(conversation) > 30 {
 		return smartPruneConversation(conversation)
+	}
+
+	// Optimization 44: Truncate old tool results to save tokens
+	// This is a lightweight operation that runs before the more expensive filtering
+	if len(conversation) > 6 {
+		conversation = smartTruncateOldToolResults(conversation)
 	}
 
 	// Reuse pooled slice
@@ -454,6 +450,54 @@ func copyMap(m map[string]interface{}) map[string]interface{} {
 	result := make(map[string]interface{}, len(m))
 	for k, v := range m {
 		result[k] = v
+	}
+	return result
+}
+
+// Optimization 44: Smart Tool Result Truncation + P1-1 enhancement
+// For old tool results (>6 messages ago), truncate to essential info only.
+// P1-1: Enhanced to compress read_file results more aggressively.
+func smartTruncateOldToolResults(conversation []map[string]interface{}) []map[string]interface{} {
+	if len(conversation) <= 6 {
+		return conversation
+	}
+
+	result := make([]map[string]interface{}, len(conversation))
+	truncated := 0
+
+	for i, msg := range conversation {
+		role, _ := msg["role"].(string)
+		content, _ := msg["content"].(string)
+
+		// Only truncate old tool results (more than 6 messages ago)
+		if role == "tool" && i < len(conversation)-6 && len(content) > 500 {
+			var truncatedContent string
+			// P1-1: More aggressive truncation for write/edit results
+			// These contain success messages that can be safely compressed
+			if strings.Contains(content, "File written successfully:") || strings.Contains(content, "File edited:") {
+				// Write/edit results: keep only status message
+				truncatedContent = content
+				if len(truncatedContent) > 300 {
+					truncatedContent = truncatedContent[:300] + "..."
+				}
+			} else if len(content) > 4000 {
+				// Large tool results: keep first 500 chars + last 200 chars
+				truncatedContent = content[:500] + "\n... [truncated to save context] ...\n" + content[len(content)-200:]
+			} else {
+				// Normal truncation: keep first 200 chars + last 100 chars
+				truncatedContent = content[:200] + "\n... [truncated for efficiency] ...\n" + content[len(content)-100:]
+			}
+			msgCopy := copyMap(msg)
+			msgCopy["content"] = truncatedContent
+			result[i] = msgCopy
+			truncated++
+		} else {
+			result[i] = msg
+		}
+	}
+
+	if truncated > 0 {
+		log.Printf("[Optimization44] truncated %d old tool results to save tokens", truncated)
 	}
 	return result
 }

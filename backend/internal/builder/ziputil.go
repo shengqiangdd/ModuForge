@@ -103,9 +103,18 @@ func ZipDir(sourceDir, outputZip string) error {
 	return ZipDirExcluding(sourceDir, outputZip, nil)
 }
 
+// ZipProgressFunc is called during zip creation to report progress.
+// current/total represent files processed/total files to zip.
+type ZipProgressFunc func(current, total int, currentFile string)
+
 // ZipDirExcluding zips a directory, excluding paths that match any of the given patterns.
 // If patterns is nil, everything is included (original behavior).
 func ZipDirExcluding(sourceDir, outputZip string, excludePatterns []string) error {
+	return ZipDirExcludingWithProgress(sourceDir, outputZip, excludePatterns, nil)
+}
+
+// ZipDirExcludingWithProgress zips a directory with progress reporting.
+func ZipDirExcludingWithProgress(sourceDir, outputZip string, excludePatterns []string, onProgress ZipProgressFunc) error {
 	zipFile, err := os.Create(outputZip)
 	if err != nil {
 		return fmt.Errorf("create zip: %w", err)
@@ -121,6 +130,23 @@ func ZipDirExcluding(sourceDir, outputZip string, excludePatterns []string) erro
 		return fmt.Errorf("abs path: %w", err)
 	}
 
+	// First pass: count files to zip for progress reporting
+	totalFiles := 0
+	if onProgress != nil {
+		filepath.Walk(absSource, func(path string, info os.FileInfo, err error) error {
+			if err != nil || info.IsDir() {
+				return nil
+			}
+			relPath, _ := filepath.Rel(absSource, path)
+			relPath = filepath.ToSlash(relPath)
+			if !isExcluded(relPath, excludePatterns) {
+				totalFiles++
+			}
+			return nil
+		})
+	}
+
+	currentFile := 0
 	return filepath.Walk(absSource, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -192,6 +218,38 @@ func ZipDirExcluding(sourceDir, outputZip string, excludePatterns []string) erro
 		defer file.Close()
 
 		_, err = io.Copy(writer, file)
+
+		// Report progress
+		if onProgress != nil {
+			currentFile++
+			onProgress(currentFile, totalFiles, relPath)
+		}
+
 		return err
 	})
+}
+
+// isExcluded checks if a path matches any exclusion pattern.
+func isExcluded(relPath string, excludePatterns []string) bool {
+	if excludePatterns == nil {
+		return false
+	}
+	lower := strings.ToLower(relPath)
+	for _, pat := range excludePatterns {
+		if strings.HasSuffix(pat, "/") {
+			if strings.HasPrefix(lower, strings.ToLower(pat)) {
+				return true
+			}
+		} else if strings.Contains(pat, "*") {
+			suffix := strings.TrimPrefix(pat, "*")
+			if strings.HasSuffix(lower, strings.ToLower(suffix)) {
+				return true
+			}
+		} else {
+			if lower == strings.ToLower(pat) || strings.HasSuffix(lower, "/"+strings.ToLower(pat)) {
+				return true
+			}
+		}
+	}
+	return false
 }
