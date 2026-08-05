@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"log"
 	"strings"
 )
@@ -30,7 +31,7 @@ type runMetrics struct {
 type preparedToolCalls struct {
 	conversation     []map[string]interface{}
 	deduped          []toolTask
-	seen             map[string]int // dedupKey -> index in deduped slice
+	seen             map[uint64]int // dedupHash -> index in deduped slice
 	skippedToolCalls []LLMToolCall
 	parallelTasks    []toolTask
 	sequentialTasks  []toolTask
@@ -139,18 +140,24 @@ func (r *AgentRunner) prepareToolTasks(llmResp *LLMResponse, conversation []map[
 
 	// Optimization 6: Deduplicate identical tool calls (same name + arguments).
 	// Weak models sometimes issue the same tool call multiple times in one iteration.
+	// Uses FNV hash for fast dedup key generation instead of full string comparison.
 	originalTasks := tasks
-	seen := make(map[string]int) // dedupKey -> index in deduped slice
+	seen := make(map[uint64]int) // dedupHash -> index in deduped slice
 	var deduped []toolTask
 	var skippedToolCalls []LLMToolCall
 	for _, t := range tasks {
-		dedupKey := t.skillName + ":" + t.tc.Function.Arguments
-		if idx, exists := seen[dedupKey]; exists {
+		// Fast hash: FNV-1a on skill name + arguments
+		h := fnv.New64a()
+		h.Write([]byte(t.skillName))
+		h.Write([]byte{':'})
+		h.Write([]byte(t.tc.Function.Arguments))
+		dedupHash := h.Sum64()
+		if idx, exists := seen[dedupHash]; exists {
 			debugLog("dedup: skipping duplicate tool call %s (same as task %d)", t.skillName, idx)
 			skippedToolCalls = append(skippedToolCalls, t.tc)
 			continue
 		}
-		seen[dedupKey] = len(deduped)
+		seen[dedupHash] = len(deduped)
 		deduped = append(deduped, t)
 	}
 	if len(deduped) < len(originalTasks) {
@@ -159,24 +166,27 @@ func (r *AgentRunner) prepareToolTasks(llmResp *LLMResponse, conversation []map[
 	tasks = deduped
 
 	// NEW: Analyze dependencies for better parallelism
-	r.depGraph.Reset()
-	for _, t := range tasks {
-		filePath := ""
-		if p, ok := t.skillInput["path"].(string); ok {
-			filePath = p
+	// Skip for single tool call (no dependencies possible)
+	if len(tasks) > 1 {
+		r.depGraph.Reset()
+		for _, t := range tasks {
+			filePath := ""
+			if p, ok := t.skillInput["path"].(string); ok {
+				filePath = p
+			}
+			r.depGraph.AddToolCall(t.tc.ID, t.skillName, filePath, !readOnlySkills[t.skillName])
 		}
-		r.depGraph.AddToolCall(t.tc.ID, t.skillName, filePath, !readOnlySkills[t.skillName])
-	}
-	r.depGraph.AnalyzeAndLink()
-	depLayers := r.depGraph.GetExecutionLayers()
-	if len(depLayers) > 1 {
-		log.Printf("[Agent] dependency analysis: %d layers, grouping: %s", len(depLayers), r.depGraph.GetParallelGroup())
-		w.WriteSSE(map[string]interface{}{
-			"type":          "step",
-			"step":          "dependency_analysis",
-			"layers":        len(depLayers),
-			"parallel_info": r.depGraph.GetParallelGroup(),
-		})
+		r.depGraph.AnalyzeAndLink()
+		depLayers := r.depGraph.GetExecutionLayers()
+		if len(depLayers) > 1 {
+			log.Printf("[Agent] dependency analysis: %d layers, grouping: %s", len(depLayers), r.depGraph.GetParallelGroup())
+			w.WriteSSE(map[string]interface{}{
+				"type":          "step",
+				"step":          "dependency_analysis",
+				"layers":        len(depLayers),
+				"parallel_info": r.depGraph.GetParallelGroup(),
+			})
+		}
 	}
 
 	// Group tasks: read-only tools run in parallel; write/edit tools run
@@ -220,6 +230,7 @@ type toolResultProcessor struct {
 // whether an answer was force-sent, and any termination error.
 func (p *toolResultProcessor) process(iter int, conversation []map[string]interface{}, results []toolResult, anyWriteCalled, answerSent bool) ([]map[string]interface{}, bool, error) {
 	// P0-1: Track stagnation for each tool call
+	buildModuleCompleted := false
 	for _, res := range results {
 		// Check stagnation
 		var toolInput map[string]interface{}
@@ -244,6 +255,29 @@ func (p *toolResultProcessor) process(iter int, conversation []map[string]interf
 		if res.tc.Function.Name == "write_file" {
 			anyWriteCalled = true
 			p.stagnationDetector.ResetNoWrite()
+		}
+
+		// Detect build_module completion
+		if res.tc.Function.Name == "build_module" {
+			buildModuleCompleted = true
+			isError := strings.HasPrefix(res.result, "Error:") || strings.HasPrefix(res.result, "❌")
+			if !isError {
+				// Build succeeded - inject completion prompt
+				log.Printf("[Agent] build_module completed successfully, injecting completion prompt")
+				p.w.WriteSSE(map[string]interface{}{
+					"type":    "step",
+					"step":    "think",
+					"content": "✅ Build completed. Preparing final answer...",
+				})
+				// Reset read_file counter to give Agent a chance to verify if needed
+				p.m.toolCallHistory["read_file"] = 0
+				p.m.toolConsecutiveIdentical = make(map[string]int)
+			} else {
+				// Build failed - inject fix prompt
+				log.Printf("[Agent] build_module failed, injecting fix prompt")
+				conversation = appendRoleMessage(conversation, "system",
+					"❌ Build failed. Analyze the error, fix the issues using edit_file, then retry build_module. Do NOT read files repeatedly.")
+			}
 		}
 	}
 

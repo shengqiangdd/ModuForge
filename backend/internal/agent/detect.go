@@ -44,15 +44,15 @@ func claimsFileModification(text string) bool {
 
 // detectLoop detects repetitive tool call patterns and returns an intervention message.
 func detectLoop(toolCallHistory map[string]int, uniqueOps map[string]bool, totalCalls int) string {
-	// Total call budget — hard limit
-	if totalCalls >= 12 {
+	// Total call budget — hard limit (reduced from 12 to 8)
+	if totalCalls >= 8 {
 		return fmt.Sprintf("Made %d tool calls total. You must stop using tools and provide your final answer now. Summarize what you accomplished.", totalCalls)
 	}
 
 	// Per-skill threshold check
 	for skill, count := range toolCallHistory {
-		if count < 3 {
-			continue // No need to check skills called fewer than 3 times
+		if count < 2 {
+			continue // No need to check skills called fewer than 2 times
 		}
 
 		// Count unique targets for this skill
@@ -65,17 +65,17 @@ func detectLoop(toolCallHistory map[string]int, uniqueOps map[string]bool, total
 
 		// read_file: special case — allow batch reads of different files
 		if skill == "read_file" {
-			// Same file read 3+ times = loop
-			if uniqueCount <= 1 && count >= 3 {
+			// Same file read 2+ times = loop (reduced from 3)
+			if uniqueCount <= 1 && count >= 2 {
 				return "Reading the same file repeatedly. This is a loop. STOP reading. Use write_file/edit_file to make changes, or provide your final answer."
 			}
-			// Many reads but few unique targets = loop
-			if count >= 6 && uniqueCount <= 3 {
+			// Many reads but few unique targets = loop (reduced from 6 to 4)
+			if count >= 4 && uniqueCount <= 2 {
 				return fmt.Sprintf("You have called read_file %d times on only %d unique targets. This is a repetitive loop. STOP reading files. Provide your final answer now, or use write_file/edit_file to create/modify files.", count, uniqueCount)
 			}
 		} else {
-			// Other skills: 6+ calls = likely loop
-			if count >= 6 {
+			// Other skills: 4+ calls = likely loop (reduced from 6)
+			if count >= 4 {
 				return fmt.Sprintf("Skill '%s' called %d times. This indicates a loop. STOP calling this skill. Try a different approach or provide your final answer.", skill, count)
 			}
 		}
