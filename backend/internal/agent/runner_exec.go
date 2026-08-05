@@ -259,22 +259,28 @@ func (p *toolResultProcessor) process(iter int, conversation []map[string]interf
 		// Detect build_module completion
 		if res.tc.Function.Name == "build_module" {
 			isError := strings.HasPrefix(res.result, "Error:") || strings.HasPrefix(res.result, "❌")
-			if !isError {
-				// Build succeeded - inject completion prompt
-				log.Printf("[Agent] build_module completed successfully, injecting completion prompt")
+			buildReady := strings.Contains(res.result, `"build_ready":true`)
+
+			if buildReady || !isError {
+				// Build succeeded - inject completion prompt with next steps
+				log.Printf("[Agent] build_module completed successfully (build_ready=%v), injecting completion prompt", buildReady)
 				p.w.WriteSSE(map[string]interface{}{
 					"type":    "step",
 					"step":    "think",
-					"content": "✅ Build completed. Preparing final answer...",
+					"content": "✅ Build completed successfully.",
 				})
 				// Reset read_file counter to give Agent a chance to verify if needed
 				p.m.toolCallHistory["read_file"] = 0
 				p.m.toolConsecutiveIdentical = make(map[string]int)
+
+				// Inject prompt for next steps
+				nextStepsPrompt := buildNextStepsPrompt(res.result)
+				conversation = appendRoleMessage(conversation, "system", nextStepsPrompt)
 			} else {
-				// Build failed - inject fix prompt
-				log.Printf("[Agent] build_module failed, injecting fix prompt")
-				conversation = appendRoleMessage(conversation, "system",
-					"❌ Build failed. Analyze the error, fix the issues using edit_file, then retry build_module. Do NOT read files repeatedly.")
+				// Build failed - inject intelligent fix prompt
+				log.Printf("[Agent] build_module failed, injecting intelligent fix prompt")
+				fixPrompt := buildErrorFixPrompt(res.result)
+				conversation = appendRoleMessage(conversation, "system", fixPrompt)
 			}
 		}
 	}
@@ -398,4 +404,138 @@ func (p *toolResultProcessor) process(iter int, conversation []map[string]interf
 	}
 
 	return conversation, false, nil
+}
+
+// buildNextStepsPrompt generates a prompt for what to do after a successful build.
+func buildNextStepsPrompt(buildOutput string) string {
+	hasZip := strings.Contains(buildOutput, ".zip")
+
+	parts := []string{
+		"✅ Build succeeded! Your module is ready.",
+	}
+
+	if hasZip {
+		parts = append(parts, "📦 The module ZIP has been created and is ready for distribution.")
+	}
+
+	parts = append(parts, "")
+	parts = append(parts, "Suggested next steps:")
+	parts = append(parts, "1. Run tests if test scripts exist (e.g., test.sh)")
+	parts = append(parts, "2. Verify the module installs correctly on a device")
+	parts = append(parts, "3. If everything looks good, provide your final answer summarizing what was built")
+
+	parts = append(parts, "")
+	parts = append(parts, "💡 If you need to make changes, use edit_file, then call build_module again to rebuild.")
+
+	return strings.Join(parts, "\n")
+}
+
+// buildErrorFixPrompt generates an intelligent fix prompt based on build errors.
+func buildErrorFixPrompt(buildOutput string) string {
+	parts := []string{
+		"❌ Build failed. Here's how to fix it:",
+		"",
+	}
+
+	// Parse error types from build output
+	errorTypes := classifyBuildErrors(buildOutput)
+
+	if len(errorTypes) == 0 {
+		parts = append(parts, "Could not classify the specific error type.")
+		parts = append(parts, "📋 General approach:")
+		parts = append(parts, "  1. Read the error message above carefully")
+		parts = append(parts, "  2. Identify the file and line number mentioned")
+		parts = append(parts, "  3. Use read_file to read that specific file")
+		parts = append(parts, "  4. Use edit_file to fix the issue")
+		parts = append(parts, "  5. Call build_module again to verify")
+	} else {
+		parts = append(parts, fmt.Sprintf("Detected %d error type(s): %s", len(errorTypes), strings.Join(errorTypes, ", ")))
+		parts = append(parts, "")
+
+		if containsErrorType(errorTypes, "missing_import") {
+			parts = append(parts, "🔧 Missing import/package:")
+			parts = append(parts, "  - Check the imports section of the file")
+			parts = append(parts, "  - For Go: add the import and run 'go mod tidy'")
+			parts = append(parts, "  - For Rust: check Cargo.toml dependencies")
+			parts = append(parts, "")
+		}
+		if containsErrorType(errorTypes, "undefined") {
+			parts = append(parts, "🔧 Undefined variable/function:")
+			parts = append(parts, "  - Check if the variable is declared")
+			parts = append(parts, "  - Check if the function exists in the imported package")
+			parts = append(parts, "  - Check for typos in variable/function names")
+			parts = append(parts, "")
+		}
+		if containsErrorType(errorTypes, "type_mismatch") {
+			parts = append(parts, "🔧 Type mismatch:")
+			parts = append(parts, "  - Check function signatures and expected types")
+			parts = append(parts, "  - Ensure variables match the expected types")
+			parts = append(parts, "  - Check for type conversions needed")
+			parts = append(parts, "")
+		}
+		if containsErrorType(errorTypes, "syntax") {
+			parts = append(parts, "🔧 Syntax error:")
+			parts = append(parts, "  - Check brackets, parentheses, and semicolons")
+			parts = append(parts, "  - Verify Go/C++/Rust syntax rules")
+			parts = append(parts, "")
+		}
+		if containsErrorType(errorTypes, "linker") {
+			parts = append(parts, "🔧 Linker error:")
+			parts = append(parts, "  - This is usually a cross-compilation issue, not a code issue")
+			parts = append(parts, "  - Host validation should still work")
+			parts = append(parts, "  - Focus on fixing code errors first")
+			parts = append(parts, "")
+		}
+	}
+
+	parts = append(parts, "⚠️ Important: After fixing, call build_module again to verify the fix.")
+	parts = append(parts, "Do NOT repeatedly read files without making changes.")
+
+	return strings.Join(parts, "\n")
+}
+
+// classifyBuildErrors extracts error types from build output.
+func classifyBuildErrors(output string) []string {
+	seen := make(map[string]bool)
+	var types []string
+
+	checkAndAdd := func(t string) {
+		if !seen[t] {
+			seen[t] = true
+			types = append(types, t)
+		}
+	}
+
+	outputLower := strings.ToLower(output)
+
+	if strings.Contains(outputLower, "cannot find package") || strings.Contains(outputLower, "no required module") {
+		checkAndAdd("missing_import")
+	}
+	if strings.Contains(outputLower, "undefined") || strings.Contains(outputLower, "undeclared") || strings.Contains(outputLower, "was not declared") {
+		checkAndAdd("undefined")
+	}
+	if strings.Contains(outputLower, "cannot use") || strings.Contains(outputLower, "type mismatch") || strings.Contains(outputLower, "type ") && strings.Contains(outputLower, "expected") {
+		checkAndAdd("type_mismatch")
+	}
+	if strings.Contains(outputLower, "syntax error") || strings.Contains(outputLower, "expected") && strings.Contains(outputLower, "unexpected") {
+		checkAndAdd("syntax")
+	}
+	if strings.Contains(outputLower, "linker") || strings.Contains(outputLower, "undefined reference") || strings.Contains(outputLower, "cannot find -l") {
+		checkAndAdd("linker")
+	}
+	if strings.Contains(outputLower, "timed out") || strings.Contains(outputLower, "timeout") {
+		checkAndAdd("timeout")
+	}
+
+	return types
+}
+
+// containsErrorType checks if a string slice contains a specific error type.
+func containsErrorType(types []string, target string) bool {
+	for _, t := range types {
+		if t == target {
+			return true
+		}
+	}
+	return false
 }

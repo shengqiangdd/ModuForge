@@ -3,6 +3,7 @@ package skills
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -29,6 +30,156 @@ type sourceInfo struct {
 	hasCpp   bool
 	hasGo    bool
 	goModDir string
+}
+
+// BuildResult holds structured build information for the runner to consume.
+type BuildResult struct {
+	BuildReady    bool              `json:"build_ready"`
+	Success       bool              `json:"success"`
+	SourceResults map[string]string `json:"source_results"` // "rust"|"cpp"|"go" -> result message
+	Errors        []CompileError    `json:"errors"`
+	Warnings      []string          `json:"warnings"`
+}
+
+// CompileError holds parsed compilation error details.
+type CompileError struct {
+	SourceType string `json:"source_type"` // "rust", "cpp", "go"
+	File       string `json:"file"`
+	Line       int    `json:"line"`
+	Column     int    `json:"column"`
+	Message    string `json:"message"`
+	ErrorType  string `json:"error_type"` // "syntax", "undefined", "type_mismatch", "linker", "missing_import", "timeout", "unknown"
+}
+
+// parseCompileErrors extracts structured error information from compiler output.
+func parseCompileErrors(sourceType, output string) []CompileError {
+	var errors []CompileError
+	lines := strings.Split(output, "\n")
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+
+		ce := CompileError{SourceType: sourceType}
+
+		switch sourceType {
+		case "rust":
+			// Rust error format: error[E0XXX]: message\n  --> file:line:col
+			if m := regexp.MustCompile(`error\[(E\d+)\]:\s*(.+)`).FindStringSubmatch(line); len(m) > 2 {
+				ce.ErrorType = classifyRustError(m[1])
+				ce.Message = m[2]
+			} else if m := regexp.MustCompile(`--> (.+):(\d+):(\d+)`).FindStringSubmatch(line); len(m) > 3 {
+				ce.File = m[1]
+				ce.Line = atoi(m[2])
+				ce.Column = atoi(m[3])
+			} else if strings.HasPrefix(line, "error") {
+				ce.Message = strings.TrimPrefix(line, "error: ")
+				ce.ErrorType = classifyRustError("")
+			}
+
+		case "go":
+			// Go error format: file:line:col: message
+			if m := regexp.MustCompile(`(.+):(\d+):(\d+):\s*(.+)`).FindStringSubmatch(line); len(m) > 4 {
+				ce.File = m[1]
+				ce.Line = atoi(m[2])
+				ce.Column = atoi(m[3])
+				ce.Message = m[4]
+				ce.ErrorType = classifyGoError(m[4])
+			} else if strings.Contains(line, "undefined") || strings.Contains(line, "undeclared") {
+				ce.Message = line
+				ce.ErrorType = "undefined"
+			}
+
+		case "cpp":
+			// C++ error format: file:line:col: error: message
+			if m := regexp.MustCompile(`(.+):(\d+):(\d+):\s*(?:error|warning):\s*(.+)`).FindStringSubmatch(line); len(m) > 4 {
+				ce.File = m[1]
+				ce.Line = atoi(m[2])
+				ce.Column = atoi(m[3])
+				ce.Message = m[4]
+				ce.ErrorType = classifyCppError(m[4])
+			} else if strings.Contains(line, "error:") {
+				ce.Message = line
+				ce.ErrorType = "unknown"
+			}
+		}
+
+		if ce.Message != "" {
+			errors = append(errors, ce)
+		}
+	}
+	return errors
+}
+
+// atoi is a simple string-to-int converter for error parsing.
+func atoi(s string) int {
+	n := 0
+	for _, c := range s {
+		if c >= '0' && c <= '9' {
+			n = n*10 + int(c-'0')
+		} else {
+			break
+		}
+	}
+	return n
+}
+
+// classifyRustError categorizes Rust compiler error codes.
+func classifyRustError(code string) string {
+	switch {
+	case strings.HasPrefix(code, "E0"):
+		if strings.Contains(code, "0412") || strings.Contains(code, "0432") || strings.Contains(code, "0433") {
+			return "missing_import"
+		}
+		if strings.Contains(code, "0596") || strings.Contains(code, "0599") || strings.Contains(code, "0609") {
+			return "undefined"
+		}
+		if strings.Contains(code, "0308") || strings.Contains(code, "0305") {
+			return "type_mismatch"
+		}
+		if strings.Contains(code, "0001") || strings.Contains(code, "0002") || strings.Contains(code, "0003") {
+			return "syntax"
+		}
+	case strings.Contains(code, "linker"):
+		return "linker"
+	}
+	return "unknown"
+}
+
+// classifyGoError categorizes Go compiler error messages.
+func classifyGoError(msg string) string {
+	switch {
+	case strings.Contains(msg, "undefined") || strings.Contains(msg, "undeclared"):
+		return "undefined"
+	case strings.Contains(msg, "cannot use") || strings.Contains(msg, "type mismatch"):
+		return "type_mismatch"
+	case strings.Contains(msg, "syntax error"):
+		return "syntax"
+	case strings.Contains(msg, "cannot find package") || strings.Contains(msg, "no required module"):
+		return "missing_import"
+	case strings.Contains(msg, "imported and not used"):
+		return "unused_import"
+	}
+	return "unknown"
+}
+
+// classifyCppError categorizes C++ compiler error messages.
+func classifyCppError(msg string) string {
+	switch {
+	case strings.Contains(msg, "undeclared") || strings.Contains(msg, "was not declared"):
+		return "undefined"
+	case strings.Contains(msg, "no matching function") || strings.Contains(msg, "cannot convert"):
+		return "type_mismatch"
+	case strings.Contains(msg, "expected") || strings.Contains(msg, "unexpected"):
+		return "syntax"
+	case strings.Contains(msg, "fatal error: ") || strings.Contains(msg, "No such file"):
+		return "missing_import"
+	case strings.Contains(msg, "undefined reference"):
+		return "linker"
+	}
+	return "unknown"
 }
 
 func NewBuildModuleSkillWithDB(projectPath string, db *sql.DB) *BuildModuleSkill {
@@ -116,7 +267,7 @@ func (s *BuildModuleSkill) Execute(ctx context.Context, input map[string]interfa
 	// ========== Phase 2: Source Compilation ==========
 	log.WriteString("\n── Phase 2: Source Compilation ──\n")
 	compileResult := s.compileSources(projectPath)
-	log.WriteString(compileResult)
+	log.WriteString(compileResult.log)
 
 	// ========== Phase 3: Shell Script Validation ==========
 	log.WriteString("\n── Phase 3: Shell Script Validation ──\n")
@@ -146,7 +297,25 @@ func (s *BuildModuleSkill) Execute(ctx context.Context, input map[string]interfa
 		log.WriteString(fmt.Sprintf("  ✅ %s\n", outputZIP))
 	}
 
-	log.WriteString("\n✅ Build complete!\n")
+	// ========== Build Result ==========
+	buildReady := compileResult.buildSuccess
+	result := BuildResult{
+		BuildReady:    buildReady,
+		Success:       buildReady && len(missingFiles) == 0,
+		SourceResults: compileResult.sourceResults,
+		Errors:        compileResult.errors,
+		Warnings:      compileResult.warnings,
+	}
+
+	resultJSON, _ := json.Marshal(result)
+	log.WriteString(fmt.Sprintf("\n[BUILD_RESULT] %s\n", string(resultJSON)))
+
+	if buildReady {
+		log.WriteString("\n✅ Build complete! Module is ready for packaging and testing.\n")
+	} else {
+		log.WriteString("\n⚠️ Build completed with errors. Please fix the issues above.\n")
+	}
+
 	return log.String(), nil
 }
 
@@ -196,10 +365,23 @@ func (s *BuildModuleSkill) detectSources(projectPath string) sourceInfo {
 	return info
 }
 
+// compileResult holds aggregated compilation results.
+type compileResult struct {
+	buildSuccess  bool
+	sourceResults map[string]string // "rust"|"cpp"|"go" -> result message
+	errors        []CompileError
+	warnings      []string
+	log           string // human-readable compilation log
+}
+
 // compileSources 编译项目中的源代码
-func (s *BuildModuleSkill) compileSources(projectPath string) string {
+func (s *BuildModuleSkill) compileSources(projectPath string) compileResult {
 	var log strings.Builder
 	hasSources := false
+	result := compileResult{
+		buildSuccess:  true,
+		sourceResults: make(map[string]string),
+	}
 
 	// Single walk pass to detect all source types
 	sources := s.detectSources(projectPath)
@@ -208,31 +390,53 @@ func (s *BuildModuleSkill) compileSources(projectPath string) string {
 	if sources.hasCargo {
 		hasSources = true
 		log.WriteString("  🔧 Compiling Rust...\n")
-		result := s.compileRust(projectPath, sources.cargoDir)
-		log.WriteString(result)
+		res := s.compileRust(projectPath, sources.cargoDir)
+		log.WriteString(res)
+		result.sourceResults["rust"] = res
+		if strings.Contains(res, "❌") {
+			result.buildSuccess = false
+			result.errors = append(result.errors, parseCompileErrors("rust", res)...)
+		} else if strings.Contains(res, "⚠️") {
+			result.warnings = append(result.warnings, res)
+		}
 	}
 
 	// Compile C/C++
 	if sources.hasCpp {
 		hasSources = true
 		log.WriteString("  🔧 Compiling C/C++...\n")
-		result := s.compileCpp(projectPath)
-		log.WriteString(result)
+		res := s.compileCpp(projectPath)
+		log.WriteString(res)
+		result.sourceResults["cpp"] = res
+		if strings.Contains(res, "❌") {
+			result.buildSuccess = false
+			result.errors = append(result.errors, parseCompileErrors("cpp", res)...)
+		} else if strings.Contains(res, "⚠️") {
+			result.warnings = append(result.warnings, res)
+		}
 	}
 
 	// Compile Go
 	if sources.hasGo {
 		hasSources = true
 		log.WriteString("  🔧 Compiling Go...\n")
-		result := s.compileGo(projectPath)
-		log.WriteString(result)
+		res := s.compileGo(projectPath)
+		log.WriteString(res)
+		result.sourceResults["go"] = res
+		if strings.Contains(res, "❌") {
+			result.buildSuccess = false
+			result.errors = append(result.errors, parseCompileErrors("go", res)...)
+		} else if strings.Contains(res, "⚠️") {
+			result.warnings = append(result.warnings, res)
+		}
 	}
 
 	if !hasSources {
 		log.WriteString("  ℹ️ No compiled sources found (shell-only module)\n")
 	}
 
-	return log.String()
+	result.log = log.String()
+	return result
 }
 
 // compileRust 编译 Rust 代码
@@ -283,21 +487,45 @@ linker = "%s"
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		// Cross-compilation failed, fall back to host compilation for validation
 		outputStr := string(output)
-		if strings.Contains(outputStr, "linker") || strings.Contains(outputStr, "not found") || ndkClang == "" {
-			// Linker not found - try host compilation to validate code quality
+
+		// Cross-compilation failed - classify the failure type
+		isLinkerError := strings.Contains(outputStr, "linker") || strings.Contains(outputStr, "ld: ") || strings.Contains(outputStr, "cannot find -l")
+		isNDKMissing := ndkClang == "" || strings.Contains(outputStr, "not found")
+
+		if isLinkerError || isNDKMissing {
+			// Phase A: Linker/NDK issue - try host compilation to validate code quality
 			ctxHost, cancelHost := context.WithTimeout(context.Background(), compileTimeout)
 			defer cancelHost()
 			cmdHost := exec.CommandContext(ctxHost, "cargo", "build", "--release")
 			cmdHost.Dir = cargoDir
 			outputHost, errHost := cmdHost.CombinedOutput()
+
 			if errHost != nil {
-				return fmt.Sprintf("  ❌ Rust build failed:\n%s\n", string(outputHost))
+				// Host compilation also failed - real code errors
+				hostErrors := parseCompileErrors("rust", string(outputHost))
+				return fmt.Sprintf(
+					"  ❌ Rust build failed (code errors, not cross-compile):\n"+
+						"  Cross-compile issue: %s\n"+
+						"  Code errors found:\n%s\n"+
+						"  💡 Fix the code errors above, then rebuild. The cross-compile linker issue is secondary.\n",
+					classifyNDKError(outputStr),
+					formatCompileErrors(hostErrors))
 			}
-			return "  ✅ Rust build succeeded (host target, cross-compile skipped: linker not found)\n"
+			// Host compilation succeeded - code is valid, cross-compile is secondary
+			return fmt.Sprintf(
+				"  ✅ Rust code validated (host target OK)\n"+
+					"  ⚠️ Cross-compile skipped: %s\n"+
+					"  💡 Code compiles successfully for host. Cross-compilation will work when NDK is properly configured.\n",
+				classifyNDKError(outputStr))
 		}
-		return fmt.Sprintf("  ❌ Rust build failed:\n%s\n", outputStr)
+
+		// Real compilation errors (syntax, type, etc.)
+		compileErrors := parseCompileErrors("rust", outputStr)
+		return fmt.Sprintf(
+			"  ❌ Rust build failed:\n%s\n"+
+				"  💡 Found %d error(s). Analyze the errors above and use edit_file to fix them.\n",
+			outputStr, len(compileErrors))
 	}
 
 	// Copy compiled binary to system/bin/
@@ -494,10 +722,37 @@ func (s *BuildModuleSkill) compileGo(projectPath string) string {
 	)
 	output, err := cmd.CombinedOutput()
 	if ctx.Err() == context.DeadlineExceeded {
-		return fmt.Sprintf("  ❌ Go build timed out after %v\n", compileTimeout)
+		return fmt.Sprintf(
+			"  ❌ Go build timed out after %v\n"+
+				"  💡 The build is taking too long. Check for infinite loops or very large dependencies.\n",
+			compileTimeout)
 	}
 	if err != nil {
-		return fmt.Sprintf("  ❌ Go build failed (dir=%s):\n%s\n", goModDir, string(output))
+		outputStr := string(output)
+		compileErrors := parseCompileErrors("go", outputStr)
+
+		// Classify the error type for better fix guidance
+		errorHint := ""
+		switch {
+		case strings.Contains(outputStr, "cannot find package"):
+			errorHint = "Missing Go package. Check go.mod and run 'go mod tidy'."
+		case strings.Contains(outputStr, "undefined") || strings.Contains(outputStr, "undeclared"):
+			errorHint = "Undefined variable/function. Check imports and variable declarations."
+		case strings.Contains(outputStr, "syntax error"):
+			errorHint = "Syntax error. Check brackets, semicolons, and Go syntax rules."
+		case strings.Contains(outputStr, "cannot use"):
+			errorHint = "Type mismatch. Check function signatures and variable types."
+		case strings.Contains(outputStr, "go.mod"):
+			errorHint = "Module configuration issue. Verify go.mod exists and is valid."
+		default:
+			errorHint = "Analyze the error above and use edit_file to fix it."
+		}
+
+		return fmt.Sprintf(
+			"  ❌ Go build failed (dir=%s):\n%s\n"+
+				"  💡 %s\n"+
+				"  Found %d error(s) in compiler output.\n",
+			goModDir, outputStr, errorHint, len(compileErrors))
 	}
 	return fmt.Sprintf("  ✅ Go build succeeded (dir=%s)\n", goModDir)
 }
@@ -566,6 +821,40 @@ func findCppCompiler() string {
 		}
 	}
 	return ""
+}
+
+// classifyNDKError describes the NDK/cross-compile issue in human-readable form.
+func classifyNDKError(output string) string {
+	switch {
+	case strings.Contains(output, "linker") && strings.Contains(output, "not found"):
+		return "NDK linker not found - NDK may not be installed at /opt/android-ndk"
+	case strings.Contains(output, "cannot find -l"):
+		return "NDK linker cannot find system libraries - NDK sysroot may be incomplete"
+	case strings.Contains(output, "aarch64-linux-android"):
+		return "Android cross-compile toolchain not fully configured"
+	default:
+		return "NDK cross-compilation environment issue"
+	}
+}
+
+// formatCompileErrors formats a slice of CompileErrors into a readable string.
+func formatCompileErrors(errors []CompileError) string {
+	var b strings.Builder
+	for _, e := range errors {
+		loc := ""
+		if e.File != "" {
+			loc = fmt.Sprintf("%s:%d", e.File, e.Line)
+			if e.Column > 0 {
+				loc = fmt.Sprintf("%s:%d", loc, e.Column)
+			}
+		}
+		if loc != "" {
+			b.WriteString(fmt.Sprintf("    [%s] %s: %s\n", e.ErrorType, loc, e.Message))
+		} else {
+			b.WriteString(fmt.Sprintf("    [%s] %s\n", e.ErrorType, e.Message))
+		}
+	}
+	return b.String()
 }
 
 func (s *BuildModuleSkill) Metadata() SkillMeta {
