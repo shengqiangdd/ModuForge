@@ -729,10 +729,11 @@
           </div>
         {:else if routeComponent}
           {#key routeKey}
-            <routeComponent
+            <svelte:component
+              this={routeComponent}
               {projectId}
               onNavigate={(route: string, id?: string) => navigate(route as Route, id)}
-            ></routeComponent>
+            />
           {/key}
         {/if}
       </div>
