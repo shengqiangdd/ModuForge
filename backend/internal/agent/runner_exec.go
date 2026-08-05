@@ -230,7 +230,6 @@ type toolResultProcessor struct {
 // whether an answer was force-sent, and any termination error.
 func (p *toolResultProcessor) process(iter int, conversation []map[string]interface{}, results []toolResult, anyWriteCalled, answerSent bool) ([]map[string]interface{}, bool, error) {
 	// P0-1: Track stagnation for each tool call
-	buildModuleCompleted := false
 	for _, res := range results {
 		// Check stagnation
 		var toolInput map[string]interface{}
@@ -259,7 +258,6 @@ func (p *toolResultProcessor) process(iter int, conversation []map[string]interf
 
 		// Detect build_module completion
 		if res.tc.Function.Name == "build_module" {
-			buildModuleCompleted = true
 			isError := strings.HasPrefix(res.result, "Error:") || strings.HasPrefix(res.result, "❌")
 			if !isError {
 				// Build succeeded - inject completion prompt

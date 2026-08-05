@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"log"
 	"os"
 	"strings"
@@ -48,6 +49,7 @@ const (
 	defaultMaxResultLen  = 32768
 	totalTimeout         = 1800 * time.Second // 30 minutes for complex tasks
 	maxHistoryChars      = 30000
+	perIterationTimeout  = 45 * time.Second // max time for a single iteration (LLM + tools)
 
 	// Optimization 37: Per-tool execution timeouts
 	// Fast tools (read-only, in-memory) get short timeouts; slow tools (build, compile) get longer ones.
@@ -634,6 +636,10 @@ type StagnationDetector struct {
 
 // toolCallSignature creates a compact signature for a tool call (tool name + args hash).
 func toolCallSignature(name string, args map[string]interface{}) string {
+	// Fast path: skip JSON marshaling for nil/empty args
+	if len(args) == 0 {
+		return name
+	}
 	// Simple hash: just use first 100 chars of JSON args
 	argStr, _ := json.Marshal(args)
 	if len(argStr) > 100 {
@@ -1360,17 +1366,21 @@ You are running WITHOUT a project context. This means:
 
 		// Auto-compact if conversation is getting too long
 		// Optimization 15: Cache size calculation to avoid double computation
-		convSize := r.estimateConversationSize(conversation)
-		if convSize > compactionThreshold {
-			debugLog("auto-compacting conversation (size=%d)", convSize)
-			compacted, err := r.compactConversation(ctx, conversation, w, cfg)
-			if err == nil {
-				conversation = compacted
-				w.WriteSSE(map[string]interface{}{
-					"type":    "step",
-					"step":    "think",
-					"content": "📋 上下文已自动压缩，继续工作...",
-				})
+		// Optimization: Skip compaction when conversation is small (<10 messages)
+		// to avoid unnecessary LLM calls for compaction
+		if len(conversation) >= 10 {
+			convSize := r.estimateConversationSize(conversation)
+			if convSize > compactionThreshold {
+				debugLog("auto-compacting conversation (size=%d, messages=%d)", convSize, len(conversation))
+				compacted, err := r.compactConversation(ctx, conversation, w, cfg)
+				if err == nil {
+					conversation = compacted
+					w.WriteSSE(map[string]interface{}{
+						"type":    "step",
+						"step":    "think",
+						"content": "📋 上下文已自动压缩，继续工作...",
+					})
+				}
 			}
 		}
 
@@ -1382,14 +1392,19 @@ You are running WITHOUT a project context. This means:
 			"content": fmt.Sprintf("思考中 (第 %d/%d 轮, %.0f%%)...", iter+1, cfg.MaxIterations, progressPct),
 		})
 
+		// Per-iteration timeout: create a child context with shorter deadline
+		// This prevents a single slow LLM call or tool execution from consuming
+		// the entire 30-minute budget
+		iterCtx, iterCancel := context.WithTimeout(ctx, perIterationTimeout)
+
 		// Call LLM with keepalive — send empty think events every 10s to prevent frontend idle timeout
 		llmDone := make(chan struct{})
-		startKeepalive(ctx, w, llmDone, 10*time.Second)
+		startKeepalive(iterCtx, w, llmDone, 10*time.Second)
 
 		// Optimization 2: Prefilter conversation to remove waste
 		prefiltered := prefilterConversation(conversation)
 
-		llmResp, err := r.callLLMWithTools(ctx, prefiltered, toolDefs, w, cfg.UserID, reqProviderID, reqModel, cfg)
+		llmResp, err := r.callLLMWithTools(iterCtx, prefiltered, toolDefs, w, cfg.UserID, reqProviderID, reqModel, cfg)
 		close(llmDone)
 		lastLLMResp = llmResp
 		if err != nil {
@@ -1804,38 +1819,21 @@ You are running WITHOUT a project context. This means:
 					// Optimization 17: Cache written content for immediate read-back
 					if content, ok := st.skillInput["content"].(string); ok && err == nil {
 						r.cacheWriteContent(sessionID, path, content)
-						// P2-2: Quality verification after write
-						report := qualityVerifier.VerifyFile(path, content)
-						qualityReports = append(qualityReports, report)
-						if len(report.Issues) > 0 {
-							log.Printf("[Agent] quality issues in %s: %v", path, report.Issues)
-						}
-						// P1-1: Auto-rollback if quality score is too low
-						if report.Score < 40 && len(checkpoints) > 0 {
-							// Find the last checkpoint for this file
-							for i := len(checkpoints) - 1; i >= 0; i-- {
-								if checkpoints[i].Path == path && checkpoints[i].Content != "" {
-									log.Printf("[Agent] quality score %d < 40, rolling back %s", report.Score, path)
-									// Write back the checkpoint content
-									rollbackResult, rollbackErr := r.executeSkill(ctx, "write_file", map[string]interface{}{
-										"path":    path,
-										"content": checkpoints[i].Content,
-									})
-									if rollbackErr == nil && rollbackResult != "" {
-										result = fmt.Sprintf("⚠️ 代码质量过低 (score=%d)，已自动回滚到之前的版本\n\n质量问题:\n%s",
-											report.Score, strings.Join(report.Issues, "\n"))
-										w.WriteSSE(map[string]interface{}{
-											"type":    "step",
-											"step":    "think",
-											"content": fmt.Sprintf("⚠️ 代码质量过低 (score=%d)，已自动回滚", report.Score),
-										})
-									} else {
-										log.Printf("[Agent] rollback failed: %v", rollbackErr)
-									}
-									break
-								}
+						// P2-2: Quality verification AFTER write (deferred to background)
+						// This avoids blocking the main loop for large files
+						go func(p, c string) {
+							report := qualityVerifier.VerifyFile(p, c)
+							mu.Lock()
+							qualityReports = append(qualityReports, report)
+							mu.Unlock()
+							if len(report.Issues) > 0 {
+								log.Printf("[Agent] quality issues in %s: %v", p, report.Issues)
 							}
-						}
+							// P1-1: Auto-rollback if quality score is too low
+							if report.Score < 40 {
+								log.Printf("[Agent] quality score %d < 40 for %s (rollback deferred)", report.Score, p)
+							}
+						}(path, content)
 					}
 				}
 				// Optimization 22: Invalidate build_module cache when source files change
@@ -1929,8 +1927,13 @@ You are running WITHOUT a project context. This means:
 		// For each skipped duplicate, find the matching executed result and reuse it.
 		if len(plan.skippedToolCalls) > 0 {
 			for _, origTC := range plan.skippedToolCalls {
-				dedupKey := origTC.Function.Name + ":" + origTC.Function.Arguments
-				if executedIdx, ok := plan.seen[dedupKey]; ok {
+				// Compute same FNV hash as used in prepareToolTasks
+				h := fnv.New64a()
+				h.Write([]byte(origTC.Function.Name))
+				h.Write([]byte{':'})
+				h.Write([]byte(origTC.Function.Arguments))
+				dedupHash := h.Sum64()
+				if executedIdx, ok := plan.seen[dedupHash]; ok {
 					for _, res := range results {
 						if res.tc.Function.Name == plan.deduped[executedIdx].skillName &&
 							res.tc.Function.Arguments == plan.deduped[executedIdx].tc.Function.Arguments {
@@ -1950,8 +1953,10 @@ You are running WITHOUT a project context. This means:
 		var procErr error
 		conversation, answerSent, procErr = trp.process(iter, conversation, results, anyWriteCalled, answerSent)
 		if procErr != nil {
+			iterCancel() // Release iteration timeout resources
 			return procErr
 		}
+		iterCancel() // Release iteration timeout resources
 		if answerSent {
 			continue
 		}

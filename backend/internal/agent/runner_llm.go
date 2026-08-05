@@ -57,7 +57,34 @@ func (r *AgentRunner) handleLLMCallError(ctx context.Context, w SSEWriter, cfg R
 	startKeepalive(ctx, w, sleepDone, 3*time.Second)
 	time.Sleep(backoff)
 	close(sleepDone)
+
+	// Smart retry: Add context about what was being attempted to help LLM recover
+	retryContext := buildRetryContext(conversation)
 	conversation = appendRoleMessage(conversation, "user",
-		fmt.Sprintf("[System: LLM call failed with error: %v. Please try again.]", err))
+		fmt.Sprintf("[System: LLM call failed with error: %v. %sPlease try again.]", err, retryContext))
 	return conversation, consecutiveErrors, nil
+}
+
+// buildRetryContext analyzes the conversation to provide context for retry.
+// This helps the LLM understand what it was doing and recover from errors.
+func buildRetryContext(conversation []map[string]interface{}) string {
+	// Find the last assistant message with tool calls
+	for i := len(conversation) - 1; i >= 0; i-- {
+		msg := conversation[i]
+		role, _ := msg["role"].(string)
+		if role != "assistant" {
+			continue
+		}
+		toolCalls, ok := msg["tool_calls"].([]LLMToolCall)
+		if !ok || len(toolCalls) == 0 {
+			continue
+		}
+		// Build context from last tool calls
+		var tools []string
+		for _, tc := range toolCalls {
+			tools = append(tools, tc.Function.Name)
+		}
+		return fmt.Sprintf("You were about to call: %s. ", strings.Join(tools, ", "))
+	}
+	return ""
 }

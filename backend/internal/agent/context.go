@@ -5,9 +5,30 @@ import (
 	"log"
 	"strings"
 	"sync"
+	"unsafe"
 )
 
+// conversationSizeCache caches the estimated size of a conversation to avoid
+// repeated full scans. Key: pointer to first element (identity), Value: size.
+// This avoids the double-scan problem where estimateConversationSize is called
+// twice per iteration (once for compaction check, once implicitly via prefilter).
+type conversationSizeCache struct {
+	lastPointer uintptr
+	lastLen     int
+	lastSize    int
+}
+
+var globalConvSizeCache = &conversationSizeCache{}
+
 func (r *AgentRunner) estimateConversationSize(conversation []map[string]interface{}) int {
+	// Fast path: if conversation pointer and length haven't changed, return cached size
+	if len(conversation) > 0 {
+		ptr := uintptr(unsafe.Pointer(&conversation[0]))
+		if ptr == globalConvSizeCache.lastPointer && len(conversation) == globalConvSizeCache.lastLen {
+			return globalConvSizeCache.lastSize
+		}
+	}
+
 	total := 0
 	for _, msg := range conversation {
 		if c, ok := msg["content"].(string); ok {
@@ -20,6 +41,15 @@ func (r *AgentRunner) estimateConversationSize(conversation []map[string]interfa
 			}
 		}
 	}
+
+	// Cache the result
+	if len(conversation) > 0 {
+		ptr := uintptr(unsafe.Pointer(&conversation[0]))
+		globalConvSizeCache.lastPointer = ptr
+		globalConvSizeCache.lastLen = len(conversation)
+		globalConvSizeCache.lastSize = total
+	}
+
 	return total
 }
 
@@ -277,34 +307,37 @@ func prefilterConversation(conversation []map[string]interface{}) []map[string]i
 	skipped := 0
 	seenToolResults := make(map[string]int)
 
-	// First pass: collect all tool_call_ids that have responses
-	toolCallIDsToKeep := make(map[string]bool)
-	for _, msg := range conversation {
-		role, _ := msg["role"].(string)
-		if role == "assistant" {
-			if toolCalls, ok := msg["tool_calls"].([]LLMToolCall); ok && len(toolCalls) > 0 {
-				for _, tc := range toolCalls {
-					toolCallIDsToKeep[tc.ID] = false // mark as needing response
-				}
-			}
-		}
-		if role == "tool" {
-			if toolCallID, ok := msg["tool_call_id"].(string); ok && toolCallID != "" {
-				if _, needsResponse := toolCallIDsToKeep[toolCallID]; needsResponse {
-					toolCallIDsToKeep[toolCallID] = true // has response
-				}
-			}
-		}
-	}
+	// OPTIMIZED: Single-pass filtering with inline tool_call tracking
+	// Instead of 4 separate passes, we do everything in 2 passes:
+	// Pass 1: Filter messages AND collect tool_call/response relationships
+	// Pass 2: Fix consistency (remove orphaned tool messages)
+
+	// Track which tool_call_ids have responses and which assistant tool_calls exist
+	toolCallIDsSeen := make(map[string]bool)   // tool_call_ids from assistant messages
+	toolResponseIDsSeen := make(map[string]bool) // tool_call_ids from tool responses
 
 	for _, msg := range conversation {
 		role, _ := msg["role"].(string)
 		content, _ := msg["content"].(string)
 
+		// Track tool_call relationships
+		if role == "assistant" {
+			if toolCalls, ok := msg["tool_calls"].([]LLMToolCall); ok && len(toolCalls) > 0 {
+				for _, tc := range toolCalls {
+					toolCallIDsSeen[tc.ID] = true
+				}
+			}
+		}
+		if role == "tool" {
+			if toolCallID, ok := msg["tool_call_id"].(string); ok && toolCallID != "" {
+				toolResponseIDsSeen[toolCallID] = true
+			}
+		}
+
 		// Skip empty tool results (waste tokens) - BUT only if not required by tool_calls
 		if role == "tool" && strings.TrimSpace(content) == "" {
 			if toolCallID, ok := msg["tool_call_id"].(string); ok && toolCallID != "" {
-				if keep, exists := toolCallIDsToKeep[toolCallID]; exists && keep {
+				if toolCallIDsSeen[toolCallID] {
 					// This tool response is needed - keep it with placeholder
 					msg = copyMap(msg)
 					msg["content"] = "(empty result)"
@@ -359,39 +392,21 @@ func prefilterConversation(conversation []map[string]interface{}) []map[string]i
 		prevContent = content
 	}
 
-	// Final pass: fix tool_calls/tool response consistency
-	// 1. Remove tool_calls from assistant messages if their tool responses are missing
-	// 2. Remove orphaned tool messages (tool responses without preceding tool_calls)
-	// This prevents LLM API errors about missing/mismatched tool messages
-	toolResponseIDsInResult := make(map[string]bool)
-	for _, msg := range result {
-		if role, _ := msg["role"].(string); role == "tool" {
-			if toolCallID, ok := msg["tool_call_id"].(string); ok && toolCallID != "" {
-				toolResponseIDsInResult[toolCallID] = true
-			}
-		}
-	}
-	// Collect all tool_call_ids from assistant messages
-	assistantToolCallIDs := make(map[string]bool)
-	for _, msg := range result {
-		if role, _ := msg["role"].(string); role == "assistant" {
-			if toolCalls, ok := msg["tool_calls"].([]LLMToolCall); ok && len(toolCalls) > 0 {
-				for _, tc := range toolCalls {
-					if tc.ID != "" {
-						assistantToolCallIDs[tc.ID] = true
-					}
-				}
-			}
-		}
-	}
+	// Pass 2: Fix tool_calls/tool response consistency (single pass)
 	// Remove tool_calls from assistant messages if their tool responses are missing
+	// Remove orphaned tool messages (tool responses without preceding tool_calls)
 	for i, msg := range result {
-		if role, _ := msg["role"].(string); role == "assistant" {
+		role, _ := msg["role"].(string)
+
+		if role == "assistant" {
 			if toolCalls, ok := msg["tool_calls"].([]LLMToolCall); ok && len(toolCalls) > 0 {
 				var validCalls []LLMToolCall
 				for _, tc := range toolCalls {
-					if tc.ID == "" || toolResponseIDsInResult[tc.ID] {
+					// Keep if: no ID (shouldn't happen) OR response exists in filtered result
+					if tc.ID == "" || toolResponseIDsSeen[tc.ID] {
 						validCalls = append(validCalls, tc)
+					} else {
+						skipped++
 					}
 				}
 				if len(validCalls) != len(toolCalls) {
@@ -400,24 +415,30 @@ func prefilterConversation(conversation []map[string]interface{}) []map[string]i
 				}
 			}
 		}
-	}
-	// Remove orphaned tool messages (tool responses without preceding tool_calls in assistant)
-	var filtered []map[string]interface{}
-	for _, msg := range result {
-		if role, _ := msg["role"].(string); role == "tool" {
+
+		// Remove orphaned tool messages (tool responses without preceding tool_calls)
+		if role == "tool" {
 			if toolCallID, ok := msg["tool_call_id"].(string); ok && toolCallID != "" {
-				// Keep only if there's a matching assistant tool_call
-				if assistantToolCallIDs[toolCallID] {
-					filtered = append(filtered, msg)
-				} else {
+				if !toolCallIDsSeen[toolCallID] {
+					// Orphaned: tool response without assistant tool_call
+					result[i] = nil // mark for removal
 					skipped++
 				}
-				continue
 			}
 		}
-		filtered = append(filtered, msg)
 	}
-	result = filtered
+
+	// Compact result to remove nil entries (orphaned tool messages)
+	if skipped > 0 {
+		compactIdx := 0
+		for _, msg := range result {
+			if msg != nil {
+				result[compactIdx] = msg
+				compactIdx++
+			}
+		}
+		result = result[:compactIdx]
+	}
 
 	// Copy result to avoid returning pooled slice
 	out := make([]map[string]interface{}, len(result))
