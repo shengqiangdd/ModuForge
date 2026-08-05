@@ -141,6 +141,8 @@ type AgentRunner struct {
 	sessionCaches sync.Map // sessionID -> *toolResultCache
 	// Optimization 17: write_file content cache (avoids redundant read_file after write)
 	writeContentCache sync.Map // sessionID -> map[string]string (path -> content)
+	// read_file content cache (avoids redundant disk reads within a session)
+	readFileCache sync.Map // sessionID -> map[string]string (path -> content)
 	// Optimization 1: Session access time tracking for TTL-based cleanup
 	sessionAccessTimes sync.Map // sessionID -> time.Time (last access timestamp)
 
@@ -1060,6 +1062,32 @@ func (r *AgentRunner) getCachedWriteContent(sessionID, path string) string {
 	return ""
 }
 
+// cacheReadFile stores the content of a successful read_file call for reuse.
+func (r *AgentRunner) cacheReadFile(sessionID, path, content string) {
+	if sessionID == "" {
+		return
+	}
+	val, _ := r.readFileCache.LoadOrStore(sessionID, &sync.Map{})
+	m := val.(*sync.Map)
+	m.Store(path, content)
+}
+
+// getCachedReadFile returns cached content for a path, or "" if not cached.
+func (r *AgentRunner) getCachedReadFile(sessionID, path string) string {
+	if sessionID == "" {
+		return ""
+	}
+	val, ok := r.readFileCache.Load(sessionID)
+	if !ok {
+		return ""
+	}
+	m := val.(*sync.Map)
+	if content, ok := m.Load(path); ok {
+		return content.(string)
+	}
+	return ""
+}
+
 // startSessionCacheCleanup runs a background goroutine that periodically evicts
 // expired session caches to prevent memory leaks. Sessions that haven't been
 // accessed in 30 minutes are removed from sessionCaches, writeContentCache,
@@ -1084,6 +1112,7 @@ func (r *AgentRunner) startSessionCacheCleanup() {
 		for _, sid := range expired {
 			r.sessionCaches.Delete(sid)
 			r.writeContentCache.Delete(sid)
+			r.readFileCache.Delete(sid)
 			r.sessionAccessTimes.Delete(sid)
 			debugLog("session cache TTL expired: session=%s", sid)
 		}
@@ -1243,7 +1272,7 @@ You are running WITHOUT a project context. This means:
 	}
 	writeFileCalled := false
 	// P1-2: Dynamic limits based on project complexity
-	baseMaxReadFilePerTurn := 10
+	baseMaxReadFilePerTurn := 30
 	baseMaxWriteFilePerTurn := 15
 	maxWriteFilePerTurn := baseMaxWriteFilePerTurn
 	maxReadFilePerTurn := baseMaxReadFilePerTurn
@@ -1261,9 +1290,9 @@ You are running WITHOUT a project context. This means:
 		lastToolCalls:         make([]string, 0, 10),
 		lastResults:           make([]string, 0, 10),
 		consecutiveNoWrite:    0,
-		maxConsecutiveNoWrite: 15, // force answer after 15 iterations without write_file
-		maxIdenticalRepeats:   3,  // stop if same tool+args repeated 3 times
-		maxStagnationRounds:   5,  // stop if no progress for 5 rounds
+		maxConsecutiveNoWrite: 20, // force answer after 20 iterations without write_file
+		maxIdenticalRepeats:   10, // stop if same tool+args repeated 10 times
+		maxStagnationRounds:   15, // stop if no progress for 15 rounds
 	}
 
 	// Post-execution analysis — stagnation detection, self-reflection, loop detection
@@ -1325,6 +1354,7 @@ You are running WITHOUT a project context. This means:
 		if w.IsDisconnected() {
 			log.Printf("[Agent] client disconnected at iteration %d", iter+1)
 			r.writeContentCache.Delete(sessionID)
+			r.readFileCache.Delete(sessionID)
 			return fmt.Errorf("client disconnected")
 		}
 
@@ -1546,6 +1576,20 @@ You are running WITHOUT a project context. This means:
 								})
 								return
 							}
+							// Check read_file content cache
+							if rc := r.getCachedReadFile(sessionID, path); rc != "" {
+								debugLog("readFileCache HIT for read_file: %s", path)
+								mu.Lock()
+								appendToolResultToList(&results, task.tc, rc)
+								mu.Unlock()
+								w.WriteSSE(map[string]interface{}{
+									"type":    "step",
+									"step":    "skill_result",
+									"skill":   task.skillName,
+									"content": rc,
+								})
+								return
+							}
 						}
 					}
 
@@ -1560,6 +1604,12 @@ You are running WITHOUT a project context. This means:
 						result = fmt.Sprintf("Error: %v", err)
 					} else {
 						toolCache.put(task.skillName, task.skillInput, result)
+						// Cache read_file results for reuse within session
+						if task.skillName == "read_file" {
+							if path, ok := task.skillInput["path"].(string); ok {
+								r.cacheReadFile(sessionID, path, result)
+							}
+						}
 					}
 
 					// Truncate large results
@@ -1588,9 +1638,10 @@ You are running WITHOUT a project context. This means:
 			wg.Wait()
 		}
 
-		// Execute sequential tasks (write/side-effect tools)
-		anyWriteCalled := false
-		for _, st := range plan.sequentialTasks {
+	// Execute sequential tasks (write/side-effect tools)
+	anyWriteCalled := false
+	editFileConsecutiveFailures := 0 // confidence check: track consecutive edit_file failures
+	for _, st := range plan.sequentialTasks {
 			// P1-3: Check call budget
 			if !callBudget.CanCall(st.skillName) {
 				budgetMsg := fmt.Sprintf("⚠️ 工具调用预算已用尽 (读取: %d/%d, 写入: %d/%d, 总计: %d/%d)",
@@ -1638,6 +1689,24 @@ You are running WITHOUT a project context. This means:
 				notifyData["confirm_msg"] = r.permChecker.GetConfirmationMessage(st.skillName, st.skillInput)
 			}
 			w.WriteSSE(notifyData)
+
+			// Confidence check: auto-pause after 5 consecutive edit_file failures
+			if st.skillName == "edit_file" && editFileConsecutiveFailures >= 5 {
+				pauseMsg := fmt.Sprintf("⚠️ [Confidence Check] edit_file 已连续失败 %d 次。Agent 可能陷入了无效的编辑循环。请确认是否继续执行，或建议 Agent 换一种方法（例如使用 write_file 重写整个文件）。", editFileConsecutiveFailures)
+				log.Printf("[Agent] confidence check triggered: edit_file failed %d times consecutively", editFileConsecutiveFailures)
+				w.WriteSSE(map[string]interface{}{
+					"type":    "step",
+					"step":    "think",
+					"content": pauseMsg,
+				})
+				// Inject system message to guide agent
+				conversation = appendRoleMessage(conversation, "system",
+					fmt.Sprintf("[System: Confidence check triggered. edit_file has failed %d times consecutively. "+
+						"STOP using edit_file. Instead: (1) Use write_file to rewrite the entire file, "+
+						"(2) Or analyze the root cause before trying again. Do NOT continue the same approach.]", editFileConsecutiveFailures))
+				// Reset counter after injecting guidance so agent gets a chance
+				editFileConsecutiveFailures = 0
+			}
 
 			// Keepalive during execution
 			skillDone := make(chan struct{})
@@ -1714,6 +1783,16 @@ You are running WITHOUT a project context. This means:
 				}
 			} else {
 				m.toolConsecutiveErrors[st.skillName] = 0 // reset on success
+			}
+
+			// Track edit_file failures for confidence check
+			if st.skillName == "edit_file" {
+				isEditError := err != nil || strings.HasPrefix(result, "Error:") || strings.HasPrefix(result, "❌")
+				if isEditError {
+					editFileConsecutiveFailures++
+				} else {
+					editFileConsecutiveFailures = 0
+				}
 			}
 
 			if st.skillName == "write_file" {
@@ -1882,6 +1961,7 @@ You are running WITHOUT a project context. This means:
 	sendFinalAnswer(w, cfg, lastLLMResp, answerSent)
 	// Clean up write-content cache for this session (tool result cache persists)
 	r.writeContentCache.Delete(sessionID)
+	r.readFileCache.Delete(sessionID)
 	return nil
 }
 

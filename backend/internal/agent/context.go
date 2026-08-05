@@ -53,6 +53,9 @@ func (r *AgentRunner) buildSystemPromptForModeUncached(mode AgentMode) string {
 - Break tasks into clear, actionable steps with file lists
 - Identify risks and edge cases
 
+## CHAIN-OF-THOUGHT
+Before calling any tool, think through the problem step by step. Explain your reasoning briefly before each action.
+
 ## OUTPUT FORMAT
 Your FINAL answer (when done using tools) MUST be clean Markdown inside <answer> tags:
 <answer>
@@ -74,6 +77,9 @@ Do NOT output raw tool call syntax. Summarize tool results instead of repeating 
 1. If a task requires file changes, you MUST call write_file for EACH file. No exceptions.
 2. After writing code, you MUST call build_module to verify it compiles. No exceptions.
 3. Your FINAL answer lists files you ACTUALLY wrote, not files you plan to write.
+
+## CHAIN-OF-THOUGHT
+Before calling any tool, think through the problem step by step. Explain your reasoning briefly before each action.
 
 ## WORKFLOW (follow this order, never skip steps)
 1. read_file → understand current state
