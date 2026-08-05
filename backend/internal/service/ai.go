@@ -69,6 +69,12 @@ func defaultSystemPrompt(mode string) string {
 必须: module.prop(id ^[a-zA-Z][a-zA-Z0-9._-]*$, semver版本), customize.sh, META-INF/(update-binary + updater-script仅含#MAGISK)
 可选: src/(源码), build.sh, service.sh, system.prop, webroot/, bin/
 
+## ⚠️ 代码质量要求（违反将导致编译失败）
+1. Go文件: 每个文件必须有 package 声明，import 的包必须使用，变量必须使用
+2. Go文件: 结构体定义必须完整，函数签名必须正确
+3. 所有语言: 检查括号平衡（{ 必须有对应的 }）
+4. 所有语言: 错误处理必须完整，不能忽略 error 返回值
+
 ## 安全规范
 - scripts:0755, configs:0644, 绝不chmod 777
 - Shell: set -euo pipefail, 变量双引号"$VAR", command -v替代which
@@ -148,13 +154,39 @@ META-INF/com/google/android/updater-script  # 仅含#MAGISK
 - 底层系统调用/C库依赖 → C/C++
 - 安装/环境检测/简单文件操作 → Shell
 
-## Go 规范（推荐）
-src/main.go: package main, signal handling(SIGHUP/SIGINT/SIGTERM), context.WithCancel, 优雅退出
-src/config.go: JSON配置 + 环境变量覆盖, viper或手动解析
-src/service.go: 核心业务逻辑, 错误用fmt.Errorf("xxx: %w", err)包装
-src/logger.go: 结构化日志(log/slog), INFO级别记录启动/关键操作, ERROR级别记录失败
-go.mod: module名用kebab-case, go 1.21+
-build.sh: GOOS=android GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o ../system/bin/<name> ./src
+## Go 代码规范（严格遵守，违反将导致编译失败）
+- 每个文件必须以 package xxx 开头（不是 package main 除非是入口文件）
+- import 块必须使用圆括号，每个导入一行
+- 所有变量必须使用，未使用的变量会导致编译错误
+- 所有导入的包必须使用，未使用的导入会导致编译错误
+- 函数签名必须正确：参数类型、返回值类型
+- 结构体定义必须完整：每个字段必须有类型
+- 错误处理必须完整：检查每个 error 返回值
+- 常见错误模式（必须避免）：
+  ✗ "var x int" 然后不使用 x
+  ✓ "var x int = 42" 或 "_ = x"
+  ✗ "import fmt" 然后不使用 fmt
+  ✓ 使用 fmt.Println 或删除导入
+  ✗ "func foo() {" 然后缺少 "}"
+  ✓ 确保每个 { 都有对应的 }
+
+## Go 文件模板
+入口文件 (src/main.go):
+  package main
+  import ("context"; "log/slog"; "os"; "os/signal"; "syscall")
+  func main() {
+    ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+    defer cancel()
+    slog.Info("service starting")
+    <-ctx.Done()
+    slog.Info("service shutting down")
+  }
+
+配置文件 (src/config.go):
+  package main
+  import ("encoding/json"; "os")
+  type Config struct { ... }
+  func loadConfig(path string) (*Config, error) { ... }
 
 ## Rust 规范
 src/main.rs: tokio::main, signal::ctrl_c(), tracing日志
@@ -172,12 +204,21 @@ Makefile或build.sh: NDK交叉编译, -O2 -Wall, 链接-pthread
 权限: scripts=0755, configs=0644, 绝不chmod 777
 环境检测: if [ -n "$KSU" ]; then...elif [ -n "$APATCH" ]; then...else...fi
 
+## 工作流程（必须遵守）
+1. 写完所有文件后，调用 syntax_checker 验证语法
+2. 如果 syntax_checker 报错，立即用 edit_file 修复
+3. 修复后再调用 build_module 构建
+4. 构建失败时，分析错误信息并修复
+
 ## 禁止
 - 空文件/占位符/TODO注释
 - chmod 777
 - 硬编码密钥/token
 - 无错误处理的代码
-- 超过300行的单个文件（拆分）`
+- 超过300行的单个文件（拆分）
+- 未使用的变量和导入
+- 不完整的结构体定义
+- 缺少 package 声明的 Go 文件`
 
 
 

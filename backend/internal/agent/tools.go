@@ -117,6 +117,12 @@ func (r *AgentRunner) buildToolDefinitionsForMode(mode AgentMode, modelName stri
 			def.Function.Parameters = toolParams(map[string]interface{}{
 				"project_id": map[string]interface{}{"type": "string", "description": "Project ID to build"},
 			}, []string{"project_id"})
+		case "syntax_checker":
+			def.Function.Description = "Pre-build syntax validation for Go, Rust, C/C++. Run AFTER writing code but BEFORE build_module to catch errors early. Returns structured errors with line numbers and fix hints."
+			def.Function.Parameters = toolParams(map[string]interface{}{
+				"project_id": map[string]interface{}{"type": "string", "description": "Project ID"},
+				"language":   map[string]interface{}{"type": "string", "enum": []interface{}{"auto", "go", "rust", "cpp"}, "description": "Language to check (default: auto-detect)"},
+			}, nil)
 		case "test_module":
 			def.Function.Description = "Validate Magisk module files (module.prop, shell script syntax, permissions, META-INF). Use after build_module to catch issues compilers miss."
 			def.Function.Parameters = toolParams(map[string]interface{}{

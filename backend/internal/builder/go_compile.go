@@ -10,6 +10,9 @@ import (
 	"time"
 )
 
+// CompileProgress is called during compilation to report progress.
+type CompileProgress func(phase string, current, total int, detail string)
+
 // reorganizeGoModule 在编译前检测 Go 文件的 import 路径，自动创建子目录结构。
 // 解决的问题：Go 源文件用模块路径（如 androwui/config）import 内部包，
 // 但文件全在同一目录，Go 编译器找不到这些子包。
@@ -335,9 +338,60 @@ func parseImportNames(block string) []string {
 	return names
 }
 
+// goBuildEnv returns the environment variables needed for Go cross-compilation.
+func goBuildEnv(goarch, goarm string) []string {
+	env := append(os.Environ(),
+		"GOOS=android",
+		fmt.Sprintf("GOARCH=%s", goarch),
+		"CGO_ENABLED=0",
+		// Use persistent GOMODCACHE for dependency caching
+		"GOMODCACHE="+getGoModCache(),
+		"GOPATH="+getGoPath(),
+	)
+	if goarm != "" {
+		env = append(env, fmt.Sprintf("GOARM=%s", goarm))
+	}
+	return env
+}
+
+// getGoModCache returns the persistent GOMODCACHE path.
+func getGoModCache() string {
+	if v := os.Getenv("GOMODCACHE"); v != "" {
+		return v
+	}
+	home, _ := os.UserHomeDir()
+	if home == "" {
+		home = "/tmp"
+	}
+	return filepath.Join(home, ".cache", "moduforge", "gomodcache")
+}
+
+// getGoPath returns the persistent GOPATH.
+func getGoPath() string {
+	if v := os.Getenv("GOPATH"); v != "" {
+		return v
+	}
+	home, _ := os.UserHomeDir()
+	if home == "" {
+		home = "/tmp"
+	}
+	return filepath.Join(home, ".cache", "moduforge", "gopath")
+}
+
 // CompileGoFilesArch compiles Go files with architecture support and binary caching.
 func (b *Builder) CompileGoFilesArch(ctx context.Context, projectDir, arch string, incr *IncrementalResult, logFn func(string)) (*CompileResult, error) {
+	return b.CompileGoFilesArchWithProgress(ctx, projectDir, arch, incr, logFn, nil)
+}
+
+// CompileGoFilesArchWithProgress compiles Go files with progress reporting.
+func (b *Builder) CompileGoFilesArchWithProgress(ctx context.Context, projectDir, arch string, incr *IncrementalResult, logFn func(string), onProgress CompileProgress) (*CompileResult, error) {
 	result := &CompileResult{}
+
+	emitProgress := func(phase string, current, total int, detail string) {
+		if onProgress != nil {
+			onProgress(phase, current, total, detail)
+		}
+	}
 
 	// 编译前重组 Go 模块结构（解决内部 import 路径问题）
 	if err := reorganizeGoModule(projectDir, logFn); err != nil {
@@ -429,6 +483,8 @@ func (b *Builder) CompileGoFilesArch(ctx context.Context, projectDir, arch strin
 	goarch := archInfo.Goarch
 	goarm := archInfo.GOARM
 
+	// Build the list of packages to compile (filter by incremental)
+	var packagesToCompile []string
 	for _, dir := range filteredDirs {
 		if !hasMainPackage(dir) {
 			logFn(fmt.Sprintf("  Skip %s: no main package\n", filepath.Base(dir)))
@@ -441,33 +497,28 @@ func (b *Builder) CompileGoFilesArch(ctx context.Context, projectDir, arch strin
 		}
 		binPath := filepath.Join(binDir, name)
 
-		// Check if we need to recompile this package
+		// Determine if this package needs compilation
+		needsCompile := true
+
 		if incr != nil && !incr.NeedsRebuild {
-			// No rebuild needed - check binary cache
+			// No rebuild needed globally - check binary cache
 			mainFile := findMainFile(dir)
 			if mainFile != "" {
 				if cached := CheckBinaryCache(projectDir, mainFile); cached != nil {
-					// Copy cached binary to bin dir
 					if input, err := os.ReadFile(*cached); err == nil {
 						if err := os.WriteFile(binPath, input, 0755); err == nil {
 							logCompileSkip(logFn, name, "binary cache hit")
 							result.CacheHits++
 							result.Recompiled = append(result.Recompiled, "bin/"+name)
-							continue
+							needsCompile = false
 						}
 					}
 				}
 			}
-		} else if incr != nil {
+		} else if incr != nil && len(incr.ChangedFiles) > 0 {
 			// Rebuild needed - check if this specific dir has changes
-			changed := false
-			for _, cf := range incr.ChangedFiles {
-				if strings.HasPrefix(cf, dir) {
-					changed = true
-					break
-				}
-			}
-			if !changed {
+			// Use ChangedDirs map for O(1) lookup instead of iterating ChangedFiles
+			if !incr.ChangedDirs[dir] {
 				// Dir unchanged - try binary cache
 				mainFile := findMainFile(dir)
 				if mainFile != "" {
@@ -477,7 +528,7 @@ func (b *Builder) CompileGoFilesArch(ctx context.Context, projectDir, arch strin
 								logCompileSkip(logFn, name, "binary cache hit (dir unchanged)")
 								result.CacheHits++
 								result.Recompiled = append(result.Recompiled, "bin/"+name)
-								continue
+								needsCompile = false
 							}
 						}
 					}
@@ -485,29 +536,50 @@ func (b *Builder) CompileGoFilesArch(ctx context.Context, projectDir, arch strin
 			}
 		}
 
-		// Need to compile
-		envExtra := []string{
-			"GOOS=android",
-			fmt.Sprintf("GOARCH=%s", goarch),
-			"CGO_ENABLED=0",
+		if needsCompile {
+			packagesToCompile = append(packagesToCompile, dir)
 		}
-		if goarm != "" {
-			envExtra = append(envExtra, fmt.Sprintf("GOARM=%s", goarm))
+	}
+
+	if len(packagesToCompile) == 0 {
+		logFn("  ✅ All packages cached, nothing to compile\n")
+		return result, nil
+	}
+
+	logFn(fmt.Sprintf("  📦 %d package(s) to compile\n", len(packagesToCompile)))
+	emitProgress("compile", 0, len(packagesToCompile), "starting")
+
+	// Ensure Go module cache directories exist
+	ensureGoCacheDirs(logFn)
+
+	envExtra := goBuildEnv(goarch, goarm)
+
+	for i, dir := range packagesToCompile {
+		name := filepath.Base(dir)
+		if name == "." || name == "go" {
+			name = "daemon"
 		}
+		binPath := filepath.Join(binDir, name)
 
-		logFn(fmt.Sprintf("  🔨 Compiling %s → bin/%s (android/%s)...\n", filepath.Base(dir), name, goarch))
+		emitProgress("compile", i+1, len(packagesToCompile), name)
+		logFn(fmt.Sprintf("  🔨 Compiling %s → bin/%s (android/%s) [%d/%d]...\n", name, name, goarch, i+1, len(packagesToCompile)))
 
-		// 先下载依赖（独立超时 60s）
-		dlCtx, dlCancel := context.WithTimeout(ctx, 60*time.Second)
+		// Phase 1: Download dependencies with longer timeout
+		dlCtx, dlCancel := context.WithTimeout(ctx, 180*time.Second)
 		dlCmd := exec.CommandContext(dlCtx, goPath, "mod", "download")
 		dlCmd.Dir = dir
-		dlCmd.Env = append(os.Environ(), envExtra...)
-		logFn(fmt.Sprintf("  ⬇️  %s: downloading dependencies...\n", name))
+		dlCmd.Env = envExtra
+		setupProcessGroup(dlCmd)
+
+		logFn(fmt.Sprintf("  ⬇️  %s: downloading dependencies (timeout 180s)...\n", name))
 		dlOut, dlErr := dlCmd.CombinedOutput()
 		dlCancel()
+
 		if dlErr != nil {
 			if dlCtx.Err() == context.DeadlineExceeded {
-				logFn(fmt.Sprintf("  ⚠️  %s: dependency download timed out (60s), trying build anyway\n", name))
+				logFn(fmt.Sprintf("  ⚠️  %s: dependency download timed out, trying build anyway\n", name))
+				// Kill any remaining go processes
+				killProcessGroup(dlCmd)
 			} else {
 				logFn(fmt.Sprintf("  ⚠️  go mod download failed: %s\n%s\n", dlErr, string(dlOut)))
 			}
@@ -515,19 +587,24 @@ func (b *Builder) CompileGoFilesArch(ctx context.Context, projectDir, arch strin
 			logFn(fmt.Sprintf("  ⬇️  %s: dependencies ready\n", name))
 		}
 
-		// 编译（独立超时 120s）
-		buildCtx, buildCancel := context.WithTimeout(ctx, 120*time.Second)
-		logFn(fmt.Sprintf("  🔨 %s: building binary...\n", name))
+		// Phase 2: Build with timeout and process group cleanup
+		buildCtx, buildCancel := context.WithTimeout(ctx, 180*time.Second)
+		logFn(fmt.Sprintf("  🔨 %s: building binary (timeout 180s)...\n", name))
 		cmd := exec.CommandContext(buildCtx, goPath, "build", "-trimpath", "-ldflags=-s -w", "-o", binPath, ".")
 		cmd.Dir = dir
-		cmd.Env = append(os.Environ(), envExtra...)
+		cmd.Env = envExtra
+		setupProcessGroup(cmd)
 
 		out, err := cmd.CombinedOutput()
 		buildCancel()
+
 		if err != nil {
+			// Ensure the process is killed on timeout
+			killProcessGroup(cmd)
+
 			if buildCtx.Err() == context.DeadlineExceeded {
-				logFn(fmt.Sprintf("  ❌ %s: build timed out (120s)\n", name))
-				return result, fmt.Errorf("go build %s: timed out after 120s", dir)
+				logFn(fmt.Sprintf("  ❌ %s: build timed out (180s)\n", name))
+				return result, fmt.Errorf("go build %s: timed out after 180s", dir)
 			}
 			logFn(fmt.Sprintf("  ❌ Compile failed: %s\n%s\n", err, string(out)))
 			return result, fmt.Errorf("go build %s: %w\n%s", dir, err, string(out))
@@ -550,7 +627,18 @@ func (b *Builder) CompileGoFilesArch(ctx context.Context, projectDir, arch strin
 		}
 	}
 
+	emitProgress("compile", len(packagesToCompile), len(packagesToCompile), "done")
 	return result, nil
+}
+
+// ensureGoCacheDirs creates the Go module and build cache directories.
+func ensureGoCacheDirs(logFn func(string)) {
+	dirs := []string{getGoModCache(), getGoPath()}
+	for _, d := range dirs {
+		if err := os.MkdirAll(d, 0755); err != nil {
+			logFn(fmt.Sprintf("  ⚠️  Failed to create cache dir %s: %v\n", d, err))
+		}
+	}
 }
 
 // findMainFile finds a .go file with package main in the directory.

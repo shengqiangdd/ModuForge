@@ -44,8 +44,46 @@
     steps.filter(s => s.round === selectedRound)
   );
 
+  // Check if there's an active thinking step (last think step without a following skill_call or answer)
+  let hasActiveThinking = $derived(
+    steps.length > 0 &&
+    steps[steps.length - 1].type === 'think' &&
+    !steps.some((s, i) => i === steps.length - 1 && s.type === 'answer')
+  );
+
   function toggleStep(index: number) {
     onToggleStep?.(index);
+  }
+
+  /** Build a short parameter summary for tool calls */
+  function buildParamSummary(input: any): string {
+    if (!input) return '';
+    const parts: string[] = [];
+    if (input.path) {
+      const filename = input.path.split('/').pop() || input.path;
+      parts.push(filename);
+    }
+    if (input.pattern) parts.push(`"${input.pattern}"`);
+    if (input.command) parts.push(input.command.slice(0, 40));
+    if (input.old_text) parts.push(`"${input.old_text.slice(0, 20)}..."`);
+    if (input.content && !input.path) parts.push(`${input.content.length} chars`);
+    if (input.files && Array.isArray(input.files)) parts.push(`${input.files.length} files`);
+    if (input.project_id) parts.push(input.project_id.slice(0, 8));
+    return parts.join(' · ') || '';
+  }
+
+  /** Build tool icon based on skill name */
+  function toolIcon(skill: string): string {
+    if (skill === 'read_file') return '📖';
+    if (skill === 'write_file' || skill === 'write_file_batch') return '✏️';
+    if (skill === 'edit_file') return '🔍';
+    if (skill === 'bash') return '💻';
+    if (skill === 'build_module') return '🔨';
+    if (skill === 'test_module') return '🧪';
+    if (skill === 'grep_search') return '🔎';
+    if (skill === 'glob_search') return '📁';
+    if (skill === 'list_dir') return '📂';
+    return '🔧';
   }
 </script>
 
@@ -84,9 +122,22 @@
           <div class="step-card" style="animation: fadeInUp 0.2s ease-out both; animation-delay: {i * 0.03}s">
             {#if step.type === 'think'}
               <div class="flex gap-2 items-start">
-                <div class="step-icon think">🧠</div>
+                <div class="step-icon think">
+                  {#if hasActiveThinking && i === filteredSteps.length - 1}
+                    <span class="animate-pulse">🧠</span>
+                  {:else}
+                    🧠
+                  {/if}
+                </div>
                 <div class="step-content flex-1 min-w-0">
-                  <div class="step-label think">思考</div>
+                  <div class="step-label think">
+                    思考
+                    {#if hasActiveThinking && i === filteredSteps.length - 1}
+                      <span class="thinking-dots">
+                        <span class="dot">.</span><span class="dot">.</span><span class="dot">.</span>
+                      </span>
+                    {/if}
+                  </div>
                   <div class="text-[11px] mt-0.5 step-result-content {expandedSteps.has(i) ? 'expanded' : ''}" style="color: var(--color-text-secondary);">{step.content}</div>
                   {#if step.content && (step.content.split('\n').length > 3 || step.content.length > 200)}
                     <button class="text-[9px] mt-0.5 hover:underline" style="color: #3b82f6;" onclick={() => toggleStep(i)}>
@@ -97,9 +148,17 @@
               </div>
             {:else if step.type === 'skill_call'}
               <div class="flex gap-2 items-start">
-                <div class="step-icon skill">🔧</div>
+                <div class="step-icon skill">{toolIcon(step.skill || '')}</div>
                 <div class="step-content flex-1 min-w-0">
-                  <div class="step-label skill">调用: {step.skill}</div>
+                  <div class="step-label skill">
+                    <span class="font-mono text-[10px]">{step.skill}</span>
+                    {#if step.input}
+                      {@const summary = buildParamSummary(step.input)}
+                      {#if summary}
+                        <span class="text-[10px] text-[var(--color-text-muted)] font-normal ml-1">{summary}</span>
+                      {/if}
+                    {/if}
+                  </div>
                   {#if step.input}
                     {@const inputStr = JSON.stringify(step.input, null, 2)}
                     <pre class="step-detail text-[10px] mt-0.5 font-mono step-result-content {expandedSteps.has(i) ? 'expanded' : ''}" style="color: var(--color-text-muted);">{inputStr}</pre>
@@ -153,7 +212,45 @@
             {/if}
           </div>
         {/each}
+        {#if hasActiveThinking}
+          <div class="thinking-indicator flex items-center gap-2 px-2 py-1 rounded-lg bg-primary-500/5">
+            <div class="thinking-spinner"></div>
+            <span class="text-[11px] text-primary-500">思考中...</span>
+          </div>
+        {/if}
       </div>
     {/if}
   </div>
 {/if}
+
+<style>
+  .thinking-dots {
+    display: inline-flex;
+    gap: 1px;
+    margin-left: 2px;
+  }
+  .thinking-dots .dot {
+    animation: blink 1.4s infinite both;
+    font-weight: bold;
+  }
+  .thinking-dots .dot:nth-child(2) { animation-delay: 0.2s; }
+  .thinking-dots .dot:nth-child(3) { animation-delay: 0.4s; }
+
+  @keyframes blink {
+    0%, 80%, 100% { opacity: 0; }
+    40% { opacity: 1; }
+  }
+
+  .thinking-spinner {
+    width: 12px;
+    height: 12px;
+    border: 2px solid var(--color-primary);
+    border-top-color: transparent;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+</style>

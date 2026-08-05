@@ -65,6 +65,8 @@ func toolTimeoutForName(name string) time.Duration {
 		return toolTimeoutFast
 	case "write_file", "write_file_batch", "edit_file", "delete_file", "delete_dir", "move_file":
 		return toolTimeoutWrite
+	case "syntax_checker":
+		return 120 * time.Second // syntax checks need some time for compilation
 	case "build_module", "test_module":
 		return toolTimeoutSlow
 	default:
@@ -550,7 +552,7 @@ type QualityReport struct {
 	Issues      []string
 }
 
-// VerifyFile checks the quality of a file.
+// VerifyFile checks the quality of a file, including syntax-aware checks.
 func (qv *QualityVerifier) VerifyFile(filePath string, content string) QualityReport {
 	report := QualityReport{
 		FilePath: filePath,
@@ -558,8 +560,11 @@ func (qv *QualityVerifier) VerifyFile(filePath string, content string) QualityRe
 		Issues:   make([]string, 0),
 	}
 
-	// Check for common issues
 	lines := strings.Split(content, "\n")
+
+	// ═══════════════════════════════════════════════════════════════
+	// Phase 1: Universal checks
+	// ═══════════════════════════════════════════════════════════════
 
 	// 1. Check line length
 	longLines := 0
@@ -584,10 +589,15 @@ func (qv *QualityVerifier) VerifyFile(filePath string, content string) QualityRe
 		report.Issues = append(report.Issues, fmt.Sprintf("发现 %d 个 TODO/FIXME/HACK 注释", todoCount))
 	}
 
-	// 3. Check for very long functions (simple heuristic: count opening braces)
+	// 3. Check brace balance (critical: unbalanced braces = syntax error)
 	braceCount := 0
 	maxBraceDepth := 0
 	for _, line := range lines {
+		// Skip strings and comments (simple heuristic)
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "//") || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
 		for _, ch := range line {
 			if ch == '{' {
 				braceCount++
@@ -600,24 +610,25 @@ func (qv *QualityVerifier) VerifyFile(filePath string, content string) QualityRe
 			}
 		}
 	}
+	if braceCount != 0 {
+		report.Issues = append(report.Issues, fmt.Sprintf("括号不平衡: { 比 } 多 %d 个（语法错误）", braceCount))
+		report.Score -= 30 // severe penalty
+	}
 	if maxBraceDepth > 5 {
 		report.Issues = append(report.Issues, fmt.Sprintf("代码嵌套深度 %d 层，建议重构", maxBraceDepth))
 		report.Complexity = maxBraceDepth
 	}
 
-	// 4. Check for magic numbers (simple heuristic)
+	// 4. Check for magic numbers
 	magicNumbers := 0
 	for _, line := range lines {
-		// Skip comments
 		trimmed := strings.TrimSpace(line)
 		if strings.HasPrefix(trimmed, "//") || strings.HasPrefix(trimmed, "#") {
 			continue
 		}
-		// Count numbers that aren't 0 or 1
 		words := strings.Fields(trimmed)
 		for _, word := range words {
 			if len(word) > 1 && word[0] >= '2' && word[0] <= '9' {
-				// Simple heuristic for magic numbers
 				magicNumbers++
 			}
 		}
@@ -626,16 +637,40 @@ func (qv *QualityVerifier) VerifyFile(filePath string, content string) QualityRe
 		report.Issues = append(report.Issues, fmt.Sprintf("发现 %d 个可能的魔法数字，建议提取为常量", magicNumbers))
 	}
 
-	// 5. Calculate score
+	// ═══════════════════════════════════════════════════════════════
+	// Phase 2: Language-specific syntax checks
+	// ═══════════════════════════════════════════════════════════════
+
+	ext := strings.ToLower(filePath[strings.LastIndex(filePath, "."):])
+	switch {
+	case ext == ".go":
+		qv.checkGoSyntax(&report, lines)
+	case ext == ".rs":
+		qv.checkRustSyntax(&report, lines)
+	case ext == ".c" || ext == ".cpp" || ext == ".cc" || ext == ".cxx":
+		qv.checkCppSyntax(&report, lines)
+	case ext == ".sh":
+		qv.checkShellSyntax(&report, lines)
+	}
+
+	// ═══════════════════════════════════════════════════════════════
+	// Phase 3: Calculate final score
+	// ═══════════════════════════════════════════════════════════════
+
 	report.Score = 100
 	for _, issue := range report.Issues {
-		if strings.Contains(issue, "嵌套深度") {
+		switch {
+		case strings.Contains(issue, "括号不平衡"):
+			report.Score -= 30
+		case strings.Contains(issue, "语法错误") || strings.Contains(issue, "缺少"):
+			report.Score -= 15
+		case strings.Contains(issue, "嵌套深度"):
 			report.Score -= 20
-		} else if strings.Contains(issue, "魔法数字") {
+		case strings.Contains(issue, "魔法数字"):
 			report.Score -= 10
-		} else if strings.Contains(issue, "TODO") || strings.Contains(issue, "FIXME") {
+		case strings.Contains(issue, "TODO") || strings.Contains(issue, "FIXME"):
 			report.Score -= 8
-		} else {
+		default:
 			report.Score -= 5
 		}
 	}
@@ -646,7 +681,201 @@ func (qv *QualityVerifier) VerifyFile(filePath string, content string) QualityRe
 	return report
 }
 
-// GetQualitySummary returns a summary of quality reports.
+// checkGoSyntax performs Go-specific syntax validation.
+func (qv *QualityVerifier) checkGoSyntax(report *QualityReport, lines []string) {
+	hasPackage := false
+	importParens := 0
+	hasFunc := false
+	inImport := false
+
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+
+		// Check package declaration
+		if strings.HasPrefix(trimmed, "package ") {
+			hasPackage = true
+		}
+
+		// Check import block balance
+		if trimmed == "import (" {
+			inImport = true
+		}
+		if inImport {
+			for _, ch := range trimmed {
+				if ch == '(' {
+					importParens++
+				}
+				if ch == ')' {
+					importParens--
+					if importParens <= 0 {
+						inImport = false
+					}
+				}
+			}
+		}
+
+		// Check for func declarations
+		if strings.HasPrefix(trimmed, "func ") {
+			hasFunc = true
+		}
+
+		// Check for common Go syntax errors
+		if strings.Contains(trimmed, ";;") {
+			report.Issues = append(report.Issues, fmt.Sprintf("双分号 ;; 在第 %d 行（Go 不需要分号）", i+1))
+		}
+		if strings.HasPrefix(trimmed, "var ") && strings.Contains(trimmed, "=") && !strings.Contains(trimmed, ":=") && strings.HasSuffix(trimmed, ";") {
+			report.Issues = append(report.Issues, fmt.Sprintf("第 %d 行: Go 声明不需要分号结尾", i+1))
+		}
+	}
+
+	if !hasPackage && len(lines) > 0 {
+		report.Issues = append(report.Issues, "缺少 package 声明（Go 文件必须以 package 开头）")
+	}
+	if importParens != 0 {
+		report.Issues = append(report.Issues, "import 块括号不平衡")
+	}
+	if !hasFunc && len(lines) > 10 {
+		report.Issues = append(report.Issues, "未发现 func 声明，可能缺少函数定义")
+	}
+}
+
+// checkRustSyntax performs Rust-specific syntax validation.
+func (qv *QualityVerifier) checkRustSyntax(report *QualityReport, lines []string) {
+	hasFn := false
+	inComment := false
+
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+
+		// Handle block comments
+		if strings.Contains(trimmed, "/*") {
+			inComment = true
+		}
+		if strings.Contains(trimmed, "*/") {
+			inComment = false
+			continue
+		}
+		if inComment || strings.HasPrefix(trimmed, "//") {
+			continue
+		}
+
+		// Check for fn declarations
+		if strings.HasPrefix(trimmed, "fn ") || strings.Contains(trimmed, " fn ") {
+			hasFn = true
+		}
+
+		// Check for common Rust syntax errors
+		if strings.Contains(trimmed, ";;") && !strings.HasPrefix(trimmed, "//") {
+			report.Issues = append(report.Issues, fmt.Sprintf("双分号 ;; 在第 %d 行（Rust 语句不需要分号结尾的分号）", i+1))
+		}
+
+		// Check for missing semicolons after let/if expressions (common LLM error)
+		if strings.HasPrefix(trimmed, "let ") && strings.Contains(trimmed, "=") && !strings.HasSuffix(trimmed, ";") && !strings.HasSuffix(trimmed, "{") && !strings.HasSuffix(trimmed, ",") {
+			// Only flag if it looks like a simple assignment (not a block)
+			if !strings.Contains(trimmed, "fn ") && !strings.Contains(trimmed, "if ") {
+				report.Issues = append(report.Issues, fmt.Sprintf("第 %d 行: let 语句可能缺少分号", i+1))
+			}
+		}
+	}
+
+	if !hasFn && len(lines) > 10 {
+		report.Issues = append(report.Issues, "未发现 fn 声明，可能缺少函数定义")
+	}
+}
+
+// checkCppSyntax performs C/C++-specific syntax validation.
+func (qv *QualityVerifier) checkCppSyntax(report *QualityReport, lines []string) {
+	hasInclude := false
+	hasMain := false
+	inComment := false
+
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+
+		// Handle block comments
+		if strings.Contains(trimmed, "/*") {
+			inComment = true
+		}
+		if strings.Contains(trimmed, "*/") {
+			inComment = false
+			continue
+		}
+		if inComment || strings.HasPrefix(trimmed, "//") {
+			continue
+		}
+
+		// Check for #include
+		if strings.HasPrefix(trimmed, "#include") {
+			hasInclude = true
+		}
+
+		// Check for main function
+		if strings.Contains(trimmed, "main(") {
+			hasMain = true
+		}
+
+		// Check for common C/C++ syntax errors
+		if strings.Contains(trimmed, ";;") && !strings.HasPrefix(trimmed, "#") {
+			report.Issues = append(report.Issues, fmt.Sprintf("双分号 ;; 在第 %d 行", i+1))
+		}
+
+		// Check for missing semicolons after struct/class/enum definitions
+		if (strings.HasPrefix(trimmed, "struct ") || strings.HasPrefix(trimmed, "class ") || strings.HasPrefix(trimmed, "enum ")) && strings.HasSuffix(trimmed, "}") {
+			report.Issues = append(report.Issues, fmt.Sprintf("第 %d 行: 结构体/类定义后可能缺少分号", i+1))
+		}
+	}
+
+	if !hasInclude && len(lines) > 5 {
+		report.Issues = append(report.Issues, "未发现 #include 指令，可能缺少头文件引用")
+	}
+	if !hasMain && len(lines) > 10 {
+		report.Issues = append(report.Issues, "未发现 main 函数，可能缺少程序入口点")
+	}
+}
+
+// checkShellSyntax performs shell script syntax validation.
+func (qv *QualityVerifier) checkShellSyntax(report *QualityReport, lines []string) {
+	if len(lines) == 0 {
+		return
+	}
+
+	// Check shebang
+	firstLine := strings.TrimSpace(lines[0])
+	if !strings.HasPrefix(firstLine, "#!/") {
+		report.Issues = append(report.Issues, "缺少 shebang 行（第一行应为 #!/system/bin/sh 或 #!/bin/bash）")
+	}
+
+	// Check for set -e / set -euo pipefail
+	hasSetE := false
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "set ") && (strings.Contains(trimmed, "-e") || strings.Contains(trimmed, "-o pipefail")) {
+			hasSetE = true
+			break
+		}
+	}
+	if !hasSetE {
+		report.Issues = append(report.Issues, "建议添加 set -euo pipefail 以增强错误处理")
+	}
+
+	// Check for unquoted variables (common LLM error in shell scripts)
+	unquotedCount := 0
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "#") || strings.HasPrefix(trimmed, "echo") {
+			continue
+		}
+		// Simple heuristic: $VAR without quotes
+		if strings.Contains(trimmed, " $") && !strings.Contains(trimmed, "\"$") && !strings.Contains(trimmed, "'$") {
+			unquotedCount++
+		}
+	}
+	if unquotedCount > 3 {
+		report.Issues = append(report.Issues, fmt.Sprintf("发现 %d 处可能未加引号的变量，建议使用 \"$VAR\" 格式", unquotedCount))
+	}
+}
+
+// GetQualitySummary returns a summary of quality reports with syntax-aware insights.
 func (qv *QualityVerifier) GetQualitySummary(reports []QualityReport) string {
 	if len(reports) == 0 {
 		return "无文件需要检查"
@@ -654,16 +883,26 @@ func (qv *QualityVerifier) GetQualitySummary(reports []QualityReport) string {
 
 	totalScore := 0
 	totalIssues := 0
+	syntaxIssues := 0
 	for _, r := range reports {
 		totalScore += r.Score
 		totalIssues += len(r.Issues)
+		for _, issue := range r.Issues {
+			if strings.Contains(issue, "括号不平衡") || strings.Contains(issue, "语法错误") || strings.Contains(issue, "缺少") {
+				syntaxIssues++
+			}
+		}
 	}
 	avgScore := totalScore / len(reports)
 
 	summary := "📊 代码质量报告:\n"
 	summary += fmt.Sprintf("- 检查文件: %d\n", len(reports))
 	summary += fmt.Sprintf("- 平均质量分: %d/100\n", avgScore)
-	summary += fmt.Sprintf("- 发现问题: %d\n", totalIssues)
+	summary += fmt.Sprintf("- 发现问题: %d (其中语法问题: %d)\n", totalIssues, syntaxIssues)
+
+	if syntaxIssues > 0 {
+		summary += "- ⚠️ 发现潜在语法错误，建议先用 syntax_checker 工具验证再构建\n"
+	}
 
 	if avgScore >= 80 {
 		summary += "- 评价: ✅ 良好"

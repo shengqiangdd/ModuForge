@@ -133,14 +133,20 @@ func classifyRustError(code string) string {
 		if strings.Contains(code, "0412") || strings.Contains(code, "0432") || strings.Contains(code, "0433") {
 			return "missing_import"
 		}
-		if strings.Contains(code, "0596") || strings.Contains(code, "0599") || strings.Contains(code, "0609") {
+		if strings.Contains(code, "0596") || strings.Contains(code, "0599") || strings.Contains(code, "0609") || strings.Contains(code, "0603") {
 			return "undefined"
 		}
-		if strings.Contains(code, "0308") || strings.Contains(code, "0305") {
+		if strings.Contains(code, "0308") || strings.Contains(code, "0305") || strings.Contains(code, "0382") {
 			return "type_mismatch"
 		}
-		if strings.Contains(code, "0001") || strings.Contains(code, "0002") || strings.Contains(code, "0003") {
+		if strings.Contains(code, "0001") || strings.Contains(code, "0002") || strings.Contains(code, "0003") || strings.Contains(code, "0004") {
 			return "syntax"
+		}
+		if strings.Contains(code, "0277") || strings.Contains(code, "0282") {
+			return "type_mismatch"
+		}
+		if strings.Contains(code, "0583") || strings.Contains(code, "0584") {
+			return "undefined"
 		}
 	case strings.Contains(code, "linker"):
 		return "linker"
@@ -161,6 +167,18 @@ func classifyGoError(msg string) string {
 		return "missing_import"
 	case strings.Contains(msg, "imported and not used"):
 		return "unused_import"
+	case strings.Contains(msg, "not enough arguments") || strings.Contains(msg, "too many arguments"):
+		return "type_mismatch"
+	case strings.Contains(msg, "cannot call") || strings.Contains(msg, "has no field") || strings.Contains(msg, "has no method"):
+		return "undefined"
+	case strings.Contains(msg, "missing return"):
+		return "syntax"
+	case strings.Contains(msg, "expected") || strings.Contains(msg, "unexpected"):
+		return "syntax"
+	case strings.Contains(msg, "go.mod"):
+		return "missing_import"
+	case strings.Contains(msg, "module declared multiple times") || strings.Contains(msg, "non-Go module"):
+		return "missing_import"
 	}
 	return "unknown"
 }
@@ -795,28 +813,16 @@ func (s *BuildModuleSkill) compileGo(projectPath string) string {
 		outputStr := string(output)
 		compileErrors := parseCompileErrors("go", outputStr)
 
-		// Classify the error type for better fix guidance
-		errorHint := ""
-		switch {
-		case strings.Contains(outputStr, "cannot find package"):
-			errorHint = "Missing Go package. Check go.mod and run 'go mod tidy'."
-		case strings.Contains(outputStr, "undefined") || strings.Contains(outputStr, "undeclared"):
-			errorHint = "Undefined variable/function. Check imports and variable declarations."
-		case strings.Contains(outputStr, "syntax error"):
-			errorHint = "Syntax error. Check brackets, semicolons, and Go syntax rules."
-		case strings.Contains(outputStr, "cannot use"):
-			errorHint = "Type mismatch. Check function signatures and variable types."
-		case strings.Contains(outputStr, "go.mod"):
-			errorHint = "Module configuration issue. Verify go.mod exists and is valid."
-		default:
-			errorHint = "Analyze the error above and use edit_file to fix it."
-		}
+		// Format errors with per-error fix hints
+		errorDetails := formatCompileErrors(compileErrors)
+		summary := generateBuildErrorSummary(compileErrors)
 
 		return fmt.Sprintf(
 			"  ❌ Go build failed (dir=%s):\n%s\n"+
-				"  💡 %s\n"+
-				"  Found %d error(s) in compiler output.\n",
-			goModDir, outputStr, errorHint, len(compileErrors))
+				"  %s\n"+
+				"%s\n"+
+				"  Use syntax_checker or edit_file to fix the errors above, then rebuild.\n",
+			goModDir, outputStr, summary, errorDetails)
 	}
 	return fmt.Sprintf("  ✅ Go build succeeded (dir=%s)\n", goModDir)
 }
@@ -901,7 +907,7 @@ func classifyNDKError(output string) string {
 	}
 }
 
-// formatCompileErrors formats a slice of CompileErrors into a readable string.
+// formatCompileErrors formats a slice of CompileErrors into a readable string with fix hints.
 func formatCompileErrors(errors []CompileError) string {
 	var b strings.Builder
 	for _, e := range errors {
@@ -917,8 +923,92 @@ func formatCompileErrors(errors []CompileError) string {
 		} else {
 			b.WriteString(fmt.Sprintf("    [%s] %s\n", e.ErrorType, e.Message))
 		}
+		// Append fix hint for each error
+		if hint := generateBuildFixHint(e); hint != "" {
+			b.WriteString(fmt.Sprintf("    💡 %s\n", hint))
+		}
 	}
 	return b.String()
+}
+
+// generateBuildFixHint creates an actionable fix suggestion for a compile error.
+func generateBuildFixHint(e CompileError) string {
+	msgLower := strings.ToLower(e.Message)
+	switch e.SourceType {
+	case "go":
+		switch e.ErrorType {
+		case "undefined":
+			return fmt.Sprintf("Check if the identifier is declared. If it's from another package, add the correct import. File: %s:%d", e.File, e.Line)
+		case "missing_import":
+			if strings.Contains(msgLower, "cannot find package") {
+				return "Run 'go mod tidy' to add missing dependencies, or check the package path spelling."
+			}
+			if strings.Contains(msgLower, "go.mod") {
+				return "Ensure go.mod exists in the project root with 'module <name>' declaration."
+			}
+			return "Check import paths and go.mod dependencies."
+		case "type_mismatch":
+			if strings.Contains(msgLower, "not enough arguments") || strings.Contains(msgLower, "too many arguments") {
+				return "Check function signature and provide the correct number of arguments."
+			}
+			return "Check types match at the assignment or function call site."
+		case "unused_import":
+			return "Remove the unused import, or use the imported package in your code."
+		case "syntax":
+			if strings.Contains(msgLower, "missing return") {
+				return "Add a return statement to the function. All non-void functions must return a value."
+			}
+			return "Fix syntax: check brackets, semicolons, and Go syntax rules."
+		}
+	case "rust":
+		switch e.ErrorType {
+		case "missing_import":
+			return "Add the missing crate to Cargo.toml [dependencies] and add 'use' statement."
+		case "undefined":
+			return "Check if the identifier is declared and in scope. Check import paths."
+		case "type_mismatch":
+			return "Check expected vs actual types. Use .into() or explicit type conversion if needed."
+		case "syntax":
+			return "Fix Rust syntax: check semicolons, braces, and match arms."
+		}
+	case "cpp":
+		switch e.ErrorType {
+		case "missing_import":
+			if strings.Contains(msgLower, "fatal error:") || strings.Contains(msgLower, "no such file") {
+				return "Add the missing #include directive or check header file paths."
+			}
+			return "Check #include paths and header file existence."
+		case "undefined":
+			return "Check if the identifier is declared. Add missing #include or forward declaration."
+		case "type_mismatch":
+			return "Check argument types match the function parameter types."
+		case "syntax":
+			return "Fix C++ syntax: check semicolons, braces, and statement structure."
+		case "linker":
+			return "Undefined reference: ensure all declared functions have implementations."
+		}
+	}
+	return ""
+}
+
+// generateBuildErrorSummary creates a concise summary of all build errors for the agent.
+func generateBuildErrorSummary(errors []CompileError) string {
+	if len(errors) == 0 {
+		return ""
+	}
+
+	// Count by type
+	typeCounts := make(map[string]int)
+	for _, e := range errors {
+		typeCounts[e.ErrorType]++
+	}
+
+	var parts []string
+	for errType, count := range typeCounts {
+		parts = append(parts, fmt.Sprintf("%d %s error(s)", count, errType))
+	}
+
+	return fmt.Sprintf("Build failed with %d error(s): %s", len(errors), strings.Join(parts, ", "))
 }
 
 func (s *BuildModuleSkill) Metadata() SkillMeta {

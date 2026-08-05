@@ -113,7 +113,7 @@ func (s *SkillRegistrySkill) listSkills(input map[string]interface{}) (string, e
 	// Add built-in skills that aren't in the config table
 	builtinSkills := []string{
 		"read_file", "write_file", "edit_file", "grep_search", "glob_search",
-		"bash", "build_module", "agent_preset",
+		"bash", "build_module", "syntax_checker", "agent_preset",
 		"todo_manager", "task_delegator", "context_manager", "skill_registry",
 	}
 
@@ -280,6 +280,7 @@ func (s *SkillRegistrySkill) getSkillInfo(skillName string) (string, error) {
 			"glob_search":     "Find files by pattern",
 			"bash":            "Execute shell commands",
 			"build_module":    "Build and package module",
+			"syntax_checker":  "Pre-build syntax validation",
 			"agent_preset":    "Manage agent presets",
 			"todo_manager":    "Manage todo lists",
 			"task_delegator":  "Delegate tasks to sub-agents",

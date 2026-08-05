@@ -46,6 +46,9 @@ func init() {
 	registry.RegisterFactory("build_module", func(d *registry.Deps) registry.Skill {
 		return NewBuildModuleSkillWithDB(d.StoragePath+"/projects", d.DB)
 	})
+	registry.RegisterFactory("syntax_checker", func(d *registry.Deps) registry.Skill {
+		return NewSyntaxCheckerSkill(d.StoragePath+"/projects", d.DB)
+	})
 	registry.RegisterFactory("test_module", func(d *registry.Deps) registry.Skill { return NewTestModuleSkill() })
 
 	// Project management

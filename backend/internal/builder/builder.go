@@ -66,8 +66,22 @@ func (b *Builder) BuildWithArch(ctx context.Context, projectDir, target, taskID,
 
 // BuildWithResult is the full build entry point with incremental + cache support.
 func (b *Builder) BuildWithResult(ctx context.Context, projectDir, target, taskID, arch string, logFn func(string)) (*BuildResult, error) {
+	return b.BuildWithResultAndProgress(ctx, projectDir, target, taskID, arch, logFn, nil)
+}
+
+// BuildProgressFunc is called during build to report progress.
+type BuildProgressFunc func(phase string, detail string)
+
+// BuildWithResultAndProgress is the full build entry point with progress reporting.
+func (b *Builder) BuildWithResultAndProgress(ctx context.Context, projectDir, target, taskID, arch string, logFn func(string), onProgress BuildProgressFunc) (*BuildResult, error) {
 	arch = NormalizeArch(arch)
 	result := &BuildResult{Arch: arch}
+
+	emitProgress := func(phase, detail string) {
+		if onProgress != nil {
+			onProgress(phase, detail)
+		}
+	}
 
 	if _, err := os.Stat(projectDir); os.IsNotExist(err) {
 		return nil, fmt.Errorf("project dir not found: %s", projectDir)
@@ -79,11 +93,13 @@ func (b *Builder) BuildWithResult(ctx context.Context, projectDir, target, taskI
 	}
 
 	// Cleanup expired binary cache
+	emitProgress("cache", "cleaning")
 	if cleaned, err := CleanupExpiredCache(projectDir); err == nil && cleaned > 0 {
 		logFn(fmt.Sprintf("  🧹 Cleaned %d expired cache entries\n", cleaned))
 	}
 
 	// Check incremental build status
+	emitProgress("incremental", "checking")
 	logFn(fmt.Sprintf("  📋 Checking incremental build (arch=%s)...\n", arch))
 	incr := CheckIncremental(projectDir, arch)
 	result.Incremental = incr
@@ -96,15 +112,22 @@ func (b *Builder) BuildWithResult(ctx context.Context, projectDir, target, taskI
 		if len(incr.NewFiles) > 0 {
 			logFn(fmt.Sprintf("  🆕 New: %d file(s)\n", len(incr.NewFiles)))
 		}
+		emitProgress("incremental", fmt.Sprintf("changes detected: %s", incr.Reason))
 	} else {
 		logFn("  ✅ No changes detected, using cached binaries\n")
+		emitProgress("incremental", "no changes")
 	}
 
 	// Compile Go files with arch support + binary cache
 	goFiles := b.DetectGoFiles(projectDir)
 	if len(goFiles) > 0 {
 		logFn(fmt.Sprintf("  Detected %d Go file(s), cross-compiling for android/%s...\n", len(goFiles), arch))
-		goResult, err := b.CompileGoFilesArch(ctx, projectDir, arch, incr, logFn)
+		emitProgress("compile", fmt.Sprintf("Go: %d files", len(goFiles)))
+
+		goProgress := func(phase string, current, total int, detail string) {
+			emitProgress(phase, fmt.Sprintf("Go [%d/%d]: %s", current, total, detail))
+		}
+		goResult, err := b.CompileGoFilesArchWithProgress(ctx, projectDir, arch, incr, logFn, goProgress)
 		if err != nil {
 			return nil, fmt.Errorf("go compilation failed: %w", err)
 		}
@@ -117,6 +140,7 @@ func (b *Builder) BuildWithResult(ctx context.Context, projectDir, target, taskI
 	rustDirs := b.DetectRustProjects(projectDir)
 	if len(rustDirs) > 0 {
 		logFn(fmt.Sprintf("  Detected %d Rust project(s)...\n", len(rustDirs)))
+		emitProgress("compile", fmt.Sprintf("Rust: %d projects", len(rustDirs)))
 		if err := InstallRustArch(ctx, arch, logFn); err != nil {
 			return nil, fmt.Errorf("rust installation failed: %w", err)
 		}
@@ -135,6 +159,7 @@ func (b *Builder) BuildWithResult(ctx context.Context, projectDir, target, taskI
 	cFiles := b.DetectCFiles(projectDir)
 	if len(cFiles) > 0 {
 		logFn(fmt.Sprintf("  Detected %d C/C++ file(s), cross-compiling with NDK...\n", len(cFiles)))
+		emitProgress("compile", fmt.Sprintf("C/C++: %d files", len(cFiles)))
 		cResult, err := b.CompileCFilesArch(ctx, projectDir, arch, incr, logFn)
 		if err != nil {
 			return nil, fmt.Errorf("C/C++ compilation failed: %w", err)
@@ -145,10 +170,13 @@ func (b *Builder) BuildWithResult(ctx context.Context, projectDir, target, taskI
 	}
 
 	// Update build cache after successful compilation
+	emitProgress("cache", "updating")
 	if err := UpdateBuildCacheAfterBuild(projectDir, arch, target); err != nil {
 		logFn(fmt.Sprintf("  ⚠️  Failed to update build cache: %v\n", err))
 	}
 
+	// Package
+	emitProgress("package", "starting")
 	var artifactPath string
 	var err error
 	if b.dockerAvailable(ctx) {
@@ -162,6 +190,7 @@ func (b *Builder) BuildWithResult(ctx context.Context, projectDir, target, taskI
 
 	result.ArtifactPath = artifactPath
 	logFn(fmt.Sprintf("  📦 Cache stats: %d hits, %d misses\n", result.CacheHits, result.CacheMisses))
+	emitProgress("done", fmt.Sprintf("artifact: %s", artifactPath))
 
 	return result, nil
 }

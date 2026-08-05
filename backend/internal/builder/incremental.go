@@ -76,12 +76,13 @@ func fileMtime(path string) (int64, error) {
 
 // IncrementalResult holds the outcome of an incremental compilation check.
 type IncrementalResult struct {
-	NeedsRebuild   bool     `json:"needs_rebuild"`   // true if full rebuild needed
-	ChangedFiles   []string `json:"changed_files"`    // files that changed since last build
-	UnchangedFiles []string `json:"unchanged_files"`  // files unchanged (will be skipped)
-	NewFiles       []string `json:"new_files"`        // files not seen before
-	RemovedFiles   []string `json:"removed_files"`    // files that were deleted
-	Reason         string   `json:"reason"`           // why full rebuild was triggered
+	NeedsRebuild   bool              `json:"needs_rebuild"`   // true if full rebuild needed
+	ChangedFiles   []string          `json:"changed_files"`    // files that changed since last build
+	UnchangedFiles []string          `json:"unchanged_files"`  // files unchanged (will be skipped)
+	NewFiles       []string          `json:"new_files"`        // files not seen before
+	RemovedFiles   []string          `json:"removed_files"`    // files that were deleted
+	ChangedDirs    map[string]bool   `json:"changed_dirs"`     // directories containing changed files (for fast lookup)
+	Reason         string            `json:"reason"`           // why full rebuild was triggered
 }
 
 // CheckIncremental compares current project files against the build cache.
@@ -183,14 +184,18 @@ func CheckIncremental(projectDir string, arch string) *IncrementalResult {
 		}
 	}
 
+	// Build the set of changed directories for fast lookup
+	result.ChangedDirs = make(map[string]bool)
+	for _, f := range result.ChangedFiles {
+		result.ChangedDirs[filepath.Dir(f)] = true
+	}
+	for _, f := range result.NewFiles {
+		result.ChangedDirs[filepath.Dir(f)] = true
+	}
+
 	// If any file in a compilation directory changed, mark ALL files in that
 	// directory as changed (dependency trigger - Go/Rust recompile entire package)
 	if len(result.ChangedFiles) > 0 {
-		changedDirSet := make(map[string]bool)
-		for _, f := range result.ChangedFiles {
-			changedDirSet[filepath.Dir(f)] = true
-		}
-
 		// Expand: all files in changed dirs are considered changed
 		var expandedChanged []string
 		expandedChanged = append(expandedChanged, result.ChangedFiles...)
@@ -199,12 +204,18 @@ func CheckIncremental(projectDir string, arch string) *IncrementalResult {
 			seen[f] = true
 		}
 		for _, f := range result.UnchangedFiles {
-			if changedDirSet[filepath.Dir(f)] && !seen[f] {
+			if result.ChangedDirs[filepath.Dir(f)] && !seen[f] {
 				expandedChanged = append(expandedChanged, f)
 				seen[f] = true
 			}
 		}
 		result.ChangedFiles = expandedChanged
+
+		// Rebuild ChangedDirs after expansion
+		result.ChangedDirs = make(map[string]bool)
+		for _, f := range result.ChangedFiles {
+			result.ChangedDirs[filepath.Dir(f)] = true
+		}
 	}
 
 	result.NeedsRebuild = len(result.ChangedFiles) > 0 || len(result.NewFiles) > 0 || len(result.RemovedFiles) > 0

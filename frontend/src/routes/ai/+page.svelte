@@ -26,6 +26,8 @@ import AICapabilityModal from './components/modals/AICapabilityModal.svelte';
 import DiffPanelModal from './components/modals/DiffPanelModal.svelte';
 import OnboardingGuide from './components/OnboardingGuide.svelte';
 import ShortcutPanel from './components/ShortcutPanel.svelte';
+import TodoList from './components/TodoList.svelte';
+import type { Subtask } from './components/TodoList.svelte';
 import {
   generateUUID, cleanRecommendedContent, extractFiles,
   extractGatherSpec, safeCopyText
@@ -151,6 +153,10 @@ import { filterStepsByRound } from './lib/rounds';
   let expandedSteps = $state<Set<number>>(new Set());
   let sessionId = $state('');
   let agentMode = $state<'plan' | 'act'>('act');
+
+  // Todo list state
+  let subtasks = $state<Subtask[]>([]);
+  let todoCollapsed = $state(false);
 
   // Auto-build state
   let autoBuildPhases = $state<AutoBuildPhase[]>([]);
@@ -378,6 +384,42 @@ import { filterStepsByRound } from './lib/rounds';
       pushAgentStep({ type: 'think', content: `🗜️ ${parsed.content || '上下文已压缩'}`, round: selectedRound });
       return true;
     }
+    // Task decomposition events
+    if (parsed.type === 'step' && parsed.step === 'task_plan') {
+      if (parsed.subtasks && Array.isArray(parsed.subtasks)) {
+        subtasks = parsed.subtasks.map((s: any) => ({
+          id: s.id,
+          description: s.description,
+          status: s.status || 'pending',
+          dependencies: s.dependencies || [],
+          files: s.files || [],
+          progress: s.progress || 0,
+          started_at: s.started_at,
+          completed_at: s.completed_at,
+          retry_count: s.retry_count || 0,
+        }));
+      }
+      pushAgentStep({ type: 'think', content: `📋 ${parsed.content || '任务分解完成'}`, round: selectedRound });
+      return true;
+    }
+    if (parsed.type === 'step' && parsed.step === 'task_progress') {
+      const subtaskId = parsed.subtask_id;
+      const status = parsed.status;
+      if (subtaskId && status) {
+        subtasks = subtasks.map(s => {
+          if (s.id === subtaskId) {
+            return {
+              ...s,
+              status: status as Subtask['status'],
+              progress: parsed.progress ?? s.progress,
+              description: parsed.description || s.description,
+            };
+          }
+          return s;
+        });
+      }
+      return true;
+    }
     return false;
   }
 
@@ -404,6 +446,28 @@ import { filterStepsByRound } from './lib/rounds';
               currentStepIndex = stepIndex;
               progressStepDetails = updateProgressDetails(progressStepDetails, parsed.step, parsed.message);
             }
+          }
+          // Handle task decomposition events in all modes
+          if (parsed.step === 'task_plan' && parsed.subtasks && Array.isArray(parsed.subtasks)) {
+            subtasks = parsed.subtasks.map((s: any) => ({
+              id: s.id,
+              description: s.description,
+              status: s.status || 'pending',
+              dependencies: s.dependencies || [],
+              files: s.files || [],
+              progress: s.progress || 0,
+              started_at: s.started_at,
+              completed_at: s.completed_at,
+              retry_count: s.retry_count || 0,
+            }));
+          }
+          if (parsed.step === 'task_progress' && parsed.subtask_id) {
+            subtasks = subtasks.map(s => {
+              if (s.id === parsed.subtask_id) {
+                return { ...s, status: parsed.status || s.status, progress: parsed.progress ?? s.progress };
+              }
+              return s;
+            });
           }
           return;
         }
@@ -1181,25 +1245,25 @@ import { filterStepsByRound } from './lib/rounds';
   // Don't trigger shortcuts when typing in inputs
   const tag = (e.target as HTMLElement)?.tagName;
   if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement)?.contentEditable === 'true') return;
-  if (e.ctrlKey && e.key === 'k') { e.preventDefault(); messages = []; currentStepIndex = -1; progressStepDetails = []; autoBuildPhases = []; agentSteps = []; allAgentSteps = []; selectedRound = -1; maxRoundIndex = 0; expandedReasoning = new Set(); activeSessionId = ''; sessionId = generateUUID(); mode = 'generate'; autoBuildProjectId = ''; autoBuildProjectName = ''; autoBuildFiles = []; }
+  if (e.ctrlKey && e.key === 'k') { e.preventDefault(); messages = []; currentStepIndex = -1; progressStepDetails = []; autoBuildPhases = []; agentSteps = []; allAgentSteps = []; selectedRound = -1; maxRoundIndex = 0; expandedReasoning = new Set(); activeSessionId = ''; sessionId = generateUUID(); mode = 'generate'; autoBuildProjectId = ''; autoBuildProjectName = ''; autoBuildFiles = []; subtasks = []; }
   if (e.ctrlKey && e.key === 'e') { e.preventDefault(); if (messages.length > 0) exportConversation('markdown'); }
   if (e.key === '?') { e.preventDefault(); showShortcutPanel = !showShortcutPanel; }
   if (e.key === 'Escape') { showHistorySidebar = false; showPromptSettings = false; showProviderConfig = false; showPreviewModal = false; showImportDialog = false; showComparison = false; showPromptTemplates = false; showDiffPanel = false; showCapability = false; showShortcutPanel = false; }
   if (!e.ctrlKey && !e.metaKey && !e.altKey && ['1','2','3','4','5','6'].includes(e.key)) {
     const idx = parseInt(e.key) - 1;
-    if (idx >= 0 && idx < modes.length && !streaming && mode !== modes[idx].value) { messages = []; currentStepIndex = -1; progressStepDetails = []; autoBuildPhases = []; agentSteps = []; expandedReasoning = new Set(); activeSessionId = ''; sessionId = generateUUID(); mode = modes[idx].value; }
+    if (idx >= 0 && idx < modes.length && !streaming && mode !== modes[idx].value) { messages = []; currentStepIndex = -1; progressStepDetails = []; autoBuildPhases = []; agentSteps = []; expandedReasoning = new Set(); activeSessionId = ''; sessionId = generateUUID(); mode = modes[idx].value; subtasks = []; }
   }
 }}>
   {#if showHistorySidebar}
     <ChatSidebar {sessions} {savedConversations} {genHistory} {convSaving} {convLoading} {historyTab} {activeSessionId} {searchResults} messagesLength={messages.length}
-      onNewConversation={() => { messages = []; currentStepIndex = -1; progressStepDetails = []; autoBuildPhases = []; agentSteps = []; allAgentSteps = []; selectedRound = -1; maxRoundIndex = 0; expandedReasoning = new Set(); activeSessionId = ''; sessionId = generateUUID(); mode = 'generate'; showHistorySidebar = false; autoBuildProjectId = ''; autoBuildProjectName = ''; autoBuildFiles = []; }}
+      onNewConversation={() => { messages = []; currentStepIndex = -1; progressStepDetails = []; autoBuildPhases = []; agentSteps = []; allAgentSteps = []; selectedRound = -1; maxRoundIndex = 0; expandedReasoning = new Set(); activeSessionId = ''; sessionId = generateUUID(); mode = 'generate'; showHistorySidebar = false; autoBuildProjectId = ''; autoBuildProjectName = ''; autoBuildFiles = []; subtasks = []; }}
       onRefresh={() => { loadConversations(); loadSessions(); loadGenHistory(); }} onSave={saveConversation}
       onClose={() => showHistorySidebar = false} onTabChange={(t) => historyTab = t}
       onSearch={(q) => { if (!q) { searchResults = []; return; } searchSessions(q).then(r => searchResults = r); }}
       onSelectConversation={loadConversation} onSelectSession={loadSessionMessages}
       onDeleteSession={deleteSession} onExportSession={exportSession}
       onDeleteConversation={deleteConversation}
-      onRestoreHistory={(item) => { if (item.messages && item.messages.length > 0) { messages = item.messages.map((m: any) => ({ role: m.role, content: m.content })); activeSessionId = ''; sessionId = generateUUID(); streaming = false; currentStepIndex = -1; progressStepDetails = []; expandedReasoning = new Set(); agentSteps = []; allAgentSteps = []; selectedRound = -1; maxRoundIndex = 0; if (item.mode && modes.some((m: any) => m.value === item.mode)) mode = item.mode as Mode; showHistorySidebar = false; toast('已加载生成记录', 'success'); } }}
+      onRestoreHistory={(item) => { if (item.messages && item.messages.length > 0) { messages = item.messages.map((m: any) => ({ role: m.role, content: m.content })); activeSessionId = ''; sessionId = generateUUID(); streaming = false; currentStepIndex = -1; progressStepDetails = []; expandedReasoning = new Set(); agentSteps = []; allAgentSteps = []; selectedRound = -1; maxRoundIndex = 0; subtasks = []; if (item.mode && modes.some((m: any) => m.value === item.mode)) mode = item.mode as Mode; showHistorySidebar = false; toast('已加载生成记录', 'success'); } }}
       onClearHistory={() => { genHistory = []; localStorage.removeItem('moduforge_ai_history'); }}
     />
   {/if}
@@ -1215,7 +1279,7 @@ import { filterStepsByRound } from './lib/rounds';
     />
 
     <CompactToolbar {mode} {streaming} {showComparison} {showProjectContext} {showHistorySidebar} {showCapability}
-      onModeChange={(m) => { if (mode !== m) { messages = []; currentStepIndex = -1; progressStepDetails = []; autoBuildPhases = []; agentSteps = []; expandedReasoning = new Set(); } mode = m; }}
+      onModeChange={(m) => { if (mode !== m) { messages = []; currentStepIndex = -1; progressStepDetails = []; autoBuildPhases = []; agentSteps = []; expandedReasoning = new Set(); subtasks = []; } mode = m; }}
       onToggleComparison={() => showComparison = !showComparison}
       onToggleProjectContext={() => showProjectContext = !showProjectContext}
       onToggleHistory={() => { if (!showHistorySidebar) { loadConversations(); loadSessions(); loadGenHistory(); } showHistorySidebar = !showHistorySidebar; }}
@@ -1232,6 +1296,8 @@ import { filterStepsByRound } from './lib/rounds';
       onSetAgentMode={(m) => agentMode = m}
       onToggleStep={(idx) => { const next = new Set(expandedSteps); if (next.has(idx)) next.delete(idx); else next.add(idx); expandedSteps = next; }}
     />
+
+    <TodoList {subtasks} collapsed={todoCollapsed} onToggleCollapse={() => todoCollapsed = !todoCollapsed} />
 
     <!-- Messages with virtual scrolling -->
     <div class="flex-1 overflow-y-auto px-3 py-1.5 space-y-1.5 messages-area"
