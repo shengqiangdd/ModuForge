@@ -114,6 +114,13 @@ func (h *AuthHandler) Login(c fiber.Ctx) error {
 	if req.Username == "" || req.Password == "" {
 		return ValidationError(c, "用户名和密码不能为空")
 	}
+	// Input length limits to prevent abuse
+	if len(req.Username) > 64 {
+		return ValidationError(c, "用户名过长")
+	}
+	if len(req.Password) > 128 {
+		return ValidationError(c, "密码过长")
+	}
 	resp, err := h.svc.Login(c.Context(), &req)
 	if err != nil {
 		return Unauthorized(c, "用户名或密码错误")

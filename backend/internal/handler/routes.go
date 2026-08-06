@@ -137,13 +137,15 @@ func RegisterRoutes(api fiber.Router, db *database.DB, cfg *config.Config) {
 	api.Get("/openapi.yaml", openapiH.ServeYAML)
 	api.Get("/docs", openapiH.ServeSwaggerUI)
 
-	// Auth
-	api.Post("/auth/register", authH.Register)
-	api.Post("/auth/login", authH.Login)
+	// Auth — stricter rate limiting for login/register/forgot-password
+	// 10 requests per minute per IP for auth endpoints (anti-brute-force)
+	rateAuthStrict := middleware.RateLimit(rateLimiter, 15, 10)
+	api.Post("/auth/register", rateAuthStrict, authH.Register)
+	api.Post("/auth/login", rateAuthStrict, authH.Login)
 	api.Post("/auth/refresh", authH.Refresh)
 	api.Post("/auth/verify-email", authH.VerifyEmail)
-	api.Post("/auth/forgot-password", authH.ForgotPassword)
-	api.Post("/auth/reset-password", authH.ResetPassword)
+	api.Post("/auth/forgot-password", rateAuthStrict, authH.ForgotPassword)
+	api.Post("/auth/reset-password", rateAuthStrict, authH.ResetPassword)
 	// change-password requires authentication (moved from public to protected)
 	r("POST", "/auth/change-password", authH.ChangePassword)
 

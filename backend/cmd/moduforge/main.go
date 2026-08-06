@@ -100,6 +100,7 @@ func main() {
 	// Middleware (runs after WS pre-middleware for non-WS paths)
 	app.Use(middleware.RequestID())
 	app.Use(middleware.ContentTypeCheck())
+	app.Use(middleware.SecurityHeaders())
 	app.Use(recover.New())
 	app.Use(logger.New(logger.Config{
 		Format: `{"time":"${time}","method":"${method}","path":"${path}","status":${status},"latency":"${latency}","ip":"${ip}","request_id":"${locals:request_id}"}` + "\n",
@@ -107,7 +108,7 @@ func main() {
 	}))
 	app.Use(cors.New(cors.Config{
 		AllowOriginsFunc: func(origin string) bool {
-			// Allow same-origin requests (no Origin header) and localhost for development
+			// Allow same-origin requests (no Origin header)
 			if origin == "" {
 				return true
 			}
@@ -121,11 +122,15 @@ func main() {
 				}
 				return false
 			}
-			// Default: allow all origins (development mode)
-			return true
+			// Development: allow localhost origins only
+			if strings.Contains(origin, "localhost") || strings.Contains(origin, "127.0.0.1") {
+				return true
+			}
+			// Deny all other origins by default
+			return false
 		},
 		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization", "X-API-Key"},
 		AllowCredentials: true,
 	}))
 	app.Use(compress.New(compress.Config{
@@ -181,11 +186,10 @@ func main() {
 		return c.SendFile(filePath)
 	})
 
-	// Health check
+	// Health check — no version info to avoid information leakage
 	app.Get("/health", func(c fiber.Ctx) error {
 		return c.JSON(fiber.Map{
-			"status":  "ok",
-			"version": "2.0-lite",
+			"status": "ok",
 		})
 	})
 
