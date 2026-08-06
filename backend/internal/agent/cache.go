@@ -265,9 +265,9 @@ func (c *toolResultCache) InvalidateBuild(projectID string) {
 // ═══════════════════════════════════════════════════════════════════
 // File Hash Cache — SHA256-based file change detection
 //
-// Avoids re-reading unchanged files: read_file computes SHA256 of file
-// content and returns "UNCHANGED" if the hash matches the cache.
-// This saves tokens when Agent re-reads the same file multiple times.
+// Tracks file content hashes for write_file change detection.
+// read_file updates the hash but always returns content (LLM needs it to edit).
+// write_file uses the hash to skip writes when content hasn't changed.
 // All operations are O(1) via hash map.
 // ═══════════════════════════════════════════════════════════════════
 

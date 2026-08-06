@@ -85,12 +85,10 @@ func (s *ReadFileSkill) Execute(ctx context.Context, input map[string]interface{
 		return fmt.Sprintf("文件未找到: %s", path), nil
 	}
 
-	// File hash cache: check if content is UNCHANGED
+	// File hash cache: only UPDATE the hash for write_file change detection.
+	// Do NOT return "UNCHANGED" here — the LLM needs to see file content to make edits.
 	if s.fileHash != nil {
 		hash := fmt.Sprintf("%x", sha256.Sum256([]byte(content)))
-		if cached := s.fileHash.Get(path); cached != "" && cached == hash {
-			return "UNCHANGED", nil
-		}
 		s.fileHash.Set(path, hash)
 	}
 
