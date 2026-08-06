@@ -57,9 +57,10 @@ func claimsFileModification(text string) bool {
 // detectLoop detects repetitive tool call patterns and returns an intervention message.
 // P0-1: Enhanced stagnation detection with stricter thresholds for read_file loops.
 func detectLoop(toolCallHistory map[string]int, uniqueOps map[string]bool, totalCalls int) string {
-	// Total call budget — hard limit (reduced from 8 to 6 for faster termination)
-	if totalCalls >= 6 {
-		return fmt.Sprintf("Made %d tool calls total. You must stop using tools and provide your final answer now. Summarize what you accomplished.", totalCalls)
+	// Total call budget — hard limit (raised to 15 for large projects)
+	// Only trigger if unique targets are fewer than half of total calls (indicating repetition)
+	if totalCalls >= 15 && len(uniqueOps) < totalCalls/2 {
+		return fmt.Sprintf("Made %d tool calls total with only %d unique targets. You must stop using tools and provide your final answer now. Summarize what you accomplished.", totalCalls, len(uniqueOps))
 	}
 
 	// Per-skill threshold check
@@ -79,17 +80,17 @@ func detectLoop(toolCallHistory map[string]int, uniqueOps map[string]bool, total
 		// read_file: special case — allow batch reads of different files
 		// P0-1: Much stricter thresholds to prevent dead loops
 		if skill == "read_file" {
-			// Same file read 2+ times = loop (reduced from 2 to 2, but now triggers immediately)
+			// Same file read 2+ times = loop
 			if uniqueCount <= 1 && count >= 2 {
 				return "Reading the same file repeatedly. This is a loop. STOP reading. Use write_file/edit_file to make changes, or provide your final answer."
 			}
-			// Many reads but few unique targets = loop (reduced from 4 to 3)
+			// Many reads but few unique targets = loop
 			if count >= 3 && uniqueCount <= 2 {
 				return fmt.Sprintf("You have called read_file %d times on only %d unique targets. This is a repetitive loop. STOP reading files. Provide your final answer now, or use write_file/edit_file to create/modify files.", count, uniqueCount)
 			}
-			// P0-1: Additional check — if read_file is called 4+ times regardless of unique targets
-			if count >= 4 {
-				return fmt.Sprintf("You have called read_file %d times. This is excessive. STOP reading files and start writing code immediately.", count)
+			// Excessive reads with low diversity (unique < 50% of total)
+			if count >= 6 && uniqueCount < count/2 {
+				return fmt.Sprintf("You have called read_file %d times on only %d unique targets. This is excessive. STOP reading files and start writing code immediately.", count, uniqueCount)
 			}
 		} else {
 			// Other skills: 3+ calls = likely loop (reduced from 4)

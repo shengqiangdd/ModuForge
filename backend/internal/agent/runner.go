@@ -1855,7 +1855,13 @@ You are running WITHOUT a project context. This means:
 	// Derive skill sets from metadata (no hardcoded maps)
 	readOnlySkills := r.registry.ReadOnlySkills()
 
+	// iterCancel/iterCtx are declared at function scope so iterCancel can be called
+	// in the final return. iterCtx is reassigned each iteration with a per-iteration timeout.
+	var iterCancel context.CancelFunc
+	var iterCtx context.Context
+
 	for iter := 0; iter < cfg.MaxIterations; iter++ {
+		// Per-iteration timeout: create a child context with shorter deadline
 		// P1-2: Dynamically adjust limits based on project complexity
 		if cfg.ProjectID != "" && iter > 0 {
 			// Increase limits for complex projects (more files to read/write)
@@ -1870,6 +1876,9 @@ You are running WITHOUT a project context. This means:
 		}
 		select {
 		case <-ctx.Done():
+			if iterCancel != nil {
+				iterCancel()
+			}
 			return ctx.Err()
 		default:
 		}
@@ -1878,6 +1887,9 @@ You are running WITHOUT a project context. This means:
 			log.Printf("[Agent] client disconnected at iteration %d", iter+1)
 			r.writeContentCache.Delete(sessionID)
 			r.readFileCache.Delete(sessionID)
+			if iterCancel != nil {
+				iterCancel()
+			}
 			return fmt.Errorf("client disconnected")
 		}
 
@@ -1914,7 +1926,7 @@ You are running WITHOUT a project context. This means:
 		// Per-iteration timeout: create a child context with shorter deadline
 		// This prevents a single slow LLM call or tool execution from consuming
 		// the entire 30-minute budget
-		iterCtx, iterCancel := context.WithTimeout(ctx, perIterationTimeout)
+		iterCtx, iterCancel = context.WithTimeout(ctx, perIterationTimeout)
 
 		// Call LLM with keepalive — send empty think events every 10s to prevent frontend idle timeout
 		llmDone := make(chan struct{})
@@ -1935,6 +1947,7 @@ You are running WITHOUT a project context. This means:
 			var abortErr error
 			conversation, consecutiveErrors, abortErr = r.handleLLMCallError(ctx, w, cfg, conversation, consecutiveErrors, err)
 			if abortErr != nil {
+				iterCancel()
 				return abortErr
 			}
 			continue
@@ -2064,6 +2077,7 @@ You are running WITHOUT a project context. This means:
 				r.convStore.Append(sessionID, service.Message{Role: "assistant", Content: answer})
 			}
 			w.WriteSSEPlain("[DONE]")
+			iterCancel()
 			return nil
 		}
 
@@ -2289,6 +2303,7 @@ You are running WITHOUT a project context. This means:
 						"error": fmt.Sprintf("多次执行失败，已终止: %v", err),
 					})
 					w.WriteSSEPlain("[DONE]")
+					iterCancel()
 					return err
 				default:
 					result = fmt.Sprintf("Error: %v", err)
@@ -2513,6 +2528,9 @@ You are running WITHOUT a project context. This means:
 		sessionID, totalDuration, perfSummary["llm_call_count"], perfSummary["tool_call_count"],
 		perfSummary["error_count"], perfSummary["retry_count"])
 
+	if iterCancel != nil {
+		iterCancel()
+	}
 	return nil
 }
 
