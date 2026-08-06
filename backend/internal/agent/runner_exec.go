@@ -293,8 +293,20 @@ func (p *toolResultProcessor) process(iter int, conversation []map[string]interf
 		}
 	}
 
-	// Check no-write stagnation
+	// Check no-write stagnation AND hard read cap
 	if !anyWriteCalled && !answerSent {
+		// Hard cap: total reads across ALL iterations
+		totalReads := p.m.toolCallHistory["read_file"] + p.m.toolCallHistory["grep_search"] + p.m.toolCallHistory["glob_search"] + p.m.toolCallHistory["list_dir"]
+		if totalReads >= 30 {
+			log.Printf("[Agent] hard read cap reached: %d total reads, 0 writes", totalReads)
+			return conversation, true, p.r.forceAnswer(p.ctx, conversation, p.w, p.sessionID, p.cfg, p.reqProviderID, p.reqModel,
+				fmt.Sprintf("CRITICAL: You have made %d read/list/search calls without a single write/edit. "+
+					"You are an ENGINEER, not a REVIEWER. You MUST now: "+
+					"(1) Use edit_file to make targeted changes to build.sh (add -Os -flto -s flags), or "+
+					"(2) Use write_file to rewrite build.sh with the optimized flags, or "+
+					"(3) Stop all tools and provide your final answer. "+
+					"DO NOT read any more files. Start writing code NOW.", totalReads))
+		}
 		if p.stagnationDetector.RecordNoWrite() {
 			log.Printf("[Agent] no-write stagnation: %d iterations without write_file", p.stagnationDetector.consecutiveNoWrite)
 			p.w.WriteSSE(map[string]interface{}{
