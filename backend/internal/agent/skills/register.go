@@ -15,7 +15,13 @@ func init() {
 	registry.RegisterFactory("edit_file", func(d *registry.Deps) registry.Skill {
 		return NewEditFileSkillWithDB(d.StoragePath+"/projects", d.DB)
 	})
-	registry.RegisterFactory("read_file", func(d *registry.Deps) registry.Skill { return NewReadFileSkill(d.DB) })
+	registry.RegisterFactory("read_file", func(d *registry.Deps) registry.Skill {
+		skill := NewReadFileSkillWithDB(d.StoragePath+"/projects", d.DB)
+		if d.FileHashCache != nil {
+			skill.SetFileHashCache(d.FileHashCache)
+		}
+		return skill
+	})
 	registry.RegisterFactory("write_file", func(d *registry.Deps) registry.Skill {
 		return NewWriteFileSkillWithDB(d.StoragePath+"/projects", d.DB)
 	})

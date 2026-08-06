@@ -277,6 +277,39 @@
     building = false;
   }
 
+  async function deleteBuild(buildId: string, e: Event) {
+    e.stopPropagation();
+    if (!confirm('确定删除此构建记录？')) return;
+    try {
+      const token = localStorage.getItem('moduforge_token') || '';
+      const res = await fetch(`/api/v1/projects/${projectId}/builds/${buildId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      if (res.ok) {
+        buildHistory = buildHistory.filter(b => b.id !== buildId);
+        toast('已删除', 'info');
+      }
+    } catch {}
+  }
+
+  async function deleteFailedBuilds() {
+    const failedCount = buildHistory.filter(b => b.status === 'failed').length;
+    if (failedCount === 0) return;
+    if (!confirm(`确定删除全部 ${failedCount} 条失败记录？`)) return;
+    try {
+      const token = localStorage.getItem('moduforge_token') || '';
+      const res = await fetch(`/api/v1/projects/${projectId}/builds/failed`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      if (res.ok) {
+        buildHistory = buildHistory.filter(b => b.status !== 'failed');
+        toast(`已删除 ${failedCount} 条失败记录`, 'info');
+      }
+    } catch {}
+  }
+
   // Parse incremental info from build log
   $effect(() => {
     const logText = logLines.join('\n');
@@ -667,7 +700,12 @@
             <span class="material-symbols-outlined text-[18px]">history</span>
             构建历史
           </h3>
-          <button class="btn-ghost border text-xs px-3 py-1 rounded-lg" style="border-color: var(--color-border)" onclick={loadBuildHistory}>刷新</button>
+          <div class="flex items-center gap-2">
+            {#if buildHistory.some(b => b.status === 'failed')}
+              <button class="btn-ghost border text-xs px-3 py-1 rounded-lg text-[var(--color-error)]" style="border-color: var(--color-border)" onclick={deleteFailedBuilds}>清除失败</button>
+            {/if}
+            <button class="btn-ghost border text-xs px-3 py-1 rounded-lg" style="border-color: var(--color-border)" onclick={loadBuildHistory}>刷新</button>
+          </div>
         </div>
         <div class="space-y-2">
           {#each buildHistory as task}
@@ -708,6 +746,14 @@
                       onclick={(e) => { e.stopPropagation(); taskId = task.id; cancelBuild(); }}
                     >
                       <span class="material-symbols-outlined text-[16px] text-[var(--color-error)]">cancel</span>
+                    </button>
+                  {/if}
+                  {#if task.status !== 'running' && task.status !== 'pending'}
+                    <button
+                      class="p-1 rounded hover:bg-[var(--color-surface)]"
+                      onclick={(e) => deleteBuild(task.id, e)}
+                    >
+                      <span class="material-symbols-outlined text-[16px] text-[var(--color-text-muted)] hover:text-[var(--color-error)]">delete</span>
                     </button>
                   {/if}
                 </div>

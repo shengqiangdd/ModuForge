@@ -132,7 +132,7 @@ func (s *WriteFileSkill) Execute(ctx context.Context, input map[string]interface
 	if diskWritten {
 		statusMsg += " [disk+db]"
 	} else {
-		statusMsg += " [db only]"
+		statusMsg += " [db only] NOTE: 磁盘不可写，文件存储在数据库中。如果需要编译，请使用 build_module，它会自动从 DB 导出文件到磁盘。"
 	}
 	// Include project_id in result so runner can detect auto-creation
 	if projectID != "" {

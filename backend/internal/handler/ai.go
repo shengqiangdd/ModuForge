@@ -446,6 +446,17 @@ func (h *AIHandler) RefreshModels(c fiber.Ctx) error {
 
 // GetLLMConfig 返回当前 LLM 配置
 func (h *AIHandler) GetLLMConfig(c fiber.Ctx) error {
+	// Try to load from database first (persists across restarts)
+	if h.db != nil {
+		var provider, modelID, endpoint string
+		err := h.db.Conn.QueryRow(`SELECT provider, model_id, endpoint FROM llm_config WHERE id='default'`).Scan(&provider, &modelID, &endpoint)
+		if err == nil && provider != "" {
+			h.cfg.LLMProvider = provider
+			h.cfg.LLMModelID = modelID
+			h.cfg.LLMEndpoint = endpoint
+		}
+	}
+
 	effectiveKey := h.cfg.EffectiveLLMKey()
 	keyConfigured := effectiveKey != ""
 
@@ -588,6 +599,15 @@ func (h *AIHandler) UpdateLLMConfig(c fiber.Ctx) error {
 	h.cfg.LLMEndpoint = provider.Endpoint
 	h.cfg.LLMModel = req.ModelID
 	h.cfg.LLMApiKey = h.cfg.EffectiveLLMKey()
+
+	// Persist to database so selection survives server restarts
+	if h.db != nil {
+		h.db.Conn.Exec(`INSERT INTO llm_config (id, provider, model_id, endpoint, updated_at)
+			VALUES ('default', ?, ?, ?, datetime('now'))
+			ON CONFLICT(id) DO UPDATE SET provider=excluded.provider, model_id=excluded.model_id,
+			endpoint=excluded.endpoint, updated_at=excluded.updated_at`,
+			req.Provider, req.ModelID, provider.Endpoint)
+	}
 
 	return c.JSON(fiber.Map{
 		"status":   "ok",

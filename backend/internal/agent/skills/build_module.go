@@ -289,7 +289,7 @@ func (s *BuildModuleSkill) Execute(ctx context.Context, input map[string]interfa
 	log.WriteString("[BUILD_PROGRESS] phase=validate status=done\n")
 
 	// ========== Phase 1.5: Sync source files from DB to disk ==========
-	log.WriteString("\n── Syncing source files to disk... ──\n")
+	log.WriteString("\n── Syncing source files from DB to disk... ──\n")
 	if s.db != nil && projectID != "" {
 		rows, err := s.db.Query(`SELECT path, content FROM project_files WHERE project_id=?`, projectID)
 		if err == nil {
@@ -301,16 +301,23 @@ func (s *BuildModuleSkill) Execute(ctx context.Context, input map[string]interfa
 					continue
 				}
 				fullPath := filepath.Join(projectPath, path)
-				dir := filepath.Dir(fullPath)
-				if err := os.MkdirAll(dir, 0755); err != nil {
-					continue
+				// Only write if file doesn't exist on disk
+				if _, err := os.Stat(fullPath); os.IsNotExist(err) {
+					dir := filepath.Dir(fullPath)
+					if err := os.MkdirAll(dir, 0755); err != nil {
+						continue
+					}
+					if err := os.WriteFile(fullPath, []byte(content), 0644); err != nil {
+						continue
+					}
+					synced++
 				}
-				if err := os.WriteFile(fullPath, []byte(content), 0644); err != nil {
-					continue
-				}
-				synced++
 			}
-			log.WriteString(fmt.Sprintf("  ✅ Synced %d files from database\n", synced))
+			if synced > 0 {
+				log.WriteString(fmt.Sprintf("  ✅ Synced %d files from database to disk\n", synced))
+			} else {
+				log.WriteString("  ✅ All DB files already present on disk\n")
+			}
 		}
 	}
 

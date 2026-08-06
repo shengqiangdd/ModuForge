@@ -30,14 +30,18 @@ func NewAgentHandler(cfg *config.Config, db *database.DB) *AgentHandler {
 	// Auto-register all skills via init() factories — no manual registration needed
 	memStore := service.NewMemoryStore(db.Conn)
 
+	// Create file hash cache shared between skills and runner
+	fileHashCache := agent.NewFileHashCache()
+
 	deps := &registry.Deps{
-		DB:          db.Conn,
-		StoragePath: cfg.StoragePath,
-		LLMApiKey:   cfg.EffectiveLLMKey(),
-		LLMEndpoint: cfg.LLMEndpoint,
-		LLMModel:    cfg.LLMModel,
-		HTTPClient:  agent.LLMHTTPClient(),
-		MemoryStore: memStore,
+		DB:            db.Conn,
+		StoragePath:   cfg.StoragePath,
+		LLMApiKey:     cfg.EffectiveLLMKey(),
+		LLMEndpoint:   cfg.LLMEndpoint,
+		LLMModel:      cfg.LLMModel,
+		HTTPClient:    agent.LLMHTTPClient(),
+		MemoryStore:   memStore,
+		FileHashCache: fileHashCache,
 	}
 	registry := agent.NewSkillRegistry(deps)
 
@@ -49,6 +53,7 @@ func NewAgentHandler(cfg *config.Config, db *database.DB) *AgentHandler {
 		db.Conn,
 	)
 	runner.SetMemoryStore(memStore)
+	runner.SetFileHashCache(fileHashCache)
 
 	return &AgentHandler{
 		runner: runner,

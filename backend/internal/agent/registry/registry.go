@@ -44,13 +44,21 @@ type Skill interface {
 
 // Deps holds shared dependencies injected into skill factories.
 type Deps struct {
-	DB          *sql.DB
-	StoragePath string
-	LLMApiKey   string
-	LLMEndpoint string
-	LLMModel    string
-	HTTPClient  *http.Client // shared LLM HTTP client with connection pooling
-	MemoryStore interface{}  // *service.MemoryStore — avoid import cycle
+	DB            *sql.DB
+	StoragePath   string
+	LLMApiKey     string
+	LLMEndpoint   string
+	LLMModel      string
+	HTTPClient    *http.Client // shared LLM HTTP client with connection pooling
+	MemoryStore   interface{}  // *service.MemoryStore — avoid import cycle
+	FileHashCache FileHashCacheI // file hash cache for UNCHANGED detection
+}
+
+// FileHashCacheI is the interface for file hash caching (avoids circular dependency).
+type FileHashCacheI interface {
+	Get(path string) string
+	Set(path, hash string)
+	Invalidate(path string)
 }
 
 // Factory creates a Skill instance from shared dependencies.

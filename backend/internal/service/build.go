@@ -77,6 +77,29 @@ func (s *BuildService) ListByProject(ctx context.Context, projectID string) ([]d
 	return tasks, nil
 }
 
+// DeleteBuild removes a single build task by ID.
+func (s *BuildService) DeleteBuild(ctx context.Context, id string) error {
+	result, err := s.db.ExecContext(ctx, `DELETE FROM build_tasks WHERE id=?`, id)
+	if err != nil {
+		return err
+	}
+	n, _ := result.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("build not found")
+	}
+	return nil
+}
+
+// DeleteFailedBuilds removes all failed build tasks for a project.
+func (s *BuildService) DeleteFailedBuilds(ctx context.Context, projectID string) (int64, error) {
+	result, err := s.db.ExecContext(ctx,
+		`DELETE FROM build_tasks WHERE project_id=? AND status='failed'`, projectID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 func (s *BuildService) checkBuildCache(projectID, filesHash string) *string {
 	cachePath := s.getCacheKey(projectID, filesHash)
 	info, err := os.Stat(cachePath)

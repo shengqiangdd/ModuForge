@@ -117,8 +117,8 @@ func TestToolResultCache_CacheKeyDeterministic(t *testing.T) {
 func TestToolResultCache_MaxEntrySize(t *testing.T) {
 	cache := newToolResultCache()
 
-	// Create a large result (> 4KB)
-	largeResult := strings.Repeat("x", 8192)
+	// Create a large result (> 64KB, the new cacheMaxEntrySize)
+	largeResult := strings.Repeat("x", 80000)
 	input := map[string]interface{}{"path": "large.rs"}
 	cache.put("read_file", input, largeResult)
 
@@ -155,7 +155,7 @@ func TestInvalidateBuild(t *testing.T) {
 	cache.mu.Lock()
 	// Manually add an entry with project_id in the key for testing
 	cache.entries["build_module|project_id=p1"] = "build ok p1"
-	cache.order = append(cache.order, "build_module|project_id=p1")
+	cache.accessOrder = append(cache.accessOrder, "build_module|project_id=p1")
 	cache.mu.Unlock()
 
 	cache.InvalidateBuild("p1")

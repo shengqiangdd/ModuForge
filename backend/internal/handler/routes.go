@@ -431,6 +431,8 @@ func RegisterRoutes(api fiber.Router, db *database.DB, cfg *config.Config) {
 	// Builds
 	r("POST", "/projects/:id/build", buildH.Create)
 	r("GET", "/projects/:id/builds", buildH.ListByProject)
+	r("DELETE", "/projects/:id/builds/failed", buildH.DeleteFailed)
+	r("DELETE", "/projects/:id/builds/:buildId", buildH.Delete)
 	r("DELETE", "/projects/:id/build-cache", buildH.ClearBuildCache)
 	r("GET", "/projects/:id/build/cache", buildH.GetBuildCacheStatus)
 	r("GET", "/projects/:id/build/architectures", buildH.GetSupportedArchitectures)

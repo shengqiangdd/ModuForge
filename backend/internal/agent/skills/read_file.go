@@ -2,18 +2,39 @@ package skills
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"fmt"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 )
 
+// FileHashCacheI is the interface for file hash caching (matches registry.FileHashCacheI).
+type FileHashCacheI interface {
+	Get(path string) string
+	Set(path, hash string)
+	Invalidate(path string)
+}
+
 type ReadFileSkill struct {
-	db *sql.DB
+	db          *sql.DB
+	projectPath string
+	fileHash    FileHashCacheI
 }
 
 func NewReadFileSkill(db *sql.DB) *ReadFileSkill {
 	return &ReadFileSkill{db: db}
+}
+
+func NewReadFileSkillWithDB(projectPath string, db *sql.DB) *ReadFileSkill {
+	return &ReadFileSkill{db: db, projectPath: projectPath}
+}
+
+// SetFileHashCache sets the file hash cache for UNCHANGED detection.
+func (s *ReadFileSkill) SetFileHashCache(cache FileHashCacheI) {
+	s.fileHash = cache
 }
 
 func (s *ReadFileSkill) Name() string {
@@ -34,20 +55,46 @@ func (s *ReadFileSkill) Execute(ctx context.Context, input map[string]interface{
 	if projectID == "" {
 		return "", fmt.Errorf("project_id is required")
 	}
-	if s.db == nil {
-		return "数据库不可用，无法读取文件", nil
+
+	// Phase 1: Try reading from disk first
+	fromDB := false
+	var content string
+	if s.projectPath != "" {
+		basePath := ResolveProjectPath(s.db, s.projectPath, projectID)
+		fullPath := filepath.Join(basePath, path)
+		if data, err := os.ReadFile(fullPath); err == nil {
+			content = string(data)
+		}
 	}
 
-	var content string
-	err := s.db.QueryRowContext(ctx,
-		`SELECT content FROM project_files WHERE project_id=? AND path=?`, projectID, path,
-	).Scan(&content)
-	if err == sql.ErrNoRows {
+	// Phase 2: Fallback to DB if disk read failed
+	if content == "" && s.db != nil {
+		err := s.db.QueryRowContext(ctx,
+			`SELECT content FROM project_files WHERE project_id=? AND path=?`, projectID, path,
+		).Scan(&content)
+		if err == sql.ErrNoRows {
+			return fmt.Sprintf("文件未找到: %s (磁盘和数据库中均不存在)", path), nil
+		}
+		if err != nil {
+			return "", fmt.Errorf("读取文件失败: %w", err)
+		}
+		fromDB = true
+	}
+
+	if content == "" {
 		return fmt.Sprintf("文件未找到: %s", path), nil
 	}
-	if err != nil {
-		return "", fmt.Errorf("读取文件失败: %w", err)
+
+	// File hash cache: check if content is UNCHANGED
+	if s.fileHash != nil {
+		hash := fmt.Sprintf("%x", sha256.Sum256([]byte(content)))
+		if cached := s.fileHash.Get(path); cached != "" && cached == hash {
+			return "UNCHANGED", nil
+		}
+		s.fileHash.Set(path, hash)
 	}
+
+	_ = fromDB // used below in header
 
 	// 支持行范围读取
 	lines := strings.Split(content, "\n")
@@ -79,7 +126,7 @@ func (s *ReadFileSkill) Execute(ctx context.Context, input map[string]interface{
 
 	// For large files without explicit range, return intelligent summary
 	if totalLines > 500 && !hasExplicitRange {
-		return s.readLargeFileSmart(path, lines, totalLines), nil
+		return s.readLargeFileSmart(path, lines, totalLines, fromDB), nil
 	}
 
 	// 提取指定范围的行
@@ -97,6 +144,9 @@ func (s *ReadFileSkill) Execute(ctx context.Context, input map[string]interface{
 	}
 
 	header := fmt.Sprintf("File: %s (lines %d-%d of %d)", path, startLine, endLine, totalLines)
+	if fromDB {
+		header = "[from DB cache] " + header
+	}
 	if truncated {
 		header += " [content truncated]"
 	}
@@ -105,10 +155,13 @@ func (s *ReadFileSkill) Execute(ctx context.Context, input map[string]interface{
 }
 
 // readLargeFileSmart intelligently extracts key sections from large files.
-func (s *ReadFileSkill) readLargeFileSmart(path string, lines []string, totalLines int) string {
+func (s *ReadFileSkill) readLargeFileSmart(path string, lines []string, totalLines int, fromDB bool) string {
 	var sb strings.Builder
 	lang := detectLanguage(path)
 
+	if fromDB {
+		sb.WriteString("[from DB cache] ")
+	}
 	sb.WriteString(fmt.Sprintf("File: %s (%d lines) — intelligent summary\n\n", path, totalLines))
 
 	// Always include first 20 lines (header, imports, package declaration)

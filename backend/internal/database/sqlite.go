@@ -780,6 +780,15 @@ func (db *DB) migrate() error {
 		"UPDATE build_tasks SET log='' WHERE log IS NULL",
 		"UPDATE build_tasks SET target='' WHERE target IS NULL",
 		"UPDATE build_tasks SET artifact_path='' WHERE artifact_path IS NULL",
+		// LLM config persistence
+		`CREATE TABLE IF NOT EXISTS llm_config (
+			id          TEXT PRIMARY KEY DEFAULT 'default',
+			provider    TEXT DEFAULT '',
+			model_id    TEXT DEFAULT '',
+			endpoint    TEXT DEFAULT '',
+			api_key     TEXT DEFAULT '',
+			updated_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+		)`,
 	}
 	for _, m := range addColumnIfMissing {
 		db.Conn.Exec(m) // ignore errors for ALTER TABLE

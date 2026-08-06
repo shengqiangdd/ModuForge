@@ -213,6 +213,25 @@ func (h *BuildHandler) GetGlobalCacheStats(c fiber.Ctx) error {
 	return c.JSON(stats)
 }
 
+// Delete removes a single build record.
+func (h *BuildHandler) Delete(c fiber.Ctx) error {
+	id := c.Params("buildId")
+	if err := h.svc.DeleteBuild(c.Context(), id); err != nil {
+		return c.Status(404).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(fiber.Map{"ok": true})
+}
+
+// DeleteFailed removes all failed build records for a project.
+func (h *BuildHandler) DeleteFailed(c fiber.Ctx) error {
+	projectID := c.Params("id")
+	n, err := h.svc.DeleteFailedBuilds(c.Context(), projectID)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(fiber.Map{"ok": true, "deleted": n})
+}
+
 // TriggerCacheCleanup manually triggers a cache cleanup pass.
 func (h *BuildHandler) TriggerCacheCleanup(c fiber.Ctx) error {
 	cfg := builder.DefaultCacheConfig(h.svc.GetStoragePath())

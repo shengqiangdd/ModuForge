@@ -159,17 +159,24 @@ type AgentRunner struct {
 
 	// Optimization 51: Performance metrics tracking
 	perfMetrics *PerformanceMetrics
+
+	// File hash cache for UNCHANGED detection in read_file
+	fileHashCache *fileHashCache
+
+	// Repo-map for global code structure indexing
+	repoMap *RepoMap
 }
 
 func NewAgentRunner(registry *SkillRegistry, apiKey, endpoint, model string, db *sql.DB) *AgentRunner {
 	r := &AgentRunner{
-		registry:     registry,
-		apiKey:       apiKey,
-		endpoint:     endpoint,
-		model:        model,
-		db:           db,
-		convStore:    service.NewConversationStore(),
-		toolDefCache: make(map[string][]ToolDef),
+		registry:      registry,
+		apiKey:        apiKey,
+		endpoint:      endpoint,
+		model:         model,
+		db:            db,
+		convStore:     service.NewConversationStore(),
+		toolDefCache:  make(map[string][]ToolDef),
+		fileHashCache: NewFileHashCache(),
 		// Initialize new modules
 		auditLog:       NewAuditLog(""),
 		permChecker:    NewPermissionChecker(),
@@ -917,6 +924,11 @@ func (qv *QualityVerifier) GetQualitySummary(reports []QualityReport) string {
 
 func (r *AgentRunner) SetMemoryV2Store(store *service.MemoryV2Store) {
 	r.memV2Store = store
+}
+
+// SetFileHashCache sets the file hash cache for UNCHANGED detection.
+func (r *AgentRunner) SetFileHashCache(cache *fileHashCache) {
+	r.fileHashCache = cache
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -1820,6 +1832,26 @@ You are running WITHOUT a project context. This means:
 	// P2-1: Self-reflection log
 	reflectionLog := NewReflectionLog()
 
+	// Initialize repo-map for global code structure indexing
+	if cfg.ProjectID != "" {
+		projectPath := ""
+		if r.db != nil {
+			var storagePath string
+			err := r.db.QueryRow(`SELECT COALESCE(storage_path,'') FROM projects WHERE id=?`, cfg.ProjectID).Scan(&storagePath)
+			if err == nil && storagePath != "" {
+				projectPath = storagePath
+			}
+		}
+		if projectPath != "" {
+			r.repoMap = NewRepoMap(projectPath)
+			// Generate initial repo-map from disk files
+			go func() {
+				r.repoMap.GenerateRepoMap(projectPath)
+				log.Printf("[Agent] repo-map generated: %d files indexed", len(r.repoMap.fileIndex))
+			}()
+		}
+	}
+
 	// Derive skill sets from metadata (no hardcoded maps)
 	readOnlySkills := r.registry.ReadOnlySkills()
 
@@ -2311,6 +2343,16 @@ You are running WITHOUT a project context. This means:
 				stagnationDetector.ResetNoWrite()
 				if path, ok := st.skillInput["path"].(string); ok {
 					toolCache.invalidate(path)
+					// Invalidate file hash cache so read_file re-reads fresh content
+					if r.fileHashCache != nil {
+						r.fileHashCache.Invalidate(path)
+					}
+					// Update repo-map incrementally after write
+					if r.repoMap != nil {
+						if content, ok := st.skillInput["content"].(string); ok {
+							r.repoMap.UpdateFile(path, content)
+						}
+					}
 					// Optimization 17: Cache written content for immediate read-back
 					if content, ok := st.skillInput["content"].(string); ok && err == nil {
 						r.cacheWriteContent(sessionID, path, content)

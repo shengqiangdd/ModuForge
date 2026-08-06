@@ -185,7 +185,14 @@ func (r *AgentRunner) buildProjectContext(cfg RunConfig) string {
 		sb.WriteString(fmt.Sprintf("Description:\n%s\n", cfg.ProjectContext))
 	}
 
-	if r.db != nil {
+	// Use repo-map summary instead of full file listing (saves tokens)
+	if r.repoMap != nil {
+		repoMapSummary := r.repoMap.GetRepoMapSummary()
+		if repoMapSummary != "" {
+			sb.WriteString("\n" + repoMapSummary + "\n")
+		}
+	} else if r.db != nil {
+		// Fallback: list files from DB if repo-map not available
 		rows, err := r.db.Query(
 			`SELECT path, length(content) as size FROM project_files WHERE project_id=? ORDER BY path`,
 			cfg.ProjectID,
