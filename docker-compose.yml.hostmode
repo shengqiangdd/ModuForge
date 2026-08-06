@@ -1,0 +1,19 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    network_mode: host
+    volumes:
+      - ./data:/app/data
+      - ./data/android:/root/.android
+    environment:
+      - PORT=:8080
+      - DATABASE_PATH=/app/data/moduforge.db
+      - OPENCODE_API_KEY=${opencode_go_key:-}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3

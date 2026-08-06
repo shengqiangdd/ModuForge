@@ -138,7 +138,7 @@ func (s *ReadFileSkill) Execute(ctx context.Context, input map[string]interface{
 
 	result := sb.String()
 	truncated := false
-	if len(result) > 8000 {
+	if len(result) > 16000 {
 		result = result[:8000] + "\n... [truncated — use smaller line range]"
 		truncated = true
 	}
@@ -255,7 +255,7 @@ func (s *ReadFileSkill) readLargeFileSmart(path string, lines []string, totalLin
 	}
 
 	result := sb.String()
-	if len(result) > 8000 {
+	if len(result) > 16000 {
 		result = result[:8000] + "\n... [summary truncated — use start_line/end_line for specific sections]"
 	}
 

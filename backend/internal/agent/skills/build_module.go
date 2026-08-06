@@ -301,17 +301,15 @@ func (s *BuildModuleSkill) Execute(ctx context.Context, input map[string]interfa
 					continue
 				}
 				fullPath := filepath.Join(projectPath, path)
-				// Only write if file doesn't exist on disk
-				if _, err := os.Stat(fullPath); os.IsNotExist(err) {
-					dir := filepath.Dir(fullPath)
-					if err := os.MkdirAll(dir, 0755); err != nil {
-						continue
-					}
-					if err := os.WriteFile(fullPath, []byte(content), 0644); err != nil {
-						continue
-					}
-					synced++
+				// DB is source of truth - always overwrite disk with DB content
+				dir := filepath.Dir(fullPath)
+				if err := os.MkdirAll(dir, 0755); err != nil {
+					continue
 				}
+				if err := os.WriteFile(fullPath, []byte(content), 0644); err != nil {
+					continue
+				}
+				synced++
 			}
 			if synced > 0 {
 				log.WriteString(fmt.Sprintf("  ✅ Synced %d files from database to disk\n", synced))
