@@ -105,7 +105,9 @@ func llmRetryBackoff(attempt int, retryAfter string) time.Duration {
 // ═══════════════════════════════════════════════════════════════════
 
 // Circuit breaker: consecutive failures before skipping a free model provider
-const circuitBreakerThreshold = 3
+// P2-Optimization: Increased from 3 to 5 to be less aggressive — many failures
+// are transient (429 rate limits, network blips) and recover quickly.
+const circuitBreakerThreshold = 5
 
 // Circuit breaker: base cooldown period after breaker opens
 const circuitBreakerBaseCooldown = 60 * time.Second

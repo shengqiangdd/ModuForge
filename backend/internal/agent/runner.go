@@ -172,6 +172,9 @@ type AgentRunner struct {
 
 	// Repo-map for global code structure indexing
 	repoMap *RepoMap
+
+	// P2: Progress tracking per session
+	progressTrackers sync.Map // sessionID -> *ProgressTracker
 }
 
 func NewAgentRunner(registry *SkillRegistry, apiKey, endpoint, model string, db *sql.DB) *AgentRunner {
@@ -1607,6 +1610,19 @@ func (r *AgentRunner) getSessionCache(sessionID string) *toolResultCache {
 	return cache
 }
 
+// getOrCreateProgressTracker returns (or creates) a session-scoped progress tracker.
+func (r *AgentRunner) getOrCreateProgressTracker(sessionID string) *ProgressTracker {
+	if sessionID == "" {
+		return NewProgressTracker()
+	}
+	if cached, ok := r.progressTrackers.Load(sessionID); ok {
+		return cached.(*ProgressTracker)
+	}
+	tracker := NewProgressTracker()
+	r.progressTrackers.Store(sessionID, tracker)
+	return tracker
+}
+
 // Optimization 30: Write-through cache with TTL (5 minutes)
 // Prevents stale data when files are modified externally or by other processes.
 // P0-1: Now tracks file mtime for external modification detection.
@@ -1917,11 +1933,15 @@ You are running WITHOUT a project context. This means:
 	// P0-1: Smart loop termination — detect stagnation (O(1) hash-based counters)
 	stagnationDetector := newStagnationDetector()
 
-	// Post-execution analysis — stagnation detection, self-reflection, loop detection
+	// P2: Progress tracking for this session
+	progressTracker := r.getOrCreateProgressTracker(sessionID)
+
+	// Post-execution analysis — stagnation detection, self-reflection, loop detection, progress tracking
 	trp := &toolResultProcessor{
 		r: r, ctx: ctx, w: w, cfg: cfg, sessionID: sessionID,
 		reqProviderID: reqProviderID, reqModel: reqModel,
 		stagnationDetector: stagnationDetector, m: m,
+		progressTracker: progressTracker,
 	}
 
 	// P0-2: Tool retry fallback

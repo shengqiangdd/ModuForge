@@ -218,7 +218,7 @@ func (r *AgentRunner) prepareToolTasks(llmResp *LLMResponse, conversation []map[
 }
 
 // toolResultProcessor runs post-execution analysis on executed tool results:
-// stagnation detection, self-reflection, and loop detection.
+// stagnation detection, self-reflection, loop detection, and progress tracking.
 type toolResultProcessor struct {
 	r                  *AgentRunner
 	ctx                context.Context
@@ -229,13 +229,23 @@ type toolResultProcessor struct {
 	reqModel           string
 	stagnationDetector *StagnationDetector
 	m                  *runMetrics
+	progressTracker    *ProgressTracker
 }
 
 // process analyzes executed tool results and returns the updated conversation,
 // whether an answer was force-sent, and any termination error.
 func (p *toolResultProcessor) process(iter int, conversation []map[string]interface{}, results []toolResult, anyWriteCalled, answerSent bool) ([]map[string]interface{}, bool, error) {
 	// P0-1: Track stagnation for each tool call
+	// P2: Record progress for each tool call
 	for _, res := range results {
+		// Record progress
+		if p.progressTracker != nil {
+			var toolInput map[string]interface{}
+			if err := json.Unmarshal([]byte(res.tc.Function.Arguments), &toolInput); err == nil {
+				p.progressTracker.RecordToolCall(res.tc.Function.Name, toolInput, res.result, !strings.HasPrefix(res.result, "Error:"))
+			}
+		}
+
 		// Check stagnation
 		var toolInput map[string]interface{}
 		if err := json.Unmarshal([]byte(res.tc.Function.Arguments), &toolInput); err != nil {
