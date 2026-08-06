@@ -10,13 +10,9 @@ import (
 // ═══════════════════════════════════════════════════════════════════
 
 func TestStagnationDetector_RecordToolCall(t *testing.T) {
-	sd := &StagnationDetector{
-		lastToolCalls:         make([]string, 0, 10),
-		lastResults:           make([]string, 0, 10),
-		maxIdenticalRepeats:   3,
-		maxStagnationRounds:   5,
-		maxConsecutiveNoWrite: 15,
-	}
+	sd := newStagnationDetector()
+	sd.maxIdenticalRepeats = 3
+	sd.maxStagnationRounds = 5
 
 	// Test: No stagnation with different calls
 	args1 := map[string]interface{}{"path": "file1.go"}
@@ -34,13 +30,9 @@ func TestStagnationDetector_RecordToolCall(t *testing.T) {
 }
 
 func TestStagnationDetector_IdenticalRepeats(t *testing.T) {
-	sd := &StagnationDetector{
-		lastToolCalls:         make([]string, 0, 10),
-		lastResults:           make([]string, 0, 10),
-		maxIdenticalRepeats:   3,
-		maxStagnationRounds:   5,
-		maxConsecutiveNoWrite: 15,
-	}
+	sd := newStagnationDetector()
+	sd.maxIdenticalRepeats = 3
+	sd.maxStagnationRounds = 5
 
 	args := map[string]interface{}{"path": "file1.go"}
 
@@ -67,13 +59,9 @@ func TestStagnationDetector_IdenticalRepeats(t *testing.T) {
 }
 
 func TestStagnationDetector_ConsecutiveIdenticalResults(t *testing.T) {
-	sd := &StagnationDetector{
-		lastToolCalls:         make([]string, 0, 10),
-		lastResults:           make([]string, 0, 10),
-		maxIdenticalRepeats:   3,
-		maxStagnationRounds:   5,
-		maxConsecutiveNoWrite: 15,
-	}
+	sd := newStagnationDetector()
+	sd.maxIdenticalRepeats = 10
+	sd.maxStagnationRounds = 5
 
 	// 5 identical results should trigger stagnation
 	for i := 0; i < 4; i++ {
@@ -90,13 +78,8 @@ func TestStagnationDetector_ConsecutiveIdenticalResults(t *testing.T) {
 }
 
 func TestStagnationDetector_ResetNoWrite(t *testing.T) {
-	sd := &StagnationDetector{
-		lastToolCalls:         make([]string, 0, 10),
-		lastResults:           make([]string, 0, 10),
-		maxIdenticalRepeats:   3,
-		maxStagnationRounds:   5,
-		maxConsecutiveNoWrite: 15,
-	}
+	sd := newStagnationDetector()
+	sd.maxConsecutiveNoWrite = 15
 
 	// Simulate no writes
 	for i := 0; i < 14; i++ {

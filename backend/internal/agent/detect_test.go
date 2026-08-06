@@ -7,7 +7,8 @@ import (
 func TestDetectLoop_NoLoop(t *testing.T) {
 	history := map[string]int{"read_file": 2, "write_file": 1}
 	unique := map[string]bool{"read_file:f1": true, "read_file:f2": true, "write_file:f1": true}
-	result := detectLoop(history, unique, 3)
+	uniquePerSkill := map[string]int{"read_file": 2, "write_file": 1}
+	result := detectLoop(history, unique, 3, uniquePerSkill)
 	if result != "" {
 		t.Errorf("detectLoop should return empty for normal usage, got: %s", result)
 	}
@@ -17,7 +18,8 @@ func TestDetectLoop_ReadFileLoop(t *testing.T) {
 	// Same file read 8 times
 	history := map[string]int{"read_file": 8}
 	unique := map[string]bool{"read_file:same_file.rs": true}
-	result := detectLoop(history, unique, 8)
+	uniquePerSkill := map[string]int{"read_file": 1}
+	result := detectLoop(history, unique, 8, uniquePerSkill)
 	if result == "" {
 		t.Error("detectLoop should detect read_file loop on same target")
 	}
@@ -30,7 +32,8 @@ func TestDetectLoop_TotalBudget(t *testing.T) {
 		"write_file:f1": true, "write_file:f2": true, "write_file:f3": true,
 		"bash:t1": true, "bash:t2": true, "bash:t3": true,
 	}
-	result := detectLoop(history, unique, 15)
+	uniquePerSkill := map[string]int{"read_file": 3, "write_file": 3, "bash": 3}
+	result := detectLoop(history, unique, 15, uniquePerSkill)
 	if result == "" {
 		t.Error("detectLoop should trigger on total call budget")
 	}
@@ -44,7 +47,8 @@ func TestDetectLoop_DifferentTargets(t *testing.T) {
 		"read_file:f4": true, "read_file:f5": true, "read_file:f6": true,
 		"read_file:f7": true, "read_file:f8": true,
 	}
-	result := detectLoop(history, unique, 8)
+	uniquePerSkill := map[string]int{"read_file": 8}
+	result := detectLoop(history, unique, 8, uniquePerSkill)
 	if result != "" {
 		t.Errorf("detectLoop should NOT trigger for reads on different targets, got: %s", result)
 	}
@@ -130,7 +134,8 @@ func TestDetectLoop_GeneralSkillLoop(t *testing.T) {
 		"build_module:f1": true, "build_module:f2": true, "build_module:f3": true,
 		"build_module:f4": true, "build_module:f5": true, "build_module:f6": true,
 	}
-	result := detectLoop(history, unique, 6)
+	uniquePerSkill := map[string]int{"build_module": 6}
+	result := detectLoop(history, unique, 6, uniquePerSkill)
 	if result == "" {
 		t.Error("detectLoop should trigger general skill loop at 6 calls")
 	}

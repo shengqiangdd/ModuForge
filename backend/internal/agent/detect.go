@@ -4,87 +4,83 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"regexp"
 	"strings"
 
 	"github.com/moduforge/backend/internal/service"
 )
 
+// ═══════════════════════════════════════════════════════════════════
+// O(1) Pattern Matching — Pre-compiled regex for claimsFileModification
+//
+// Instead of O(n*k) string contains checks (k=40 patterns),
+// we use a single pre-compiled regex that matches any pattern in O(n).
+// The regex is compiled once at init time and reused for all calls.
+// ═══════════════════════════════════════════════════════════════════
+
+// Pre-compiled regex for strong modification claims (Chinese + English).
+// Matches any of the 40+ patterns in a single pass through the text.
+var strongClaimsRegex = regexp.MustCompile(
+	`(?:已修改|已写入|已保存|已更新|已创建|已完成` +
+		`|have modified|have written|have saved|have created` +
+		`|i modified|i wrote|i saved|i created|i updated` +
+		`|修改了文件|写入了文件|保存了文件|更新了文件` +
+		`|我修改了|我写入了|我保存了|我创建了|我更新了` +
+		`|修改完成|写入完成|保存完成|更新完成|创建完成` +
+		`|successfully modified|successfully wrote|successfully saved` +
+		`|files modified|files written|file updated|file created` +
+		`|will modify|will write|will create|will update` +
+		`|需要修改|需要写入|需要创建|需要更新` +
+		`|将要修改|将要写入|将要创建|将要更新` +
+		`|计划修改|计划写入|计划创建|计划更新)`,
+)
+
+// Pre-compiled regex for file extension/path mentions.
+var fileMentionRegex = regexp.MustCompile(
+	`\.(?:java|sh|prop|xml|json|kt|cpp|go|h|rs|html|css|js|ts|sql|c|py)` +
+		`|makefile|src/|lib/|main\.rs|lib\.rs`,
+)
+
 // claimsFileModification checks if the text claims to have modified files.
-// P0-2: Enhanced to detect more patterns and include edit_file/write_file_batch.
+// O(n) via pre-compiled regex instead of O(n*k) string contains checks.
 func claimsFileModification(text string) bool {
 	lower := strings.ToLower(text)
 
-	// Strong signal: explicitly claims to have written/saved/modified files
-	strongClaims := []string{
-		"已修改", "已写入", "已保存", "已更新", "已创建", "已完成",
-		"have modified", "have written", "have saved", "have created",
-		"i modified", "i wrote", "i saved", "i created", "i updated",
-		"修改了文件", "写入了文件", "保存了文件", "更新了文件",
-		"我修改了", "我写入了", "我保存了", "我创建了", "我更新了",
-		"修改完成", "写入完成", "保存完成", "更新完成", "创建完成",
-		"successfully modified", "successfully wrote", "successfully saved",
-		"files modified", "files written", "file updated", "file created",
-		// P0-2: Add patterns for plans/intentions that should be executed
-		"will modify", "will write", "will create", "will update",
-		"需要修改", "需要写入", "需要创建", "需要更新",
-		"将要修改", "将要写入", "将要创建", "将要更新",
-		"计划修改", "计划写入", "计划创建", "计划更新",
-	}
-	hasStrongClaim := false
-	for _, s := range strongClaims {
-		if strings.Contains(lower, s) {
-			hasStrongClaim = true
-			break
-		}
+	// O(n): Single regex scan for strong claims
+	hasStrongClaim := strongClaimsRegex.MatchString(lower)
+
+	// O(n): Single regex scan for file mentions (only if strong claim found)
+	if hasStrongClaim {
+		return fileMentionRegex.MatchString(lower)
 	}
 
-	// Weak signal: mentions files that need changes (only triggers with strong claim)
-	hasFile := strings.Contains(lower, ".java") || strings.Contains(lower, ".sh") ||
-		strings.Contains(lower, ".prop") || strings.Contains(lower, ".xml") ||
-		strings.Contains(lower, ".json") || strings.Contains(lower, ".kt") ||
-		strings.Contains(lower, ".cpp") || strings.Contains(lower, ".go") ||
-		strings.Contains(lower, ".h") || strings.Contains(lower, ".rs") ||
-		strings.Contains(lower, ".html") || strings.Contains(lower, ".css") ||
-		strings.Contains(lower, ".js") || strings.Contains(lower, ".ts") ||
-		strings.Contains(lower, ".sql") || strings.Contains(lower, ".c") ||
-		strings.Contains(lower, "makefile") || strings.Contains(lower, ".py") ||
-		strings.Contains(lower, "src/") || strings.Contains(lower, "lib/") ||
-		strings.Contains(lower, "main.rs") || strings.Contains(lower, "lib.rs")
-
-	return hasStrongClaim && hasFile
+	return false
 }
 
 // detectLoop detects repetitive tool call patterns and returns an intervention message.
-// P0-1: Enhanced stagnation detection with stricter thresholds for read_file loops.
-func detectLoop(toolCallHistory map[string]int, uniqueOps map[string]bool, totalCalls int) string {
+// O(1) via pre-computed counters in runMetrics instead of iterating through maps.
+func detectLoop(toolCallHistory map[string]int, uniqueOps map[string]bool, totalCalls int,
+	uniqueTargetsPerSkill map[string]int) string {
 	// Total call budget — hard limit (raised to 15 for large projects)
-	// Only trigger if unique targets are fewer than half of total calls (indicating repetition)
+	// O(1): Use pre-computed uniqueOps count
 	if totalCalls >= 15 && len(uniqueOps) < totalCalls/2 {
 		return fmt.Sprintf("Made %d tool calls total with only %d unique targets. You must stop using tools and provide your final answer now. Summarize what you accomplished.", totalCalls, len(uniqueOps))
 	}
 
-	// Per-skill threshold check
+	// Per-skill threshold check — O(1) per skill via pre-computed counters
 	for skill, count := range toolCallHistory {
 		if count < 2 {
-			continue // No need to check skills called fewer than 2 times
+			continue
 		}
 
-		// Count unique targets for this skill
-		uniqueCount := 0
-		for op := range uniqueOps {
-			if strings.HasPrefix(op, skill+":") {
-				uniqueCount++
-			}
-		}
+		// O(1): Use pre-computed unique target count instead of iterating uniqueOps
+		uniqueCount := uniqueTargetsPerSkill[skill]
 
 		// read_file: special case — allow batch reads of different files
-		// P0-1: Much stricter thresholds to prevent dead loops
 		if skill == "read_file" {
-			// Same file read 2+ times = loop
 			if uniqueCount <= 1 && count >= 2 {
 				return "Reading the same file repeatedly. This is a loop. STOP reading. Use write_file/edit_file to make changes, or provide your final answer."
 			}
-			// Many reads but few unique targets = loop
 			if count >= 3 && uniqueCount <= 2 {
 				return fmt.Sprintf("You have called read_file %d times on only %d unique targets. This is a repetitive loop. STOP reading files. Provide your final answer now, or use write_file/edit_file to create/modify files.", count, uniqueCount)
 			}

@@ -19,6 +19,7 @@ type toolTask struct {
 }
 
 // runMetrics tracks tool-call accounting that accumulates across Run iterations.
+// Includes O(1) pre-computed counters for loop detection.
 type runMetrics struct {
 	toolCallHistory          map[string]int
 	uniqueOps                map[string]bool
@@ -26,6 +27,9 @@ type runMetrics struct {
 	toolConsecutiveErrors    map[string]int    // skill name -> consecutive error count
 	toolLastResults          map[string]string // skill name -> last result (for pattern detection)
 	toolConsecutiveIdentical map[string]int    // skill name -> consecutive identical calls
+
+	// O(1) pre-computed counters for detectLoop (avoids iterating uniqueOps per skill)
+	uniqueTargetsPerSkill    map[string]int    // skill name -> count of unique targets (e.g., "read_file" -> 5)
 }
 
 // preparedToolCalls is the result of planning a batch of tool calls.
@@ -400,8 +404,10 @@ func (p *toolResultProcessor) process(iter int, conversation []map[string]interf
 	}
 
 	// Smart loop detection (skip if read-only reminder was just injected)
+	// O(1): Use pre-computed uniqueTargetsPerSkill for loop detection
 	if !skipLoopDetection {
-		if reason := detectLoop(p.m.toolCallHistory, p.m.uniqueOps, p.m.totalToolCalls); reason != "" {
+		if reason := detectLoop(p.m.toolCallHistory, p.m.uniqueOps, p.m.totalToolCalls,
+			p.m.uniqueTargetsPerSkill); reason != "" {
 			debugLog("loop detected: %s", reason)
 			return conversation, true, p.r.forceAnswer(p.ctx, conversation, p.w, p.sessionID, p.cfg, p.reqProviderID, p.reqModel, reason)
 		}

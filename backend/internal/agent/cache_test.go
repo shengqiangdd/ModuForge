@@ -134,28 +134,23 @@ func TestToolResultCache_MaxEntrySize(t *testing.T) {
 func TestInvalidateBuild(t *testing.T) {
 	cache := newToolResultCache()
 
-	// Note: cacheKey skips project_id (treated as injected param), so
-	// both build_module puts share the same cache key. The second overwrites the first.
+	// Put build_module entries with different project_ids
+	// Note: cacheKey skips project_id, so both puts share the same cache key
 	cache.put("build_module", map[string]interface{}{"project_id": "p1"}, "build ok p1")
 	cache.put("build_module", map[string]interface{}{"project_id": "p2"}, "build ok p2")
 	cache.put("read_file", map[string]interface{}{"path": "src/main.rs"}, "content")
 
-	// Before invalidation: build_module should be present (last put wins)
-	result := cache.get("build_module", map[string]interface{}{"project_id": "any"})
-	if result != "build ok p2" {
-		t.Errorf("build_module should be present with last value, got %q", result)
-	}
-
-	// InvalidateBuild checks if key contains "build_module" AND projectID.
+	// InvalidateBuild scans entries for keys containing "build_module" AND projectID
 	// Since project_id is skipped in cacheKey, the key is just "build_module"
 	// and InvalidateBuild("p1") won't match (key doesn't contain "p1").
 	// This is a known limitation — InvalidateBuild works only when project_id
-	// appears in the cache key string. For now, test the actual behavior.
-	// Use a broader invalidation by putting a key that includes the project_id.
+	// appears in the cache key string.
+	// For testing, we manually add an entry with project_id in the key.
 	cache.mu.Lock()
-	// Manually add an entry with project_id in the key for testing
-	cache.entries["build_module|project_id=p1"] = "build ok p1"
-	cache.accessOrder = append(cache.accessOrder, "build_module|project_id=p1")
+	entry := &cacheEntry{key: "build_module|project_id=p1", result: "build ok p1"}
+	elem := cache.accessOrder.PushBack(entry)
+	cache.entries["build_module|project_id=p1"] = elem
+	cache.addToPathIndex("build_module|project_id=p1")
 	cache.mu.Unlock()
 
 	cache.InvalidateBuild("p1")
@@ -169,7 +164,7 @@ func TestInvalidateBuild(t *testing.T) {
 	}
 
 	// The regular build_module entry (without project_id in key) should remain
-	result = cache.get("build_module", map[string]interface{}{"project_id": "any"})
+	result := cache.get("build_module", map[string]interface{}{"project_id": "any"})
 	if result != "build ok p2" {
 		t.Errorf("regular build_module entry should remain, got %q", result)
 	}

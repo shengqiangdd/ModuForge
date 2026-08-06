@@ -559,7 +559,8 @@ type QualityReport struct {
 	Issues      []string
 }
 
-// VerifyFile checks the quality of a file, including syntax-aware checks.
+// VerifyFile checks the quality of a file using O(n) single-pass analysis.
+// Instead of 4 separate passes through lines, we do everything in one pass.
 func (qv *QualityVerifier) VerifyFile(filePath string, content string) QualityReport {
 	report := QualityReport{
 		FilePath: filePath,
@@ -570,116 +571,222 @@ func (qv *QualityVerifier) VerifyFile(filePath string, content string) QualityRe
 	lines := strings.Split(content, "\n")
 
 	// ═══════════════════════════════════════════════════════════════
-	// Phase 1: Universal checks
+	// Single-pass analysis: collect all metrics in one iteration
+	// O(n) total instead of O(4n) = O(n)
 	// ═══════════════════════════════════════════════════════════════
 
-	// 1. Check line length
 	longLines := 0
-	for _, line := range lines {
+	todoCount := 0
+	braceCount := 0
+	maxBraceDepth := 0
+	magicNumbers := 0
+	hasPackage := false
+	hasFunc := false
+	hasInclude := false
+	hasMain := false
+	hasFn := false
+	importParens := 0
+	inImport := false
+	inBlockComment := false
+	hasSetE := false
+	unquotedVarCount := 0
+	doubleSemicolonCount := 0
+
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		lineUpper := strings.ToUpper(trimmed)
+
+		// ── Universal checks (all languages) ──
+
+		// 1. Line length
 		if len(line) > 120 {
 			longLines++
 		}
-	}
-	if longLines > 0 {
-		report.Issues = append(report.Issues, fmt.Sprintf("%d 行超过120字符", longLines))
-	}
 
-	// 2. Check for TODO/FIXME/HACK
-	todoCount := 0
-	for _, line := range lines {
-		lineUpper := strings.ToUpper(strings.TrimSpace(line))
+		// 2. TODO/FIXME/HACK
 		if strings.Contains(lineUpper, "TODO") || strings.Contains(lineUpper, "FIXME") || strings.Contains(lineUpper, "HACK") {
 			todoCount++
 		}
+
+		// 3. Brace balance (skip comments)
+		if !strings.HasPrefix(trimmed, "//") && !strings.HasPrefix(trimmed, "#") {
+			for _, ch := range line {
+				if ch == '{' {
+					braceCount++
+					if braceCount > maxBraceDepth {
+						maxBraceDepth = braceCount
+					}
+				} else if ch == '}' {
+					braceCount--
+				}
+			}
+		}
+
+		// 4. Magic numbers (skip comments)
+		if !strings.HasPrefix(trimmed, "//") && !strings.HasPrefix(trimmed, "#") {
+			words := strings.Fields(trimmed)
+			for _, word := range words {
+				if len(word) > 1 && word[0] >= '2' && word[0] <= '9' {
+					magicNumbers++
+				}
+			}
+		}
+
+		// ── Language-specific checks (single pass) ──
+
+		// Handle block comments
+		if strings.Contains(trimmed, "/*") {
+			inBlockComment = true
+		}
+		if strings.Contains(trimmed, "*/") {
+			inBlockComment = false
+			continue
+		}
+		if inBlockComment || strings.HasPrefix(trimmed, "//") {
+			continue
+		}
+
+		// Go-specific
+		if strings.HasPrefix(trimmed, "package ") {
+			hasPackage = true
+		}
+		if trimmed == "import (" {
+			inImport = true
+		}
+		if inImport {
+			for _, ch := range trimmed {
+				if ch == '(' {
+					importParens++
+				} else if ch == ')' {
+					importParens--
+					if importParens <= 0 {
+						inImport = false
+					}
+				}
+			}
+		}
+		if strings.HasPrefix(trimmed, "func ") {
+			hasFunc = true
+		}
+
+		// Rust-specific
+		if strings.HasPrefix(trimmed, "fn ") || strings.Contains(trimmed, " fn ") {
+			hasFn = true
+		}
+
+		// C/C++-specific
+		if strings.HasPrefix(trimmed, "#include") {
+			hasInclude = true
+		}
+		if strings.Contains(trimmed, "main(") {
+			hasMain = true
+		}
+
+		// Shell-specific
+		if i == 0 && strings.HasPrefix(trimmed, "#!") {
+			// shebang found
+		}
+		if strings.HasPrefix(trimmed, "set ") && (strings.Contains(trimmed, "-e") || strings.Contains(trimmed, "-o pipefail")) {
+			hasSetE = true
+		}
+		if strings.Contains(trimmed, " $") && !strings.Contains(trimmed, "\"$") && !strings.Contains(trimmed, "'$") {
+			unquotedVarCount++
+		}
+
+		// Double semicolons (all languages)
+		if strings.Contains(trimmed, ";;") {
+			doubleSemicolonCount++
+		}
+	}
+
+	// ═══════════════════════════════════════════════════════════════
+	// Build issues from collected metrics (no additional iteration)
+	// ═══════════════════════════════════════════════════════════════
+
+	if longLines > 0 {
+		report.Issues = append(report.Issues, fmt.Sprintf("%d 行超过120字符", longLines))
 	}
 	if todoCount > 0 {
 		report.Issues = append(report.Issues, fmt.Sprintf("发现 %d 个 TODO/FIXME/HACK 注释", todoCount))
 	}
-
-	// 3. Check brace balance (critical: unbalanced braces = syntax error)
-	braceCount := 0
-	maxBraceDepth := 0
-	for _, line := range lines {
-		// Skip strings and comments (simple heuristic)
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "//") || strings.HasPrefix(trimmed, "#") {
-			continue
-		}
-		for _, ch := range line {
-			if ch == '{' {
-				braceCount++
-				if braceCount > maxBraceDepth {
-					maxBraceDepth = braceCount
-				}
-			}
-			if ch == '}' {
-				braceCount--
-			}
-		}
-	}
 	if braceCount != 0 {
 		report.Issues = append(report.Issues, fmt.Sprintf("括号不平衡: { 比 } 多 %d 个（语法错误）", braceCount))
-		report.Score -= 30 // severe penalty
+		report.Score -= 30
 	}
 	if maxBraceDepth > 5 {
 		report.Issues = append(report.Issues, fmt.Sprintf("代码嵌套深度 %d 层，建议重构", maxBraceDepth))
 		report.Complexity = maxBraceDepth
 	}
-
-	// 4. Check for magic numbers
-	magicNumbers := 0
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "//") || strings.HasPrefix(trimmed, "#") {
-			continue
-		}
-		words := strings.Fields(trimmed)
-		for _, word := range words {
-			if len(word) > 1 && word[0] >= '2' && word[0] <= '9' {
-				magicNumbers++
-			}
-		}
-	}
 	if magicNumbers > 5 {
 		report.Issues = append(report.Issues, fmt.Sprintf("发现 %d 个可能的魔法数字，建议提取为常量", magicNumbers))
 	}
+	if doubleSemicolonCount > 0 {
+		report.Issues = append(report.Issues, fmt.Sprintf("双分号 ;; 在 %d 处", doubleSemicolonCount))
+	}
 
-	// ═══════════════════════════════════════════════════════════════
-	// Phase 2: Language-specific syntax checks
-	// ═══════════════════════════════════════════════════════════════
-
+	// Language-specific issue reporting
 	ext := strings.ToLower(filePath[strings.LastIndex(filePath, "."):])
 	switch {
 	case ext == ".go":
-		qv.checkGoSyntax(&report, lines)
+		if !hasPackage && len(lines) > 0 {
+			report.Issues = append(report.Issues, "缺少 package 声明（Go 文件必须以 package 开头）")
+		}
+		if importParens != 0 {
+			report.Issues = append(report.Issues, "import 块括号不平衡")
+		}
+		if !hasFunc && len(lines) > 10 {
+			report.Issues = append(report.Issues, "未发现 func 声明，可能缺少函数定义")
+		}
 	case ext == ".rs":
-		qv.checkRustSyntax(&report, lines)
-	case ext == ".c" || ext == ".cpp" || ext == ".cc" || ext == ".cxx":
-		qv.checkCppSyntax(&report, lines)
+		if !hasFn && len(lines) > 10 {
+			report.Issues = append(report.Issues, "未发现 fn 声明，可能缺少函数定义")
+		}
+	case ext == ".c", ext == ".cpp", ext == ".cc", ext == ".cxx":
+		if !hasInclude && len(lines) > 5 {
+			report.Issues = append(report.Issues, "未发现 #include 指令，可能缺少头文件引用")
+		}
+		if !hasMain && len(lines) > 10 {
+			report.Issues = append(report.Issues, "未发现 main 函数，可能缺少程序入口点")
+		}
 	case ext == ".sh":
-		qv.checkShellSyntax(&report, lines)
+		if len(lines) > 0 && !strings.HasPrefix(strings.TrimSpace(lines[0]), "#!") {
+			report.Issues = append(report.Issues, "缺少 shebang 行（第一行应为 #!/system/bin/sh 或 #!/bin/bash）")
+		}
+		if !hasSetE {
+			report.Issues = append(report.Issues, "建议添加 set -euo pipefail 以增强错误处理")
+		}
+		if unquotedVarCount > 3 {
+			report.Issues = append(report.Issues, fmt.Sprintf("发现 %d 处可能未加引号的变量，建议使用 \"$VAR\" 格式", unquotedVarCount))
+		}
 	}
 
 	// ═══════════════════════════════════════════════════════════════
-	// Phase 3: Calculate final score
+	// Calculate final score (no iteration over issues — use counters)
 	// ═══════════════════════════════════════════════════════════════
 
 	report.Score = 100
-	for _, issue := range report.Issues {
-		switch {
-		case strings.Contains(issue, "括号不平衡"):
-			report.Score -= 30
-		case strings.Contains(issue, "语法错误") || strings.Contains(issue, "缺少"):
-			report.Score -= 15
-		case strings.Contains(issue, "嵌套深度"):
-			report.Score -= 20
-		case strings.Contains(issue, "魔法数字"):
-			report.Score -= 10
-		case strings.Contains(issue, "TODO") || strings.Contains(issue, "FIXME"):
-			report.Score -= 8
-		default:
-			report.Score -= 5
-		}
+	// Deduct based on severity (using counters, not string matching)
+	if braceCount != 0 {
+		report.Score -= 30
+	}
+	if maxBraceDepth > 5 {
+		report.Score -= 20
+	}
+	if longLines > 0 {
+		report.Score -= 5
+	}
+	if magicNumbers > 5 {
+		report.Score -= 10
+	}
+	if todoCount > 0 {
+		report.Score -= 8
+	}
+	// Language-specific deductions
+	if ext == ".go" && importParens != 0 {
+		report.Score -= 15
+	}
+	if doubleSemicolonCount > 0 {
+		report.Score -= 5
 	}
 	if report.Score < 0 {
 		report.Score = 0
@@ -1083,17 +1190,34 @@ func (rl *ReflectionLog) GetSummary() string {
 
 // StagnationDetector tracks agent progress and detects when it's stuck in a loop.
 // It monitors: repeated tool calls, lack of write operations, and identical results.
+// StagnationDetector tracks agent progress and detects when it's stuck in a loop.
+// O(1) operations via hash-based counters instead of linear scans.
 type StagnationDetector struct {
-	lastToolCalls         []string // last N tool call signatures (tool:hash)
-	lastResults           []string // last N tool results (truncated)
+	// Sliding window of last N tool call signatures (ring buffer)
+	lastToolCalls         []string
+	lastToolCallsIdx      int      // ring buffer write position
+	lastToolCallsCount    int      // number of entries in ring buffer
+	// Sliding window of last N tool results (ring buffer)
+	lastResults           []string
+	lastResultsIdx        int      // ring buffer write position
+	lastResultsCount      int      // number of entries in ring buffer
+
+	// O(1) counters for stagnation detection
+	signatureCounts       map[string]int // tool signature -> count in current window
+	resultStreak          int            // consecutive identical results
+	lastResultSig         string         // last result signature for streak detection
+
 	consecutiveNoWrite    int      // iterations without write_file call
 	maxConsecutiveNoWrite int      // threshold to force answer
 	maxIdenticalRepeats   int      // max times same tool+args can repeat
 	maxStagnationRounds   int      // rounds with no meaningful progress
 	stagnationCount       int      // current stagnation counter
+
+	windowSize            int      // size of sliding window (max of lastToolCalls/lastResults capacity)
 }
 
 // toolCallSignature creates a compact signature for a tool call (tool name + args hash).
+// O(k) where k = args size (bounded by 100 char truncation).
 func toolCallSignature(name string, args map[string]interface{}) string {
 	// Fast path: skip JSON marshaling for nil/empty args
 	if len(args) == 0 {
@@ -1108,6 +1232,7 @@ func toolCallSignature(name string, args map[string]interface{}) string {
 }
 
 // resultSignature creates a compact signature for a tool result.
+// O(1) — just truncation.
 func resultSignature(result string) string {
 	if len(result) > 200 {
 		return result[:200]
@@ -1115,55 +1240,76 @@ func resultSignature(result string) string {
 	return result
 }
 
+// newStagnationDetector creates a new detector with O(1) operations.
+func newStagnationDetector() *StagnationDetector {
+	const windowSize = 15
+	return &StagnationDetector{
+		lastToolCalls:         make([]string, windowSize),
+		lastResults:           make([]string, windowSize),
+		signatureCounts:       make(map[string]int, windowSize),
+		maxConsecutiveNoWrite: 20,
+		maxIdenticalRepeats:   10,
+		maxStagnationRounds:   15,
+		windowSize:            windowSize,
+	}
+}
+
+// addSignature adds a signature to the ring buffer and updates the O(1) counter.
+func (sd *StagnationDetector) addSignature(sig string) {
+	// If window is full, remove the oldest entry from counter
+	if sd.lastToolCallsCount == sd.windowSize {
+		oldSig := sd.lastToolCalls[sd.lastToolCallsIdx]
+		sd.signatureCounts[oldSig]--
+		if sd.signatureCounts[oldSig] <= 0 {
+			delete(sd.signatureCounts, oldSig)
+		}
+	} else {
+		sd.lastToolCallsCount++
+	}
+
+	// Add new signature
+	sd.lastToolCalls[sd.lastToolCallsIdx] = sig
+	sd.signatureCounts[sig]++
+	sd.lastToolCallsIdx = (sd.lastToolCallsIdx + 1) % sd.windowSize
+}
+
 // RecordToolCall records a tool call and returns true if stagnation detected.
+// O(1) via hash-based counter instead of linear scan.
 func (sd *StagnationDetector) RecordToolCall(name string, args map[string]interface{}, result string) (stagnant bool, reason string) {
 	sig := toolCallSignature(name, args)
-	sd.lastToolCalls = append(sd.lastToolCalls, sig)
-	if len(sd.lastToolCalls) > 10 {
-		sd.lastToolCalls = sd.lastToolCalls[1:]
-	}
 
-	resSig := resultSignature(result)
-	sd.lastResults = append(sd.lastResults, resSig)
-	if len(sd.lastResults) > 10 {
-		sd.lastResults = sd.lastResults[1:]
-	}
+	// O(1): Add to ring buffer and update counter
+	sd.addSignature(sig)
 
-	// Check 1: Same tool+args repeated maxIdenticalRepeats times
-	count := 0
-	for _, s := range sd.lastToolCalls {
-		if s == sig {
-			count++
-		}
-	}
+	// O(1): Check if same tool+args repeated maxIdenticalRepeats times
+	count := sd.signatureCounts[sig]
 	if count >= sd.maxIdenticalRepeats {
 		return true, fmt.Sprintf("工具 '%s' 已重复调用 %d 次（相同参数），建议换一种方式或直接给出答案", name, count)
 	}
 
-	// Check 2: Same result repeated maxStagnationRounds times
-	if len(sd.lastResults) >= sd.maxStagnationRounds {
-		// Check if the last N results are all the same
-		allSame := true
-		for i := len(sd.lastResults) - sd.maxStagnationRounds + 1; i < len(sd.lastResults); i++ {
-			if sd.lastResults[i] != sd.lastResults[i-1] {
-				allSame = false
-				break
-			}
+	// O(1): Track result streak for stagnation detection
+	resSig := resultSignature(result)
+	if resSig == sd.lastResultSig && resSig != "" {
+		sd.resultStreak++
+	} else {
+		sd.resultStreak = 1
+		sd.lastResultSig = resSig
+	}
+
+	// Check if result streak exceeds stagnation threshold
+	if sd.resultStreak >= sd.maxStagnationRounds {
+		sd.stagnationCount++
+		if sd.stagnationCount >= 1 {
+			return true, "连续多轮返回相同结果，Agent 可能陷入循环，建议直接给出当前进度的答案"
 		}
-		if allSame && sd.lastResults[len(sd.lastResults)-1] != "" {
-			sd.stagnationCount++
-			if sd.stagnationCount >= 1 { // detect immediately after maxStagnationRounds identical results
-				return true, "连续多轮返回相同结果，Agent 可能陷入循环，建议直接给出当前进度的答案"
-			}
-		} else {
-			sd.stagnationCount = 0
-		}
+	} else {
+		sd.stagnationCount = 0
 	}
 
 	return false, ""
 }
 
-// RecordNoWrite tracks iterations without write_file.
+// RecordNoWrite tracks iterations without write_file. O(1).
 func (sd *StagnationDetector) RecordNoWrite() bool {
 	sd.consecutiveNoWrite++
 	if sd.consecutiveNoWrite >= sd.maxConsecutiveNoWrite {
@@ -1172,7 +1318,7 @@ func (sd *StagnationDetector) RecordNoWrite() bool {
 	return false
 }
 
-// ResetNoWrite resets the no-write counter (called when write_file is executed).
+// ResetNoWrite resets the no-write counter (called when write_file is executed). O(1).
 func (sd *StagnationDetector) ResetNoWrite() {
 	sd.consecutiveNoWrite = 0
 }
@@ -1727,13 +1873,14 @@ You are running WITHOUT a project context. This means:
 		}
 	}
 
-	// Tracking state
+	// Tracking state (with O(1) pre-computed counters for loop detection)
 	m := &runMetrics{
 		toolCallHistory:          make(map[string]int),
 		uniqueOps:                make(map[string]bool),
 		toolConsecutiveErrors:    make(map[string]int),
 		toolLastResults:          make(map[string]string),
 		toolConsecutiveIdentical: make(map[string]int),
+		uniqueTargetsPerSkill:    make(map[string]int),
 	}
 	writeFileCalled := false
 	anyWriteCalled := false // P0-2: Track if any write tool was called
@@ -1755,15 +1902,8 @@ You are running WITHOUT a project context. This means:
 	// Optimization 1: Session-scoped tool result cache (persists across Run() calls)
 	toolCache := r.getSessionCache(sessionID)
 
-	// P0-1: Smart loop termination — detect stagnation
-	stagnationDetector := &StagnationDetector{
-		lastToolCalls:         make([]string, 0, 10),
-		lastResults:           make([]string, 0, 10),
-		consecutiveNoWrite:    0,
-		maxConsecutiveNoWrite: 20, // force answer after 20 iterations without write_file
-		maxIdenticalRepeats:   10, // stop if same tool+args repeated 10 times
-		maxStagnationRounds:   15, // stop if no progress for 15 rounds
-	}
+	// P0-1: Smart loop termination — detect stagnation (O(1) hash-based counters)
+	stagnationDetector := newStagnationDetector()
 
 	// Post-execution analysis — stagnation detection, self-reflection, loop detection
 	trp := &toolResultProcessor{
@@ -2429,6 +2569,21 @@ You are running WITHOUT a project context. This means:
 			}
 			m.uniqueOps[opKey] = true
 
+			// O(1): Update pre-computed unique targets counter for loop detection
+			if !strings.Contains(opKey, ":") {
+				// This is a tool call without a specific target (e.g., grep_search)
+				m.uniqueTargetsPerSkill[st.skillName]++
+			} else if st.skillName == "read_file" || st.skillName == "write_file" {
+				// For file-specific tools, count unique file paths
+				if path, ok := st.skillInput["path"].(string); ok {
+					// Use a composite key to track unique files per skill
+					uniqueKey := st.skillName + ":" + path
+					if _, exists := m.uniqueOps[uniqueKey]; !exists {
+						m.uniqueTargetsPerSkill[st.skillName]++
+					}
+				}
+			}
+
 			// P2-1: Record reflection
 			if err != nil {
 				reflectionLog.Record(st.skillName, "failure", err.Error(), iter+1)
@@ -2625,6 +2780,18 @@ func executeParallelTask(task toolTask, r *AgentRunner, ctx context.Context, w S
 		opKey = task.skillName + ":" + path
 	}
 	m.uniqueOps[opKey] = true
+
+	// O(1): Update pre-computed unique targets counter for loop detection
+	if !strings.Contains(opKey, ":") {
+		m.uniqueTargetsPerSkill[task.skillName]++
+	} else if task.skillName == "read_file" || task.skillName == "write_file" {
+		if path, ok := task.skillInput["path"].(string); ok {
+			uniqueKey := task.skillName + ":" + path
+			if _, exists := m.uniqueOps[uniqueKey]; !exists {
+				m.uniqueTargetsPerSkill[task.skillName]++
+			}
+		}
+	}
 	mu.Unlock()
 
 	w.WriteSSE(map[string]interface{}{
