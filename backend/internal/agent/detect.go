@@ -76,7 +76,7 @@ func detectLoop(toolCallHistory map[string]int, uniqueOps map[string]bool, total
 		// O(1): Use pre-computed unique target count instead of iterating uniqueOps
 		uniqueCount := uniqueTargetsPerSkill[skill]
 
-		// read_file: special case — allow batch reads of different files
+		// read_file: special case — allow batch reads of different files, but enforce write after reading
 		if skill == "read_file" {
 			if uniqueCount <= 1 && count >= 2 {
 				return "Reading the same file repeatedly. This is a loop. STOP reading. Use write_file/edit_file to make changes, or provide your final answer."
@@ -87,6 +87,10 @@ func detectLoop(toolCallHistory map[string]int, uniqueOps map[string]bool, total
 			// Excessive reads with low diversity (unique < 50% of total)
 			if count >= 6 && uniqueCount < count/2 {
 				return fmt.Sprintf("You have called read_file %d times on only %d unique targets. This is excessive. STOP reading files and start writing code immediately.", count, uniqueCount)
+			}
+			// Absolute cap: no matter how many unique files, 15+ reads without any write is a loop
+			if count >= 15 {
+				return fmt.Sprintf("You have called read_file %d times. Even with %d unique files, this is excessive reading. STOP reading. You MUST now use edit_file or write_file to make changes, then call build_module.", count, uniqueCount)
 			}
 		} else {
 			// Other skills: 3+ calls = likely loop (reduced from 4)

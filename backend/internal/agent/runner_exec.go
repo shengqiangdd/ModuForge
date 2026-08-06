@@ -374,22 +374,34 @@ func (p *toolResultProcessor) process(iter int, conversation []map[string]interf
 	readOnlyCount := p.m.toolCallHistory["read_file"] + p.m.toolCallHistory["grep_search"] + p.m.toolCallHistory["glob_search"] + p.m.toolCallHistory["list_dir"]
 	writeCount := p.m.toolCallHistory["write_file"] + p.m.toolCallHistory["edit_file"] + p.m.toolCallHistory["write_file_batch"]
 	skipLoopDetection := false
+
+	// Phase 1 (iter >= 2, readOnlyCount >= 6): Inject warning, give one chance
+	// Phase 2 (iter >= 3, readOnlyCount >= 10): Force answer immediately
+	if readOnlyCount >= 10 && writeCount == 0 && iter >= 3 {
+		// Second warning: Agent ignored the first warning and still only reads. Force answer now.
+		log.Printf("[Agent] read-only loop forced termination: %d reads, %d writes, %d iterations", readOnlyCount, writeCount, iter)
+		return conversation, true, p.r.forceAnswer(p.ctx, conversation, p.w, p.sessionID, p.cfg, p.reqProviderID, p.reqModel,
+			fmt.Sprintf("CRITICAL: You have called read tools %d times across %d iterations without a single write/edit. "+
+				"You MUST stop reading and start writing code NOW. Use edit_file or write_file to make changes, "+
+				"then call build_module to verify. Do NOT read any more files.", readOnlyCount, iter))
+	}
 	if readOnlyCount >= 6 && writeCount == 0 && iter >= 2 {
 		diagnostic := fmt.Sprintf(
 			"⚠️ [Read-Only Loop] You have called read tools %d times without any write/edit operations. "+
 				"You have already read enough code. NOW you MUST: "+
 				"(1) Use edit_file for targeted fixes, or write_file to rewrite files completely. "+
 				"(2) Then call build_module to verify. "+
-				"DO NOT read any more files. Start writing code immediately.",
+				"DO NOT read any more files. Start writing code immediately. "+
+				"If you do not write/edit in the next iteration, I will force you to provide a final answer.",
 			readOnlyCount)
 		log.Printf("[Agent] read-only loop detected: %d reads, %d writes", readOnlyCount, writeCount)
 		conversation = appendRoleMessage(conversation, "system", diagnostic)
 		p.w.WriteSSE(map[string]interface{}{
 			"type":    "step",
 			"step":    "think",
-			"content": fmt.Sprintf("🔄 检测到只读循环（%d 次读取，0 次写入），已注入编辑提醒", readOnlyCount),
+			"content": fmt.Sprintf("🔄 检测到只读循环（%d 次读取，0 次写入），已注入编辑提醒，下一轮仍无写入将强制回答", readOnlyCount),
 		})
-		skipLoopDetection = true // Give Agent a chance to respond before forcing answer
+		skipLoopDetection = true // Give Agent one last chance before forcing answer
 	}
 
 	// Global error cap: if total consecutive errors across all skills >= 5, force answer
