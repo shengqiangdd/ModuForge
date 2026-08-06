@@ -1254,9 +1254,9 @@ func newStagnationDetector() *StagnationDetector {
 		lastToolCalls:         make([]string, windowSize),
 		lastResults:           make([]string, windowSize),
 		signatureCounts:       make(map[string]int, windowSize),
-		maxConsecutiveNoWrite: 5, // Reduced from 20: each iteration can have 10+ reads, so 5 iterations is enough
-		maxIdenticalRepeats:   5, // Reduced from 10: same tool call 5 times is already a loop
-		maxStagnationRounds:   10, // Reduced from 15
+		maxConsecutiveNoWrite: 30,
+		maxIdenticalRepeats:   15,
+		maxStagnationRounds:   25,
 		windowSize:            windowSize,
 	}
 }

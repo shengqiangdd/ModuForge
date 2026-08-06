@@ -81,4 +81,57 @@ func init() {
 	registry.RegisterFactory("session_summary", func(d *registry.Deps) registry.Skill {
 		return &SessionSummarySkill{db: d.DB}
 	})
+
+	// ============================================
+	// Code Quality & Development Workflow Skills
+	// ============================================
+
+	// Code Review (automated quality/security scan)
+	registry.RegisterFactory("code_review", func(d *registry.Deps) registry.Skill {
+		return NewCodeReviewSkill()
+	})
+
+	// Test Generator (unit test generation)
+	registry.RegisterFactory("test_generator", func(d *registry.Deps) registry.Skill {
+		return NewTestGeneratorSkill()
+	})
+
+	// Doc Generator (API documentation)
+	registry.RegisterFactory("doc_generator", func(d *registry.Deps) registry.Skill {
+		return NewDocGeneratorSkill()
+	})
+
+	// Git Operations (version control)
+	registry.RegisterFactory("git_ops", func(d *registry.Deps) registry.Skill {
+		return NewGitOpsSkill(d.StoragePath + "/projects")
+	})
+
+	// Dependency Graph (structured dependency analysis)
+	registry.RegisterFactory("dependency_graph", func(d *registry.Deps) registry.Skill {
+		return NewDependencyGraphSkill()
+	})
+
+	// Refactor (cross-file refactoring)
+	registry.RegisterFactory("refactor", func(d *registry.Deps) registry.Skill {
+		return NewRefactorSkill(d.StoragePath + "/projects")
+	})
+
+	// ============================================
+	// Security & Quality Analysis Skills
+	// ============================================
+
+	// Security Scan (static security analysis)
+	registry.RegisterFactory("security_scan", func(d *registry.Deps) registry.Skill {
+		return NewSecurityScanSkill()
+	})
+
+	// Code Quality (metrics and analysis)
+	registry.RegisterFactory("code_quality", func(d *registry.Deps) registry.Skill {
+		return NewCodeQualitySkill()
+	})
+
+	// Profiling (performance guidance)
+	registry.RegisterFactory("profiling", func(d *registry.Deps) registry.Skill {
+		return NewProfilingSkill()
+	})
 }

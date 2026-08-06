@@ -486,6 +486,9 @@ func RegisterRoutes(api fiber.Router, db *database.DB, cfg *config.Config) {
 	r("GET", "/agent/audit", agentH.GetAuditHistory)
 	r("GET", "/agent/denials", agentH.GetPermissionDenials)
 	r("GET", "/agent/session/:sessionId", agentH.GetSessionState)
+	// NEW: Agent session management
+	r("GET", "/agent/sessions", agentH.ListSessions)
+	r("GET", "/agent/sessions/:id", agentH.GetSession)
 
 	// Collaboration
 	collabSvc := service.NewCollaborationService(db.Conn)
