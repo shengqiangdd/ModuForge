@@ -1,15 +1,1309 @@
-openapi: "3.0.3"
+openapi: 3.0.3
 info:
   title: ModuForge API
-  description: Backend API for ModuForge — Magisk/KernelSU/APatch module development platform
+  description: |
+    ModuForge - Android Kernel Module (KernelSU/APatch) Code Generation Platform.
+    Go backend + WebUI with AI Agent, ADB integration, build system, and module marketplace.
   version: "2.0.0"
   contact:
-    name: ModuForge Team
-    url: https://moduforge.app
-
+    name: ModuForge
 servers:
   - url: /api/v1
     description: API v1
+
+security:
+  - BearerAuth: []
+
+paths:
+  # ─── Auth (Public) ───
+  /auth/register:
+    post:
+      tags: [Auth]
+      summary: Register new user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password, email]
+              properties:
+                username: { type: string }
+                password: { type: string }
+                email: { type: string, format: email }
+      responses:
+        "201": { description: Registered }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username: { type: string }
+                password: { type: string }
+      responses:
+        "200":
+          description: Login success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token: { type: string }
+                  user: { $ref: "#/components/schemas/User" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Refresh JWT token
+      responses:
+        "200": { description: Token refreshed }
+
+  /auth/verify-email:
+    post:
+      tags: [Auth]
+      summary: Verify email address
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                token: { type: string }
+      responses:
+        "200": { description: Email verified }
+
+  /auth/forgot-password:
+    post:
+      tags: [Auth]
+      summary: Request password reset
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email: { type: string, format: email }
+      responses:
+        "200": { description: Reset email sent }
+
+  /auth/reset-password:
+    post:
+      tags: [Auth]
+      summary: Reset password with token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                token: { type: string }
+                password: { type: string }
+      responses:
+        "200": { description: Password reset }
+
+  # ─── Auth (Protected) ───
+  /auth/change-password:
+    post:
+      tags: [Auth]
+      summary: Change password
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                old_password: { type: string }
+                new_password: { type: string }
+      responses:
+        "200": { description: Password changed }
+
+  /auth/2fa/setup:
+    post:
+      tags: [Auth]
+      summary: Setup 2FA
+      security:
+        - BearerAuth: []
+      responses:
+        "200": { description: 2FA setup data }
+
+  /auth/2fa/enable:
+    post:
+      tags: [Auth]
+      summary: Enable 2FA
+      security:
+        - BearerAuth: []
+      responses:
+        "200": { description: 2FA enabled }
+
+  /auth/2fa/disable:
+    post:
+      tags: [Auth]
+      summary: Disable 2FA
+      security:
+        - BearerAuth: []
+      responses:
+        "200": { description: 2FA disabled }
+
+  /auth/profile:
+    get:
+      tags: [Auth]
+      summary: Get user profile
+      security:
+        - BearerAuth: []
+      responses:
+        "200": { description: User profile }
+    put:
+      tags: [Auth]
+      summary: Update user profile
+      security:
+        - BearerAuth: []
+      responses:
+        "200": { description: Profile updated }
+
+  /auth/avatar:
+    post:
+      tags: [Auth]
+      summary: Upload avatar
+      security:
+        - BearerAuth: []
+      responses:
+        "200": { description: Avatar uploaded }
+
+  /auth/resend-verification:
+    post:
+      tags: [Auth]
+      summary: Resend verification email
+      security:
+        - BearerAuth: []
+      responses:
+        "200": { description: Email sent }
+
+  # ─── Projects ───
+  /projects:
+    get:
+      tags: [Projects]
+      summary: List projects
+      security:
+        - BearerAuth: []
+      responses:
+        "200": { description: Project list }
+    post:
+      tags: [Projects]
+      summary: Create project
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+                description: { type: string }
+                module_type: { type: string }
+      responses:
+        "201": { description: Project created }
+
+  /projects/{id}:
+    get:
+      tags: [Projects]
+      summary: Get project
+      security:
+        - BearerAuth: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Project details }
+    put:
+      tags: [Projects]
+      summary: Update project
+      security:
+        - BearerAuth: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Project updated }
+    delete:
+      tags: [Projects]
+      summary: Delete project
+      security:
+        - BearerAuth: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Project deleted }
+
+  # ─── Project Files ───
+  /projects/{id}/files:
+    get:
+      tags: [Projects]
+      summary: List project files
+      security:
+        - BearerAuth: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: File list }
+
+  /projects/{id}/files/{path}:
+    get:
+      tags: [Projects]
+      summary: Get file content
+      security:
+        - BearerAuth: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: path, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: File content }
+    put:
+      tags: [Projects]
+      summary: Save file
+      security:
+        - BearerAuth: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: path, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: File saved }
+    delete:
+      tags: [Projects]
+      summary: Delete file
+      security:
+        - BearerAuth: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: path, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: File deleted }
+
+  /projects/{id}/files/upload:
+    post:
+      tags: [Projects]
+      summary: Upload files
+      security:
+        - BearerAuth: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Files uploaded }
+
+  /projects/{id}/validate:
+    post:
+      tags: [Projects]
+      summary: Validate project
+      security:
+        - BearerAuth: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Validation result }
+
+  # ─── Builds ───
+  /projects/{id}/build:
+    post:
+      tags: [Build]
+      summary: Create build
+      security:
+        - BearerAuth: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "201": { description: Build created }
+
+  /projects/{id}/builds:
+    get:
+      tags: [Build]
+      summary: List builds
+      security:
+        - BearerAuth: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Build list }
+
+  /projects/{id}/build/auto:
+    post:
+      tags: [Build]
+      summary: Auto-build
+      security:
+        - BearerAuth: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "201": { description: Auto build started }
+
+  /builds/{id}:
+    get:
+      tags: [Build]
+      summary: Get build
+      security:
+        - BearerAuth: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Build details }
+
+  /builds/{id}/logs:
+    get:
+      tags: [Build]
+      summary: Stream build logs
+      security:
+        - BearerAuth: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Build logs stream }
+
+  /builds/{id}/download:
+    get:
+      tags: [Build]
+      summary: Download build artifact
+      security:
+        - BearerAuth: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Build artifact }
+
+  /builds/{id}/cancel:
+    post:
+      tags: [Build]
+      summary: Cancel build
+      security:
+        - BearerAuth: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Build cancelled }
+
+  # ─── Build Schedules ───
+  /projects/{id}/build-schedules:
+    get:
+      tags: [Build]
+      summary: List build schedules
+      security:
+        - BearerAuth: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Schedule list }
+    post:
+      tags: [Build]
+      summary: Create build schedule
+      security:
+        - BearerAuth: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "201": { description: Schedule created }
+
+  /projects/{id}/build-schedules/{scheduleId}:
+    put:
+      tags: [Build]
+      summary: Toggle schedule
+      security:
+        - BearerAuth: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: scheduleId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Schedule toggled }
+    delete:
+      tags: [Build]
+      summary: Delete schedule
+      security:
+        - BearerAuth: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: scheduleId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Schedule deleted }
+
+  # ─── Agent ───
+  /agent/run:
+    post:
+      tags: [Agent]
+      summary: Run AI Agent task
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [task]
+              properties:
+                task: { type: string, description: "Task description (max 20000 chars)" }
+                session_id: { type: string }
+                provider_id: { type: string }
+                model: { type: string }
+                project_id: { type: string }
+                project_context: { type: string }
+                agent_mode: { type: string, enum: [plan, act] }
+      responses:
+        "200":
+          description: SSE stream of agent events
+          content:
+            text/event-stream:
+              schema: { type: string }
+
+  /agent/skills:
+    get:
+      tags: [Agent]
+      summary: List available agent skills
+      security:
+        - BearerAuth: []
+      responses:
+        "200": { description: Skill list }
+
+  /agent/custom-skills:
+    get:
+      tags: [Agent]
+      summary: List custom skills
+      security:
+        - BearerAuth: []
+      responses:
+        "200": { description: Custom skill list }
+    post:
+      tags: [Agent]
+      summary: Create custom skill
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, description, prompt]
+              properties:
+                name: { type: string }
+                description: { type: string }
+                prompt: { type: string }
+                input_schema: { type: string }
+                is_public: { type: boolean }
+      responses:
+        "201": { description: Skill created }
+
+  /agent/custom-skills/{id}:
+    put:
+      tags: [Agent]
+      summary: Update custom skill
+      security:
+        - BearerAuth: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Skill updated }
+    delete:
+      tags: [Agent]
+      summary: Delete custom skill
+      security:
+        - BearerAuth: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Skill deleted }
+
+  /agent/custom-skills/{id}/execute:
+    post:
+      tags: [Agent]
+      summary: Execute custom skill
+      security:
+        - BearerAuth: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                input: { type: string }
+      responses:
+        "200": { description: Skill execution result }
+
+  /agent/custom-skills/{id}/evolution:
+    get:
+      tags: [Agent]
+      summary: Get skill evolution stats
+      security:
+        - BearerAuth: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Evolution stats }
+    post:
+      tags: [Agent]
+      summary: Record skill execution
+      security:
+        - BearerAuth: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Execution recorded }
+
+  /agent/custom-skills/{id}/optimize:
+    get:
+      tags: [Agent]
+      summary: Get skill optimization suggestions
+      security:
+        - BearerAuth: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Optimization suggestions }
+
+  /agent/stats:
+    get:
+      tags: [Agent]
+      summary: Get tool usage statistics
+      security:
+        - BearerAuth: []
+      responses:
+        "200": { description: Tool stats }
+
+  /agent/audit:
+    get:
+      tags: [Agent]
+      summary: Get audit history
+      security:
+        - BearerAuth: []
+      parameters:
+        - { name: tool, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, default: 50 } }
+      responses:
+        "200": { description: Audit entries }
+
+  /agent/denials:
+    get:
+      tags: [Agent]
+      summary: Get permission denials
+      security:
+        - BearerAuth: []
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, default: 50 } }
+      responses:
+        "200": { description: Denial records }
+
+  /agent/sessions:
+    get:
+      tags: [Agent]
+      summary: List agent sessions
+      security:
+        - BearerAuth: []
+      responses:
+        "200": { description: Session list }
+
+  /agent/sessions/{id}:
+    get:
+      tags: [Agent]
+      summary: Get agent session with messages
+      security:
+        - BearerAuth: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Session details }
+
+  /agent/session/{sessionId}:
+    get:
+      tags: [Agent]
+      summary: Get agent session state
+      security:
+        - BearerAuth: []
+      parameters:
+        - { name: sessionId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Session state }
+
+  # ─── AI ───
+  /ai/prompts:
+    get:
+      tags: [AI]
+      summary: Get AI prompts
+      responses:
+        "200": { description: Prompt list }
+    put:
+      tags: [AI]
+      summary: Update AI prompt
+      security:
+        - BearerAuth: []
+      responses:
+        "200": { description: Prompt updated }
+
+  /ai/generate:
+    post:
+      tags: [AI]
+      summary: Generate module with AI
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                prompt: { type: string }
+                language: { type: string }
+      responses:
+        "200": { description: Generated module }
+
+  /ai/chat:
+    post:
+      tags: [AI]
+      summary: Chat with AI
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                message: { type: string }
+      responses:
+        "200": { description: AI response }
+
+  /ai/stream:
+    post:
+      tags: [AI]
+      summary: Stream AI chat
+      security:
+        - BearerAuth: []
+      responses:
+        "200": { description: SSE stream }
+
+  /ai/capability:
+    get:
+      tags: [AI]
+      summary: Get AI capability score
+      security:
+        - BearerAuth: []
+      responses:
+        "200": { description: Capability score }
+
+  /ai/history/{session_id}:
+    get:
+      tags: [AI]
+      summary: Get AI history
+      security:
+        - BearerAuth: []
+      parameters:
+        - { name: session_id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: History data }
+    delete:
+      tags: [AI]
+      summary: Delete AI history
+      security:
+        - BearerAuth: []
+      parameters:
+        - { name: session_id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: History deleted }
+
+  /ai/memory:
+    get:
+      tags: [AI]
+      summary: List AI memory
+      security:
+        - BearerAuth: []
+      responses:
+        "200": { description: Memory entries }
+    delete:
+      tags: [AI]
+      summary: Clear all AI memory
+      security:
+        - BearerAuth: []
+      responses:
+        "200": { description: Memory cleared }
+
+  /ai/memory/{type}/{key}:
+    delete:
+      tags: [AI]
+      summary: Delete specific memory
+      security:
+        - BearerAuth: []
+      parameters:
+        - { name: type, in: path, required: true, schema: { type: string } }
+        - { name: key, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Memory deleted }
+
+  /ai/conversations:
+    get:
+      tags: [AI]
+      summary: List conversations
+      security:
+        - BearerAuth: []
+      responses:
+        "200": { description: Conversation list }
+    post:
+      tags: [AI]
+      summary: Save conversation
+      security:
+        - BearerAuth: []
+      responses:
+        "200": { description: Conversation saved }
+
+  /ai/conversations/{id}:
+    get:
+      tags: [AI]
+      summary: Get conversation
+      security:
+        - BearerAuth: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Conversation details }
+    delete:
+      tags: [AI]
+      summary: Delete conversation
+      security:
+        - BearerAuth: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Conversation deleted }
+
+  /ai/sessions:
+    get:
+      tags: [AI]
+      summary: List AI sessions
+      security:
+        - BearerAuth: []
+      responses:
+        "200": { description: Session list }
+
+  /ai/sessions/{session_id}/messages:
+    get:
+      tags: [AI]
+      summary: Get session messages
+      security:
+        - BearerAuth: []
+      parameters:
+        - { name: session_id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Message list }
+
+  /ai/sessions/{session_id}:
+    delete:
+      tags: [AI]
+      summary: Delete session
+      security:
+        - BearerAuth: []
+      parameters:
+        - { name: session_id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Session deleted }
+
+  # ─── LLM Config ───
+  /llm/config:
+    get:
+      tags: [LLM]
+      summary: Get LLM config
+      security:
+        - BearerAuth: []
+      responses:
+        "200": { description: LLM config }
+    post:
+      tags: [LLM]
+      summary: Update LLM config
+      security:
+        - BearerAuth: []
+      responses:
+        "200": { description: Config updated }
+
+  /llm/providers:
+    get:
+      tags: [LLM]
+      summary: List LLM providers
+      responses:
+        "200": { description: Provider list }
+
+  /llm/provider-config:
+    put:
+      tags: [LLM]
+      summary: Save provider config
+      security:
+        - BearerAuth: []
+      responses:
+        "200": { description: Config saved }
+
+  /llm/provider-configs:
+    get:
+      tags: [LLM]
+      summary: Get provider configs
+      security:
+        - BearerAuth: []
+      responses:
+        "200": { description: Config list }
+
+  /llm/provider-config/{id}:
+    delete:
+      tags: [LLM]
+      summary: Delete provider config
+      security:
+        - BearerAuth: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Config deleted }
+
+  /llm/custom-providers:
+    get:
+      tags: [LLM]
+      summary: Get custom providers
+      security:
+        - BearerAuth: []
+      responses:
+        "200": { description: Provider list }
+    post:
+      tags: [LLM]
+      summary: Create custom provider
+      security:
+        - BearerAuth: []
+      responses:
+        "201": { description: Provider created }
+
+  /llm/custom-providers/{id}:
+    put:
+      tags: [LLM]
+      summary: Update custom provider
+      security:
+        - BearerAuth: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Provider updated }
+    delete:
+      tags: [LLM]
+      summary: Delete custom provider
+      security:
+        - BearerAuth: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Provider deleted }
+
+  # ─── Templates ───
+  /templates:
+    get:
+      tags: [Templates]
+      summary: List templates
+      responses:
+        "200": { description: Template list }
+
+  /templates/list:
+    get:
+      tags: [Templates]
+      summary: List templates (detailed)
+      responses:
+        "200": { description: Template list }
+
+  /templates/{name}:
+    get:
+      tags: [Templates]
+      summary: Get template
+      parameters:
+        - { name: name, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Template details }
+
+  /templates/recommend:
+    post:
+      tags: [Templates]
+      summary: Recommend templates
+      responses:
+        "200": { description: Recommendations }
+
+  /templates/market:
+    get:
+      tags: [Templates]
+      summary: List market templates
+      responses:
+        "200": { description: Market template list }
+    post:
+      tags: [Templates]
+      summary: Publish template
+      security:
+        - BearerAuth: []
+      responses:
+        "201": { description: Template published }
+
+  /templates/market/trending:
+    get:
+      tags: [Templates]
+      summary: Get trending templates
+      responses:
+        "200": { description: Trending list }
+
+  /templates/market/categories:
+    get:
+      tags: [Templates]
+      summary: Get template categories
+      responses:
+        "200": { description: Category list }
+
+  /templates/market/{id}:
+    delete:
+      tags: [Templates]
+      summary: Delete template
+      security:
+        - BearerAuth: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Template deleted }
+
+  /templates/market/{id}/use:
+    post:
+      tags: [Templates]
+      summary: Use template
+      security:
+        - BearerAuth: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Template applied }
+
+  # ─── Market ───
+  /market/modules:
+    get:
+      tags: [Market]
+      summary: List market modules
+      responses:
+        "200": { description: Module list }
+
+  /market/trending:
+    get:
+      tags: [Market]
+      summary: Get trending modules
+      responses:
+        "200": { description: Trending list }
+
+  /market/categories:
+    get:
+      tags: [Market]
+      summary: Get categories
+      responses:
+        "200": { description: Category list }
+
+  /market/module/{slug}:
+    get:
+      tags: [Market]
+      summary: Get module
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Module details }
+
+  /market/module/{slug}/reviews:
+    get:
+      tags: [Market]
+      summary: Get module reviews
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Review list }
+
+  /market/module/{slug}/download:
+    get:
+      tags: [Market]
+      summary: Download module
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Module download }
+
+  /market/publish:
+    post:
+      tags: [Market]
+      summary: Publish to market
+      security:
+        - BearerAuth: []
+      responses:
+        "201": { description: Published }
+
+  /market/module/{slug}/star:
+    post:
+      tags: [Market]
+      summary: Star module
+      security:
+        - BearerAuth: []
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Starred }
+
+  /market/module/{slug}/review:
+    post:
+      tags: [Market]
+      summary: Add review
+      security:
+        - BearerAuth: []
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Review added }
+
+  # ─── ADB ───
+  /adb/check:
+    get:
+      tags: [ADB]
+      summary: Check ADB availability
+      responses:
+        "200": { description: ADB status }
+
+  /adb/status:
+    get:
+      tags: [ADB]
+      summary: Get ADB server status
+      responses:
+        "200": { description: Server status }
+
+  /adb/devices:
+    get:
+      tags: [ADB]
+      summary: List connected devices
+      responses:
+        "200": { description: Device list }
+
+  /adb/shell:
+    post:
+      tags: [ADB]
+      summary: Run ADB shell command
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                command: { type: string }
+                device: { type: string }
+      responses:
+        "200": { description: Command output }
+
+  /adb/push:
+    post:
+      tags: [ADB]
+      summary: Push file to device
+      security:
+        - BearerAuth: []
+      responses:
+        "200": { description: File pushed }
+
+  /adb/pull:
+    post:
+      tags: [ADB]
+      summary: Pull file from device
+      security:
+        - BearerAuth: []
+      responses:
+        "200": { description: File pulled }
+
+  # ─── Git ───
+  /git/commits:
+    get:
+      tags: [Git]
+      summary: List commits
+      responses:
+        "200": { description: Commit list }
+
+  /git/diff:
+    get:
+      tags: [Git]
+      summary: Get diff
+      responses:
+        "200": { description: Diff data }
+
+  /git/commit:
+    post:
+      tags: [Git]
+      summary: Create commit
+      security:
+        - BearerAuth: []
+      responses:
+        "200": { description: Commit created }
+
+  # ─── Security ───
+  /security/scan:
+    post:
+      tags: [Security]
+      summary: Scan files for vulnerabilities
+      security:
+        - BearerAuth: []
+      responses:
+        "200": { description: Scan results }
+
+  /projects/{id}/scan-vulns:
+    post:
+      tags: [Security]
+      summary: Scan project vulnerabilities
+      security:
+        - BearerAuth: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Vulnerability scan results }
+
+  /projects/{id}/sign:
+    post:
+      tags: [Security]
+      summary: Sign module
+      security:
+        - BearerAuth: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Module signed }
+
+  # ─── Backup ───
+  /backup/export:
+    post:
+      tags: [Backup]
+      summary: Export database
+      security:
+        - BearerAuth: []
+      responses:
+        "200": { description: Database exported }
+
+  /backup/import:
+    post:
+      tags: [Backup]
+      summary: Import database
+      security:
+        - BearerAuth: []
+      responses:
+        "200": { description: Database imported }
+
+  # ─── Notifications ───
+  /notifications:
+    get:
+      tags: [Notifications]
+      summary: List notifications
+      security:
+        - BearerAuth: []
+      responses:
+        "200": { description: Notification list }
+
+  /notifications/unread-count:
+    get:
+      tags: [Notifications]
+      summary: Get unread count
+      security:
+        - BearerAuth: []
+      responses:
+        "200": { description: Unread count }
+
+  # ─── Plugins ───
+  /plugins:
+    get:
+      tags: [Plugins]
+      summary: List plugins
+      responses:
+        "200": { description: Plugin list }
+
+  /plugins/install:
+    post:
+      tags: [Plugins]
+      summary: Install plugin
+      security:
+        - BearerAuth: []
+      responses:
+        "200": { description: Plugin installed }
+
+  # ─── Settings ───
+  /settings/agent:
+    get:
+      tags: [Settings]
+      summary: Get agent settings
+      security:
+        - BearerAuth: []
+      responses:
+        "200": { description: Agent settings }
+    put:
+      tags: [Settings]
+      summary: Update agent settings
+      security:
+        - BearerAuth: []
+      responses:
+        "200": { description: Settings updated }
+
+  # ─── Search ───
+  /search:
+    get:
+      tags: [Search]
+      summary: Search projects
+      security:
+        - BearerAuth: []
+      parameters:
+        - { name: q, in: query, schema: { type: string } }
+      responses:
+        "200": { description: Search results }
+
+  # ─── Health ───
+  /health/system:
+    get:
+      tags: [Health]
+      summary: System health check
+      responses:
+        "200": { description: Health status }
+
+  # ─── Admin ───
+  /admin/email-config:
+    get:
+      tags: [Admin]
+      summary: Get email config
+      security:
+        - BearerAuth: []
+      responses:
+        "200": { description: Email config }
+
+  /admin/health/detailed:
+    get:
+      tags: [Admin]
+      summary: Detailed health check
+      security:
+        - BearerAuth: []
+      responses:
+        "200": { description: Detailed health }
+
+  /admin/logs:
+    get:
+      tags: [Admin]
+      summary: List logs
+      security:
+        - BearerAuth: []
+      responses:
+        "200": { description: Log list }
 
 components:
   securitySchemes:
@@ -17,776 +1311,34 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
-      description: JWT token obtained from /auth/login or /auth/register
+      description: "JWT token from /auth/login or API key via X-API-Key header"
 
   schemas:
-    Error:
-      type: object
-      properties:
-        error:
-          type: string
-      required: [error]
-
     User:
       type: object
       properties:
         id: { type: string }
         username: { type: string }
         email: { type: string }
-        role: { type: string }
-        created_at: { type: string, format: date-time }
 
-    MarketModule:
+    Error:
       type: object
       properties:
-        id: { type: string }
-        title: { type: string }
-        slug: { type: string }
-        description: { type: string }
-        category: { type: string, enum: [system, ui, audio, display, utility] }
-        tags: { type: string }
-        version: { type: string }
-        version_code: { type: integer }
-        author: { type: string }
-        license: { type: string }
-        cover_image: { type: string }
-        stars: { type: integer }
-        installs: { type: integer }
-        dependencies: { type: string }
-        created_at: { type: string, format: date-time }
-        updated_at: { type: string, format: date-time }
-        screenshots:
-          type: array
-          items:
-            $ref: '#/components/schemas/ModuleScreenshot'
+        error: { type: string }
 
-    ModuleScreenshot:
-      type: object
-      properties:
-        id: { type: integer }
-        module_id: { type: string }
-        url: { type: string }
-        sort_order: { type: integer }
-        created_at: { type: string, format: date-time }
-
-    MarketReview:
-      type: object
-      properties:
-        id: { type: string }
-        module_id: { type: string }
-        uid: { type: string }
-        username: { type: string }
-        rating: { type: integer, minimum: 1, maximum: 5 }
-        comment: { type: string }
-        created_at: { type: string, format: date-time }
-
-    ModuleVersion:
-      type: object
-      properties:
-        id: { type: string }
-        module_id: { type: string }
-        version: { type: string }
-        changelog: { type: string }
-        created_at: { type: string, format: date-time }
-
-    BuildTask:
-      type: object
-      properties:
-        id: { type: string }
-        project_id: { type: string }
-        status: { type: string, enum: [pending, running, completed, failed, cancelled] }
-        target: { type: string }
-        log: { type: string }
-        commit_hash: { type: string }
-        trigger: { type: string }
-        created_at: { type: string, format: date-time }
-        updated_at: { type: string, format: date-time }
-
-    Notification:
-      type: object
-      properties:
-        id: { type: integer }
-        user_id: { type: integer }
-        type: { type: string }
-        title: { type: string }
-        message: { type: string }
-        link: { type: string }
-        is_read: { type: boolean }
-        created_at: { type: string, format: date-time }
-
-    Activity:
-      type: object
-      properties:
-        id: { type: integer }
-        user_id: { type: integer }
-        project_id: { type: integer }
-        activity_type: { type: string }
-        description: { type: string }
-        created_at: { type: string, format: date-time }
-
-    Project:
-      type: object
-      properties:
-        id: { type: string }
-        user_id: { type: string }
-        name: { type: string }
-        module_type: { type: string }
-        description: { type: string }
-        created_at: { type: string, format: date-time }
-        updated_at: { type: string, format: date-time }
-
-    ProjectFile:
-      type: object
-      properties:
-        id: { type: integer }
-        project_id: { type: string }
-        path: { type: string }
-        content: { type: string }
-        created_at: { type: string, format: date-time }
-        updated_at: { type: string, format: date-time }
-
-security:
-  - BearerAuth: []
-
-tags:
-  - name: Auth
-    description: 注册 / 登录
-  - name: Projects
-    description: 项目 CRUD
-  - name: Build
-    description: 构建系统
-  - name: Market
-    description: 模块市场
-  - name: AI
-    description: AI 助手
-  - name: ADB
-    description: 设备管理
-  - name: Notifications
-    description: 通知中心
-  - name: Activities
-    description: 活动流
-  - name: Backup
-    description: 备份与恢复
-  - name: Plugins
-    description: 插件系统
-  - name: Security
-    description: 安全扫描
-
-paths:
-  # ===== Auth =====
-  /auth/register:
-    post:
-      tags: [Auth]
-      summary: 注册
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                username: { type: string }
-                email: { type: string }
-                password: { type: string }
-              required: [username, email, password]
-      responses:
-        "200":
-          description: 注册成功 + JWT token
-        "400":
-          description: 请求无效
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-
-  /auth/login:
-    post:
-      tags: [Auth]
-      summary: 登录
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                email: { type: string }
-                password: { type: string }
-              required: [email, password]
-      responses:
-        "200":
-          description: 登录成功 + JWT token
-        "401":
-          description: 密码错误
-
-  # ===== Market =====
-  /market/modules:
-    get:
-      tags: [Market]
-      summary: 模块列表
-      parameters:
-        - in: query
-          name: query
-          schema: { type: string }
-          description: 搜索关键词
-        - in: query
-          name: category
-          schema: { type: string, enum: [system, ui, audio, display, utility] }
-        - in: query
-          name: sort
-          schema: { type: string, enum: [stars, installs, newest, title] }
-        - in: query
-          name: page
-          schema: { type: integer, default: 1 }
-        - in: query
-          name: per_page
-          schema: { type: integer, default: 20 }
-      responses:
-        "200":
-          description: 模块列表
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  modules:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/MarketModule'
-                  total: { type: integer }
-                  page: { type: integer }
-                  per_page: { type: integer }
-
-  /market/trending:
-    get:
-      tags: [Market]
-      summary: 热门模块
-      parameters:
-        - in: query
-          name: limit
-          schema: { type: integer, default: 10 }
-      responses:
-        "200":
-          description: 热门模块列表
-
-  /market/categories:
-    get:
-      tags: [Market]
-      summary: 分类列表
-      responses:
-        "200":
-          description: 分类数组
-
-  /market/module/{slug}:
-    get:
-      tags: [Market]
-      summary: 模块详情
-      parameters:
-        - in: path
-          name: slug
-          required: true
-          schema: { type: string }
-      responses:
-        "200":
-          description: 模块详情（含截图）
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/MarketModule'
-        "404":
-          $ref: '#/components/schemas/Error'
-
-  /market/module/{slug}/reviews:
-    get:
-      tags: [Market]
-      summary: 评论列表
-      parameters:
-        - in: path
-          name: slug
-          required: true
-          schema: { type: string }
-      responses:
-        "200":
-          description: 评论列表
-
-    post:
-      tags: [Market]
-      summary: 添加评论
-      security: [{ BearerAuth: [] }]
-      parameters:
-        - in: path
-          name: slug
-          required: true
-          schema: { type: string }
-      requestBody:
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                uid: { type: string }
-                username: { type: string }
-                rating: { type: integer, minimum: 1, maximum: 5 }
-                comment: { type: string }
-      responses:
-        "200":
-          description: 评论成功
-
-  /market/publish:
-    post:
-      tags: [Market]
-      summary: 发布模块
-      security: [{ BearerAuth: [] }]
-      requestBody:
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                title: { type: string }
-                description: { type: string }
-                category: { type: string }
-                tags: { type: string }
-                version: { type: string }
-                version_code: { type: string }
-                changelog: { type: string }
-                cover_image: { type: string }
-                license: { type: string }
-                author: { type: string }
-                dependencies:
-                  type: array
-                  items:
-                    type: object
-                    properties:
-                      id: { type: string }
-                      min_version: { type: string }
-                      optional: { type: boolean }
-      responses:
-        "200":
-          description: 发布成功
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/MarketModule'
-
-  /market/module/{slug}/star:
-    post:
-      tags: [Market]
-      summary: 星标模块
-      security: [{ BearerAuth: [] }]
-      parameters:
-        - in: path
-          name: slug
-          required: true
-          schema: { type: string }
-      responses:
-        "200":
-          description: 星标数
-
-  /market/module/{slug}/versions:
-    get:
-      tags: [Market]
-      summary: 版本历史
-      security: [{ BearerAuth: [] }]
-      parameters:
-        - in: path
-          name: slug
-          schema: { type: string }
-      responses:
-        "200":
-          description: 版本列表
-
-  /market/module/{slug}/rollback:
-    post:
-      tags: [Market]
-      summary: 回滚版本
-      security: [{ BearerAuth: [] }]
-
-  /market/module/{slug}/version:
-    post:
-      tags: [Market]
-      summary: 更新版本
-      security: [{ BearerAuth: [] }]
-
-  /market/module/{slug}/dependencies:
-    get:
-      tags: [Market]
-      summary: 依赖列表
-      responses:
-        "200":
-          description: 依赖和依赖树
-
-  /market/module/{slug}/check-deps:
-    post:
-      tags: [Market]
-      summary: 检查依赖冲突
-      responses:
-        "200":
-          description: 冲突结果
-
-  /market/module/{slug}/screenshots:
-    post:
-      tags: [Market]
-      summary: 上传截图
-      security: [{ BearerAuth: [] }]
-      requestBody:
-        content:
-          multipart/form-data:
-            schema:
-              type: object
-              properties:
-                screenshots:
-                  type: array
-                  items:
-                    type: string
-                    format: binary
-      responses:
-        "200":
-          description: 截图列表
-
-  /market/screenshots/{id}:
-    delete:
-      tags: [Market]
-      summary: 删除截图
-      security: [{ BearerAuth: [] }]
-
-  # ===== Build =====
-  /projects/{id}/build:
-    post:
-      tags: [Build]
-      summary: 创建构建
-      security: [{ BearerAuth: [] }]
-
-  /projects/{id}/build/auto:
-    post:
-      tags: [Build]
-      summary: 自动触发构建
-      security: [{ BearerAuth: [] }]
-
-  /builds/{id}:
-    get:
-      tags: [Build]
-      summary: 获取构建详情
-      security: [{ BearerAuth: [] }]
-
-  /builds/{id}/cancel:
-    post:
-      tags: [Build]
-      summary: 取消构建
-      security: [{ BearerAuth: [] }]
-
-  /builds/{id}/logs:
-    get:
-      tags: [Build]
-      summary: 构建日志流（SSE）
-      security: [{ BearerAuth: [] }]
-
-  /builds/{id}/download:
-    get:
-      tags: [Build]
-      summary: 下载构建产物
-      security: [{ BearerAuth: [] }]
-
-  # ===== Projects =====
-  /projects:
-    get:
-      tags: [Projects]
-      summary: 项目列表
-      security: [{ BearerAuth: [] }]
-      responses:
-        "200":
-          description: 项目列表
-    post:
-      tags: [Projects]
-      summary: 创建项目
-      security: [{ BearerAuth: [] }]
-
-  /projects/{id}:
-    get:
-      tags: [Projects]
-      summary: 项目详情
-      security: [{ BearerAuth: [] }]
-    put:
-      tags: [Projects]
-      summary: 更新项目
-      security: [{ BearerAuth: [] }]
-    delete:
-      tags: [Projects]
-      summary: 删除项目
-      security: [{ BearerAuth: [] }]
-
-  /projects/{id}/files:
-    get:
-      tags: [Projects]
-      summary: 文件列表
-      security: [{ BearerAuth: [] }]
-
-  /projects/{id}/files/{path}:
-    get:
-      tags: [Projects]
-      summary: 读取文件
-      security: [{ BearerAuth: [] }]
-    put:
-      tags: [Projects]
-      summary: 保存文件
-      security: [{ BearerAuth: [] }]
-
-  # ===== AI =====
-  /ai/generate:
-    post:
-      tags: [AI]
-      summary: AI 生成模块
-      security: [{ BearerAuth: [] }]
-
-  /ai/chat:
-    post:
-      tags: [AI]
-      summary: AI 对话
-      security: [{ BearerAuth: [] }]
-
-  /ai/repair:
-    post:
-      tags: [AI]
-      summary: AI 修复构建
-      security: [{ BearerAuth: [] }]
-
-  /ai/gather:
-    post:
-      tags: [AI]
-      summary: 需求收集
-      security: [{ BearerAuth: [] }]
-
-  /ai/stream:
-    post:
-      tags: [AI]
-      summary: 流式对话（SSE）
-      security: [{ BearerAuth: [] }]
-
-  /ai/prompts:
-    get:
-      tags: [AI]
-      summary: 获取提示词
-    put:
-      tags: [AI]
-      summary: 更新提示词
-      security: [{ BearerAuth: [] }]
-
-  /ai/history/{session_id}:
-    get:
-      tags: [AI]
-      summary: 获取对话历史
-      security: [{ BearerAuth: [] }]
-    delete:
-      tags: [AI]
-      summary: 删除对话历史
-      security: [{ BearerAuth: [] }]
-
-  /ai/memory:
-    get:
-      tags: [AI]
-      summary: 记忆列表
-      security: [{ BearerAuth: [] }]
-    delete:
-      tags: [AI]
-      summary: 清空所有记忆
-      security: [{ BearerAuth: [] }]
-
-  /ai/memory/{type}/{key}:
-    delete:
-      tags: [AI]
-      summary: 删除单条记忆
-      security: [{ BearerAuth: [] }]
-
-  # ===== Notifications =====
-  /notifications:
-    get:
-      tags: [Notifications]
-      summary: 通知列表
-      security: [{ BearerAuth: [] }]
-      parameters:
-        - in: query
-          name: limit
-          schema: { type: integer, default: 20 }
-        - in: query
-          name: offset
-          schema: { type: integer, default: 0 }
-      responses:
-        "200":
-          description: 通知列表
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  notifications:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/Notification'
-
-  /notifications/unread-count:
-    get:
-      tags: [Notifications]
-      summary: 未读通知数
-      security: [{ BearerAuth: [] }]
-      responses:
-        "200":
-          description: 未读计数
-
-  /notifications/{id}/read:
-    post:
-      tags: [Notifications]
-      summary: 标记单条已读
-      security: [{ BearerAuth: [] }]
-
-  /notifications/read-all:
-    post:
-      tags: [Notifications]
-      summary: 全部标记已读
-      security: [{ BearerAuth: [] }]
-
-  /notifications/{id}:
-    delete:
-      tags: [Notifications]
-      summary: 删除通知
-      security: [{ BearerAuth: [] }]
-
-  # ===== Activities =====
-  /activities:
-    get:
-      tags: [Activities]
-      summary: 用户活动流
-      security: [{ BearerAuth: [] }]
-      responses:
-        "200":
-          description: 活动列表
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  activities:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/Activity'
-
-  /projects/{id}/activities:
-    get:
-      tags: [Activities]
-      summary: 项目活动流
-      security: [{ BearerAuth: [] }]
-
-  # ===== ADB =====
-  /adb/devices:
-    get:
-      tags: [ADB]
-      summary: 设备列表
-  /adb/check:
-    get:
-      tags: [ADB]
-      summary: 检测 ADB
-  /adb/modules:
-    get:
-      tags: [ADB]
-      summary: 已安装模块列表
-  /adb/modules/{name}:
-    get:
-      tags: [ADB]
-      summary: 模块详情
-  /adb/device-info:
-    get:
-      tags: [ADB]
-      summary: 设备信息
-  /adb/screenshot:
-    get:
-      tags: [ADB]
-      summary: 截图
-      security: [{ BearerAuth: [] }]
-  /adb/push:
-    post:
-      tags: [ADB]
-      summary: 推送文件
-      security: [{ BearerAuth: [] }]
-  /adb/install:
-    post:
-      tags: [ADB]
-      summary: 安装模块
-      security: [{ BearerAuth: [] }]
-  /adb/shell:
-    post:
-      tags: [ADB]
-      summary: 执行 Shell
-      security: [{ BearerAuth: [] }]
-  /adb/reboot:
-    post:
-      tags: [ADB]
-      summary: 重启设备
-      security: [{ BearerAuth: [] }]
-
-  # ===== Backup =====
-  /backup/export:
-    post:
-      tags: [Backup]
-      summary: 导出数据库
-      security: [{ BearerAuth: [] }]
-  /backup/import:
-    post:
-      tags: [Backup]
-      summary: 导入数据库
-      security: [{ BearerAuth: [] }]
-  /projects/{id}/export:
-    post:
-      tags: [Backup]
-      summary: 导出项目
-      security: [{ BearerAuth: [] }]
-  /projects/{id}/import:
-    post:
-      tags: [Backup]
-      summary: 导入项目
-      security: [{ BearerAuth: [] }]
-
-  # ===== LLM =====
-  /llm/providers:
-    get:
-      tags: [AI]
-      summary: 提供商列表
-  /llm/config:
-    get:
-      tags: [AI]
-      summary: 获取 LLM 配置
-      security: [{ BearerAuth: [] }]
-    post:
-      tags: [AI]
-      summary: 更新 LLM 配置
-      security: [{ BearerAuth: [] }]
-  /llm/provider-config:
-    put:
-      tags: [AI]
-      summary: 保存提供商配置
-      security: [{ BearerAuth: [] }]
-  /llm/refresh:
-    get:
-      tags: [AI]
-      summary: 刷新模型列表
-  /webhook/git:
-    post:
-      tags: [Build]
-      summary: Git Webhook
-      security: [{ BearerAuth: [] }]
-
-  # ===== Analytics =====
-  /analytics/build-stats:
-    get:
-      tags: [Build]
-      summary: 构建统计
-  /analytics/build-trends:
-    get:
-      tags: [Build]
-      summary: 构建趋势
-  /analytics/module-stats:
-    get:
-      tags: [Market]
-      summary: 市场统计
-  /analytics/system:
-    get:
-      tags: [Build]
-      summary: 系统信息
+  responses:
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Unauthorized:
+      description: Unauthorized
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: Not found
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }

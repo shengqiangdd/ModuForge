@@ -131,6 +131,12 @@ func RegisterRoutes(api fiber.Router, db *database.DB, cfg *config.Config) {
 	// PUBLIC ROUTES
 	// ============================================================================
 
+	// OpenAPI documentation
+	openapiH := NewOpenAPIHandler()
+	api.Get("/openapi.json", openapiH.ServeJSON)
+	api.Get("/openapi.yaml", openapiH.ServeYAML)
+	api.Get("/docs", openapiH.ServeSwaggerUI)
+
 	// Auth
 	api.Post("/auth/register", authH.Register)
 	api.Post("/auth/login", authH.Login)

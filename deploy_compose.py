@@ -1,5 +1,14 @@
 #!/usr/bin/env python3
-"""Deploy ModuForge via Docker Compose"""
+"""Deploy ModuForge via Docker Compose.
+
+Usage:
+    python deploy_compose.py
+
+Connects to the remote server via SSH, pulls latest code from git,
+rebuilds the Docker container, waits for healthy status, and verifies
+the deployment. Credentials are read from environment variables or
+configurable constants.
+"""
 import paramiko
 import time
 
