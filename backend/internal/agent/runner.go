@@ -2697,7 +2697,21 @@ You are running WITHOUT a project context. This means:
 		}
 		iterCancel() // Release iteration timeout resources
 		if answerSent {
-			continue
+			// FIX: Break instead of continue — forceAnswer already sent the final answer.
+			// Continuing would let the LLM generate more tool calls and loop forever.
+			log.Printf("[Agent] answerSent=true at iter %d, breaking out of loop", iter+1)
+			break
+		}
+
+		// HARD CAP: After 8 iterations with zero writes, force answer and break.
+		// This prevents the LLM from generating endless tool calls even after stagnation warnings.
+		if !anyWriteCalled && iter >= 7 {
+			log.Printf("[Agent] HARD CAP: %d iterations with 0 writes, forcing final answer", iter+1)
+			_ = r.forceAnswer(ctx, conversation, w, sessionID, cfg, reqProviderID, reqModel,
+				fmt.Sprintf("CRITICAL STOP: You have completed %d iterations without writing a single file. "+
+					"This is unacceptable. You MUST now stop all tool calls and provide your final answer "+
+					"based on what you have already read. Do NOT call any more tools.", iter+1))
+			break
 		}
 	}
 
