@@ -100,7 +100,7 @@ func (s *WriteFileSkill) Execute(ctx context.Context, input map[string]interface
 		).Scan(&existingContent)
 		if err == nil && len(existingContent) > 0 {
 			// Guard: reject if new content is drastically shorter than existing (likely truncation/garbage)
-			if len(content) < len(existingContent)/10 && len(existingContent) > 100 {
+			if len(content) < len(existingContent)/20 && len(existingContent) > 500 {
 				return "", fmt.Errorf("content too short (%d bytes vs existing %d bytes) - possible truncation. Aborting to prevent data loss", len(content), len(existingContent))
 			}
 		}

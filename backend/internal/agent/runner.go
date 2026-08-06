@@ -45,11 +45,11 @@ func debugLog(format string, args ...interface{}) {
 }
 
 const (
-	defaultMaxIterations = 100
+	defaultMaxIterations = 200
 	defaultMaxResultLen  = 32768
 	totalTimeout         = 1800 * time.Second // 30 minutes for complex tasks
-	maxHistoryChars      = 30000
-	perIterationTimeout  = 45 * time.Second // max time for a single iteration (LLM + tools)
+	maxHistoryChars      = 60000
+	perIterationTimeout  = 90 * time.Second // max time for a single iteration (LLM + tools)
 
 	// Optimization 37: Per-tool execution timeouts
 	// Fast tools (read-only, in-memory) get short timeouts; slow tools (build, compile) get longer ones.
@@ -1739,8 +1739,8 @@ You are running WITHOUT a project context. This means:
 	anyWriteCalled := false // P0-2: Track if any write tool was called
 	// P1-2: Dynamic limits based on project complexity
 	// P0-1: Reduced base limits to prevent excessive reads
-	baseMaxReadFilePerTurn := 15
-	baseMaxWriteFilePerTurn := 10
+	baseMaxReadFilePerTurn := 25
+	baseMaxWriteFilePerTurn := 20
 	maxWriteFilePerTurn := baseMaxWriteFilePerTurn
 	maxReadFilePerTurn := baseMaxReadFilePerTurn
 	checkpoints := make([]FileCheckpoint, 0) // file change history for undo
@@ -1760,9 +1760,9 @@ You are running WITHOUT a project context. This means:
 		lastToolCalls:         make([]string, 0, 10),
 		lastResults:           make([]string, 0, 10),
 		consecutiveNoWrite:    0,
-		maxConsecutiveNoWrite: 20, // force answer after 20 iterations without write_file
-		maxIdenticalRepeats:   10, // stop if same tool+args repeated 10 times
-		maxStagnationRounds:   15, // stop if no progress for 15 rounds
+		maxConsecutiveNoWrite:    30, // force answer after 20 iterations without write_file
+		maxIdenticalRepeats:   15, // stop if same tool+args repeated 10 times
+		maxStagnationRounds:   25, // stop if no progress for 15 rounds
 	}
 
 	// Post-execution analysis — stagnation detection, self-reflection, loop detection
@@ -1865,13 +1865,17 @@ You are running WITHOUT a project context. This means:
 		// P1-2: Dynamically adjust limits based on project complexity
 		if cfg.ProjectID != "" && iter > 0 {
 			// Increase limits for complex projects (more files to read/write)
-			if m.totalToolCalls > 20 {
-				maxReadFilePerTurn = baseMaxReadFilePerTurn + 5
-				maxWriteFilePerTurn = baseMaxWriteFilePerTurn + 5
-			}
-			if m.totalToolCalls > 50 {
+			if m.totalToolCalls > 15 {
 				maxReadFilePerTurn = baseMaxReadFilePerTurn + 10
 				maxWriteFilePerTurn = baseMaxWriteFilePerTurn + 10
+			}
+			if m.totalToolCalls > 40 {
+				maxReadFilePerTurn = baseMaxReadFilePerTurn + 20
+				maxWriteFilePerTurn = baseMaxWriteFilePerTurn + 20
+			}
+			if m.totalToolCalls > 80 {
+				maxReadFilePerTurn = baseMaxReadFilePerTurn + 30
+				maxWriteFilePerTurn = baseMaxWriteFilePerTurn + 30
 			}
 		}
 		select {
