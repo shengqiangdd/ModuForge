@@ -454,7 +454,19 @@ type LLMToolCall struct {
 }
 
 func (r *AgentRunner) callLLMWithTools(ctx context.Context, messages []map[string]interface{}, tools []ToolDef, w SSEWriter, userID, reqProviderID, reqModel string, cfg RunConfig) (*LLMResponse, error) {
-	endpoint, apiKey, model := r.resolveLLMConfig(userID, reqProviderID, reqModel, cfg)
+	// P0-Optimization: Use cached resolved config from RunConfig instead of re-querying DB.
+	// The config was resolved once at Run() entry and stored in cfg.resolved* fields.
+	endpoint := cfg.resolvedEndpoint
+	apiKey := cfg.resolvedAPIKey
+	model := cfg.resolvedModel
+	modelTier := cfg.modelTier
+
+	// Fallback: if resolved config is empty (shouldn't happen after Run() init), resolve now
+	if endpoint == "" {
+		endpoint, apiKey, model = r.resolveLLMConfig(userID, reqProviderID, reqModel, cfg)
+		modelTier = resolveModelTier(model)
+	}
+
 	if !strings.HasSuffix(endpoint, "/chat/completions") {
 		endpoint = endpoint + "/chat/completions"
 	}
@@ -463,7 +475,6 @@ func (r *AgentRunner) callLLMWithTools(ctx context.Context, messages []map[strin
 	PrewarmConnection(endpoint)
 
 	// Circuit breaker: skip free model providers with consecutive failures
-	modelTier := resolveModelTier(model)
 	if modelTier == TierFree && reqProviderID != "" && globalCircuitBreaker.IsOpen(reqProviderID) {
 		log.Printf("[Agent] circuit breaker OPEN for provider %s, attempting fallback", reqProviderID)
 		// Optimization 21: Try fallback providers before giving up

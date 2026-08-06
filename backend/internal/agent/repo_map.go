@@ -1,14 +1,17 @@
 package agent
 
 import (
+	"context"
 	"crypto/sha256"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
 	"sync"
+	"time"
 )
 
 // ═══════════════════════════════════════════════════════════════════
@@ -153,6 +156,31 @@ func (rm *RepoMap) GenerateRepoMap(root string) string {
 	})
 
 	return rm.generateOutput()
+}
+
+// P3-Fix: GenerateRepoMapWithTimeout scans the project directory with a context timeout.
+// If the project is large (thousands of files), the scan can take seconds.
+// This prevents blocking the main agent loop indefinitely.
+func (rm *RepoMap) GenerateRepoMapWithTimeout(ctx context.Context, root string, timeout time.Duration) string {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	type result struct {
+		output string
+	}
+
+	done := make(chan result, 1)
+	go func() {
+		done <- result{output: rm.GenerateRepoMap(root)}
+	}()
+
+	select {
+	case <-ctx.Done():
+		log.Printf("[RepoMap] scan timed out after %v", timeout)
+		return "[RepoMap] Scan timed out — using partial index."
+	case r := <-done:
+		return r.output
+	}
 }
 
 // UpdateFile incrementally updates a single file's index entry.

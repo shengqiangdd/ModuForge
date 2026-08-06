@@ -433,8 +433,12 @@ func prefilterConversation(conversation []map[string]interface{}) []map[string]i
 		// For tool results: if content is very long (>4K), keep only first 2K + last 1K
 		if role == "tool" && len(content) > 4000 {
 			newContent := content[:2000] + "\n... [truncated to save context] ...\n" + content[len(content)-1000:]
-			msg = copyMap(msg)
-			msg["content"] = newContent
+			msgCopy := make(map[string]interface{}, len(msg))
+			for k, v := range msg {
+				msgCopy[k] = v
+			}
+			msgCopy["content"] = newContent
+			msg = msgCopy
 		}
 
 		result = append(result, msg)

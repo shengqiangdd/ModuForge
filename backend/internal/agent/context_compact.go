@@ -698,8 +698,16 @@ func (r *AgentRunner) heuristicCompactConversation(conversation []map[string]int
 // callLLMSummary sends a one-shot summary request to the LLM and returns the
 // streamed content. Shared by compactConversation and compactHistoryViaLLM.
 func (r *AgentRunner) callLLMSummary(ctx context.Context, cfg RunConfig, summaryPrompt []map[string]string) (string, error) {
-	// Use resolveLLMConfig with the provider ID to load API key from database
-	endpoint, apiKey, model := r.resolveLLMConfig(cfg.UserID, cfg.ProviderID, "", cfg)
+	// P0-Optimization: Use cached resolved config when available.
+	endpoint := cfg.resolvedEndpoint
+	apiKey := cfg.resolvedAPIKey
+	model := cfg.resolvedModel
+
+	// Fallback: if not cached (e.g., called outside Run()), resolve now
+	if endpoint == "" {
+		endpoint, apiKey, model = r.resolveLLMConfig(cfg.UserID, cfg.ProviderID, "", cfg)
+	}
+
 	if !strings.HasSuffix(endpoint, "/chat/completions") {
 		endpoint = endpoint + "/chat/completions"
 	}

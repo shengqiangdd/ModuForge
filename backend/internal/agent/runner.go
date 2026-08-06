@@ -126,6 +126,13 @@ type RunConfig struct {
 	LLMApiKey       string    // resolved API key
 	LLMModel        string    // resolved model ID
 	MaxOutputTokens int       // max output tokens (0 = use model default)
+
+	// P0-Optimization: Cached resolved LLM config (endpoint, apiKey, model).
+	// Populated once at Run() entry to avoid repeated DB queries per iteration.
+	resolvedEndpoint string
+	resolvedAPIKey   string
+	resolvedModel    string
+	modelTier        ModelTier
 }
 
 type AgentRunner struct {
@@ -1794,9 +1801,14 @@ func (r *AgentRunner) Run(ctx context.Context, task string, userID string, messa
 		cfg.Mode = ModeAct
 	}
 
-	// Resolve model tier for adaptive limits
-	_, _, resolvedModel := r.resolveLLMConfig(userID, reqProviderID, reqModel, cfg)
-	modelTier := resolveModelTier(resolvedModel)
+	// P0-Optimization: Resolve LLM config ONCE at Run() entry and cache in RunConfig.
+	// This avoids repeated DB queries in callLLMWithTools on every iteration.
+	resolvedEndpoint, resolvedAPIKey, resolvedModel := r.resolveLLMConfig(userID, reqProviderID, reqModel, cfg)
+	cfg.resolvedEndpoint = resolvedEndpoint
+	cfg.resolvedAPIKey = resolvedAPIKey
+	cfg.resolvedModel = resolvedModel
+	cfg.modelTier = resolveModelTier(resolvedModel)
+	modelTier := cfg.modelTier
 	compactionThreshold := compactionThresholdForTier(modelTier)
 	// Override MaxResultLen with tier-based default if user hasn't set a custom value
 	if cfg.MaxResultLen == defaultMaxResultLen {
@@ -1962,6 +1974,9 @@ You are running WITHOUT a project context. This means:
 	// P2-2: Quality verifier
 	qualityVerifier := &QualityVerifier{db: r.db}
 	qualityReports := make([]QualityReport, 0)
+	// P2-Fix: Limit concurrent quality verification goroutines to prevent goroutine explosion.
+	// Max 3 concurrent verifications; excess goroutines block on this channel.
+	qualitySem := make(chan struct{}, 3)
 
 	// P1-2: File lock for race condition prevention
 	fileLock := &FileLock{}
@@ -1984,9 +1999,10 @@ You are running WITHOUT a project context. This means:
 		}
 		if projectPath != "" {
 			r.repoMap = NewRepoMap(projectPath)
-			// Generate initial repo-map from disk files
+			// P3-Fix: Generate initial repo-map with timeout protection.
+			// Large projects can take seconds to scan; this prevents blocking indefinitely.
 			go func() {
-				r.repoMap.GenerateRepoMap(projectPath)
+				r.repoMap.GenerateRepoMapWithTimeout(ctx, projectPath, 10*time.Second)
 				log.Printf("[Agent] repo-map generated: %d files indexed", len(r.repoMap.fileIndex))
 			}()
 		}
@@ -2386,17 +2402,27 @@ You are running WITHOUT a project context. This means:
 			toolTimeout := toolTimeoutForName(st.skillName)
 			toolCtx, toolCancel := context.WithTimeout(ctx, toolTimeout)
 
-			// P1-2: Acquire file lock for write operations
+			// P0-Fix: Acquire file lock for write operations.
+			// BUG FIX: Previously used `defer fileLock.Unlock(path)` inside a for loop,
+			// which deferred the unlock until Run() returns (not loop iteration end),
+			// causing lock contention across sequential writes to different files.
+			// Now use explicit unlock after executeSkill returns.
+			var lockedPath string
 			if st.skillName == "write_file" || st.skillName == "write_file_batch" {
 				if path, ok := st.skillInput["path"].(string); ok {
 					fileLock.Lock(path)
-					defer fileLock.Unlock(path)
+					lockedPath = path
 				}
 			}
 
 			result, err := r.executeSkill(toolCtx, st.skillName, st.skillInput)
 			toolCancel()
 			close(skillDone)
+
+			// Release file lock immediately after execution (not deferred to function exit)
+			if lockedPath != "" {
+				fileLock.Unlock(lockedPath)
+			}
 
 			if toolCtx.Err() == context.DeadlineExceeded {
 				result = fmt.Sprintf("⚠️ Tool execution timed out after %v", toolTimeout)
@@ -2516,8 +2542,10 @@ You are running WITHOUT a project context. This means:
 					if content, ok := st.skillInput["content"].(string); ok && err == nil {
 						r.cacheWriteContent(sessionID, path, content)
 						// P2-2: Quality verification AFTER write (deferred to background)
-						// This avoids blocking the main loop for large files
+						// P2-Fix: Bounded by qualitySem to prevent goroutine explosion.
 						go func(p, c string) {
+							qualitySem <- struct{}{}        // acquire
+							defer func() { <-qualitySem }() // release
 							report := qualityVerifier.VerifyFile(p, c)
 							mu.Lock()
 							qualityReports = append(qualityReports, report)
