@@ -300,10 +300,10 @@ func (p *toolResultProcessor) process(iter int, conversation []map[string]interf
 			p.w.WriteSSE(map[string]interface{}{
 				"type":    "step",
 				"step":    "think",
-				"content": "⚠️ 已连续多轮未执行写入操作，请直接给出当前进度的答案或执行必要的文件修改",
+				"content": "⚠️ 已连续5轮未执行写入操作，强制要求：你必须立即使用 edit_file 或 write_file 修改代码，或者停止使用工具并提供最终答案。",
 			})
 			conversation = appendRoleMessage(conversation, "user",
-				"[System: You have not written any files for multiple iterations. Please either write the necessary files or provide your final answer based on what you've read so far.]")
+				"[System: CRITICAL - You have not written any files for 5 consecutive iterations. You MUST either: (1) Use edit_file or write_file to make code changes NOW, or (2) Stop using all tools and provide your final answer immediately. Do NOT read any more files.]")
 			answerSent = true
 		}
 	}
