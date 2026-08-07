@@ -3,7 +3,13 @@ node_modules
 frontend/node_modules
 frontend/dist
 backend/server
+backend/target/
 data/
 *.md
 .env
 .mimocode
+*.exe
+*.test
+*.log
+.vscode/
+.idea/

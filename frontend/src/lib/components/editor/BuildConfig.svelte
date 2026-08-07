@@ -1,8 +1,8 @@
 <script lang="ts">
   let {
     projectId = '',
-    selectedTarget = 'arm64',
-    triggerMode = 'manual',
+    selectedTarget = $bindable('arm64'),
+    triggerMode = $bindable('manual'),
     building = false,
     status = '',
     project = null,
@@ -175,15 +175,15 @@
         {#each buildSchedules as s}
           <div class="flex items-center justify-between p-2 rounded-lg" style="background: var(--color-surface)">
             <div class="flex items-center gap-2 text-xs">
-              <span class="material-symbols-outlined text-[14px] {s.is_active ? 'text-[var(--color-success)]' : 'text-[var(--color-text-muted)]'}">
-                {s.is_active ? 'check_circle' : 'pause_circle'}
+              <span class="material-symbols-outlined text-[14px] {s.active ? 'text-[var(--color-success)]' : 'text-[var(--color-text-muted)]'}">
+                {s.active ? 'check_circle' : 'pause_circle'}
               </span>
-              <code class="text-[var(--color-text)]">{s.cron_expr}</code>
+              <code class="text-[var(--color-text)]">{s.cron}</code>
               <span class="text-[var(--color-text-muted)]">{s.target}/{s.arch}</span>
             </div>
             <div class="flex items-center gap-1">
-              <button class="p-1 rounded hover:bg-[var(--color-border)]" onclick={() => onToggleSchedule?.(s.id, !s.is_active)} title={s.is_active ? '暂停' : '启用'}>
-                <span class="material-symbols-outlined text-[14px]">{s.is_active ? 'pause' : 'play_arrow'}</span>
+              <button class="p-1 rounded hover:bg-[var(--color-border)]" onclick={() => onToggleSchedule?.(s.id, !s.active)} title={s.active ? '暂停' : '启用'}>
+                <span class="material-symbols-outlined text-[14px]">{s.active ? 'pause' : 'play_arrow'}</span>
               </button>
               <button class="p-1 rounded hover:bg-[var(--color-error-light)]" onclick={() => onDeleteSchedule?.(s.id)} title="删除">
                 <span class="material-symbols-outlined text-[14px] text-[var(--color-error)]">delete</span>

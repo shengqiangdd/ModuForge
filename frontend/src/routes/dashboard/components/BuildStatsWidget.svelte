@@ -1,7 +1,7 @@
 <script lang="ts">
   import Skeleton from '$lib/components/ui/Skeleton.svelte';
 
-  let { data = null, loading = false }: { data?: { total: number; success: number; failed: number; cancelled: number; avg_time: number } | null; loading?: boolean } = $props();
+  let { data = null, loading = false }: { data?: { total: number; success: number; failed: number; cancelled: number; avg_time: number; success_rate?: number } | null; loading?: boolean } = $props();
 </script>
 
 <div class="widget">

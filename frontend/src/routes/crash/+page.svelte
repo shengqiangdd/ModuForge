@@ -10,6 +10,13 @@
     timestamp: string;
     stack?: string;
     count?: number;
+    error_type: string;
+    module_slug?: string;
+    device_id?: string;
+    created_at: string;
+    app_version?: string;
+    stack_trace?: string;
+    device_info?: string;
   }
 
   interface CrashStats {
@@ -17,6 +24,8 @@
     devices: number;
     modules: number;
     types: { type: string; count: number }[];
+    today?: number;
+    affected_modules?: number;
   }
 
   let logs: CrashLog[] = $state([]);

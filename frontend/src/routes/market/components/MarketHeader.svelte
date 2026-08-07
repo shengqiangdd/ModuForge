@@ -40,7 +40,7 @@
     onCompare?: () => void;
     onRunBatch?: (action: 'install' | 'uninstall' | 'update') => void;
     onClearSlugs?: () => void;
-    onClearCompare?: () => void;
+    onClearCompare?: (slug: string) => void;
   } = $props();
 
   let debounceTimer: ReturnType<typeof setTimeout> | null = $state(null);
@@ -123,7 +123,7 @@
       {#each Array.from(compareIds) as slug}
         <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-xs" style="background: var(--color-bg-elevated); color: var(--color-text)">
           {slug}
-          <button class="p-0.5 hover:text-[var(--color-error)]" onclick={() => onClearCompare?.()}>
+          <button class="p-0.5 hover:text-[var(--color-error)]" onclick={() => onClearCompare?.(slug)}>
             <span class="material-symbols-outlined text-[12px]">close</span>
           </button>
         </span>

@@ -2,12 +2,12 @@
   export interface Subtask {
     id: string;
     description: string;
-    status: 'pending' | 'in_progress' | 'completed' | 'failed';
+    status: 'pending' | 'in_progress' | 'completed' | 'failed' | 'running' | 'done' | 'error' | 'skipped';
     dependencies?: string[];
     files?: string[];
     progress?: number;
-    started_at?: number;
-    completed_at?: number;
+    started_at?: number | string;
+    completed_at?: number | string;
     retry_count?: number;
   }
 

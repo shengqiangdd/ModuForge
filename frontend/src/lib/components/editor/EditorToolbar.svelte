@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { shortcutLabel } from '$lib/stores/shortcuts';
+  import { shortcutLabel, type Shortcut } from '$lib/stores/shortcuts';
 
   let {
     project = null,
@@ -31,7 +31,7 @@
     showTerminal?: boolean;
     showDiffList?: boolean;
     diffFiles?: { path: string; current: string; incoming: string }[];
-    shortcuts?: { id: string; key: string; label: string; category: string }[];
+    shortcuts?: Shortcut[];
     onFormatCode?: () => void;
     onRunSecurityScan?: () => void;
     onValidateProject?: () => void;

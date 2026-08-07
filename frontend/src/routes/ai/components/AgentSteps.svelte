@@ -1,10 +1,21 @@
 <script lang="ts">
   import ToolResult from './ToolResult.svelte';
 
+  type AgentStepInput = {
+    path?: string;
+    pattern?: string;
+    command?: string;
+    old_text?: string;
+    content?: string;
+    files?: string[];
+    project_id?: string;
+    [key: string]: unknown;
+  };
+
   type AgentStep = {
     type: 'think' | 'skill_call' | 'skill_result' | 'answer' | 'reasoning';
     skill?: string;
-    input?: Record<string, unknown>;
+    input?: AgentStepInput;
     content?: string;
     round?: number;
   };
@@ -56,7 +67,7 @@
   }
 
   /** Build a short parameter summary for tool calls */
-  function buildParamSummary(input: Record<string, unknown>): string {
+  function buildParamSummary(input: AgentStepInput): string {
     if (!input) return '';
     const parts: string[] = [];
     if (input.path) {

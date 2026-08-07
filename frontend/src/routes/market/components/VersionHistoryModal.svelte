@@ -1,7 +1,7 @@
 <script lang="ts">
   import { renderMarkdown } from '$lib/utils/markdown';
 
-  let { show, versions, versionsLoading, selectedModuleSlug, rollingBack, showVersionUpdate, newVersionCode, newChangelog, updatingVersion, onClose, onRollback, onPublishVersion, onShowUpdate, onHideUpdate }: {
+  let { show, versions, versionsLoading, selectedModuleSlug, rollingBack, showVersionUpdate = $bindable(false), newVersionCode = $bindable(''), newChangelog = $bindable(''), updatingVersion, onClose, onRollback, onPublishVersion, onShowUpdate, onHideUpdate }: {
     show: boolean;
     versions: { id: string; version: string; version_code: string; changelog?: string; created_at?: string }[];
     versionsLoading: boolean;

@@ -7,12 +7,35 @@ export interface TokenUsage {
   total_tokens: number;
 }
 
+export interface AgentStepInput {
+  path?: string;
+  pattern?: string;
+  command?: string;
+  old_text?: string;
+  content?: string;
+  files?: string[];
+  project_id?: string;
+  [key: string]: unknown;
+}
+
 export interface AgentStep {
   type: 'think' | 'skill_call' | 'skill_result' | 'answer';
   skill?: string;
-  input?: Record<string, unknown>;
+  input?: AgentStepInput;
   content?: string;
   round?: number;
+}
+
+export interface Subtask {
+  id: string;
+  description: string;
+  status: 'pending' | 'in_progress' | 'completed' | 'failed' | 'running' | 'done' | 'error' | 'skipped';
+  dependencies?: string[];
+  files?: string[];
+  progress?: number;
+  started_at?: string | number;
+  completed_at?: string | number;
+  retry_count?: number;
 }
 
 export interface Model {
@@ -23,6 +46,7 @@ export interface Model {
 export interface Provider {
   name: string; id: string; endpoint: string; models: Model[];
   requires_key: boolean; is_free: boolean; tier: string;
+  models_json?: string; api_key?: string;
 }
 
 export interface AIPrompt { id: string; mode: string; content: string; updated_at: string; }

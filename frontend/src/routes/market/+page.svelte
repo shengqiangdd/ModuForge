@@ -57,7 +57,7 @@
   let favoriteSlugs = $state<Set<string>>(new Set());
 
   // Health Score
-  let healthScore: { score: number; level: string; details: { name: string; label: string; score: number; max: number }[] } | null = $state(null);
+  let healthScore = $state<{ score: number; level: string; details: { name: string; label: string; score: number; max: number }[] } | null>(null);
   let healthColor = $derived(healthScore ? (healthScore.score >= 80 ? '#22c55e' : healthScore.score >= 60 ? '#eab308' : '#ef4444') : 'var(--color-success)');
   let healthLoading = $state(false);
 
@@ -922,7 +922,7 @@
           <p class="text-xs text-[var(--color-text-muted)]">加载中...</p>
         {:else}
           <div class="space-y-2">
-            {#each trendingModules as mod (mod.id)}
+            {#each trendingModules as mod, i (mod.id)}
               <div class="flex items-center gap-3 py-1.5">
                 <span class="w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold" style="background: {i < 3 ? 'var(--gradient-brand)' : 'var(--color-surface)'}; color: {i < 3 ? 'white' : 'var(--color-text-muted)'}">{i + 1}</span>
                 <div class="flex-1 min-w-0">

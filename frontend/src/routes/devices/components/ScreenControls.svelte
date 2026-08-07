@@ -32,7 +32,7 @@
     onToggleRecording?: () => void;
     onSendKey?: (key: string) => void;
     onSendKeyCombo?: (keys: string[]) => void;
-    onSendInputText?: () => void;
+    onSendInputText?: (text: string) => void;
     onSwipeScreen?: (x1: number, y1: number, x2: number, y2: number, duration: number) => void;
     onRotateScreen?: (dir: string) => void;
     onInputChange?: (v: string) => void;
@@ -92,8 +92,8 @@
 <div>
   <p class="text-xs font-medium mb-2" style="color: var(--color-text-secondary)">文字输入</p>
   <div class="flex gap-2">
-    <input type="text" class="input-field flex-1 text-xs" value={inputText} placeholder="输入文字..." oninput={(e) => onInputChange?.((e.target as HTMLInputElement).value)} onkeydown={(e) => { if (e.key === 'Enter') onSendInputText?.(); }} />
-    <button class="px-3 py-1.5 rounded-xl text-xs font-medium text-white transition-colors" style="background: var(--color-primary)" onclick={onSendInputText} disabled={!inputText}>发送</button>
+    <input type="text" class="input-field flex-1 text-xs" value={inputText} placeholder="输入文字..." oninput={(e) => onInputChange?.((e.target as HTMLInputElement).value)} onkeydown={(e) => { if (e.key === 'Enter') onSendInputText?.(inputText); }} />
+    <button class="px-3 py-1.5 rounded-xl text-xs font-medium text-white transition-colors" style="background: var(--color-primary)" onclick={() => onSendInputText?.(inputText)} disabled={!inputText}>发送</button>
   </div>
 </div>
 

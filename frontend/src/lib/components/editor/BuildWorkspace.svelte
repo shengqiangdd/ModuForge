@@ -372,7 +372,7 @@
       onSelectBuild={(task) => {
         if (task._cancel) { taskId = task.id; cancelBuild(); return; }
         taskId = task.id;
-        status = task.status;
+        status = task.status || '';
         logLines = task.log ? task.log.split('\n') : [];
         if (task.status === 'running' || task.status === 'pending') { building = true; pollStatus(); }
       }}

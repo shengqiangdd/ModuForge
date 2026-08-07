@@ -18,11 +18,14 @@
     module: string;
     message: string;
     timestamp: string;
+    created_at?: string;
+    details?: string;
   }
 
   interface LogStats {
     total: number;
     levels: Record<string, number>;
+    total_logs?: number;
   }
 
   interface HealthInfo {
@@ -30,6 +33,8 @@
     version: string;
     goroutines: number;
     memory: string;
+    status?: string;
+    checks?: Record<string, unknown>;
   }
 
   // ===== Cache =====
@@ -284,7 +289,7 @@
             {#if log.module}
               <span class="text-xs" style="color: var(--color-text-secondary)">{log.module}</span>
             {/if}
-            <span class="text-xs ml-auto" style="color: var(--color-text-muted)">{new Date(log.created_at).toLocaleString()}</span>
+            <span class="text-xs ml-auto" style="color: var(--color-text-muted)">{log.created_at ? new Date(log.created_at).toLocaleString() : ''}</span>
           </div>
           <p class="text-sm" style="color: var(--color-text)">{log.message}</p>
           {#if log.details}

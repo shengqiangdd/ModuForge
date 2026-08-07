@@ -93,7 +93,7 @@
       <p class="hint">请连接设备或检查 ADB 服务</p>
     </div>
   {:else}
-    <ListTransition items={devices} key="serial">
+    <ListTransition items={devices as any} key="serial">
       {#snippet children(device: Device)}
         <div
           class="device-item"

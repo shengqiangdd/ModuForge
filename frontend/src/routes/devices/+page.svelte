@@ -871,9 +871,9 @@
         <!-- Search Bar (1.5) -->
         <div class="p-3 border-b" style="border-color: var(--color-border); background: var(--color-surface)">
           <div class="flex items-center gap-2">
-            <input type="text" class="input-field text-xs flex-1" placeholder="搜索模块名称、描述、作者..." bind:value={moduleSearchQuery} oninput={filterModules}>
+            <input type="text" class="input-field text-xs flex-1" placeholder="搜索模块名称、描述、作者..." bind:value={moduleSearchQuery}>
             {#if moduleSearchQuery}
-              <button class="btn-ghost text-xs" onclick={() => { moduleSearchQuery = ''; filterModules(); }}>清除</button>
+              <button class="btn-ghost text-xs" onclick={() => { moduleSearchQuery = ''; }}>清除</button>
             {/if}
           </div>
         </div>

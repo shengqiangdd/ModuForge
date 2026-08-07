@@ -58,6 +58,9 @@
     versions: { version: number; timestamp: string; changes: string }[];
     score: number;
     metrics: Record<string, number>;
+    stats?: Record<string, unknown>;
+    success_rate?: string;
+    avg_duration?: string;
   }
 
   interface MemoryEntry {
@@ -618,7 +621,7 @@
   async function saveSkill() {
     const token = getToken();
     const isEdit = !!editingSkill;
-    const url = isEdit ? `/api/v1/agent/custom-skills/${editingSkill.id}` : '/api/v1/agent/custom-skills';
+    const url = isEdit ? `/api/v1/agent/custom-skills/${editingSkill!.id}` : '/api/v1/agent/custom-skills';
     const method = isEdit ? 'PUT' : 'POST';
     try {
       const res = await fetch(url, {
@@ -799,7 +802,7 @@
 
     const handler = (e: Event) => {
       e.preventDefault();
-      deferredPrompt = e;
+      deferredPrompt = e as any;
       showInstallPrompt = true;
     };
     window.addEventListener('beforeinstallprompt', handler);
@@ -815,9 +818,9 @@
   </div>
 
   <!-- Profile -->
-  <ProfileSection onProfileLoaded={(admin) => {
-    isAdmin = admin;
-    if (admin) {
+  <ProfileSection onProfileLoaded={(data) => {
+    isAdmin = (data as any).isAdmin ?? data as any;
+    if (isAdmin) {
       Promise.all([loadEmailConfig(), loadHealth()]);
     }
   }} />
@@ -1039,7 +1042,7 @@
                     <pre class="text-xs p-2 rounded-lg overflow-x-auto" style="background: var(--color-bg); color: var(--color-text-secondary); font-family: 'JetBrains Mono', monospace; font-size: 10px">{typeof skill.input_schema === 'string' ? skill.input_schema : JSON.stringify(skill.input_schema, null, 2)}</pre>
                   {/if}
                   <div class="flex items-center gap-2 mt-2">
-                    <button class="btn-ghost text-[11px] px-2.5 py-1" onclick={() => { loadSkillEvolution(skill.id); showEvolution = showEvolution === skill.id ? false : skill.id; }}>
+                    <button class="btn-ghost text-[11px] px-2.5 py-1" onclick={() => { loadSkillEvolution(skill.id); showEvolution = showEvolution === skill.id ? null : skill.id; }}>
                       📊 进化数据
                     </button>
                     <button class="btn-ghost text-[11px] px-2.5 py-1" onclick={() => { testSkillId = skill.id; testResult = ''; showTestInput = true; }}>

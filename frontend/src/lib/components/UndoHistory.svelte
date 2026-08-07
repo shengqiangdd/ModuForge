@@ -18,7 +18,7 @@
     onClose();
   }
 
-  function describeAction(a: { type: string; data: { path?: string } }): string {
+  function describeAction(a: { type: string; data: { path?: string; count?: number; [key: string]: unknown } }): string {
     switch (a.type) {
       case 'file_save': return `保存文件: ${a.data.path || 'unknown'}`;
       case 'file_create': return `创建文件: ${a.data.path || 'unknown'}`;
@@ -64,7 +64,7 @@
                   <span class="material-symbols-outlined text-[14px]">{iconForType(action.type)}</span>
                 </div>
                 <div class="timeline-text">
-                  <span class="timeline-desc">{describeAction(action)}</span>
+                  <span class="timeline-desc">{describeAction(action as any)}</span>
                   <span class="timeline-time">{new Date(action.timestamp).toLocaleTimeString()}</span>
                 </div>
               </div>

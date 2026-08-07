@@ -1,5 +1,5 @@
 <script lang="ts">
-  let { show, onClose, onPublish, publishing, publishName, publishDesc, publishCategory }: {
+  let { show, onClose, onPublish, publishing, publishName = $bindable(''), publishDesc = $bindable(''), publishCategory = $bindable('') }: {
     show: boolean;
     onClose: () => void;
     onPublish: () => void;

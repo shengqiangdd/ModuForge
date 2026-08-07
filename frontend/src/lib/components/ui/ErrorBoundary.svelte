@@ -48,7 +48,7 @@
   </div>
 {:else}
   {#key error}
-    {@render children()}
+    {@render children?.()}
   {/key}
 {/if}
 

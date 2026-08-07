@@ -5,6 +5,8 @@ export interface Shortcut {
   ctrlKey: boolean;
   shiftKey: boolean;
   metaKey: boolean;
+  altKey?: boolean;
+  category?: string;
 }
 
 const STORAGE_KEY = 'moduforge_shortcuts';

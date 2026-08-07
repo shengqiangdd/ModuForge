@@ -71,7 +71,7 @@ export class StreamHandler {
   private progressUpdateMgr: ProgressUpdateManager;
   private safetyTimerMgr: SafetyTimerManager;
   private agentStepBatcher: AgentStepBatcher | null = null;
-  private streamCtrl: AbortController | null = null;
+  private streamCtrl: EventSource | null = null;
   private sseLineBuffer = '';
   private stepElapsedTimer: ReturnType<typeof setInterval> | null = null;
   private autoSaveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -296,7 +296,7 @@ export class StreamHandler {
         if (s.mode === 'agent' && this.parseAgentStep(parsed)) continue;
         if (s.mode === 'auto-build') { this.handleAutoBuildEvent(parsed); continue; }
         if (parsed.type === 'step') {
-          if (s.mode === 'generate' || s.mode === 'auto-build') {
+          if (s.mode === 'generate') {
             const stepIndex = resolveStepIndex(parsed.step as string);
             if (stepIndex >= 0) {
               s.currentStepIndex = stepIndex;
@@ -313,7 +313,7 @@ export class StreamHandler {
           }
           if (parsed.step === 'task_progress' && parsed.subtask_id) {
             s.subtasks = s.subtasks.map(st => {
-              if (st.id === parsed.subtask_id) return { ...st, status: (parsed.status as string) || st.status, progress: (parsed.progress as number) ?? st.progress };
+              if (st.id === parsed.subtask_id) return { ...st, status: ((parsed.status as string) || st.status) as Subtask['status'], progress: (parsed.progress as number) ?? st.progress };
               return st;
             });
           }
@@ -353,14 +353,12 @@ export class StreamHandler {
         let reasoning = (parsed.choices?.[0]?.delta?.reasoning_content as string) || '';
         if (reasoning) { this.appendStreamReasoning(reasoning); }
         if (content) {
-          if (s.mode === 'auto-build') return;
           if (s.messages.length > 0 && s.messages[s.messages.length - 1].role === 'assistant') s.lastStreamAssistantIdx = s.messages.length - 1;
           else { s.messages = [...s.messages, { role: 'assistant', content: '' }]; s.lastStreamAssistantIdx = s.messages.length - 1; }
           this.appendStreamContent(content);
           this.progressUpdateMgr.append(content);
         }
       } catch {
-        if (s.mode === 'auto-build') return;
         if (s.messages.length > 0 && s.messages[s.messages.length - 1].role === 'assistant') { s.messages[s.messages.length - 1].content += data; s.messages = [...s.messages]; }
         else s.messages = [...s.messages, { role: 'assistant', content: data }];
         this.progressUpdateMgr.append(data);
@@ -480,7 +478,7 @@ export class StreamHandler {
   // ─── Stop stream ───
   stopStream = () => {
     const s = this.state;
-    this.streamCtrl?.abort();
+    this.streamCtrl?.close();
     this.safetyTimerMgr.stop();
     s.streaming = false; s.currentStepIndex = -1; this.progressSteps = []; s.progressStepDetails = [];
     s.expandedReasoning = new Set(); s.agentSteps = []; s.agentHadFinalAnswer = false;

@@ -533,7 +533,7 @@ import { filterStepsByRound } from './lib/rounds';
     if (!result) return;
     messages = result.truncated;
     input = result.userInput;
-    setTimeout(() => handler.handler.send(true), 100);
+    setTimeout(() => handler.send(true), 100);
   }
 
   function editMessage(idx: number) {
@@ -780,7 +780,7 @@ import { filterStepsByRound } from './lib/rounds';
     }, {
       loadProjectFiles,
       loadConversations,
-      loadGenHistory,
+      loadGenHistory: async () => { loadGenHistory(); },
       saveConfigToBackend: (pid, mid) => saveConfigToBackend(pid, mid),
       scrollToBottom: async () => { await tick(); chatMessages?.scrollToBottom(); },
       toast,
@@ -886,11 +886,11 @@ import { filterStepsByRound } from './lib/rounds';
 
     <ChatMessages bind:this={chatMessages}
       bind:messages {mode} {streaming} {expandedReasoning} {messageUsages} {messageTimes}
-      onToggleReasoning={(idx) => { const next = new Set(expandedReasoning); if (next.has(idx)) next.delete(idx); else next.add(idx); expandedReasoning = next; }}
+      onToggleReasoning={(idx: number) => { const next = new Set(expandedReasoning); if (next.has(idx)) next.delete(idx); else next.add(idx); expandedReasoning = next; }}
       onEdit={editMessage} onDelete={confirmDeleteMessage} onReply={replyToMessage}
-      onCopy={(text) => safeCopyText(text).then(ok => { if (ok) toast('已复制', 'success'); })}
+      onCopy={(text: string) => safeCopyText(text).then(ok => { if (ok) toast('已复制', 'success'); })}
       onOpenImportDialog={openImportDialog} onOpenPreview={(files: {path: string; content: string}[]) => openPreview(files)}
-      onInsertToInput={(text) => input = text}
+      onInsertToInput={(text: string) => input = text}
     />
 
     <GatherSpecCard show={showSpecCard} spec={gatheredSpec} onClose={() => showSpecCard = false} onGenerate={switchToGenerateWithSpec} />

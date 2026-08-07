@@ -61,13 +61,9 @@
       opacity: {getOpacity()};
     "
   >
-    {@render children()}
+    <slot />
   </div>
 {/if}
-
-{#snippet children()}
-  <slot />
-{/snippet}
 
 <style>
   .transition-wrapper {

@@ -9,3 +9,6 @@ dist/
 *.db-shm
 opencode.json
 opencode_analysis.txt
+.env
+.env.local
+.env.*.local

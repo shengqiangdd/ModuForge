@@ -13,6 +13,8 @@
     requires_key: boolean;
     is_free: boolean;
     tier: string;
+    models_json?: string;
+    api_key?: string;
   }
 
   // Current provider
@@ -37,7 +39,7 @@
 
   // Models modal
   let showModelsModal = $state(false);
-  let modelsModalProvider: { id: string; name: string } | null = $state(null);
+  let modelsModalProvider: { id: string; name: string; models?: { id: string; name: string; max_tokens: number }[] } | null = $state(null);
   let userModelsMap = $state<Record<string, Array<{id: string; name: string}>>>({});
   let addingModelProviderId = $state('');
   let newModelId = $state('');
@@ -548,7 +550,7 @@
       </div>
       <div class="p-5 overflow-auto flex-1 space-y-3">
         <!-- Built-in models -->
-        {#if modelsModalProvider.models?.length > 0}
+        {#if (modelsModalProvider.models?.length ?? 0) > 0}
           <div>
             <p class="text-xs font-medium text-[var(--color-text-muted)] mb-2">内置模型</p>
             {#each modelsModalProvider.models as model}
@@ -575,8 +577,8 @@
                   <span class="text-sm text-[var(--color-text)]">{model.name}</span>
                   <span class="text-xs text-[var(--color-text-muted)] ml-1">({model.id})</span>
                 </div>
-                <button class="text-xs text-[var(--color-error)]" onclick={() => removeUserModel(modelsModalProvider.id, model.id)} disabled={removingModelKey === `${modelsModalProvider.id}:${model.id}`}>
-                  {removingModelKey === `${modelsModalProvider.id}:${model.id}` ? '移除中...' : '移除'}
+                <button class="text-xs text-[var(--color-error)]" onclick={() => removeUserModel(modelsModalProvider!.id, model.id)} disabled={removingModelKey === `${modelsModalProvider!.id}:${model.id}`}>
+                  {removingModelKey === `${modelsModalProvider!.id}:${model.id}` ? '移除中...' : '移除'}
                 </button>
               </div>
             {/each}
@@ -599,7 +601,7 @@
             </div>
           </div>
         {:else}
-          <button class="btn-ghost text-xs w-full py-2" onclick={() => startAddModel(modelsModalProvider.id)}>
+          <button class="btn-ghost text-xs w-full py-2" onclick={() => startAddModel(modelsModalProvider!.id)}>
             <span class="material-symbols-outlined text-[14px]">add</span>
             添加自定义模型
           </button>

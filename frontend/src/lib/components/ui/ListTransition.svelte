@@ -1,22 +1,21 @@
-<script lang="ts">
+<script lang="ts" generics="T extends Record<string, any>">
   let { items = [], key = 'id', duration = 200, children }: {
-    items?: Record<string, unknown>[];
+    items?: T[];
     key?: string;
     duration?: number;
-    children?: (...args: unknown[]) => unknown;
+    children?: import('svelte').Snippet<[T, number]>;
   } = $props();
 
-  let prevItems = $state<Record<string, unknown>[]>([]);
+  let prevItems = $state<T[]>([]);
   let transitioning = $state(new Set<string>());
 
   $effect(() => {
-    const newKeys = new Set(items.map(i => i[key]));
-    const oldKeys = new Set(prevItems.map(i => i[key]));
+    const newKeys = new Set(items.map(i => String(i[key])));
+    const oldKeys = new Set(prevItems.map(i => String(i[key])));
 
-    // Find removed items
     for (const oldKey of oldKeys) {
       if (!newKeys.has(oldKey)) {
-        transitioning.add(oldKey as string);
+        transitioning.add(oldKey);
       }
     }
 
@@ -28,10 +27,10 @@
   {#each items as item, i (item[key])}
     <div
       class="list-item"
-      class:entering={!transitioning.has(item[key])}
+      class:entering={!transitioning.has(String(item[key]))}
       style="transition: opacity {duration}ms ease-out, transform {duration}ms ease-out; animation-delay: {i * 30}ms"
     >
-      {@render children(item, i)}
+      {#if children}{@render children(item, i)}{/if}
     </div>
   {/each}
 </div>

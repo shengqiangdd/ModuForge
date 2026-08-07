@@ -6,8 +6,8 @@
     onDeleteFailedBuilds,
     onRefresh,
   }: {
-    buildHistory?: { id: string; status: string; timestamp: string; branch: string; target: string; version: string }[];
-    onSelectBuild?: (task: { id: string }) => void;
+    buildHistory?: { id: string; status: string; timestamp: string; branch: string; target: string; version: string; trigger?: string; commit_hash?: string; created_at?: string; _cancel?: boolean }[];
+    onSelectBuild?: (task: { id: string; _cancel?: boolean; status?: string; log?: string }) => void;
     onDeleteBuild?: (buildId: string, e: Event) => void;
     onDeleteFailedBuilds?: () => void;
     onRefresh?: () => void;
@@ -54,7 +54,7 @@
               <span class="material-symbols-outlined text-[18px] {cfg.color}">{cfg.icon}</span>
               <span class="text-xs text-[var(--color-text)]">#{task.id?.slice(0, 8) || ''}</span>
               <span class="text-xs px-2 py-0.5 rounded-full flex items-center gap-1 whitespace-nowrap" style="background: var(--color-surface); color: var(--color-text-muted)">
-                <span class="material-symbols-outlined text-[12px]">{triggerIcons[task.trigger] || 'build'}</span>
+                <span class="material-symbols-outlined text-[12px]">{triggerIcons[task.trigger || ''] || 'build'}</span>
                 {task.trigger === 'manual' ? '手动' : task.trigger === 'git' ? 'Git' : task.trigger === 'schedule' ? '定时' : task.trigger || '手动'}
               </span>
             </div>
@@ -62,7 +62,7 @@
               {#if task.commit_hash}
                 <span class="text-xs font-mono" style="color: var(--color-text-muted)">{task.commit_hash.slice(0, 7)}</span>
               {/if}
-              <span class="text-xs" style="color: var(--color-text-muted)">{new Date(task.created_at).toLocaleString('zh-CN')}</span>
+              <span class="text-xs" style="color: var(--color-text-muted)">{new Date(task.created_at || task.timestamp).toLocaleString('zh-CN')}</span>
               {#if task.status === 'running' || task.status === 'pending'}
                 <button class="p-1 rounded hover:bg-[var(--color-surface)]" onclick={(e) => { e.stopPropagation(); onSelectBuild?.({ ...task, _cancel: true }); }}>
                   <span class="material-symbols-outlined text-[16px] text-[var(--color-error)]">cancel</span>
