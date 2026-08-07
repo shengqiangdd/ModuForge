@@ -11,12 +11,13 @@ services:
     ports:
       - "8086:8080"
     environment:
-      - PORT=8080
-      - DB_PATH=/data/moduforge.db
+      - PORT=:8080
+      - DATABASE_PATH=/data/moduforge.db
       - BUILD_DIR=/data/builds
       - MODULES_DIR=/data/modules
       - PROJECTS_DIR=/data/projects
       - GIN_MODE=release
+      - JWT_SECRET=moduforge-jwt-secret-2026
       - MODUFORGE_DEV=0
       - TZ=Asia/Shanghai
     volumes:
