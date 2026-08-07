@@ -30,6 +30,11 @@ func AuthMiddleware(jwtSecret string) fiber.Handler {
 			return c.Status(401).JSON(fiber.Map{"error": "invalid or expired token"})
 		}
 
+		// Reject 2fa_pending tokens — they are only for the 2FA verification endpoint
+		if claims.Role == "2fa_pending" {
+			return c.Status(403).JSON(fiber.Map{"error": "2FA verification required"})
+		}
+
 		c.Locals("uid", claims.UID)
 		c.Locals("user_id", claims.UID)
 		c.Locals("username", claims.Username)

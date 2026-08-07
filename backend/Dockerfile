@@ -1,124 +1,64 @@
-# Frontend build stage
+# ============================================================
+# ModuForge — 多阶段构建 (Multi-stage Build)
+# ============================================================
+# Stage 0: Frontend 构建
 FROM node:22-alpine AS frontend-builder
 
 WORKDIR /app
-
-# Step 1: deps — only reruns when package.json changes
 COPY frontend/package.json frontend/package-lock.json ./
-RUN npm ci
-
-# Step 2: source + build — reruns when any source file changes
+RUN npm ci --include=dev
 COPY frontend/ .
 RUN npm run build
 
-# Backend build stage — use Debian for glibc compatibility with runtime
-FROM golang:1.25-bookworm AS backend-builder
-
-RUN apt-get update && apt-get install -y --no-install-recommends gcc && rm -rf /var/lib/apt/lists/*
+# ============================================================
+# Stage 1: Go 后端编译 (CGO_ENABLED=0 → 纯静态二进制)
+FROM golang:1.25-alpine AS backend-builder
 
 WORKDIR /app
-
+# 先拷贝依赖文件，利用 Docker 缓存层
 COPY backend/go.mod backend/go.sum ./
-RUN --mount=type=cache,target=/go/pkg/mod \
-    go mod tidy && \
-    go mod download
+RUN go mod download
 
 COPY backend/ .
+# 静态编译：CGO_ENABLED=0 避免 glibc 依赖，-trimpath 缩小体积，-s -w 剥离符号表
+RUN CGO_ENABLED=0 go build -ldflags="-s -w" -trimpath -o /server ./cmd/moduforge/
 
-RUN --mount=type=cache,target=/go/pkg/mod \
-    --mount=type=cache,target=/root/.cache/go-build \
-    CGO_ENABLED=1 GOOS=linux go build -o /app/server ./cmd/moduforge/
+# ============================================================
+# Stage 2: 运行时镜像 (最小化 Alpine)
+FROM alpine:3.20
 
-# NDK extraction stage — extract compiler + full sysroot for Rust/C++ cross-compilation
-FROM debian:bookworm-slim AS ndk-extractor
+# 安全元数据标签
+LABEL org.opencontainers.image.title="ModuForge"
+LABEL org.opencontainers.image.description="Modular software forge platform"
+LABEL org.opencontainers.image.source="https://github.com/moduforge/ModuForge"
+LABEL org.opencontainers.image.vendor="ModuForge"
+LABEL org.opencontainers.image.licenses="MIT"
 
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl unzip && rm -rf /var/lib/apt/lists/*
+# 安装运行时的最小依赖（仅 wget 用于健康检查）
+RUN apk add --no-cache wget ca-certificates tzdata && \
+    addgroup -S app && adduser -S app -G app
 
-ENV ANDROID_NDK_VERSION=r27c
-ENV NDK_URL=https://dl.google.com/android/repository/android-ndk-${ANDROID_NDK_VERSION}-linux.zip
-RUN --mount=type=cache,target=/ndk-cache,sharing=locked \
-    CACHE_FILE="/ndk-cache/android-ndk-${ANDROID_NDK_VERSION}-linux.zip" && \
-    if [ -f "$CACHE_FILE" ]; then \
-        echo "✅ Using cached NDK zip" && \
-        cp "$CACHE_FILE" /tmp/ndk.zip; \
-    else \
-        echo "⬇️  Downloading NDK from GitHub..." && \
-        curl -L -o /tmp/ndk.zip "${NDK_URL}" && \
-        cp /tmp/ndk.zip "$CACHE_FILE" && \
-        echo "✅ Downloaded and cached"; \
-    fi && \
-    echo "Size: $(du -sh /tmp/ndk.zip | cut -f1)" && \
-    unzip -q /tmp/ndk.zip -d /tmp && \
-    cp -a /tmp/android-ndk-*/toolchains/llvm/prebuilt/linux-x86_64 /ndk && \
-    rm -rf /tmp/android-ndk-* /tmp/ndk.zip && \
-    echo "✅ NDK ready: $(du -sh /ndk | cut -f1)"
+# 从构建阶段拷贝产物
+COPY --from=backend-builder --chown=app:app /server /server
+COPY --from=frontend-builder --chown=app:app /app/dist /app/dist
 
-# Rust toolchain extraction stage — pre-install stable + ARM64 target (~200MB)
-# Use rust:slim-bookworm (Debian) for glibc compatibility with Debian runtime
-FROM rust:slim-bookworm AS rust-extractor
+# 运行时配置默认值
+ENV PORT=8080 \
+    DB_PATH=/data/moduforge.db \
+    BUILD_DIR=/data/builds \
+    MODULES_DIR=/data/modules \
+    PROJECTS_DIR=/data/projects \
+    GIN_MODE=release \
+    DIST_DIR=/app/dist
 
-# Install ARM64 cross-compilation target
-RUN apt-get update && apt-get install -y --no-install-recommends gcc libc6-dev && \
-    rustup target add aarch64-linux-android && \
-    rustc --version && cargo --version && \
-    # Strip to reduce size
-    find ${CARGO_HOME} -name "*.rlib" -exec strip --strip-debug {} + 2>/dev/null || true && \
-    echo "✅ Rust extracted: $(du -sh ${CARGO_HOME} ${RUSTUP_HOME} | tail -1)"
+# 健康检查：通过 /health HTTP 端点
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://localhost:${PORT}/health || exit 1
 
-# Runtime stage — use Debian for glibc compatibility with NDK clang
-FROM debian:bookworm-slim
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    wget ca-certificates unzip curl xz-utils gcc g++ bash procps libxml2 && \
-    rm -rf /var/lib/apt/lists/*
-
-# Install adb (Android Debug Bridge) for device management
-RUN apt-get update && apt-get install -y --no-install-recommends adb || \
-    (wget -q -O /tmp/platform-tools.zip "https://dl.google.com/android/repository/platform-tools-latest-linux.zip" && \
-     unzip -q /tmp/platform-tools.zip -d /opt && \
-     rm /tmp/platform-tools.zip && \
-     ln -sf /opt/platform-tools/adb /usr/local/bin/adb) || \
-    echo "WARN: adb install failed — device management will be unavailable"
-
-# Copy full NDK from extractor stage for Rust/C++ cross-compilation
-ENV ANDROID_NDK=/opt/android-ndk
-COPY --from=ndk-extractor /ndk ${ANDROID_NDK}
-
-# Copy Go compiler from builder stage (~150MB) for cross-compiling user modules
-ENV GOROOT=/usr/local/go
-ENV PATH="${GOROOT}/bin:${PATH}"
-COPY --from=backend-builder /usr/local/go ${GOROOT}
-
-# Copy pre-installed Rust toolchain (~200MB) with ARM64 target
-# Keep at default paths to preserve symlinks; update Go code to match
-COPY --from=rust-extractor /usr/local/cargo /usr/local/cargo
-COPY --from=rust-extractor /usr/local/rustup /usr/local/rustup
-ENV CARGO_HOME=/usr/local/cargo
-ENV RUSTUP_HOME=/usr/local/rustup
-ENV PATH="${CARGO_HOME}/bin:${PATH}"
-RUN rustc --version && cargo --version && echo "✅ Rust ready"
-
-# Verify toolchains are usable
-RUN echo "--- Toolchain Check ---" && \
-    go version && \
-    rustc --version && \
-    cargo --version && \
-    test -f ${ANDROID_NDK}/bin/aarch64-linux-android21-clang && \
-    echo "✅ NDK ready: $(du -sh ${ANDROID_NDK} | cut -f1)" && \
-    echo "✅ All toolchains OK" || \
-    (echo "❌ Toolchain check FAILED" && exit 1)
-
-WORKDIR /app
-
-COPY --from=backend-builder /app/server .
-COPY --from=frontend-builder /app/dist /app/dist
-RUN mkdir -p /app/data /app/default-data
-
-# Copy entrypoint script
-COPY entrypoint.sh /app/entrypoint.sh
-RUN chmod +x /app/entrypoint.sh
-
+# 服务端口
 EXPOSE 8080
 
-ENTRYPOINT ["/app/entrypoint.sh"]
-CMD ["./server"]
+# 非 root 用户运行
+USER app
+
+ENTRYPOINT ["/server"]

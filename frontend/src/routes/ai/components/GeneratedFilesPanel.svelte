@@ -39,7 +39,7 @@ let {
       </div>
     </div>
     <div class="max-h-48 overflow-y-auto p-3 space-y-2">
-      {#each files as gf}
+      {#each files as gf (gf.path)}
         <div class="rounded-lg border border-[var(--color-border)] overflow-hidden">
           <div class="flex items-center gap-2 px-3 py-1.5 text-xs font-mono" style="background: var(--color-surface); border-bottom: 1px solid var(--color-border);">
             <span class="material-symbols-outlined text-[12px] text-primary-500">description</span>

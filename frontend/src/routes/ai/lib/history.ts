@@ -213,7 +213,7 @@ export async function fetchProjectFiles(projectId: string): Promise<{ path: stri
 export async function fetchProjectList(): Promise<{ id: string; name: string }[]> {
   try {
     const res = await authFetch('/api/v1/projects');
-    if (res.ok) { const data = await res.json(); return (data.projects || []).map((p: any) => ({ id: p.id, name: p.name })); }
+    if (res.ok) { const data = await res.json(); return (data.projects || []).map((p: { id: string; name: string }) => ({ id: p.id, name: p.name })); }
   } catch {}
   return [];
 }

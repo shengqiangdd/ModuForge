@@ -1,8 +1,13 @@
 package config
 
-import "os"
+import (
+	"os"
+	"sync"
+)
 
 type Config struct {
+	mu sync.RWMutex
+
 	Port         string // 监听端口
 	JWTSecret    string // JWT 签名密钥
 	DatabasePath string // SQLite 数据库路径
@@ -15,27 +20,32 @@ type Config struct {
 	LLMProvider string // 当前使用的提供商 ID
 	LLMModelID  string // 当前使用的模型 ID
 	// Provider API Keys
-	OpenAIApiKey    string // OpenAI API key
-	AnthropicApiKey string // Anthropic API key
-	GoogleApiKey    string // Google API key
-	DeepSeekApiKey  string // DeepSeek API key
-	QwenApiKey      string // 通义千问 API key
-	OpenCodeApiKey  string // OpenCode Zen 和 Go 共用
-	XAIApiKey       string // xAI / Grok API key
-	OllamaEndpoint  string // Ollama 本地端点
-	DockerEndpoint    string // Docker 端点（空 = 不启用 Docker 构建）
-	ADBAddress        string // ADB 地址（空 = 不启用 ADB 健康检查）
-	WebhookSecret     string // Git webhook HMAC secret
-	GitHubWebhookSec  string // GitHub webhook secret
-	RateLimitPublic   float64 // 公共路由限流 (req/min)
-	RateLimitAuth     float64 // 认证路由限流 (req/min)
-	RateLimitAI       float64 // AI 路由限流 (req/min)
+	OpenAIApiKey     string // OpenAI API key
+	AnthropicApiKey  string // Anthropic API key
+	GoogleApiKey     string // Google API key
+	DeepSeekApiKey   string // DeepSeek API key
+	QwenApiKey       string // 通义千问 API key
+	OpenCodeApiKey   string // OpenCode Zen 和 Go 共用
+	XAIApiKey        string // xAI / Grok API key
+	OllamaEndpoint   string // Ollama 本地端点
+	DockerEndpoint   string // Docker 端点（空 = 不启用 Docker 构建）
+	ADBAddress       string // ADB 地址（空 = 不启用 ADB 健康检查）
+	WebhookSecret    string // Git webhook HMAC secret
+	GitHubWebhookSec string // GitHub webhook secret
+	RateLimitPublic  float64 // 公共路由限流 (req/min)
+	RateLimitAuth    float64 // 认证路由限流 (req/min)
+	RateLimitAI      float64 // AI 路由限流 (req/min)
 }
+
+func (c *Config) Lock()    { c.mu.Lock() }
+func (c *Config) Unlock()  { c.mu.Unlock() }
+func (c *Config) RLock()   { c.mu.RLock() }
+func (c *Config) RUnlock() { c.mu.RUnlock() }
 
 func Load() *Config {
 	return &Config{
 		Port:           getEnv("PORT", ":8080"),
-		JWTSecret:      getEnv("JWT_SECRET", "change-me-in-production"),
+		JWTSecret:      getEnv("JWT_SECRET", ""),
 		DatabasePath:   getEnv("DATABASE_PATH", "data/moduforge.db"),
 		StoragePath:    getEnv("STORAGE_PATH", "data/storage"),
 		LLMApiKey:      getEnv("LLM_API_KEY", ""),
@@ -53,7 +63,7 @@ func Load() *Config {
 		OllamaEndpoint:  getEnv("OLLAMA_ENDPOINT", "http://localhost:11434"),
 		DockerEndpoint:    getEnv("DOCKER_ENDPOINT", ""),
 		ADBAddress:        getEnv("ADB_ADDRESS", ""),
-		WebhookSecret:     getEnv("WEBHOOK_SECRET", "change-me"),
+		WebhookSecret:     getEnv("WEBHOOK_SECRET", ""),
 		GitHubWebhookSec:  getEnv("GITHUB_WEBHOOK_SECRET", ""),
 		RateLimitPublic:   100,
 		RateLimitAuth:     200,

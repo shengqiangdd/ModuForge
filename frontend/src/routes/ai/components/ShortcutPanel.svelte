@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { focusTrap } from '$lib/utils/focusTrap';
   let { show, onClose }: { show: boolean; onClose: () => void } = $props();
 
   const shortcuts = [
@@ -15,7 +16,7 @@
 </script>
 
 {#if show}
-  <div class="shortcut-overlay" role="dialog" aria-label="快捷键" tabindex="-1" onkeydown={handleKeydown}>
+  <div class="shortcut-overlay" role="dialog" aria-label="快捷键" aria-modal="true" tabindex="-1" onkeydown={handleKeydown} use:focusTrap>
     <div class="shortcut-card">
       <div class="header">
         <h3>⌨️ 快捷键</h3>

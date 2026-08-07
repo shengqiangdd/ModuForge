@@ -32,7 +32,7 @@ func (h *BuildLogHandler) GetBuildLog(c fiber.Ctx) error {
 	c.Set("Content-Type", "text/event-stream")
 	c.Set("Cache-Control", "no-cache")
 	c.Set("Connection", "keep-alive")
-	c.Set("Access-Control-Allow-Origin", "*")
+	// ACAO set by CORS middleware; do not override
 	c.Set("X-Accel-Buffering", "no")
 
 	c.RequestCtx().SetBodyStreamWriter(func(w *bufio.Writer) {

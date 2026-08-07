@@ -198,7 +198,7 @@ func extractGoTypeDependencies(content string) map[string]string {
 			if len(parts) >= 2 {
 				// Check if it's a type reference (starts with uppercase)
 				for _, part := range parts {
-					if len(part) > 0 && part[0] >= 'A' && part[0] <= 'Z' && part != strings.Title(part[:1])+part[1:] {
+					if len(part) > 0 && part[0] >= 'A' && part[0] <= 'Z' {
 						// Might be a type reference
 						break
 					}

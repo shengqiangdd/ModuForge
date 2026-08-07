@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"github.com/moduforge/backend/internal/agent/registry"
 )
 
 // PatternLearningSkill learns from successful module patterns and applies them
@@ -373,8 +374,8 @@ func sanitizePattern(pattern string) string {
 	return result
 }
 
-func (s *PatternLearningSkill) Metadata() SkillMeta {
-	return SkillMeta{
+func (s *PatternLearningSkill) Metadata() registry.SkillMeta {
+	return registry.SkillMeta{
 		ReadOnly:  false,
 		Essential: false,
 		NeedsDB:   true,

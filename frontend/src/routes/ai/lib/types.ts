@@ -10,7 +10,7 @@ export interface TokenUsage {
 export interface AgentStep {
   type: 'think' | 'skill_call' | 'skill_result' | 'answer';
   skill?: string;
-  input?: any;
+  input?: Record<string, unknown>;
   content?: string;
   round?: number;
 }

@@ -1,4 +1,5 @@
 <script lang="ts">
+import { focusTrap } from '$lib/utils/focusTrap';
 import type { SecurityScanResult } from '../../lib/types';
 
 let {
@@ -15,8 +16,8 @@ let {
 </script>
 
 {#if show}
-  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-    <div class="bg-[var(--color-bg)] rounded-2xl shadow-2xl w-full max-w-md border border-[var(--color-border)]" role="dialog" aria-modal="true" tabindex="-1">
+  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) onClose(); }} onkeydown={(e) => { if (e.key === 'Escape') onClose(); }}>
+    <div class="bg-[var(--color-bg)] rounded-2xl shadow-2xl w-full max-w-md border border-[var(--color-border)]" role="dialog" aria-modal="true" tabindex="-1" use:focusTrap>
       <div class="px-6 py-4 border-b border-[var(--color-border)] flex items-center gap-2">
         <span class="material-symbols-outlined text-error-500">warning</span>
         <h3 class="text-lg font-semibold text-[var(--color-text)]">安全警告</h3>

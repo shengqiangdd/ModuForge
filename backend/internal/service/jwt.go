@@ -15,6 +15,9 @@ type Claims struct {
 }
 
 func GenerateJWT(secret, uid, username, role string) (string, error) {
+	if secret == "" {
+		return "", fmt.Errorf("JWT secret is not configured")
+	}
 	claims := &Claims{
 		UID:      uid,
 		Username: username,
@@ -30,6 +33,9 @@ func GenerateJWT(secret, uid, username, role string) (string, error) {
 }
 
 func ParseJWT(tokenStr, secret string) (*Claims, error) {
+	if secret == "" {
+		return nil, fmt.Errorf("JWT secret is not configured")
+	}
 	token, err := jwt.ParseWithClaims(tokenStr, &Claims{}, func(t *jwt.Token) (interface{}, error) {
 		// Prevent algorithm confusion attacks (e.g. alg:RS256 with HMAC)
 		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
@@ -49,6 +55,9 @@ func ParseJWT(tokenStr, secret string) (*Claims, error) {
 // ParseJWTAllowExpired parses a JWT even if it's expired (within grace period).
 // Used by token refresh endpoint — allows renewing tokens that just expired.
 func ParseJWTAllowExpired(tokenStr, secret string, gracePeriod time.Duration) (*Claims, error) {
+	if secret == "" {
+		return nil, fmt.Errorf("JWT secret is not configured")
+	}
 	parser := jwt.NewParser(
 		jwt.WithLeeway(gracePeriod),
 	)

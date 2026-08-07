@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"github.com/moduforge/backend/internal/agent/registry"
 )
 
 // FileHashCacheI is the interface for file hash caching (matches registry.FileHashCacheI).
@@ -62,6 +63,9 @@ func (s *ReadFileSkill) Execute(ctx context.Context, input map[string]interface{
 	if s.projectPath != "" {
 		basePath := ResolveProjectPath(s.db, s.projectPath, projectID)
 		fullPath := filepath.Join(basePath, path)
+		if !isPathWithin(basePath, fullPath) {
+			return "", fmt.Errorf("path traversal denied: %s escapes project root", path)
+		}
 		if data, err := os.ReadFile(fullPath); err == nil {
 			content = string(data)
 		}
@@ -309,8 +313,8 @@ func getDefinitionPatterns(lang string) []*regexp.Regexp {
 	return definitionPatternsCache[lang]
 }
 
-func (s *ReadFileSkill) Metadata() SkillMeta {
-	return SkillMeta{
+func (s *ReadFileSkill) Metadata() registry.SkillMeta {
+	return registry.SkillMeta{
 		ReadOnly:  true,
 		Essential: true,
 		Core:      true,

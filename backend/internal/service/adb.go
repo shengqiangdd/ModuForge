@@ -448,7 +448,7 @@ func (s *ADBService) GetServerStatus(ctx context.Context) (map[string]interface{
 func (s *ADBService) ListDevices(ctx context.Context) ([]ADBDevice, error) {
 	out, err := s.run(ctx, "devices", "-l")
 	if err != nil {
-		return nil, fmt.Errorf("adb devices failed: %v", err)
+		return nil, fmt.Errorf("adb devices failed: %w", err)
 	}
 	var devices []ADBDevice
 	for _, line := range strings.Split(out, "\n") {
@@ -971,7 +971,15 @@ func sanitizePath(p string) string {
 	p = strings.ReplaceAll(p, "}", "")
 	p = strings.ReplaceAll(p, "\n", "")
 	p = strings.ReplaceAll(p, "\r", "")
-	return p
+	// Remove path traversal components
+	var cleaned []string
+	for _, part := range strings.Split(p, "/") {
+		if part == ".." || part == "." {
+			continue
+		}
+		cleaned = append(cleaned, part)
+	}
+	return strings.Join(cleaned, "/")
 }
 
 func (s *ADBService) RunShell(ctx context.Context, serial, shellCmd string) (string, error) {
@@ -1052,7 +1060,7 @@ func (s *ADBService) ListFiles(ctx context.Context, serial, remotePath string) (
 		out, err = s.RunShell(ctx, serial, "su -c 'ls -la "+remotePath+"' 2>/dev/null")
 	}
 	if err != nil {
-		return nil, fmt.Errorf("list files failed: %v", err)
+		return nil, fmt.Errorf("list files failed: %w", err)
 	}
 	var files []FileInfo
 	for _, line := range strings.Split(out, "\n") {
@@ -1100,7 +1108,7 @@ func (s *ADBService) PullFile(ctx context.Context, serial, remotePath, localPath
 	}
 	out, err := s.run(ctx, "-s", serial, "pull", remotePath, localPath)
 	if err != nil {
-		return "", fmt.Errorf("pull failed: %v", err)
+		return "", fmt.Errorf("pull failed: %w", err)
 	}
 	return strings.TrimSpace(out), nil
 }
@@ -1111,7 +1119,7 @@ func (s *ADBService) PushFile(ctx context.Context, serial, localPath, remotePath
 	}
 	out, err := s.run(ctx, "-s", serial, "push", localPath, remotePath)
 	if err != nil {
-		return "", fmt.Errorf("push failed: %v", err)
+		return "", fmt.Errorf("push failed: %w", err)
 	}
 	return strings.TrimSpace(out), nil
 }
@@ -1195,7 +1203,7 @@ func (s *ADBService) ReadFile(ctx context.Context, serial, remotePath string) (s
 	// Read as text
 	out, err := s.RunShell(ctx, serial, "cat '"+remotePath+"' 2>/dev/null")
 	if err != nil {
-		return "", fmt.Errorf("read file failed: %v", err)
+		return "", fmt.Errorf("read file failed: %w", err)
 	}
 
 	// Strip common non-printable control characters that cause garbled display
@@ -1212,7 +1220,7 @@ func (s *ADBService) WriteFile(ctx context.Context, serial, remotePath, content 
 	cmd := fmt.Sprintf("echo '%s' | base64 -d > '%s' && echo 'written'", encoded, remotePath)
 	out, err := s.RunShell(ctx, serial, cmd)
 	if err != nil {
-		return "", fmt.Errorf("write file failed: %v", err)
+		return "", fmt.Errorf("write file failed: %w", err)
 	}
 	return strings.TrimSpace(out), nil
 }
@@ -1231,7 +1239,7 @@ func (s *ADBService) GetFileInfo(ctx context.Context, serial, remotePath string)
 	remotePath = sanitizePath(remotePath)
 	statOut, err := s.RunShell(ctx, serial, "stat "+remotePath+" 2>/dev/null")
 	if err != nil {
-		return nil, fmt.Errorf("file not found: %v", err)
+		return nil, fmt.Errorf("file not found: %w", err)
 	}
 	info := make(map[string]interface{})
 	info["path"] = remotePath
@@ -1284,7 +1292,7 @@ func (s *ADBService) ListApps(ctx context.Context, serial, filter string) ([]App
 	}
 	out, err := s.run(ctx, args...)
 	if err != nil {
-		return nil, fmt.Errorf("list apps failed: %v", err)
+		return nil, fmt.Errorf("list apps failed: %w", err)
 	}
 	var apps []AppInfo
 	for _, line := range strings.Split(out, "\n") {
@@ -1336,7 +1344,7 @@ func (s *ADBService) UninstallApp(ctx context.Context, serial, packageName strin
 	args = append(args, packageName)
 	out, err := s.run(ctx, args...)
 	if err != nil {
-		return "", fmt.Errorf("uninstall failed: %v", err)
+		return "", fmt.Errorf("uninstall failed: %w", err)
 	}
 	return strings.TrimSpace(out), nil
 }
@@ -1344,7 +1352,7 @@ func (s *ADBService) UninstallApp(ctx context.Context, serial, packageName strin
 func (s *ADBService) ClearAppData(ctx context.Context, serial, packageName string) (string, error) {
 	out, err := s.RunShell(ctx, serial, "pm clear "+packageName)
 	if err != nil {
-		return "", fmt.Errorf("clear data failed: %v", err)
+		return "", fmt.Errorf("clear data failed: %w", err)
 	}
 	return strings.TrimSpace(out), nil
 }
@@ -1352,7 +1360,7 @@ func (s *ADBService) ClearAppData(ctx context.Context, serial, packageName strin
 func (s *ADBService) ForceStopApp(ctx context.Context, serial, packageName string) (string, error) {
 	_, err := s.RunShell(ctx, serial, "am force-stop "+packageName)
 	if err != nil {
-		return "", fmt.Errorf("force stop failed: %v", err)
+		return "", fmt.Errorf("force stop failed: %w", err)
 	}
 	return "stopped", nil
 }
@@ -1390,7 +1398,7 @@ func (s *ADBService) ToggleApp(ctx context.Context, serial, packageName string, 
 func (s *ADBService) InstallApp(ctx context.Context, serial, apkPath string) (string, error) {
 	out, err := s.run(ctx, "-s", serial, "install", "-r", "-g", apkPath)
 	if err != nil {
-		return "", fmt.Errorf("install failed: %v", err)
+		return "", fmt.Errorf("install failed: %w", err)
 	}
 	return strings.TrimSpace(out), nil
 }
@@ -1403,7 +1411,7 @@ func (s *ADBService) InstallModule(ctx context.Context, serial, zipPath string) 
 	}
 	out, err := s.RunShell(ctx, serial, "su -c 'magisk --install-module "+remotePath+"'")
 	if err != nil {
-		return "", fmt.Errorf("install failed: %v", err)
+		return "", fmt.Errorf("install failed: %w", err)
 	}
 	return strings.TrimSpace(out), nil
 }
@@ -1416,11 +1424,11 @@ func (s *ADBService) InstallModuleFromURL(ctx context.Context, serial, moduleURL
 	tmpFile := filepath.Join(os.TempDir(), fmt.Sprintf("module_%d.zip", time.Now().UnixMilli()))
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, moduleURL, nil)
 	if err != nil {
-		return nil, fmt.Errorf("create download request failed: %v", err)
+		return nil, fmt.Errorf("create download request failed: %w", err)
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("download failed: %v", err)
+		return nil, fmt.Errorf("download failed: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -1430,13 +1438,13 @@ func (s *ADBService) InstallModuleFromURL(ctx context.Context, serial, moduleURL
 
 	f, err := os.Create(tmpFile)
 	if err != nil {
-		return nil, fmt.Errorf("create temp file failed: %v", err)
+		return nil, fmt.Errorf("create temp file failed: %w", err)
 	}
 	written, err := io.Copy(f, resp.Body)
 	f.Close()
 	if err != nil {
 		os.Remove(tmpFile)
-		return nil, fmt.Errorf("save download failed: %v", err)
+		return nil, fmt.Errorf("save download failed: %w", err)
 	}
 	result["downloaded_size"] = written
 	result["temp_file"] = tmpFile
@@ -1445,14 +1453,14 @@ func (s *ADBService) InstallModuleFromURL(ctx context.Context, serial, moduleURL
 	remotePath := "/data/local/tmp/module_install.zip"
 	if _, err := s.PushFile(ctx, serial, tmpFile, remotePath); err != nil {
 		os.Remove(tmpFile)
-		return nil, fmt.Errorf("push to device failed: %v", err)
+		return nil, fmt.Errorf("push to device failed: %w", err)
 	}
 
 	// 3. Install
 	installOut, err := s.RunShell(ctx, serial, "su -c 'magisk --install-module "+remotePath+"'")
 	if err != nil {
 		os.Remove(tmpFile)
-		return nil, fmt.Errorf("module install failed: %v", err)
+		return nil, fmt.Errorf("module install failed: %w", err)
 	}
 	result["install_output"] = strings.TrimSpace(installOut)
 
@@ -2029,10 +2037,10 @@ func (s *ADBService) UninstallModule(ctx context.Context, serial, moduleName str
 func (s *ADBService) Screenshot(ctx context.Context, serial, localPath string) (string, error) {
 	remotePath := "/data/local/tmp/screenshot.png"
 	if _, err := s.RunShell(ctx, serial, "screencap -p "+remotePath); err != nil {
-		return "", fmt.Errorf("screencap failed: %v", err)
+		return "", fmt.Errorf("screencap failed: %w", err)
 	}
 	if _, err := s.run(ctx, "-s", serial, "pull", remotePath, localPath); err != nil {
-		return "", fmt.Errorf("pull screenshot failed: %v", err)
+		return "", fmt.Errorf("pull screenshot failed: %w", err)
 	}
 	s.RunShell(ctx, serial, "rm "+remotePath)
 	return localPath, nil
@@ -2044,7 +2052,7 @@ func (s *ADBService) ScreenshotBase64(ctx context.Context, serial string) (strin
 	var stdout bytes.Buffer
 	cmd.Stdout = &stdout
 	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("screencap failed: %v", err)
+		return "", fmt.Errorf("screencap failed: %w", err)
 	}
 	encoded := base64.StdEncoding.EncodeToString(stdout.Bytes())
 	return encoded, nil
@@ -2054,7 +2062,7 @@ func (s *ADBService) ScreenshotBase64(ctx context.Context, serial string) (strin
 func (s *ADBService) GetScreenSize(ctx context.Context, serial string) (int, int, error) {
 	out, err := s.RunShell(ctx, serial, "wm size")
 	if err != nil {
-		return 0, 0, fmt.Errorf("get screen size failed: %v", err)
+		return 0, 0, fmt.Errorf("get screen size failed: %w", err)
 	}
 	// Output format: "Physical size: 1080x2340" or "Override size: 1080x2340"
 	// Find the last line with "x" in it
@@ -2097,7 +2105,7 @@ func (s *ADBService) CaptureScreenJPEG(ctx context.Context, serial string, quali
 
 	out, _, err := s.ExecADBRaw(ctx, args...)
 	if err != nil {
-		return 0, 0, nil, fmt.Errorf("screencap failed: %v", err)
+		return 0, 0, nil, fmt.Errorf("screencap failed: %w", err)
 	}
 	if len(out) < 20 {
 		return 0, 0, nil, fmt.Errorf("screencap output too short (%d bytes)", len(out))
@@ -2106,7 +2114,7 @@ func (s *ADBService) CaptureScreenJPEG(ctx context.Context, serial string, quali
 	// Parse PPM P6 header
 	width, height, headerLen, err := parsePPMHeader(out)
 	if err != nil {
-		return 0, 0, nil, fmt.Errorf("PPM parse error: %v", err)
+		return 0, 0, nil, fmt.Errorf("PPM parse error: %w", err)
 	}
 
 	pixelData := out[headerLen:]
@@ -2152,7 +2160,7 @@ func (s *ADBService) CaptureScreenJPEG(ctx context.Context, serial string, quali
 
 	var buf bytes.Buffer
 	if err := jpeg.Encode(&buf, img, &jpeg.Options{Quality: quality}); err != nil {
-		return 0, 0, nil, fmt.Errorf("JPEG encode failed: %v", err)
+		return 0, 0, nil, fmt.Errorf("JPEG encode failed: %w", err)
 	}
 
 	return newW, newH, buf.Bytes(), nil
@@ -2344,10 +2352,10 @@ func (s *ADBService) ScreenRecord(ctx context.Context, serial, localPath, durati
 		duration = "10"
 	}
 	if _, err := s.RunShell(ctx, serial, "screenrecord --time-limit "+duration+" "+remotePath); err != nil {
-		return "", fmt.Errorf("screenrecord failed: %v", err)
+		return "", fmt.Errorf("screenrecord failed: %w", err)
 	}
 	if _, err := s.run(ctx, "-s", serial, "pull", remotePath, localPath); err != nil {
-		return "", fmt.Errorf("pull recording failed: %v", err)
+		return "", fmt.Errorf("pull recording failed: %w", err)
 	}
 	s.RunShell(ctx, serial, "rm "+remotePath)
 	return localPath, nil
@@ -2408,7 +2416,7 @@ func (s *ADBService) GetLogcat(ctx context.Context, serial, filter, level string
 	}
 	out, err := s.run(ctx, args...)
 	if err != nil {
-		return "", fmt.Errorf("logcat failed: %v", err)
+		return "", fmt.Errorf("logcat failed: %w", err)
 	}
 	return out, nil
 }
@@ -2421,7 +2429,7 @@ func (s *ADBService) ClearLogcat(ctx context.Context, serial string) (string, er
 	args = append(args, "logcat", "-c")
 	_, err := s.run(ctx, args...)
 	if err != nil {
-		return "", fmt.Errorf("clear logcat failed: %v", err)
+		return "", fmt.Errorf("clear logcat failed: %w", err)
 	}
 	return "Log cleared", nil
 }

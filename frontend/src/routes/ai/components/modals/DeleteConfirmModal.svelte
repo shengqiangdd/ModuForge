@@ -1,4 +1,5 @@
 <script lang="ts">
+import { focusTrap } from '$lib/utils/focusTrap';
 let {
   show = false,
   onClose,
@@ -11,8 +12,8 @@ let {
 </script>
 
 {#if show}
-  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-    <div class="bg-[var(--color-bg)] rounded-2xl shadow-2xl w-full max-w-sm border border-[var(--color-border)] p-6" role="dialog" aria-modal="true" tabindex="-1">
+  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) onClose(); }} onkeydown={(e) => { if (e.key === 'Escape') onClose(); }}>
+    <div class="bg-[var(--color-bg)] rounded-2xl shadow-2xl w-full max-w-sm border border-[var(--color-border)] p-6" role="dialog" aria-modal="true" tabindex="-1" use:focusTrap>
       <div class="flex items-center gap-2 mb-4">
         <span class="material-symbols-outlined text-error-500 text-[20px]">warning</span>
         <h3 class="text-base font-semibold text-[var(--color-text)]">确认删除</h3>

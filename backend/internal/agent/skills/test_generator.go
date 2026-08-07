@@ -139,11 +139,11 @@ func generateRustTests(path, content string) (string, error) {
 		if strings.HasPrefix(trimmed, "pub fn ") || strings.HasPrefix(trimmed, "pub async fn ") {
 			fnName := extractRustFunctionName(trimmed)
 			if fnName != "" {
-				sb.WriteString(fmt.Sprintf("\t#[test]\n"))
+				sb.WriteString("\t#[test]\n")
 				sb.WriteString(fmt.Sprintf("\tfn test_%s() {\n", fnName))
 				sb.WriteString(fmt.Sprintf("\t\t// TODO: Implement test for %s\n", fnName))
 				sb.WriteString(fmt.Sprintf("\t\t// assert_eq!(%s(...), expected);\n", fnName))
-				sb.WriteString(fmt.Sprintf("\t}\n\n"))
+				sb.WriteString("\t}\n\n")
 			}
 		}
 	}
@@ -179,7 +179,7 @@ func generatePythonTests(path, content string) (string, error) {
 			if fnName != "" && len(fnName) > 1 && fnName[0] >= 'a' && fnName[0] <= 'z' {
 				sb.WriteString(fmt.Sprintf("def test_%s():\n", fnName))
 				sb.WriteString(fmt.Sprintf("    # TODO: Implement test for %s\n", fnName))
-				sb.WriteString(fmt.Sprintf("    pass\n\n"))
+				sb.WriteString("    pass\n\n")
 			}
 		}
 	}
@@ -208,10 +208,10 @@ func generateTypeScriptTests(path, content string) (string, error) {
 			fnName := extractTypeScriptFunctionName(trimmed)
 			if fnName != "" {
 				sb.WriteString(fmt.Sprintf("describe('%s', () => {\n", fnName))
-				sb.WriteString(fmt.Sprintf("\tit('should work correctly', () => {\n"))
+				sb.WriteString("\tit('should work correctly', () => {\n")
 				sb.WriteString(fmt.Sprintf("\t\t// TODO: Implement test for %s\n", fnName))
 				sb.WriteString(fmt.Sprintf("\t\t// expect(%s(...)).toEqual(expected);\n", fnName))
-				sb.WriteString(fmt.Sprintf("\t});\n"))
+				sb.WriteString("\t});\n")
 				sb.WriteString("});\n\n")
 			}
 		}

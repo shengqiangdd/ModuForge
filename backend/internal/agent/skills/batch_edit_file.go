@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"github.com/moduforge/backend/internal/agent/registry"
 )
 
 // BatchEditFileSkill provides atomic multi-file editing.
@@ -81,7 +82,7 @@ func (s *BatchEditFileSkill) Execute(ctx context.Context, input map[string]inter
 		}
 
 		// Read file and validate old_text exists
-		projectPath := s.resolvePath(projectID)
+		projectPath := ResolveProjectPath(s.db, s.projectPath, projectID)
 		fullPath := filepath.Join(projectPath, path)
 		if !isPathWithin(projectPath, fullPath) {
 			return "", fmt.Errorf("edit %d: path traversal not allowed", i)
@@ -121,7 +122,7 @@ func (s *BatchEditFileSkill) Execute(ctx context.Context, input map[string]inter
 		var editedPaths []string
 		for _, op := range ops {
 			// Read file content
-			projectPath := s.resolvePath(projectID)
+			projectPath := ResolveProjectPath(s.db, s.projectPath, projectID)
 			fullPath := filepath.Join(projectPath, op.path)
 
 			data, err := os.ReadFile(fullPath)
@@ -162,7 +163,7 @@ func (s *BatchEditFileSkill) Execute(ctx context.Context, input map[string]inter
 	// No DB — apply edits directly to disk
 	var editedPaths []string
 	for _, op := range ops {
-		projectPath := s.resolvePath(projectID)
+		projectPath := ResolveProjectPath(s.db, s.projectPath, projectID)
 		fullPath := filepath.Join(projectPath, op.path)
 
 		data, err := os.ReadFile(fullPath)
@@ -187,12 +188,8 @@ func (s *BatchEditFileSkill) Execute(ctx context.Context, input map[string]inter
 	return fmt.Sprintf("Batch edited %d files: %s", len(editedPaths), strings.Join(editedPaths, ", ")), nil
 }
 
-func (s *BatchEditFileSkill) resolvePath(projectID string) string {
-	return ResolveProjectPath(s.db, s.projectPath, projectID)
-}
-
-func (s *BatchEditFileSkill) Metadata() SkillMeta {
-	return SkillMeta{
+func (s *BatchEditFileSkill) Metadata() registry.SkillMeta {
+	return registry.SkillMeta{
 		ReadOnly:  false,
 		Essential: false,
 		Core:      true,

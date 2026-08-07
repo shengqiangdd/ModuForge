@@ -224,7 +224,7 @@ export function copyToClipboard(text: string) {
 
 // ─── Gather spec extraction ───
 
-export function extractGatherSpec(content: string): any {
+export function extractGatherSpec(content: string): Record<string, unknown> | null {
   try {
     const match = content.match(/```json\s*\n?([\s\S]*?)```/);
     if (match) return JSON.parse(match[1]);

@@ -4,7 +4,7 @@
   type AgentStep = {
     type: 'think' | 'skill_call' | 'skill_result' | 'answer' | 'reasoning';
     skill?: string;
-    input?: any;
+    input?: Record<string, unknown>;
     content?: string;
     round?: number;
   };
@@ -56,7 +56,7 @@
   }
 
   /** Build a short parameter summary for tool calls */
-  function buildParamSummary(input: any): string {
+  function buildParamSummary(input: Record<string, unknown>): string {
     if (!input) return '';
     const parts: string[] = [];
     if (input.path) {
@@ -140,7 +140,7 @@
                   </div>
                   <div class="text-[11px] mt-0.5 step-result-content {expandedSteps.has(i) ? 'expanded' : ''}" style="color: var(--color-text-secondary);">{step.content}</div>
                   {#if step.content && (step.content.split('\n').length > 3 || step.content.length > 200)}
-                    <button class="text-[9px] mt-0.5 hover:underline" style="color: #3b82f6;" onclick={() => toggleStep(i)}>
+                    <button class="text-[9px] mt-0.5 hover:underline" style="color: var(--color-primary);" onclick={() => toggleStep(i)}>
                       {expandedSteps.has(i) ? '收起' : '展开'}
                     </button>
                   {/if}
@@ -203,7 +203,7 @@
                   <div class="step-label think">推理过程</div>
                   <div class="text-[11px] mt-0.5 step-result-content {expandedSteps.has(i) ? 'expanded' : ''}" style="color: var(--color-text-secondary);">{step.content}</div>
                   {#if step.content && (step.content.split('\n').length > 3 || step.content.length > 200)}
-                    <button class="text-[9px] mt-0.5 hover:underline" style="color: #3b82f6;" onclick={() => toggleStep(i)}>
+                    <button class="text-[9px] mt-0.5 hover:underline" style="color: var(--color-primary);" onclick={() => toggleStep(i)}>
                       {expandedSteps.has(i) ? '收起' : '展开'}
                     </button>
                   {/if}

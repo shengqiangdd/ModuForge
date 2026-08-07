@@ -1,8 +1,8 @@
 const MAX_STEPS = 50;
 
-export interface HistoryAction {
+export interface HistoryAction<T = unknown> {
   type: string;
-  data: any;
+  data: T;
   timestamp: number;
 }
 

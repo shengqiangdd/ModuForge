@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+	"github.com/moduforge/backend/internal/agent/registry"
 )
 
 type MoveFileSkill struct {
@@ -26,10 +27,6 @@ func (s *MoveFileSkill) Description() string {
 	return "Move or rename a file. Input: {\"from\": \"...\", \"to\": \"...\", \"project_id\": \"...\"}. Both paths are relative to project root."
 }
 
-func (s *MoveFileSkill) resolvePath(projectID string) string {
-	return ResolveProjectPath(s.db, s.projectPath, projectID)
-}
-
 func (s *MoveFileSkill) Execute(ctx context.Context, input map[string]interface{}) (string, error) {
 	from, _ := input["from"].(string)
 	to, _ := input["to"].(string)
@@ -46,7 +43,7 @@ func (s *MoveFileSkill) Execute(ctx context.Context, input map[string]interface{
 	}
 
 	// Path traversal protection for both paths
-	basePath := s.resolvePath(projectID)
+	basePath := ResolveProjectPath(s.db, s.projectPath, projectID)
 	fullFrom := filepath.Join(basePath, from)
 	fullTo := filepath.Join(basePath, to)
 	if !isPathWithin(basePath, fullFrom) {
@@ -97,8 +94,8 @@ func (s *MoveFileSkill) Execute(ctx context.Context, input map[string]interface{
 	return fmt.Sprintf("File moved: %s → %s", from, to), nil
 }
 
-func (s *MoveFileSkill) Metadata() SkillMeta {
-	return SkillMeta{
+func (s *MoveFileSkill) Metadata() registry.SkillMeta {
+	return registry.SkillMeta{
 		ReadOnly:  false,
 		Essential: false,
 		Core:      true,

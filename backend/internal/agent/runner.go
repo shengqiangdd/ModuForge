@@ -25,18 +25,10 @@ var agentDebug = os.Getenv("MODUFORGE_DEBUG") == "1"
 // Helps detect leaks from unfinished tool executions or LLM streaming.
 var (
 	activeGoroutines int64
-	goroutineWarnAt  = 50 // warn if more than 50 goroutines active
 )
 
 func incGoroutines() int64 { return atomic.AddInt64(&activeGoroutines, 1) }
 func decGoroutines()       { atomic.AddInt64(&activeGoroutines, -1) }
-
-func checkGoroutineLeak() {
-	n := atomic.LoadInt64(&activeGoroutines)
-	if n > int64(goroutineWarnAt) {
-		log.Printf("[Agent:LEAK] ⚠️ %d goroutines active (threshold=%d)", n, goroutineWarnAt)
-	}
-}
 
 func debugLog(format string, args ...interface{}) {
 	if agentDebug {
@@ -602,7 +594,7 @@ func (qv *QualityVerifier) VerifyFile(filePath string, content string) QualityRe
 	unquotedVarCount := 0
 	doubleSemicolonCount := 0
 
-	for i, line := range lines {
+	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
 		lineUpper := strings.ToUpper(trimmed)
 
@@ -693,9 +685,7 @@ func (qv *QualityVerifier) VerifyFile(filePath string, content string) QualityRe
 		}
 
 		// Shell-specific
-		if i == 0 && strings.HasPrefix(trimmed, "#!") {
-			// shebang found
-		}
+		
 		if strings.HasPrefix(trimmed, "set ") && (strings.Contains(trimmed, "-e") || strings.Contains(trimmed, "-o pipefail")) {
 			hasSetE = true
 		}
@@ -803,200 +793,6 @@ func (qv *QualityVerifier) VerifyFile(filePath string, content string) QualityRe
 	}
 
 	return report
-}
-
-// checkGoSyntax performs Go-specific syntax validation.
-func (qv *QualityVerifier) checkGoSyntax(report *QualityReport, lines []string) {
-	hasPackage := false
-	importParens := 0
-	hasFunc := false
-	inImport := false
-
-	for i, line := range lines {
-		trimmed := strings.TrimSpace(line)
-
-		// Check package declaration
-		if strings.HasPrefix(trimmed, "package ") {
-			hasPackage = true
-		}
-
-		// Check import block balance
-		if trimmed == "import (" {
-			inImport = true
-		}
-		if inImport {
-			for _, ch := range trimmed {
-				if ch == '(' {
-					importParens++
-				}
-				if ch == ')' {
-					importParens--
-					if importParens <= 0 {
-						inImport = false
-					}
-				}
-			}
-		}
-
-		// Check for func declarations
-		if strings.HasPrefix(trimmed, "func ") {
-			hasFunc = true
-		}
-
-		// Check for common Go syntax errors
-		if strings.Contains(trimmed, ";;") {
-			report.Issues = append(report.Issues, fmt.Sprintf("双分号 ;; 在第 %d 行（Go 不需要分号）", i+1))
-		}
-		if strings.HasPrefix(trimmed, "var ") && strings.Contains(trimmed, "=") && !strings.Contains(trimmed, ":=") && strings.HasSuffix(trimmed, ";") {
-			report.Issues = append(report.Issues, fmt.Sprintf("第 %d 行: Go 声明不需要分号结尾", i+1))
-		}
-	}
-
-	if !hasPackage && len(lines) > 0 {
-		report.Issues = append(report.Issues, "缺少 package 声明（Go 文件必须以 package 开头）")
-	}
-	if importParens != 0 {
-		report.Issues = append(report.Issues, "import 块括号不平衡")
-	}
-	if !hasFunc && len(lines) > 10 {
-		report.Issues = append(report.Issues, "未发现 func 声明，可能缺少函数定义")
-	}
-}
-
-// checkRustSyntax performs Rust-specific syntax validation.
-func (qv *QualityVerifier) checkRustSyntax(report *QualityReport, lines []string) {
-	hasFn := false
-	inComment := false
-
-	for i, line := range lines {
-		trimmed := strings.TrimSpace(line)
-
-		// Handle block comments
-		if strings.Contains(trimmed, "/*") {
-			inComment = true
-		}
-		if strings.Contains(trimmed, "*/") {
-			inComment = false
-			continue
-		}
-		if inComment || strings.HasPrefix(trimmed, "//") {
-			continue
-		}
-
-		// Check for fn declarations
-		if strings.HasPrefix(trimmed, "fn ") || strings.Contains(trimmed, " fn ") {
-			hasFn = true
-		}
-
-		// Check for common Rust syntax errors
-		if strings.Contains(trimmed, ";;") && !strings.HasPrefix(trimmed, "//") {
-			report.Issues = append(report.Issues, fmt.Sprintf("双分号 ;; 在第 %d 行（Rust 语句不需要分号结尾的分号）", i+1))
-		}
-
-		// Check for missing semicolons after let/if expressions (common LLM error)
-		if strings.HasPrefix(trimmed, "let ") && strings.Contains(trimmed, "=") && !strings.HasSuffix(trimmed, ";") && !strings.HasSuffix(trimmed, "{") && !strings.HasSuffix(trimmed, ",") {
-			// Only flag if it looks like a simple assignment (not a block)
-			if !strings.Contains(trimmed, "fn ") && !strings.Contains(trimmed, "if ") {
-				report.Issues = append(report.Issues, fmt.Sprintf("第 %d 行: let 语句可能缺少分号", i+1))
-			}
-		}
-	}
-
-	if !hasFn && len(lines) > 10 {
-		report.Issues = append(report.Issues, "未发现 fn 声明，可能缺少函数定义")
-	}
-}
-
-// checkCppSyntax performs C/C++-specific syntax validation.
-func (qv *QualityVerifier) checkCppSyntax(report *QualityReport, lines []string) {
-	hasInclude := false
-	hasMain := false
-	inComment := false
-
-	for i, line := range lines {
-		trimmed := strings.TrimSpace(line)
-
-		// Handle block comments
-		if strings.Contains(trimmed, "/*") {
-			inComment = true
-		}
-		if strings.Contains(trimmed, "*/") {
-			inComment = false
-			continue
-		}
-		if inComment || strings.HasPrefix(trimmed, "//") {
-			continue
-		}
-
-		// Check for #include
-		if strings.HasPrefix(trimmed, "#include") {
-			hasInclude = true
-		}
-
-		// Check for main function
-		if strings.Contains(trimmed, "main(") {
-			hasMain = true
-		}
-
-		// Check for common C/C++ syntax errors
-		if strings.Contains(trimmed, ";;") && !strings.HasPrefix(trimmed, "#") {
-			report.Issues = append(report.Issues, fmt.Sprintf("双分号 ;; 在第 %d 行", i+1))
-		}
-
-		// Check for missing semicolons after struct/class/enum definitions
-		if (strings.HasPrefix(trimmed, "struct ") || strings.HasPrefix(trimmed, "class ") || strings.HasPrefix(trimmed, "enum ")) && strings.HasSuffix(trimmed, "}") {
-			report.Issues = append(report.Issues, fmt.Sprintf("第 %d 行: 结构体/类定义后可能缺少分号", i+1))
-		}
-	}
-
-	if !hasInclude && len(lines) > 5 {
-		report.Issues = append(report.Issues, "未发现 #include 指令，可能缺少头文件引用")
-	}
-	if !hasMain && len(lines) > 10 {
-		report.Issues = append(report.Issues, "未发现 main 函数，可能缺少程序入口点")
-	}
-}
-
-// checkShellSyntax performs shell script syntax validation.
-func (qv *QualityVerifier) checkShellSyntax(report *QualityReport, lines []string) {
-	if len(lines) == 0 {
-		return
-	}
-
-	// Check shebang
-	firstLine := strings.TrimSpace(lines[0])
-	if !strings.HasPrefix(firstLine, "#!/") {
-		report.Issues = append(report.Issues, "缺少 shebang 行（第一行应为 #!/system/bin/sh 或 #!/bin/bash）")
-	}
-
-	// Check for set -e / set -euo pipefail
-	hasSetE := false
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "set ") && (strings.Contains(trimmed, "-e") || strings.Contains(trimmed, "-o pipefail")) {
-			hasSetE = true
-			break
-		}
-	}
-	if !hasSetE {
-		report.Issues = append(report.Issues, "建议添加 set -euo pipefail 以增强错误处理")
-	}
-
-	// Check for unquoted variables (common LLM error in shell scripts)
-	unquotedCount := 0
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "#") || strings.HasPrefix(trimmed, "echo") {
-			continue
-		}
-		// Simple heuristic: $VAR without quotes
-		if strings.Contains(trimmed, " $") && !strings.Contains(trimmed, "\"$") && !strings.Contains(trimmed, "'$") {
-			unquotedCount++
-		}
-	}
-	if unquotedCount > 3 {
-		report.Issues = append(report.Issues, fmt.Sprintf("发现 %d 处可能未加引号的变量，建议使用 \"$VAR\" 格式", unquotedCount))
-	}
 }
 
 // GetQualitySummary returns a summary of quality reports with syntax-aware insights.
@@ -1207,10 +1003,6 @@ type StagnationDetector struct {
 	lastToolCalls         []string
 	lastToolCallsIdx      int      // ring buffer write position
 	lastToolCallsCount    int      // number of entries in ring buffer
-	// Sliding window of last N tool results (ring buffer)
-	lastResults           []string
-	lastResultsIdx        int      // ring buffer write position
-	lastResultsCount      int      // number of entries in ring buffer
 
 	// O(1) counters for stagnation detection
 	signatureCounts       map[string]int // tool signature -> count in current window
@@ -1223,7 +1015,7 @@ type StagnationDetector struct {
 	maxStagnationRounds   int      // rounds with no meaningful progress
 	stagnationCount       int      // current stagnation counter
 
-	windowSize            int      // size of sliding window (max of lastToolCalls/lastResults capacity)
+	windowSize            int      // size of sliding window (lastToolCalls capacity)
 }
 
 // toolCallSignature creates a compact signature for a tool call (tool name + args hash).
@@ -1255,7 +1047,6 @@ func newStagnationDetector() *StagnationDetector {
 	const windowSize = 15
 	return &StagnationDetector{
 		lastToolCalls:         make([]string, windowSize),
-		lastResults:           make([]string, windowSize),
 		signatureCounts:       make(map[string]int, windowSize),
 		maxConsecutiveNoWrite: 30,
 		maxIdenticalRepeats:   15,
@@ -2018,12 +1809,13 @@ You are running WITHOUT a project context. This means:
 			}
 		}
 		if projectPath != "" {
-			r.repoMap = NewRepoMap(projectPath)
+			rm := NewRepoMap(projectPath)
+			r.repoMap = rm
 			// P3-Fix: Generate initial repo-map with timeout protection.
 			// Large projects can take seconds to scan; this prevents blocking indefinitely.
 			go func() {
-				r.repoMap.GenerateRepoMapWithTimeout(ctx, projectPath, 10*time.Second)
-				log.Printf("[Agent] repo-map generated: %d files indexed", len(r.repoMap.fileIndex))
+				rm.GenerateRepoMapWithTimeout(ctx, projectPath, 10*time.Second)
+				log.Printf("[Agent] repo-map generated: %d files indexed", len(rm.fileIndex))
 			}()
 		}
 	}

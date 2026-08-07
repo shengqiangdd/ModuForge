@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"regexp"
 )
 
 type BuildLogEntry struct {
@@ -28,9 +29,18 @@ func NewBuildLogService(logsDir string) *BuildLogService {
 	return &BuildLogService{logsDir: logsDir}
 }
 
+// safeBuildID sanitizes buildID to prevent path traversal.
+func safeBuildID(buildID string) string {
+	// Allow alphanumeric, hyphens, underscores, and dots only
+	re := regexp.MustCompile(`[^a-zA-Z0-9._-]+`)
+	return re.ReplaceAllString(buildID, "")
+}
+
 func (s *BuildLogService) WriteLog(buildID string, level, message string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	buildID = safeBuildID(buildID)
 
 	entry := BuildLogEntry{
 		Timestamp: time.Now(),
@@ -49,6 +59,7 @@ func (s *BuildLogService) WriteLog(buildID string, level, message string) {
 }
 
 func (s *BuildLogService) StreamLogs(ctx context.Context, buildID string) (<-chan BuildLogEntry, error) {
+	buildID = safeBuildID(buildID)
 	logFile := filepath.Join(s.logsDir, buildID+".log")
 
 	ch := make(chan BuildLogEntry, 100)
@@ -82,6 +93,7 @@ func (s *BuildLogService) StreamLogs(ctx context.Context, buildID string) (<-cha
 
 // WatchLogs 实时监听日志文件变化（用于 SSE 推送）
 func (s *BuildLogService) WatchLogs(ctx context.Context, buildID string) (<-chan BuildLogEntry, error) {
+	buildID = safeBuildID(buildID)
 	logFile := filepath.Join(s.logsDir, buildID+".log")
 	ch := make(chan BuildLogEntry, 100)
 

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"github.com/moduforge/backend/internal/agent/registry"
 )
 
 // SecurityScanSkill performs static security scanning on source code.
@@ -70,8 +71,8 @@ func (s *SecurityScanSkill) Execute(ctx context.Context, input map[string]interf
 	return formatSecurityReport(path, findings, len(lines)), nil
 }
 
-func (s *SecurityScanSkill) Metadata() SkillMeta {
-	return SkillMeta{
+func (s *SecurityScanSkill) Metadata() registry.SkillMeta {
+	return registry.SkillMeta{
 		ReadOnly:  true,
 		Essential: false,
 		Core:      false,

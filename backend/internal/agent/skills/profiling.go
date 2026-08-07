@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"github.com/moduforge/backend/internal/agent/registry"
 )
 
 // ProfilingSkill provides performance profiling guidance for different languages.
@@ -69,8 +70,8 @@ func (s *ProfilingSkill) Execute(ctx context.Context, input map[string]interface
 	return formatProfilingReport(result), nil
 }
 
-func (s *ProfilingSkill) Metadata() SkillMeta {
-	return SkillMeta{
+func (s *ProfilingSkill) Metadata() registry.SkillMeta {
+	return registry.SkillMeta{
 		ReadOnly:  true,
 		Essential: false,
 		Core:      false,

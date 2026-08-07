@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"strings"
+	"github.com/moduforge/backend/internal/agent/registry"
 )
 
 // CodeQualitySkill measures code quality metrics: cyclomatic complexity,
@@ -64,8 +65,8 @@ func (s *CodeQualitySkill) Execute(ctx context.Context, input map[string]interfa
 	return formatQualityReport(metrics), nil
 }
 
-func (s *CodeQualitySkill) Metadata() SkillMeta {
-	return SkillMeta{
+func (s *CodeQualitySkill) Metadata() registry.SkillMeta {
+	return registry.SkillMeta{
 		ReadOnly:  true,
 		Essential: false,
 		Core:      false,
@@ -250,9 +251,7 @@ func extractFunctionName(line, language string) string {
 		// fn name( or pub fn name(
 		rest := line
 		for _, prefix := range []string{"pub(", "pub ", "pub(crate) ", "async "} {
-			if strings.HasPrefix(rest, prefix) {
-				rest = rest[len(prefix):]
-			}
+			rest = strings.TrimPrefix(rest, prefix)
 		}
 		rest = strings.TrimPrefix(rest, "fn ")
 		rest = strings.TrimSpace(rest)

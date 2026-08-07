@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { focusTrap } from '$lib/utils/focusTrap';
   import { onMount } from 'svelte';
 
   let { onClose = () => {} }: { onClose?: () => void } = $props();
@@ -55,7 +56,7 @@
 </script>
 
 <div class="overlay" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-  <div class="panel" role="dialog" aria-modal="true" tabindex="-1">
+  <div class="panel" role="dialog" aria-modal="true" tabindex="-1" use:focusTrap>
     <div class="panel-header">
       <h2 class="panel-title">快捷键</h2>
       <button class="close-btn" onclick={onClose} aria-label="关闭">

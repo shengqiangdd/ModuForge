@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"github.com/moduforge/backend/internal/agent/registry"
 )
 
 type TestModuleSkill struct{}
@@ -498,8 +499,8 @@ func sanitizeFnName(name string) string {
 	return r.Replace(name)
 }
 
-func (s *TestModuleSkill) Metadata() SkillMeta {
-	return SkillMeta{
+func (s *TestModuleSkill) Metadata() registry.SkillMeta {
+	return registry.SkillMeta{
 		ReadOnly:  true,
 		Essential: false,
 		NeedsDB:   true,

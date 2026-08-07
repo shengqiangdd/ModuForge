@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"github.com/moduforge/backend/internal/agent/registry"
 )
 
 // AgentPresetSkill manages agent presets and styles
@@ -164,8 +165,8 @@ func (s *AgentPresetSkill) deletePreset(userID, presetID string) (string, error)
 	return fmt.Sprintf("Deleted preset %s", presetID), nil
 }
 
-func (s *AgentPresetSkill) Metadata() SkillMeta {
-	return SkillMeta{
+func (s *AgentPresetSkill) Metadata() registry.SkillMeta {
+	return registry.SkillMeta{
 		ReadOnly:  false,
 		Essential: false,
 	}

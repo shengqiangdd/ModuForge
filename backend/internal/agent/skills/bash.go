@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"github.com/moduforge/backend/internal/agent/registry"
 )
 
 type BashSkill struct {
@@ -44,7 +45,7 @@ func (s *BashSkill) Execute(ctx context.Context, input map[string]interface{}) (
 		return "", fmt.Errorf("command is required")
 	}
 
-	projectPath := s.resolvePath(projectID)
+	projectPath := ResolveProjectPath(s.db, s.projectPath, projectID)
 
 	// Ensure project files exist on disk (sync from DB if needed)
 	if projectID != "" {
@@ -78,13 +79,6 @@ func (s *BashSkill) Execute(ctx context.Context, input map[string]interface{}) (
 	}
 
 	return outputStr, nil
-}
-
-func (s *BashSkill) resolvePath(projectID string) string {
-	if s.projectPath == "" || projectID == "" {
-		return s.projectPath
-	}
-	return ResolveProjectPath(s.db, s.projectPath, projectID)
 }
 
 // syncProjectToDisk ensures all project files from the database exist on disk.
@@ -134,8 +128,8 @@ func (s *BashSkill) syncProjectToDisk(projectID, projectDir string) error {
 	return nil
 }
 
-func (s *BashSkill) Metadata() SkillMeta {
-	return SkillMeta{
+func (s *BashSkill) Metadata() registry.SkillMeta {
+	return registry.SkillMeta{
 		ReadOnly:  false,
 		Essential: false,
 		Core:      true,

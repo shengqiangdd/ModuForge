@@ -1,13 +1,31 @@
 <script lang="ts">
   import { onMount } from 'svelte';
 
-  let logs: any[] = $state([]);
-  let stats: any = $state(null);
+  interface CrashLog {
+    id: number;
+    module: string;
+    type: string;
+    message: string;
+    device?: string;
+    timestamp: string;
+    stack?: string;
+    count?: number;
+  }
+
+  interface CrashStats {
+    total: number;
+    devices: number;
+    modules: number;
+    types: { type: string; count: number }[];
+  }
+
+  let logs: CrashLog[] = $state([]);
+  let stats: CrashStats | null = $state(null);
   let loading = $state(true);
   let filterModule = $state('');
   let filterType = $state('');
   let filterDevice = $state('');
-  let selectedLog: any = $state(null);
+  let selectedLog: CrashLog | null = $state(null);
 
   function getToken() { return localStorage.getItem('moduforge_token') || ''; }
 
@@ -89,7 +107,7 @@
     <div class="text-center py-8 text-sm" style="color: var(--color-text-muted)">暂无崩溃日志</div>
   {:else}
     <div class="space-y-3">
-      {#each logs as log}
+      {#each logs as log (log.id)}
         <div role="button" tabindex="0" class="card p-4 cursor-pointer hover:shadow-md transition-shadow" onclick={() => selectedLog = log} onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectedLog = log; } }}>
           <div class="flex items-center gap-3">
             <div class="w-2 h-2 rounded-full flex-shrink-0" style="background: {severityColor(log.error_type)}"></div>

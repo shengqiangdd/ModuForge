@@ -1061,6 +1061,10 @@ func (db *DB) SeedAdminUser() error {
 	email := getEnvOrDefault("ADMIN_EMAIL", "admin@moduforge.local")
 	password := getEnvOrDefault("ADMIN_PASSWORD", "admin123")
 
+	if password == "admin123" && os.Getenv("ADMIN_PASSWORD") == "" {
+		log.Printf("[DB] WARNING: using default admin password 'admin123'. Set ADMIN_PASSWORD env var in production.")
+	}
+
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		return fmt.Errorf("hash admin password: %w", err)

@@ -468,8 +468,8 @@ func emitBuildProgress(w SSEWriter, buildOutput string) {
 			}
 		}
 
-		phase, _ := attrs["phase"]
-		status, _ := attrs["status"]
+		phase := attrs["phase"]
+		status := attrs["status"]
 
 		// Map phase names to human-readable labels
 		phaseLabel := phase

@@ -79,9 +79,13 @@ func (h *Hub) Unsubscribe(userID string, client *WSClient) {
 func (h *Hub) NotifyUser(userID string, event string, data interface{}) {
 	evt := WSEvent{Event: event, Data: data}
 	h.mu.RLock()
-	clients := h.clients[userID]
+	clientSet := h.clients[userID]
+	clients := make([]*WSClient, 0, len(clientSet))
+	for c := range clientSet {
+		clients = append(clients, c)
+	}
 	h.mu.RUnlock()
-	for client := range clients {
+	for _, client := range clients {
 		if err := client.SendJSON(evt); err != nil {
 			slog.Warn("ws send error", "user_id", userID, "error", err)
 			h.Unsubscribe(userID, client)
@@ -92,9 +96,13 @@ func (h *Hub) NotifyUser(userID string, event string, data interface{}) {
 func (h *Hub) NotifyProject(projectID string, event string, data interface{}) {
 	evt := WSEvent{Event: event, Data: data}
 	h.projectMu.RLock()
-	members := h.projects[projectID]
+	memberSet := h.projects[projectID]
+	members := make([]*WSClient, 0, len(memberSet))
+	for c := range memberSet {
+		members = append(members, c)
+	}
 	h.projectMu.RUnlock()
-	for client := range members {
+	for _, client := range members {
 		if err := client.SendJSON(evt); err != nil {
 			slog.Warn("ws project send error", "project_id", projectID, "error", err)
 			if client.UserID != "" {
@@ -115,9 +123,13 @@ func (h *Hub) SubscribeProject(projectID string, client *WSClient) {
 
 func (h *Hub) NotifyUserJSON(userID string, raw []byte) {
 	h.mu.RLock()
-	clients := h.clients[userID]
+	clientSet := h.clients[userID]
+	clients := make([]*WSClient, 0, len(clientSet))
+	for c := range clientSet {
+		clients = append(clients, c)
+	}
 	h.mu.RUnlock()
-	for client := range clients {
+	for _, client := range clients {
 		client.mu.Lock()
 		err := client.Conn.WriteMessage(websocket.TextMessage, raw)
 		client.mu.Unlock()
@@ -130,9 +142,13 @@ func (h *Hub) NotifyUserJSON(userID string, raw []byte) {
 
 func (h *Hub) NotifyProjectJSON(projectID string, raw []byte) {
 	h.projectMu.RLock()
-	members := h.projects[projectID]
+	memberSet := h.projects[projectID]
+	members := make([]*WSClient, 0, len(memberSet))
+	for c := range memberSet {
+		members = append(members, c)
+	}
 	h.projectMu.RUnlock()
-	for client := range members {
+	for _, client := range members {
 		client.mu.Lock()
 		err := client.Conn.WriteMessage(websocket.TextMessage, raw)
 		client.mu.Unlock()

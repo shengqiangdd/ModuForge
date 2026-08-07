@@ -226,9 +226,9 @@ let passwordStrength = $derived(getPasswordStrength(password));
 
   <!-- Decorative gradient orbs -->
   <div class="absolute inset-0 overflow-hidden pointer-events-none">
-    <div class="auth-orb auth-orb-1 absolute w-[500px] h-[500px] rounded-full blur-[140px]" style="background: rgba(139,92,246,0.2)"></div>
-    <div class="auth-orb auth-orb-2 absolute w-[400px] h-[400px] rounded-full blur-[120px]" style="background: rgba(6,182,212,0.12)"></div>
-    <div class="auth-orb auth-orb-3 absolute w-[300px] h-[300px] rounded-full blur-[100px]" style="background: rgba(139,92,246,0.06)"></div>
+    <div class="auth-orb auth-orb-1 absolute w-[500px] h-[500px] rounded-full blur-[140px]" style="background: color-mix(in srgb, var(--color-primary) 20%, transparent)"></div>
+    <div class="auth-orb auth-orb-2 absolute w-[400px] h-[400px] rounded-full blur-[120px]" style="background: color-mix(in srgb, var(--color-info) 12%, transparent)"></div>
+    <div class="auth-orb auth-orb-3 absolute w-[300px] h-[300px] rounded-full blur-[100px]" style="background: color-mix(in srgb, var(--color-primary) 6%, transparent)"></div>
   </div>
 
   <!-- Login Card -->
@@ -561,15 +561,15 @@ let passwordStrength = $derived(getPasswordStrength(password));
 <style>
   /* Auth card glassmorphism */
   .auth-card {
-    background: color-mix(in srgb, var(--color-bg-elevated) 82%, rgba(139,92,246,0.08));
+    background: color-mix(in srgb, var(--color-bg-elevated) 82%, color-mix(in srgb, var(--color-primary) 8%, transparent));
     box-shadow: 
       var(--shadow-xl),
-      inset 0 1px 0 rgba(139,92,246,0.1);
+      inset 0 1px 0 color-mix(in srgb, var(--color-primary) 10%, transparent);
   }
 
   /* Grid dot pattern */
   .auth-grid {
-    background-image: radial-gradient(circle, rgba(139,92,246,0.15) 1px, transparent 1px);
+    background-image: radial-gradient(circle, color-mix(in srgb, var(--color-primary) 15%, transparent) 1px, transparent 1px);
     background-size: 24px 24px;
   }
 
@@ -594,7 +594,7 @@ let passwordStrength = $derived(getPasswordStrength(password));
   .auth-input:focus {
     outline: none;
     border-color: var(--color-primary);
-    box-shadow: 0 0 0 3px var(--color-primary-light), 0 0 20px rgba(139,92,246,0.1);
+    box-shadow: 0 0 0 3px var(--color-primary-light), 0 0 20px color-mix(in srgb, var(--color-primary) 10%, transparent);
     background: var(--color-bg-elevated);
   }
   .auth-input:hover:not(:focus) {
@@ -617,15 +617,15 @@ let passwordStrength = $derived(getPasswordStrength(password));
   }
   .auth-submit:hover::before { opacity: 1; }
   .auth-submit:hover {
-    box-shadow: var(--shadow-glow), 0 4px 20px rgba(139,92,246,0.3);
+    box-shadow: var(--shadow-glow), 0 4px 20px color-mix(in srgb, var(--color-primary) 30%, transparent);
     transform: translateY(-1px);
   }
   .auth-submit:active { transform: translateY(0) scale(0.98); }
 
   /* Breathing glow animation */
   @keyframes breatheGlow {
-    0%, 100% { box-shadow: 0 0 20px rgba(139,92,246,0.3), 0 0 40px rgba(139,92,246,0.1); }
-    50% { box-shadow: 0 0 30px rgba(139,92,246,0.5), 0 0 60px rgba(139,92,246,0.2), 0 0 80px rgba(6,182,212,0.1); }
+    0%, 100% { box-shadow: 0 0 20px color-mix(in srgb, var(--color-primary) 30%, transparent), 0 0 40px color-mix(in srgb, var(--color-primary) 10%, transparent); }
+    50% { box-shadow: 0 0 30px color-mix(in srgb, var(--color-primary) 50%, transparent), 0 0 60px color-mix(in srgb, var(--color-primary) 20%, transparent), 0 0 80px color-mix(in srgb, var(--color-info) 10%, transparent); }
   }
 
   /* Floating animations */

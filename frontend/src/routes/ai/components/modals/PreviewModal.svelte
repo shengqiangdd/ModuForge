@@ -1,4 +1,5 @@
 <script lang="ts">
+import { focusTrap } from '$lib/utils/focusTrap';
 import { getFileLanguage, getFileIcon, getWebUIPreviewHTML, checkWebUIFiles } from '../../lib/utils';
 
 let {
@@ -30,8 +31,8 @@ $effect(() => {
 </script>
 
 {#if show}
-  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) { onClose(); webUIMode = false; } }}>
-    <div class="bg-[var(--color-bg)] rounded-2xl shadow-2xl w-full max-w-4xl max-h-[85vh] flex flex-col border border-[var(--color-border)]" role="dialog" aria-modal="true" tabindex="-1">
+  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) { onClose(); webUIMode = false; } }} onkeydown={(e) => { if (e.key === 'Escape') { onClose(); webUIMode = false; } }}>
+    <div class="bg-[var(--color-bg)] rounded-2xl shadow-2xl w-full max-w-4xl max-h-[85vh] flex flex-col border border-[var(--color-border)]" role="dialog" aria-modal="true" tabindex="-1" use:focusTrap>
       <div class="flex items-center justify-between px-6 py-4 border-b border-[var(--color-border)]">
         <div class="flex items-center gap-2">
           {#if hasWebUI && webUIMode}
@@ -52,7 +53,7 @@ $effect(() => {
               {webUIMode ? '文件视图' : 'WebUI 预览'}
             </button>
           {/if}
-          <button class="p-1.5 rounded-lg hover:bg-[var(--color-surface)] transition-colors" onclick={() => { onClose(); webUIMode = false; }}>
+          <button class="p-1.5 rounded-lg hover:bg-[var(--color-surface)] transition-colors" onclick={() => { onClose(); webUIMode = false; }} aria-label="关闭">
             <span class="material-symbols-outlined text-[20px]">close</span>
           </button>
         </div>
@@ -60,7 +61,7 @@ $effect(() => {
       {#if hasWebUI && webUIMode && webUIHTML}
         <div class="flex flex-1 overflow-hidden">
           <div class="flex-1 flex flex-col">
-            <iframe sandbox="allow-scripts allow-same-origin" srcdoc={webUIHTML} class="w-full h-full border-0" title="WebUI Preview"></iframe>
+            <iframe sandbox="allow-scripts" srcdoc={webUIHTML} class="w-full h-full border-0" title="WebUI Preview"></iframe>
           </div>
           <div class="w-64 border-l border-[var(--color-border)] overflow-y-auto p-3 flex-shrink-0">
             <p class="text-xs font-medium text-[var(--color-text-secondary)] mb-2">WebUI 文件</p>

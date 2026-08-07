@@ -10,7 +10,7 @@ export async function loadProjectFilesState(projectId: string): Promise<{
   const files = await fetchProjectFiles(projectId);
   return {
     autoBuildFiles: files,
-    generatedFiles: files.map((f: any) => ({ path: f.path, content: f.content })),
+    generatedFiles: files.map((f: { path: string; content: string; size: number }) => ({ path: f.path, content: f.content })),
   };
 }
 

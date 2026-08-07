@@ -1,4 +1,5 @@
 <script lang="ts">
+import { focusTrap } from '$lib/utils/focusTrap';
 import type { SecurityScanResult } from '../../lib/types';
 
 let {
@@ -27,8 +28,8 @@ let {
 </script>
 
 {#if show}
-  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-    <div class="bg-[var(--color-bg)] rounded-2xl shadow-2xl w-full max-w-md border border-[var(--color-border)] max-h-[85vh] flex flex-col" role="dialog" aria-modal="true" tabindex="-1">
+  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) onClose(); }} onkeydown={(e) => { if (e.key === 'Escape') onClose(); }}>
+    <div class="bg-[var(--color-bg)] rounded-2xl shadow-2xl w-full max-w-md border border-[var(--color-border)] max-h-[85vh] flex flex-col" role="dialog" aria-modal="true" tabindex="-1" use:focusTrap>
       <div class="px-6 py-4 border-b border-[var(--color-border)]">
         <h3 class="text-lg font-semibold text-[var(--color-text)]">导入到项目</h3>
       </div>

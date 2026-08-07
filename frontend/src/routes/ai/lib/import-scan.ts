@@ -6,8 +6,8 @@ import type { SecurityScanResult } from './types';
 export async function loadImportProjects(): Promise<{ id: string; name: string }[]> {
   try {
     return await client.get<{ id: string; name: string }[]>('/projects');
-  } catch (e: any) {
-    toast(e.message || '加载项目列表失败', 'error');
+  } catch (e: unknown) {
+    toast(e instanceof Error ? e.message : '加载项目列表失败', 'error');
     return [];
   }
 }

@@ -243,9 +243,24 @@ func (s *ProjectService) DeleteWithRecycle(ctx context.Context, id string, userI
 	return nil
 }
 
-func (s *ProjectService) ListFiles(ctx context.Context, projectID string) ([]domain.ProjectFile, error) {
+func (s *ProjectService) checkProjectOwnership(ctx context.Context, projectID, userID string) error {
+	var ownerID string
+	err := s.db.QueryRowContext(ctx, "SELECT user_id FROM projects WHERE id = ? AND deleted_at IS NULL", projectID).Scan(&ownerID)
+	if err != nil {
+		return fmt.Errorf("project not found")
+	}
+	if ownerID != "" && ownerID != userID {
+		return fmt.Errorf("access denied")
+	}
+	return nil
+}
+
+func (s *ProjectService) ListFiles(ctx context.Context, projectID, userID string) ([]domain.ProjectFile, error) {
 	if projectID == "" {
 		return []domain.ProjectFile{}, nil
+	}
+	if err := s.checkProjectOwnership(ctx, projectID, userID); err != nil {
+		return nil, err
 	}
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT id, project_id, path, content, created_at, updated_at
@@ -266,7 +281,10 @@ func (s *ProjectService) ListFiles(ctx context.Context, projectID string) ([]dom
 	return files, nil
 }
 
-func (s *ProjectService) GetFile(ctx context.Context, projectID, path string) (*domain.ProjectFile, error) {
+func (s *ProjectService) GetFile(ctx context.Context, projectID, path, userID string) (*domain.ProjectFile, error) {
+	if err := s.checkProjectOwnership(ctx, projectID, userID); err != nil {
+		return nil, err
+	}
 	var f domain.ProjectFile
 	err := s.db.QueryRowContext(ctx,
 		`SELECT id, project_id, path, content, created_at, updated_at
@@ -310,7 +328,7 @@ func (s *ProjectService) SearchAll(ctx context.Context, userID, query string) ([
 		}
 
 		// Search file contents
-		files, err := s.ListFiles(ctx, p.ID)
+		files, err := s.ListFiles(ctx, p.ID, userID)
 		if err != nil {
 			continue
 		}
@@ -359,7 +377,10 @@ func (s *ProjectService) SearchAll(ctx context.Context, userID, query string) ([
 	return results, nil
 }
 
-func (s *ProjectService) SaveFile(ctx context.Context, projectID, path, content string) (*domain.ProjectFile, error) {
+func (s *ProjectService) SaveFile(ctx context.Context, projectID, path, content, userID string) (*domain.ProjectFile, error) {
+	if err := s.checkProjectOwnership(ctx, projectID, userID); err != nil {
+		return nil, err
+	}
 	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO project_files (project_id, path, content)
 		 VALUES (?, ?, ?)
@@ -368,5 +389,5 @@ func (s *ProjectService) SaveFile(ctx context.Context, projectID, path, content 
 	if err != nil {
 		return nil, err
 	}
-	return s.GetFile(ctx, projectID, path)
+	return s.GetFile(ctx, projectID, path, userID)
 }

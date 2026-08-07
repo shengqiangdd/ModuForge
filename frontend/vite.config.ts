@@ -1,3 +1,4 @@
+/// <reference types="vitest" />
 import { defineConfig } from 'vite';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import UnoCSS from 'unocss/vite';
@@ -39,5 +40,17 @@ export default defineConfig({
         },
       },
     },
+  },
+  test: {
+    // 使用 jsdom 作为 DOM 环境（Svelte 5 组件测试需要）
+    environment: 'jsdom',
+    // 全局 setup 文件
+    setupFiles: ['./src/test-setup.ts'],
+    // 包含 Svelte 组件测试
+    include: ['src/**/*.{test,spec}.{ts,js,svelte}'],
+    // 排除 E2E 测试
+    exclude: ['e2e/**', 'node_modules/**'],
+    // 为 Svelte 组件启用 CSS 处理
+    css: false,
   },
 });

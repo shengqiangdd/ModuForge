@@ -139,7 +139,7 @@
           <div class="mb-2">
             <p class="text-[10px] font-medium text-[var(--color-text-muted)] uppercase tracking-wider mb-1.5 px-1">保存的对话</p>
             <div class="space-y-1">
-              {#each savedConversations as conv}
+              {#each savedConversations as conv (conv.id)}
                 <div class="px-2 py-1.5 rounded-lg transition-colors hover:bg-[var(--color-surface)] group">
                   <div class="flex items-center gap-1.5">
                     <button class="flex-1 text-left min-w-0" onclick={() => onSelectConversation?.(conv.id)}>
@@ -184,7 +184,7 @@
           <div>
             <p class="text-[10px] font-medium text-[var(--color-text-muted)] uppercase tracking-wider mb-1.5 px-1">会话记录</p>
             <div class="space-y-1">
-              {#each sessions as sess}
+              {#each sessions as sess (sess.session_id)}
                 <div class="px-2 py-1.5 rounded-lg transition-colors hover:bg-[var(--color-surface)] group {activeSessionId === sess.session_id ? 'bg-primary-500/5' : ''}">
                   <div class="flex items-center gap-1.5">
                     <button class="flex-1 text-left min-w-0" onclick={() => onSelectSession?.(sess.session_id)}>
@@ -230,7 +230,7 @@
         </div>
       {:else}
         <div class="space-y-1">
-          {#each genHistory as item}
+          {#each genHistory as item (item.id)}
             <button
               class="w-full text-left px-2 py-1.5 rounded-lg transition-colors hover:bg-[var(--color-surface)] group"
               onclick={() => onRestoreHistory?.(item)}

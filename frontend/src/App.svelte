@@ -5,6 +5,8 @@
   import { client, getToken, setToken, clearToken, AuthError, hasValidToken, tryRefreshToken } from '$lib/api/client';
   import { globalLoading } from '$lib/stores/loading.svelte';
   import { ws } from '$lib/ws';
+  import { debounce } from '$lib/utils/performance';
+  import ListTransition from '$lib/components/ui/ListTransition.svelte';
   import LocaleSwitcher from '$lib/components/LocaleSwitcher.svelte';
   import NotificationBell from '$lib/components/NotificationBell.svelte';
   import Onboarding from '$lib/components/Onboarding.svelte';
@@ -16,6 +18,7 @@
   import QuickActions from '$lib/components/QuickActions.svelte';
   import { toast } from '$lib/stores/toast.svelte';
   import { initTheme, getTheme, setTheme } from '$lib/stores/theme';
+  import PageSkeleton from '$lib/components/ui/PageSkeleton.svelte';
 
   // Lazy-loaded route components — only imported when navigated to
   const lazyRoutes: Record<string, () => Promise<{ default: Component }>> = {
@@ -60,6 +63,8 @@
   let mobileMenuOpen = $state(false);
   let offline = $state(false);
   let errorCaught = $state<string | null>(null);
+  let errorDetail = $state<string | null>(null);
+  let errorRecoverable = $state(true);
   let showOnboarding = $state(false);
 
   // Search panel (Ctrl+K)
@@ -87,7 +92,9 @@
   // Project state
   interface Project { id: string; name: string; module_type: string; description: string; created_at: string; updated_at: string; }
   let projects = $state<Project[]>([]);
+  let projectSearchRaw = $state('');
   let projectSearch = $state('');
+  const debouncedProjectSearch = debounce((val: string) => { projectSearch = val; }, 200);
   let showCreateModal = $state(false);
   let newProjectName = $state('');
   let newProjectType = $state('universal');
@@ -323,14 +330,12 @@
 
     function handlePopState() {
       const path = window.location.pathname;
-      if (path === '/market/publish') { current = 'market-publish'; loadRoute('market-publish'); }
-      else if (path === '/market') { current = 'market'; loadRoute('market'); }
-      else if (path === '/dashboard') { current = 'dashboard'; loadRoute('dashboard'); }
-      else if (path === '/settings') { current = 'settings'; loadRoute('settings'); }
-      else if (path === '/ai') { current = 'ai'; loadRoute('ai'); }
-      else if (path === '/devices') { current = 'devices'; loadRoute('devices'); }
-      else if (path === '/glossary') { current = 'glossary'; loadRoute('glossary'); }
-      else if (path === '/crash') { current = 'crash'; loadRoute('crash'); }
+      const routeMap: Record<string, Route> = {
+        '/market/publish': 'market-publish', '/market': 'market', '/dashboard': 'dashboard',
+        '/settings': 'settings', '/ai': 'ai', '/devices': 'devices',
+        '/glossary': 'glossary', '/crash': 'crash',
+      };
+      if (routeMap[path]) { current = routeMap[path]; loadRoute(routeMap[path]); }
       else if (path === '/projects') { current = 'projects'; routeComponent = null; routeKey = 'projects'; }
       else if (path.startsWith('/projects/') && path.includes('/build')) { current = 'builds'; projectId = path.split('/')[2] || ''; loadRoute('builds'); }
       else if (path.startsWith('/projects/') && path.includes('/tests')) { current = 'tests'; projectId = path.split('/')[2] || ''; loadRoute('tests'); }
@@ -346,12 +351,16 @@
 
     const handleGlobalError = (event: ErrorEvent) => {
       errorCaught = event.message || '未知错误';
+      errorDetail = event.filename && event.lineno ? `${event.filename}:${event.lineno}` : null;
+      errorRecoverable = true;
       event.preventDefault();
     };
     window.addEventListener('error', handleGlobalError);
 
     const handleRejection = (event: PromiseRejectionEvent) => {
       errorCaught = event.reason?.message || '未处理的 Promise 异常';
+      errorDetail = event.reason?.stack ? event.reason.stack.split('\n')[0] : null;
+      errorRecoverable = true;
       event.preventDefault();
     };
     window.addEventListener('unhandledrejection', handleRejection);
@@ -426,7 +435,7 @@
   }
   .project-card:hover {
     border-color: var(--color-primary);
-    box-shadow: 0 8px 32px rgba(139,92,246,0.12), 0 0 0 1px rgba(139,92,246,0.08);
+    box-shadow: 0 8px 32px color-mix(in srgb, var(--color-primary) 12%, transparent), 0 0 0 1px color-mix(in srgb, var(--color-primary) 8%, transparent);
     transform: translateY(-4px);
   }
   .nav-item {
@@ -449,8 +458,14 @@
     <div class="rounded-2xl shadow-2xl p-8 max-w-md text-center border" style="background: var(--color-bg-elevated); border-color: var(--color-border);">
       <span class="material-symbols-outlined text-5xl mb-3 block" style="color: var(--color-error)">error_outline</span>
       <h2 class="text-lg font-bold mb-2" style="color: var(--color-text)">出现异常</h2>
-      <p class="text-sm mb-4" style="color: var(--color-text-secondary)">{errorCaught}</p>
-      <button class="btn-primary" onclick={() => { errorCaught = null; window.location.reload(); }}>刷新页面</button>
+      <p class="text-sm mb-2" style="color: var(--color-text-secondary)">{errorCaught}</p>
+      {#if errorDetail}
+        <p class="text-xs mb-4 font-mono" style="color: var(--color-text-muted); word-break: break-all">{errorDetail}</p>
+      {/if}
+      <div class="flex gap-3 justify-center">
+        <button class="btn-primary" onclick={() => { errorCaught = null; errorDetail = null; }}>重试</button>
+        <button class="btn-ghost" onclick={() => { errorCaught = null; errorDetail = null; window.location.reload(); }}>刷新页面</button>
+      </div>
     </div>
   </div>
 {/if}
@@ -496,7 +511,7 @@
   <!-- ═══ Desktop Sidebar ═══ -->
   <aside
     class="hidden md:flex flex-col border-r transition-all duration-300 ease-in-out {sidebarCollapsed ? 'w-[72px]' : 'w-64'}"
-    style="background: color-mix(in srgb, var(--color-bg-elevated) 92%, rgba(139,92,246,0.06)); border-color: var(--color-border)"
+    style="background: color-mix(in srgb, var(--color-bg-elevated) 92%, color-mix(in srgb, var(--color-primary) 6%, transparent)); border-color: var(--color-border)"
   >
     <!-- Logo -->
     <div class="flex items-center gap-3 px-5 h-16 border-b cursor-pointer" style="border-color: var(--color-border)" role="button" tabindex="0" onclick={() => navigate('projects')} onkeydown={(e) => { if (e.key === 'Enter') navigate('projects'); }}>
@@ -513,6 +528,7 @@
         class="ml-auto p-1.5 rounded-lg transition-colors"
         style="color: var(--color-text-muted)"
         onclick={() => sidebarCollapsed = !sidebarCollapsed}
+        aria-label={sidebarCollapsed ? '展开侧边栏' : '折叠侧边栏'}
       >
         <span class="material-symbols-outlined text-[18px]">{sidebarCollapsed ? 'chevron_right' : 'chevron_left'}</span>
       </button>
@@ -536,7 +552,7 @@
           {/if}
           <!-- Hover background -->
            <div class="absolute inset-0 rounded-xl transition-opacity duration-200 {isActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}"
-                style="background: {isActive ? 'rgba(139,92,246,0.12)' : 'transparent'}; border: 1px solid {isActive ? 'rgba(139,92,246,0.2)' : 'transparent'}">
+                style="background: {isActive ? 'color-mix(in srgb, var(--color-primary) 12%, transparent)' : 'transparent'}; border: 1px solid {isActive ? 'color-mix(in srgb, var(--color-primary) 20%, transparent)' : 'transparent'}">
           </div>
           <span class="material-symbols-outlined text-[20px] flex-shrink-0 relative z-10" style={isActive ? 'color: var(--color-primary)' : 'color: var(--color-text-muted)'}>
             {item.icon}
@@ -555,6 +571,7 @@
         class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-150 text-[14px] font-medium min-h-[44px] hover:bg-[var(--color-surface)]"
         style="color: var(--color-text-secondary)"
         onclick={toggleTheme}
+        aria-label={themeMode === 'dark' ? '浅色模式' : themeMode === 'light' ? '深色模式' : '跟随系统'}
       >
         <span class="material-symbols-outlined text-[20px]" style="color: var(--color-text-muted)">{themeMode === 'dark' ? 'dark_mode' : themeMode === 'light' ? 'light_mode' : 'brightness_auto'}</span>
         {#if !sidebarCollapsed}
@@ -568,6 +585,7 @@
         class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-150 text-[14px] font-medium min-h-[44px] hover:bg-[var(--color-surface)]"
         style="color: var(--color-text-secondary)"
         onclick={() => showShortcuts = true}
+        aria-label="快捷键"
       >
         <span class="material-symbols-outlined text-[20px]" style="color: var(--color-text-muted)">keyboard</span>
         {#if !sidebarCollapsed}
@@ -579,6 +597,7 @@
         class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 text-[14px] font-medium mt-1 min-h-[44px] group/logout hover:bg-[var(--color-surface)]"
         style="color: var(--color-text-secondary)"
         onclick={confirmLogout}
+        aria-label="{$t('nav.logout')}"
       >
         <span class="material-symbols-outlined text-[20px] transition-colors group-hover/logout:text-[var(--color-error)]" style="color: var(--color-text-muted)">logout</span>
         {#if !sidebarCollapsed}
@@ -601,7 +620,7 @@
       </div>
       <div class="flex items-center gap-1">
         <NotificationBell />
-        <button class="p-2 rounded-lg min-w-[44px] min-h-[44px] flex items-center justify-center" style="color: var(--color-text-muted)" onclick={toggleTheme}>
+        <button class="p-2 rounded-lg min-w-[44px] min-h-[44px] flex items-center justify-center" style="color: var(--color-text-muted)" onclick={toggleTheme} aria-label="切换主题">
           <span class="material-symbols-outlined text-[20px]">{themeMode === 'dark' ? 'dark_mode' : themeMode === 'light' ? 'light_mode' : 'brightness_auto'}</span>
         </button>
         <LocaleSwitcher />
@@ -628,7 +647,7 @@
           </div>
           <div class="relative mb-4">
             <span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400 text-[18px]">search</span>
-            <input type="text" placeholder="搜索项目..." class="input-field" style="padding-left: 36px;" bind:value={projectSearch} />
+            <input type="text" placeholder="搜索项目..." class="input-field" style="padding-left: 36px;" bind:value={projectSearchRaw} oninput={() => debouncedProjectSearch(projectSearchRaw)} />
           </div>
           {#if filteredProjects.length === 0 && projectSearch}
             <div class="text-center py-16">
@@ -650,7 +669,8 @@
                 <p class="text-xs mt-1" style="color: var(--color-text-muted)">Create a new universal module</p>
               </button>
               <!-- Existing Projects -->
-              {#each filteredProjects as project (project.id)}
+              <ListTransition items={filteredProjects} key="id">
+                {#snippet children(project, _i)}
                 <div
                   role="button"
                   tabindex="0"
@@ -660,7 +680,7 @@
                   onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate('editor', project.id); } }}
                 >
                   <!-- Hover gradient -->
-                  <div class="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300" style="background: linear-gradient(135deg, rgba(139,92,246,0.05) 0%, rgba(6,182,212,0.03) 100%)"></div>
+                  <div class="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300" style="background: linear-gradient(135deg, color-mix(in srgb, var(--color-primary) 5%, transparent) 0%, color-mix(in srgb, var(--color-info) 3%, transparent) 100%)"></div>
                   
                   <div class="relative z-10">
                     <div class="flex items-start justify-between mb-3">
@@ -669,7 +689,8 @@
                       </div>
                       <button class="p-2 rounded-lg opacity-0 group-hover:opacity-100 transition-all duration-200 min-w-[44px] min-h-[44px] flex items-center justify-center hover:bg-[var(--color-error-light)]"
                               style="color: var(--color-text-muted)"
-                              onclick={(e) => { e.stopPropagation(); confirmDelete(project.id); }}>
+                              onclick={(e) => { e.stopPropagation(); confirmDelete(project.id); }}
+                              aria-label="删除项目 {project.name}">
                         <span class="material-symbols-outlined text-[18px]" style="color: var(--color-error)">delete</span>
                       </button>
                     </div>
@@ -681,7 +702,8 @@
                     </div>
                   </div>
                 </div>
-              {/each}
+                {/snippet}
+              </ListTransition>
             </div>
           {/if}
         </div>
@@ -689,11 +711,11 @@
 
       <!-- Create Project Modal -->
       {#if showCreateModal}
-        <div class="fixed inset-0 z-50 flex items-center justify-center p-4 animate-[fadeIn_0.15s_ease-out]" style="background: rgba(0,0,0,0.6); backdrop-filter: blur(8px)" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) showCreateModal = false; }}>
+        <div class="fixed inset-0 z-50 flex items-center justify-center p-4 animate-[fadeIn_0.15s_ease-out]" style="background: rgba(0,0,0,0.6); backdrop-filter: blur(8px)" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) showCreateModal = false; }} onkeydown={(e) => { if (e.key === 'Escape') showCreateModal = false; }}>
           <div class="w-full max-w-md rounded-2xl shadow-xl p-6 border animate-[scaleIn_0.2s_ease-out]"
                style="background: var(--color-bg-elevated); border-color: var(--color-border)"
-               role="dialog" aria-modal="true" tabindex="-1">
-            <h3 class="text-lg font-bold mb-4" style="color: var(--color-text)">{$t('project.new')}</h3>
+               role="dialog" aria-modal="true" aria-labelledby="new-project-title" tabindex="-1">
+            <h3 id="new-project-title" class="text-lg font-bold mb-4" style="color: var(--color-text)">{$t('project.new')}</h3>
             <div class="space-y-4">
               <div>
                 <label for="new-project-name" class="block text-sm font-medium mb-1.5" style="color: var(--color-text-secondary)">项目名称</label>
@@ -724,13 +746,11 @@
       <!-- Lazy-loaded route component -->
       <div class="flex-1 overflow-y-auto overflow-x-hidden flex flex-col min-h-0 {current === 'ai' ? '' : 'page-enter'}">
         {#if routeLoading}
-          <div class="flex-1 flex items-center justify-center">
-            <div class="animate-spin h-6 w-6 border-2 border-primary-500 border-t-transparent rounded-full"></div>
-          </div>
+          <PageSkeleton variant={current === 'editor' ? 'editor' : current === 'market' ? 'market' : current === 'market-publish' ? 'market' : 'list'} />
         {:else if routeComponent}
           {#key routeKey}
-            <svelte:component
-              this={routeComponent}
+            {@const RouteComp = routeComponent}
+            <RouteComp
               {projectId}
               onNavigate={(route: string, id?: string) => navigate(route as Route, id)}
             />
@@ -766,7 +786,7 @@
   {/if}
 
   {#if mobileMenuOpen && current !== 'ai'}
-    <div class="fixed inset-0 z-50 md:hidden" role="presentation" onclick={() => mobileMenuOpen = false}>
+    <div class="fixed inset-0 z-50 md:hidden" role="presentation" onclick={() => mobileMenuOpen = false} onkeydown={(e) => { if (e.key === 'Escape') mobileMenuOpen = false; }}>
       <div class="absolute bottom-16 left-2 right-2 rounded-2xl border shadow-2xl p-4 grid grid-cols-3 gap-3"
            style="background: var(--color-bg-elevated); border-color: var(--color-border)"
            role="presentation"

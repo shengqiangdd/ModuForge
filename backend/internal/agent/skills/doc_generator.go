@@ -65,7 +65,7 @@ func generateGoDocs(path, content string) string {
 		}
 	}
 
-	sb.WriteString(fmt.Sprintf("# %s Package\n\n", strings.Title(packageName)))
+	sb.WriteString(fmt.Sprintf("# %s Package\n\n", capitalizeFirst(packageName)))
 	sb.WriteString(fmt.Sprintf("**File:** `%s`\n\n", path))
 
 	// Package documentation
@@ -304,4 +304,12 @@ func generateGenericDocs(path, content string) string {
 	sb.WriteString("```\n")
 
 	return sb.String()
+}
+
+// capitalizeFirst converts the first character of s to uppercase.
+func capitalizeFirst(s string) string {
+	if len(s) == 0 {
+		return s
+	}
+	return string(s[0]-32) + s[1:] // ASCII uppercase (package names are ASCII)
 }

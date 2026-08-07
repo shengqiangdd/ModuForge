@@ -75,8 +75,11 @@ func RequirePermission(perm string) fiber.Handler {
 		if role == "admin" {
 			return c.Next()
 		}
-		// For non-admin users, check if the permission matches their role
-		// Currently all authenticated non-admin users get standard permissions
+		// For non-admin users, only allow general (non-admin) permissions
+		if perm == "admin" || strings.HasPrefix(perm, "admin:") {
+			return c.Status(403).JSON(fiber.Map{"error": "insufficient permissions"})
+		}
+		// Standard non-admin users get access to general permissions
 		return c.Next()
 	}
 }

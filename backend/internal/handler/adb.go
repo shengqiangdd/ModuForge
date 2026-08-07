@@ -406,6 +406,11 @@ func (h *ADBHandler) PushFile(c fiber.Ctx) error {
 	if req.Serial == "" || req.LocalPath == "" {
 		return c.Status(400).JSON(fiber.Map{"error": "serial and local_path required"})
 	}
+	if req.RemotePath != "" {
+		if err := validatePath(req.RemotePath); err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+		}
+	}
 	result, err := h.svc.PushFile(c.Context(), req.Serial, req.LocalPath, req.RemotePath)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
@@ -420,6 +425,9 @@ func (h *ADBHandler) PullFile(c fiber.Ctx) error {
 	}
 	if req.Serial == "" || req.RemotePath == "" {
 		return c.Status(400).JSON(fiber.Map{"error": "serial and remote_path required"})
+	}
+	if err := validatePath(req.RemotePath); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
 	}
 	// Save to temp dir
 	localPath := filepath.Join(os.TempDir(), fmt.Sprintf("adb_pull_%d_%s", time.Now().UnixMilli(), filepath.Base(req.RemotePath)))

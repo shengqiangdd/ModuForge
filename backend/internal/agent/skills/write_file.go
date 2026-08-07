@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"github.com/moduforge/backend/internal/agent/registry"
 )
 
 type WriteFileSkill struct {
@@ -28,10 +29,6 @@ func (s *WriteFileSkill) Description() string {
 }
 
 // resolvePath 根据 project_id 解析实际文件路径
-func (s *WriteFileSkill) resolvePath(projectID string) string {
-	return ResolveProjectPath(s.db, s.projectPath, projectID)
-}
-
 // syncToDB 将文件内容同步到 project_files 表（upsert）
 func (s *WriteFileSkill) syncToDB(projectID, path, content string) {
 	if s.db == nil || projectID == "" {
@@ -113,7 +110,7 @@ func (s *WriteFileSkill) Execute(ctx context.Context, input map[string]interface
 	}
 
 	// Optional: write to filesystem (may fail in read-only containers)
-	basePath := s.resolvePath(projectID)
+	basePath := ResolveProjectPath(s.db, s.projectPath, projectID)
 	fullPath := filepath.Join(basePath, path)
 	if !isPathWithin(basePath, fullPath) {
 		return "", fmt.Errorf("path traversal not allowed")
@@ -155,8 +152,8 @@ func (s *WriteFileSkill) Execute(ctx context.Context, input map[string]interface
 	return statusMsg, nil
 }
 
-func (s *WriteFileSkill) Metadata() SkillMeta {
-	return SkillMeta{
+func (s *WriteFileSkill) Metadata() registry.SkillMeta {
+	return registry.SkillMeta{
 		ReadOnly:  false,
 		Essential: true,
 		Core:      true,
@@ -258,8 +255,8 @@ func (s *WriteFileBatchSkill) Execute(ctx context.Context, input map[string]inte
 	return s.inner.ExecuteBatch(ctx, input)
 }
 
-func (s *WriteFileBatchSkill) Metadata() SkillMeta {
-	return SkillMeta{
+func (s *WriteFileBatchSkill) Metadata() registry.SkillMeta {
+	return registry.SkillMeta{
 		ReadOnly:  false,
 		Essential: false,
 		Core:      true,

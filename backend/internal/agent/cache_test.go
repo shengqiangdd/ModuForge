@@ -210,12 +210,12 @@ func TestCircuitBreaker_AdaptiveIsOpen(t *testing.T) {
 		breakerActive: make(map[string]bool),
 	}
 
-	// Record 3 failures → should open with 60s cooldown
-	for i := 0; i < 3; i++ {
+	// Record 5 failures → should open with 60s cooldown (threshold = 5)
+	for i := 0; i < 5; i++ {
 		cb.RecordFailure("prov1")
 	}
 	if !cb.IsOpen("prov1") {
-		t.Fatal("breaker should be open after 3 failures")
+		t.Fatal("breaker should be open after 5 failures")
 	}
 
 	// Record 5 total failures → cooldown should be 120s

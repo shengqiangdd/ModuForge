@@ -145,6 +145,8 @@ func (h *AIHandler) GenerateModule(c fiber.Ctx) error {
 // resolveProvider resolves LLM provider from request params or fallback to global config.
 // Non-destructive: saves and restores the original provider after resolution.
 func (h *AIHandler) resolveProvider(providerID, modelID string) {
+	h.cfg.Lock()
+	defer h.cfg.Unlock()
 	if providerID == "" {
 		providerID = h.cfg.LLMProvider
 	}
@@ -153,6 +155,10 @@ func (h *AIHandler) resolveProvider(providerID, modelID string) {
 	}
 	if providerID != "" {
 		savedProvider := h.cfg.LLMProvider
+		savedModel := h.cfg.LLMModel
+		savedEndpoint := h.cfg.LLMEndpoint
+		savedKey := h.cfg.LLMApiKey
+
 		h.cfg.LLMProvider = providerID
 		if modelID != "" {
 			h.cfg.LLMModel = modelID
@@ -162,7 +168,16 @@ func (h *AIHandler) resolveProvider(providerID, modelID string) {
 		}
 		h.cfg.LLMApiKey = h.cfg.EffectiveLLMKey()
 		slog.Info("resolveProvider", "provider", providerID, "model", modelID, "endpoint", h.cfg.LLMEndpoint, "has_key", h.cfg.LLMApiKey != "")
-		_ = savedProvider
+
+		// Restore original values after the request completes
+		defer func() {
+			h.cfg.Lock()
+			h.cfg.LLMProvider = savedProvider
+			h.cfg.LLMModel = savedModel
+			h.cfg.LLMEndpoint = savedEndpoint
+			h.cfg.LLMApiKey = savedKey
+			h.cfg.Unlock()
+		}()
 	}
 }
 
@@ -451,16 +466,19 @@ func (h *AIHandler) GetLLMConfig(c fiber.Ctx) error {
 		var provider, modelID, endpoint string
 		err := h.db.Conn.QueryRow(`SELECT provider, model_id, endpoint FROM llm_config WHERE id='default'`).Scan(&provider, &modelID, &endpoint)
 		if err == nil && provider != "" {
+			h.cfg.Lock()
 			h.cfg.LLMProvider = provider
 			h.cfg.LLMModelID = modelID
 			h.cfg.LLMEndpoint = endpoint
+			h.cfg.Unlock()
 		}
 	}
 
+	h.cfg.RLock()
 	effectiveKey := h.cfg.EffectiveLLMKey()
 	keyConfigured := effectiveKey != ""
 
-	return c.JSON(fiber.Map{
+	resp := c.JSON(fiber.Map{
 		"provider": h.cfg.LLMProvider,
 		"model_id": h.cfg.LLMModelID,
 		// Legacy fields for backward compatibility
@@ -469,6 +487,8 @@ func (h *AIHandler) GetLLMConfig(c fiber.Ctx) error {
 		"key_configured":  keyConfigured,
 		// Don't expose actual keys
 	})
+	h.cfg.RUnlock()
+	return resp
 }
 
 func (h *AIHandler) GetPrompts(c fiber.Ctx) error {
@@ -592,6 +612,7 @@ func (h *AIHandler) UpdateLLMConfig(c fiber.Ctx) error {
 	}
 
 	// Update runtime config
+	h.cfg.Lock()
 	h.cfg.LLMProvider = req.Provider
 	h.cfg.LLMModelID = req.ModelID
 
@@ -599,6 +620,7 @@ func (h *AIHandler) UpdateLLMConfig(c fiber.Ctx) error {
 	h.cfg.LLMEndpoint = provider.Endpoint
 	h.cfg.LLMModel = req.ModelID
 	h.cfg.LLMApiKey = h.cfg.EffectiveLLMKey()
+	h.cfg.Unlock()
 
 	// Persist to database so selection survives server restarts
 	if h.db != nil {

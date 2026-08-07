@@ -112,10 +112,12 @@ func (h *AgentHandler) Run(c fiber.Ctx) error {
 		runCfg.LLMModel = req.Model
 		// Always resolve the API key for this provider from env/config,
 		// not just when h.cfg.LLMProvider matches (which may be stale/empty).
+		h.cfg.Lock()
 		saved := h.cfg.LLMProvider
 		h.cfg.LLMProvider = req.ProviderID
 		runCfg.LLMApiKey = h.cfg.EffectiveLLMKey()
 		h.cfg.LLMProvider = saved
+		h.cfg.Unlock()
 		// Resolve max_output_tokens from provider's model list
 		for _, m := range provider.Models {
 			if m.ID == req.Model || m.Name == req.Model {

@@ -184,8 +184,8 @@ func RegisterRoutes(api fiber.Router, db *database.DB, cfg *config.Config) {
 	// Module ZIP parse
 	api.Post("/module/parse-zip", ParseModuleZip)
 
-	// Signer
-	api.Post("/sign", signerH.Sign)
+	// Signer (protected)
+	r("POST", "/sign", signerH.Sign)
 	api.Post("/verify", signerH.Verify)
 
 	// ADB (public read)
@@ -205,12 +205,12 @@ func RegisterRoutes(api fiber.Router, db *database.DB, cfg *config.Config) {
 	api.Post("/update/check", updateH.CheckUpdate)
 	api.Post("/update/check-all", updateH.CheckAllUpdates)
 
-	// Git (public)
-	api.Get("/git/commits", gitH.ListCommits)
-	api.Get("/git/diff", gitH.GetDiff)
-	api.Get("/git/head", gitH.GetCurrentHash)
-	api.Get("/git/branches", gitH.ListBranches)
-	api.Get("/git/branch", gitH.GetCurrentBranch)
+	// Git (protected — project data)
+	r("GET", "/git/commits", gitH.ListCommits)
+	r("GET", "/git/diff", gitH.GetDiff)
+	r("GET", "/git/head", gitH.GetCurrentHash)
+	r("GET", "/git/branches", gitH.ListBranches)
+	r("GET", "/git/branch", gitH.GetCurrentBranch)
 
 	// Market (public)
 	api.Get("/market/modules", CacheMiddleware(cache), marketH.ListModules)

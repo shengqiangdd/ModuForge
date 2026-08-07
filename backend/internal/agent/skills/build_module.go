@@ -11,8 +11,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
-
 	"github.com/moduforge/backend/internal/builder"
+	"github.com/moduforge/backend/internal/agent/registry"
 )
 
 type BuildModuleSkill struct {
@@ -205,10 +205,6 @@ func NewBuildModuleSkillWithDB(projectPath string, db *sql.DB) *BuildModuleSkill
 }
 
 // resolvePath 根据 project_id 解析实际文件路径（与 write_file 保持一致）
-func (s *BuildModuleSkill) resolvePath(projectID string) string {
-	return ResolveProjectPath(s.db, s.projectPath, projectID)
-}
-
 func (s *BuildModuleSkill) Name() string {
 	return "build_module"
 }
@@ -222,7 +218,7 @@ Returns build log with success/failure status.`
 
 func (s *BuildModuleSkill) Execute(ctx context.Context, input map[string]interface{}) (string, error) {
 	projectID, _ := input["project_id"].(string)
-	projectPath := s.resolvePath(projectID)
+	projectPath := ResolveProjectPath(s.db, s.projectPath, projectID)
 	enableIncremental, _ := input["incremental"].(bool)
 
 	var log strings.Builder
@@ -1016,8 +1012,8 @@ func generateBuildErrorSummary(errors []CompileError) string {
 	return fmt.Sprintf("Build failed with %d error(s): %s", len(errors), strings.Join(parts, ", "))
 }
 
-func (s *BuildModuleSkill) Metadata() SkillMeta {
-	return SkillMeta{
+func (s *BuildModuleSkill) Metadata() registry.SkillMeta {
+	return registry.SkillMeta{
 		ReadOnly:  false,
 		Essential: true,
 		Core:      true,

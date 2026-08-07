@@ -52,12 +52,12 @@ func (s *AuthService) Register(ctx context.Context, req *domain.RegisterRequest)
 	}
 
 	err = tx.QueryRowContext(ctx,
-		`INSERT INTO users (id, username, email, password_hash, role, email_verified) VALUES (?, ?, ?, ?, ?, ?)
+		`INSERT INTO users (id, username, email, password_hash, password_changed_at, role, email_verified) VALUES (?, ?, ?, ?, datetime('now'), ?, ?)
 		 RETURNING id, username, email, created_at`,
 		user.ID, req.Username, req.Email, string(hash), role, 1,
 	).Scan(&user.ID, &user.Username, &user.Email, &user.CreatedAt)
 	if err != nil {
-		return nil, fmt.Errorf("registration failed: %v", err)
+		return nil, fmt.Errorf("registration failed: %w", err)
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -122,20 +122,29 @@ func (s *AuthService) Login(ctx context.Context, req *domain.LoginRequest) (*dom
 }
 
 func (s *AuthService) RefreshToken(ctx context.Context, tokenStr string) (*domain.AuthResponse, error) {
-	// Allow expired tokens within 7-day grace period for refresh
-	claims, err := ParseJWTAllowExpired(tokenStr, s.cfg.JWTSecret, 7*24*time.Hour)
+	// Allow expired tokens within 1-hour grace period for refresh
+	claims, err := ParseJWTAllowExpired(tokenStr, s.cfg.JWTSecret, 1*time.Hour)
 	if err != nil {
 		return nil, fmt.Errorf("invalid token")
 	}
 
 	var user domain.User
 	var role string
+	var passwordChangedAt sql.NullString
 	err = s.db.QueryRowContext(ctx,
-		`SELECT id, username, email, password_hash, COALESCE(role,'user'), created_at FROM users WHERE id = ?`,
+		`SELECT id, username, email, password_hash, COALESCE(role,'user'), created_at, password_changed_at FROM users WHERE id = ?`,
 		claims.UID,
-	).Scan(&user.ID, &user.Username, &user.Email, &user.PasswordHash, &role, &user.CreatedAt)
+	).Scan(&user.ID, &user.Username, &user.Email, &user.PasswordHash, &role, &user.CreatedAt, &passwordChangedAt)
 	if err != nil {
 		return nil, fmt.Errorf("user not found")
+	}
+
+	// If password was changed after the token was issued, reject the refresh
+	if passwordChangedAt.Valid && passwordChangedAt.String != "" {
+		changedAt, err := time.Parse(time.RFC3339, passwordChangedAt.String)
+		if err == nil && claims.IssuedAt != nil && claims.IssuedAt.Time.Before(changedAt) {
+			return nil, fmt.Errorf("token has been revoked, please login again")
+		}
 	}
 
 	newToken, err := GenerateJWT(s.cfg.JWTSecret, user.ID, user.Username, role)
@@ -383,6 +392,6 @@ func (s *AuthService) ChangePassword(userID, oldPassword, newPassword string) er
 	if err != nil {
 		return err
 	}
-	_, err = s.db.Exec(`UPDATE users SET password_hash = ? WHERE id = ?`, string(newHash), userID)
+	_, err = s.db.Exec(`UPDATE users SET password_hash = ?, password_changed_at = datetime('now') WHERE id = ?`, string(newHash), userID)
 	return err
 }

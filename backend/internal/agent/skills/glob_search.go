@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"github.com/moduforge/backend/internal/agent/registry"
 )
 
 type GlobSearchSkill struct {
@@ -41,7 +42,7 @@ func (s *GlobSearchSkill) Execute(ctx context.Context, input map[string]interfac
 		return "", fmt.Errorf("pattern is required")
 	}
 
-	projectPath := s.resolvePath(projectID)
+	projectPath := ResolveProjectPath(s.db, s.projectPath, projectID)
 
 	// Ensure files exist on disk
 	if projectID != "" {
@@ -133,13 +134,6 @@ func (s *GlobSearchSkill) walkSearch(projectPath, pattern string, maxResults int
 	return output, nil
 }
 
-func (s *GlobSearchSkill) resolvePath(projectID string) string {
-	if s.projectPath == "" || projectID == "" {
-		return s.projectPath
-	}
-	return ResolveProjectPath(s.db, s.projectPath, projectID)
-}
-
 // syncProjectToDisk ensures project files from DB exist on disk for searching.
 func (s *GlobSearchSkill) syncProjectToDisk(projectID, projectDir string) error {
 	if s.db == nil || projectID == "" {
@@ -175,8 +169,8 @@ func (s *GlobSearchSkill) syncProjectToDisk(projectID, projectDir string) error 
 	return nil
 }
 
-func (s *GlobSearchSkill) Metadata() SkillMeta {
-	return SkillMeta{
+func (s *GlobSearchSkill) Metadata() registry.SkillMeta {
+	return registry.SkillMeta{
 		ReadOnly:  true,
 		Essential: false,
 		Core:      true,

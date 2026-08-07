@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"github.com/moduforge/backend/internal/agent/registry"
 )
 
 // SelfEvolvingSkill learns from execution history and auto-improves its prompts
@@ -624,8 +625,8 @@ func min(a, b int) int {
 	return b
 }
 
-func (s *SelfEvolvingSkill) Metadata() SkillMeta {
-	return SkillMeta{
+func (s *SelfEvolvingSkill) Metadata() registry.SkillMeta {
+	return registry.SkillMeta{
 		ReadOnly:  false,
 		Essential: false,
 		NeedsDB:   true,

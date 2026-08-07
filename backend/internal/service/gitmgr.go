@@ -26,7 +26,16 @@ func NewGitManagerService(projectsDir string) *GitManagerService {
 }
 
 func (s *GitManagerService) projectDir(projectID string) string {
-	return filepath.Join(s.projectsDir, projectID)
+	cleanID := filepath.Clean(projectID)
+	if cleanID == "." || cleanID == ".." || strings.Contains(cleanID, "..") {
+		return filepath.Join(s.projectsDir, "invalid")
+	}
+	dir := filepath.Join(s.projectsDir, cleanID)
+	sp := string(filepath.Separator)
+	if !(dir == s.projectsDir || strings.HasPrefix(dir, s.projectsDir+sp)) {
+		return filepath.Join(s.projectsDir, "invalid")
+	}
+	return dir
 }
 
 func (s *GitManagerService) InitRepo(ctx context.Context, projectID string) error {

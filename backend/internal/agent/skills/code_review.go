@@ -292,14 +292,20 @@ func reviewShell(content string) []ReviewIssue {
 	}
 
 	// Security: Unquoted variables
-	unquotedPattern := regexp.MustCompile(`\$\w+(?!\}|\"|\()`)
+	reVarRef := regexp.MustCompile(`\$\w+`)
 	for i, line := range lines {
-		if !strings.HasPrefix(strings.TrimSpace(line), "#") && unquotedPattern.MatchString(line) {
-			issues = append(issues, ReviewIssue{
-				Severity: "warning", Category: "security", Line: i + 1,
-				Description: "Unquoted variable - word splitting and globbing risk",
-				Suggestion:  "Always quote variables: \"$VAR\"",
-			})
+		if strings.HasPrefix(strings.TrimSpace(line), "#") { continue }
+		matches := reVarRef.FindAllStringIndex(line, -1)
+		for _, m := range matches {
+			end := m[1]
+			if end >= len(line) || (line[end] != '}' && line[end] != '"' && line[end] != '(') {
+				issues = append(issues, ReviewIssue{
+					Severity: "warning", Category: "security", Line: i + 1,
+					Description: "Unquoted variable - word splitting and globbing risk",
+					Suggestion:  "Always quote variables: \"$VAR\"",
+				})
+				break
+			}
 		}
 	}
 

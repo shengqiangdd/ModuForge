@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -15,6 +16,12 @@ import (
 	"github.com/moduforge/backend/internal/config"
 	"github.com/moduforge/backend/internal/domain"
 )
+
+// safeID sanitizes a project or build ID to prevent path traversal.
+func safeID(id string) string {
+	re := regexp.MustCompile(`[^a-zA-Z0-9._-]+`)
+	return re.ReplaceAllString(id, "")
+}
 
 type BuildService struct {
 	db  *sql.DB
@@ -31,6 +38,7 @@ func (s *BuildService) GetStoragePath() string {
 }
 
 func (s *BuildService) getCacheKey(projectID, filesHash string) string {
+	projectID = safeID(projectID)
 	return filepath.Join(s.cfg.StoragePath, "build-cache", projectID, filesHash+".zip")
 }
 
@@ -126,12 +134,14 @@ func (s *BuildService) saveBuildCache(projectID, filesHash, outputPath string) e
 }
 
 func (s *BuildService) ClearBuildCache(ctx context.Context, projectID string) error {
+	projectID = safeID(projectID)
 	cacheDir := filepath.Join(s.cfg.StoragePath, "build-cache", projectID)
 	return os.RemoveAll(cacheDir)
 }
 
 // GetBuildCacheStatus returns cache statistics for a project.
 func (s *BuildService) GetBuildCacheStatus(ctx context.Context, projectID string) (map[string]interface{}, error) {
+	projectID = safeID(projectID)
 	cacheDir := filepath.Join(s.cfg.StoragePath, "build-cache", projectID)
 
 	var totalSize int64

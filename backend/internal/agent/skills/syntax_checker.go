@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"github.com/moduforge/backend/internal/agent/registry"
 )
 
 // SyntaxCheckerSkill performs pre-build syntax validation on source files.
@@ -55,7 +56,7 @@ Returns structured errors with line numbers and fix hints for the agent.`
 func (s *SyntaxCheckerSkill) Execute(ctx context.Context, input map[string]interface{}) (string, error) {
 	projectID, _ := input["project_id"].(string)
 	language, _ := input["language"].(string)
-	projectPath := s.resolvePath(projectID)
+	projectPath := ResolveProjectPath(s.db, s.projectPath, projectID)
 
 	var results []SyntaxResult
 
@@ -89,10 +90,6 @@ func (s *SyntaxCheckerSkill) Execute(ctx context.Context, input map[string]inter
 	}
 
 	return s.formatResults(results), nil
-}
-
-func (s *SyntaxCheckerSkill) resolvePath(projectID string) string {
-	return ResolveProjectPath(s.db, s.projectPath, projectID)
 }
 
 // detectLanguages scans the project directory for source files.
@@ -627,8 +624,8 @@ func (s *SyntaxCheckerSkill) hasFile(projectPath, name string) bool {
 	return err == nil
 }
 
-func (s *SyntaxCheckerSkill) Metadata() SkillMeta {
-	return SkillMeta{
+func (s *SyntaxCheckerSkill) Metadata() registry.SkillMeta {
+	return registry.SkillMeta{
 		ReadOnly:  false,
 		Essential: true,
 		Core:      false,

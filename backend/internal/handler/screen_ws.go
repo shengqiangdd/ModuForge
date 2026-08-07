@@ -268,10 +268,10 @@ func streamH264(ctx context.Context, adbSvc *service.ADBService, serial string, 
 	cmd := createADBCommand(ctx, adbSvc, args...)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		return fmt.Errorf("stdout pipe: %v", err)
+		return fmt.Errorf("stdout pipe: %w", err)
 	}
 	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("start screenrecord: %v", err)
+		return fmt.Errorf("start screenrecord: %w", err)
 	}
 	defer func() {
 		cmd.Process.Kill()

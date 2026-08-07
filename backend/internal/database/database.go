@@ -77,6 +77,7 @@ func migrate(db *sql.DB) error {
 			username      TEXT NOT NULL UNIQUE,
 			email         TEXT NOT NULL UNIQUE,
 			password_hash TEXT NOT NULL,
+			password_changed_at TEXT,
 			created_at    TEXT NOT NULL DEFAULT (datetime('now'))
 		)`,
 		`CREATE TABLE IF NOT EXISTS projects (
@@ -284,6 +285,11 @@ func migrate(db *sql.DB) error {
 	// Add agent_mode column to ai_conversations if not exists
 	if _, err := db.Exec(`ALTER TABLE ai_conversations ADD COLUMN agent_mode TEXT DEFAULT 'act'`); err != nil {
 		log.Printf("migration: alter ai_conversations add agent_mode: %v", err)
+	}
+
+	// Add password_changed_at column to users if not exists
+	if tableExists(db, "users") && !columnExists(db, "users", "password_changed_at") {
+		_, _ = db.Exec(`ALTER TABLE users ADD COLUMN password_changed_at TEXT`)
 	}
 
 	return nil

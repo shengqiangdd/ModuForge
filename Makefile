@@ -1,12 +1,14 @@
-# ── ModuForge 编译策略 ──
-# Go 二进制 + 前端静态文件，控制产物体积
+# ── ModuForge 构建与质量工具链 ──
+# Go 二进制 + 前端静态文件 + 测试/lint/基准
 
 APP_NAME := moduforge
 VERSION  := $(shell git describe --tags --always --dirty 2>nul || echo dev)
 LDFLAGS  := -s -w -X main.version=$(VERSION)
 BUILD    := go build -ldflags="$(LDFLAGS)" -trimpath
 
-.PHONY: build clean dev release size
+.PHONY: build clean dev release size test lint bench all
+
+# ── 构建 ──
 
 ## 开发构建（快速，保留 debug info）
 dev:
@@ -32,3 +34,21 @@ clean:
 	cd backend && go clean -cache -testcache
 	@if exist bin\$(APP_NAME).exe del /q bin\$(APP_NAME).exe
 	@echo Build artifacts cleaned.
+
+# ── 质量 ──
+
+## 运行全部后端测试（含竞态检测）
+test:
+	cd backend && go test -v -race -count=1 ./internal/...
+
+## 运行 lint（staticcheck）
+lint:
+	cd backend && staticcheck ./...
+
+## 列出所有基准测试
+bench-list:
+	cd backend && go test -C internal/service -bench=. -list=".*" -timeout 10s
+
+## 全部质量检查：测试 + lint + 构建
+all: test lint build
+	@echo "=== All checks passed ==="

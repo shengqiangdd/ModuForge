@@ -1,4 +1,5 @@
 <script lang="ts">
+import { focusTrap } from '$lib/utils/focusTrap';
 let {
   show = false,
   capability = null,
@@ -6,21 +7,31 @@ let {
   onClose,
 }: {
   show: boolean;
-  capability: any;
+  capability: {
+    grade: string;
+    total_score: number;
+    current_provider?: string;
+    current_model?: string;
+    model_score: number;
+    speed_score: number;
+    cost_score: number;
+    feature_score: number;
+    suggestions?: string[];
+  } | null;
   loading: boolean;
   onClose: () => void;
 } = $props();
 </script>
 
 {#if show}
-  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-    <div class="bg-[var(--color-bg)] rounded-2xl shadow-2xl w-full max-w-lg border border-[var(--color-border)]" role="dialog" aria-modal="true" tabindex="-1">
+  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) onClose(); }} onkeydown={(e) => { if (e.key === 'Escape') onClose(); }}>
+    <div class="bg-[var(--color-bg)] rounded-2xl shadow-2xl w-full max-w-lg border border-[var(--color-border)]" role="dialog" aria-modal="true" tabindex="-1" use:focusTrap>
       <div class="flex items-center justify-between px-6 py-4 border-b border-[var(--color-border)]">
         <div class="flex items-center gap-2">
           <span class="material-symbols-outlined text-primary-600">speed</span>
           <h2 class="text-lg font-semibold text-[var(--color-text)]">AI 能力评分</h2>
         </div>
-        <button class="p-1.5 rounded-lg hover:bg-[var(--color-surface)] transition-colors" onclick={onClose}>
+        <button class="p-1.5 rounded-lg hover:bg-[var(--color-surface)] transition-colors" onclick={onClose} aria-label="关闭">
           <span class="material-symbols-outlined text-[20px]">close</span>
         </button>
       </div>

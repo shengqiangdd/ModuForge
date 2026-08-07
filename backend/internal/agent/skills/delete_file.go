@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"github.com/moduforge/backend/internal/agent/registry"
 )
 
 type DeleteFileSkill struct {
@@ -25,10 +26,6 @@ func (s *DeleteFileSkill) Description() string {
 	return "Delete a file from the project. Input: {\"path\": \"...\", \"project_id\": \"...\"}. Removes from both database and disk."
 }
 
-func (s *DeleteFileSkill) resolvePath(projectID string) string {
-	return ResolveProjectPath(s.db, s.projectPath, projectID)
-}
-
 func (s *DeleteFileSkill) Execute(ctx context.Context, input map[string]interface{}) (string, error) {
 	path, _ := input["path"].(string)
 	projectID, _ := input["project_id"].(string)
@@ -41,7 +38,7 @@ func (s *DeleteFileSkill) Execute(ctx context.Context, input map[string]interfac
 	}
 
 	// Path traversal protection
-	basePath := s.resolvePath(projectID)
+	basePath := ResolveProjectPath(s.db, s.projectPath, projectID)
 	fullPath := filepath.Join(basePath, path)
 	if !isPathWithin(basePath, fullPath) {
 		return "", fmt.Errorf("path traversal not allowed: %s", path)
@@ -68,8 +65,8 @@ func (s *DeleteFileSkill) Execute(ctx context.Context, input map[string]interfac
 	return fmt.Sprintf("File deleted: %s", path), nil
 }
 
-func (s *DeleteFileSkill) Metadata() SkillMeta {
-	return SkillMeta{
+func (s *DeleteFileSkill) Metadata() registry.SkillMeta {
+	return registry.SkillMeta{
 		ReadOnly:  false,
 		Essential: false,
 		Core:      true,

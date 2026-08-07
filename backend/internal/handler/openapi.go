@@ -2,10 +2,8 @@ package handler
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
 	"regexp"
-	"strings"
 	"sync"
 
 	"github.com/gofiber/fiber/v3"
@@ -119,8 +117,7 @@ func (h *OpenAPIHandler) ServeYAML(c fiber.Ctx) error {
 }
 
 func (h *OpenAPIHandler) ServeSwaggerUI(c fiber.Ctx) error {
-	_ = strings.NewReader("") // ensure strings is used
-	html := fmt.Sprintf(`<!DOCTYPE html>
+	html := `<!DOCTYPE html>
 <html>
 <head>
   <title>ModuForge API Docs</title>
@@ -138,7 +135,7 @@ func (h *OpenAPIHandler) ServeSwaggerUI(c fiber.Ctx) error {
     });
   </script>
 </body>
-</html>`)
+</html>`
 	c.Set("Content-Type", "text/html")
 	return c.SendString(html)
 }

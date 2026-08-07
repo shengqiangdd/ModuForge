@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -28,6 +30,10 @@ type SignatureInfo struct {
 }
 
 func (s *SignerService) SignModule(zipPath string) (*SignatureInfo, error) {
+	// Constrain to signer key directory to prevent path traversal
+	if !isPathWithin(s.privateKeyDir(), zipPath) {
+		return nil, fmt.Errorf("path traversal denied: %s is not allowed", zipPath)
+	}
 	f, err := os.Open(zipPath)
 	if err != nil {
 		return nil, fmt.Errorf("open zip: %w", err)
@@ -50,6 +56,10 @@ func (s *SignerService) SignModule(zipPath string) (*SignatureInfo, error) {
 }
 
 func (s *SignerService) VerifyModule(zipPath, expectedHash string) (bool, error) {
+	// Constrain to signer key directory to prevent path traversal
+	if !isPathWithin(s.privateKeyDir(), zipPath) {
+		return false, fmt.Errorf("path traversal denied: %s is not allowed", zipPath)
+	}
 	info, err := s.SignModule(zipPath)
 	if err != nil {
 		return false, err
@@ -69,4 +79,19 @@ func (s *SignerService) GenerateSignatureManifest(zipPath string) (string, error
   "signed_at": "%s",
   "tool": "ModuForge Signer v1.0"
 }`, info.Algorithm, info.Hash, info.Size, info.SignedAt.Format(time.RFC3339)), nil
+}
+
+// privateKeyDir returns the directory containing the private key.
+func (s *SignerService) privateKeyDir() string {
+	return filepath.Dir(s.privateKeyPath)
+}
+
+// isPathWithin reports whether path is within the allowed base directory.
+func isPathWithin(base, path string) bool {
+	base = filepath.Clean(base)
+	path = filepath.Clean(path)
+	if path == base {
+		return true
+	}
+	return strings.HasPrefix(path, base+string(filepath.Separator))
 }

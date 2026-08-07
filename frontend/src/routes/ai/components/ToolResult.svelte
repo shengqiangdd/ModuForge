@@ -44,7 +44,7 @@
 {/if}
 {#if files && files.length > 0}
   <div class="mt-1 space-y-0.5">
-    {#each files as file}
+    {#each files as file (file.path)}
       <div class="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded" style="background: var(--color-surface);">
         <span class="material-symbols-outlined text-[10px] text-primary-500">description</span>
         <span class="font-mono text-[var(--color-text-secondary)] truncate">{file.path}</span>

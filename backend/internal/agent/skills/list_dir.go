@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"github.com/moduforge/backend/internal/agent/registry"
 )
 
 type ListDirSkill struct {
@@ -200,8 +201,8 @@ func (s *ListDirSkill) formatTree(rootPath string, paths []string) string {
 	return sb.String()
 }
 
-func (s *ListDirSkill) Metadata() SkillMeta {
-	return SkillMeta{
+func (s *ListDirSkill) Metadata() registry.SkillMeta {
+	return registry.SkillMeta{
 		ReadOnly:  true,
 		Essential: true,
 		NeedsDB:   true,

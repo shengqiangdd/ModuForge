@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { focusTrap } from '$lib/utils/focusTrap';
   let { show, onClose, onComplete }: { show: boolean; onClose: () => void; onComplete: () => void } = $props();
   let step = $state(0);
 
@@ -31,7 +32,7 @@
 </script>
 
 {#if show}
-  <div class="onboarding-overlay" role="dialog" aria-label="新手引导">
+  <div class="onboarding-overlay" role="dialog" aria-label="新手引导" aria-modal="true" use:focusTrap>
     <div class="onboarding-card">
       <div class="step-indicator">
         {#each steps as _, i}

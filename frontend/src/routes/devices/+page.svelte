@@ -2,6 +2,13 @@
   import { onMount } from 'svelte';
   import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte';
   import ScreenCanvas from '$lib/components/ScreenCanvas.svelte';
+  import DeviceList from './components/DeviceList.svelte';
+  import DeviceDetail from './components/DeviceDetail.svelte';
+  import ScreenControls from './components/ScreenControls.svelte';
+  import RootManager from './components/RootManager.svelte';
+  import ModuleDetail from './components/ModuleDetail.svelte';
+  import { apiGet, apiPost } from './device-api';
+  import type { Device, SavedDevice, DeviceInfo, InstalledModule, AppInfo, FileInfo } from './device-types';
 
   // Confirmation dialog state
   let confirmOpen = $state(false);
@@ -23,77 +30,6 @@
     confirmOpen = false;
   }
 
-  interface Device {
-    serial: string;
-    model: string;
-    brand: string;
-    state: string;
-    android_version: string;
-  }
-
-  interface SavedDevice {
-    id: number;
-    address: string;
-    name: string;
-    last_connected_at: string;
-    created_at: string;
-  }
-
-  interface DeviceInfo {
-    serial: string;
-    model: string;
-    brand: string;
-    manufacturer: string;
-    android_version: string;
-    sdk_version: string;
-    build_id: string;
-    security_patch: string;
-    magisk_version: string;
-    ksu_version: string;
-    apatch_version: string;
-    battery_level: number;
-    battery_status: string;
-    storage_total: string;
-    storage_used: string;
-    storage_free: string;
-    ram_total: string;
-    ram_free: string;
-    ram_used: string;
-    uptime: string;
-    kernel: string;
-    abi: string;
-  }
-
-  interface InstalledModule {
-    name: string;
-    version: string;
-    author: string;
-    description: string;
-    enabled: boolean;
-    size: string;
-    source: string;
-    update_date: string;
-    has_update: boolean;
-  }
-
-  interface AppInfo {
-    app_name?: string;
-    package_name: string;
-    version_name: string;
-    version_code: number;
-    target_sdk: number;
-    enabled: boolean;
-    system: boolean;
-  }
-
-  interface FileInfo {
-    name: string;
-    path: string;
-    size: number;
-    mode: string;
-    is_dir: boolean;
-  }
-
   // State
   let devices = $state<Device[]>([]);
   let savedDevices = $state<SavedDevice[]>([]);
@@ -102,8 +38,8 @@
   let modules = $state<InstalledModule[]>([]);
   let apps = $state<AppInfo[]>([]);
   let files = $state<FileInfo[]>([]);
-  let filteredFiles = $state<FileInfo[]>([]);
   let fileSearchQuery = $state('');
+  let filteredFiles = $derived(!fileSearchQuery ? files : files.filter(f => f.name.toLowerCase().includes(fileSearchQuery.toLowerCase())));
   let currentPath = $state('/sdcard/');
   let uploading = $state(false);
   let uploadTarget = $state('');
@@ -164,14 +100,19 @@
 
   // Module search/filter (1.5)
   let moduleSearchQuery = $state('');
-  let filteredModules = $state<InstalledModule[]>([]);
+  let filteredModules = $derived(!moduleSearchQuery ? modules : modules.filter(m =>
+    m.name.toLowerCase().includes(moduleSearchQuery.toLowerCase()) ||
+    (m.description || '').toLowerCase().includes(moduleSearchQuery.toLowerCase()) ||
+    (m.author || '').toLowerCase().includes(moduleSearchQuery.toLowerCase())
+  ));
 
   // Batch module operations (1.3)
   let selectedModules = $state<Set<string>>(new Set());
   let showModuleCheckboxes = $state(false);
 
-  // Module detail modal (1.6)
-  let showModuleDetail = $state(false);
+  
+
+  // Module detail
   let selectedModuleDetail = $state<InstalledModule | null>(null);
 
   // Module backup/restore (1.1)
@@ -184,32 +125,9 @@
   let moduleUpdateInfo = $state<Record<string, any>>({});
   let updatingCheck = $state<Set<string>>(new Set());
 
-  // Root manager (2.1-2.3)
-  let rootManagers = $state<any[]>([]);
-  let rootPermissions = $state<any[]>([]);
-  let rootModuleList = $state<any[]>([]);
-  let showRootPermissions = $state(false);
-  let showRootModules = $state(false);
-  let rootPermPackage = $state('');
-  let rootPermGrant = $state(true);
-  let rootPermResult = $state('');
+  
 
-  // API helpers
-  async function apiGet(url: string) {
-    const token = localStorage.getItem('moduforge_token') || sessionStorage.getItem('moduforge_token') || '';
-    const res = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
-    return res.json();
-  }
-
-  async function apiPost(url: string, body: any) {
-    const token = localStorage.getItem('moduforge_token') || sessionStorage.getItem('moduforge_token') || '';
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-      body: JSON.stringify(body),
-    });
-    return res.json();
-  }
+  
 
   function msg(err: string, ok?: string) {
     errorMsg = err;
@@ -279,7 +197,6 @@
     if (!selectedDevice) return;
     const d = await apiGet(`/api/v1/adb/modules?serial=${selectedDevice}`);
     modules = d.modules || [];
-    filteredModules = modules;
     moduleSearchQuery = '';
   }
 
@@ -337,25 +254,9 @@
     });
   }
 
-  // ─── Module Search/Filter (1.5) ───
-  function filterModules() {
-    if (!moduleSearchQuery) {
-      filteredModules = modules;
-    } else {
-      const q = moduleSearchQuery.toLowerCase();
-      filteredModules = modules.filter(m =>
-        m.name.toLowerCase().includes(q) ||
-        (m.description || '').toLowerCase().includes(q) ||
-        (m.author || '').toLowerCase().includes(q)
-      );
-    }
-  }
+  // ─── Module Backup/Restore (1.1) ───
 
-  // ─── Module Detail (1.6) ───
-  function openModuleDetail(mod: InstalledModule) {
-    selectedModuleDetail = mod;
-    showModuleDetail = true;
-  }
+  
 
   // ─── Module Backup/Restore (1.1) ───
   async function backupModule(name: string) {
@@ -403,32 +304,7 @@
     }
   }
 
-  // ─── Root Manager (2.1-2.3) ───
-  async function loadRootManagers() {
-    if (!selectedDevice) return;
-    const d = await apiGet(`/api/v1/adb/root/managers?serial=${selectedDevice}`);
-    rootManagers = d.managers || [];
-  }
-
-  async function loadRootPermissions() {
-    if (!selectedDevice) return;
-    const d = await apiGet(`/api/v1/adb/root/permissions?serial=${selectedDevice}`);
-    rootPermissions = d.permissions || [];
-    showRootPermissions = true;
-  }
-
-  async function manageRootPermission() {
-    if (!rootPermPackage.trim()) { msg('请输入包名'); return; }
-    const d = await apiPost('/api/v1/adb/root/permission', { serial: selectedDevice, package_name: rootPermPackage.trim(), grant: rootPermGrant });
-    if (d.error) { msg(d.error); } else { msg('', d.output || '操作成功'); rootPermPackage = ''; loadRootPermissions(); }
-  }
-
-  async function loadRootModules() {
-    if (!selectedDevice) return;
-    const d = await apiGet(`/api/v1/adb/root/modules?serial=${selectedDevice}`);
-    rootModuleList = d.modules || [];
-    showRootModules = true;
-  }
+  
 
   // ─── Apps ───
   async function loadApps() {
@@ -748,16 +624,6 @@
     return `${m}分钟`;
   }
 
-  // ─── File Search ───
-  $effect(() => {
-    if (!fileSearchQuery) {
-      filteredFiles = files;
-    } else {
-      const q = fileSearchQuery.toLowerCase();
-      filteredFiles = files.filter(f => f.name.toLowerCase().includes(q));
-    }
-  });
-
   // ─── Auto Refresh ───
   $effect(() => {
     if (autoRefresh && selectedDevice) {
@@ -920,54 +786,16 @@
   {/if}
 
   <!-- Device Selector + Connect -->
-  <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-    <div class="flex items-center gap-3">
-      <span class="text-sm font-medium" style="color: var(--color-text-secondary)">设备</span>
-      {#if loading}
-        <span class="text-sm" style="color: var(--color-text-muted)">检测中...</span>
-      {:else if devices.length === 0}
-        <span class="text-sm" style="color: var(--color-text-muted)">未检测到设备</span>
-      {:else}
-        <select class="input-field flex-1" bind:value={selectedDevice} onchange={() => { loadDeviceInfo(); switchTab(activeTab); }}>
-          {#each devices as dev}
-            <option value={dev.serial}>{dev.model || dev.serial} ({dev.state})</option>
-          {/each}
-        </select>
-        {#if devices.length > 1}
-          <button class="btn-ghost text-xs" onclick={toggleSelectAll}>
-            {selectAllDevices ? '取消全选' : '全选'}
-          </button>
-          <div class="flex gap-1">
-            {#each devices as dev}
-              <button
-                class="text-xs px-1.5 py-1 rounded"
-                style={selectedDevices.has(dev.serial) ? 'background: var(--color-primary); color: white' : 'background: var(--color-surface); color: var(--color-text-muted)'}
-                onclick={() => toggleDeviceSelect(dev.serial)}
-              >
-                {dev.model || dev.serial}
-              </button>
-            {/each}
-          </div>
-        {/if}
-      {/if}
-    </div>
-    <div class="flex flex-col gap-2">
-      {#if savedDevices.length > 0}
-        <div class="flex gap-1 flex-wrap">
-          {#each savedDevices as sd}
-            <button class="saved-device-chip" onclick={() => selectSavedDevice(sd.address)}>
-              <span class="text-xs">{sd.address}</span>
-              <span role="button" tabindex="-1" class="delete-chip" onclick={(e) => { e.stopPropagation(); showConfirm('移除设备', `确定要移除设备 ${sd.address} 吗？`, 'danger', () => deleteSavedDevice(sd.id)); }} onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); showConfirm('移除设备', `确定要移除设备 ${sd.address} 吗？`, 'danger', () => deleteSavedDevice(sd.id)); } }}>×</span>
-            </button>
-          {/each}
-        </div>
-      {/if}
-      <div class="flex gap-2">
-        <input type="text" class="input-field flex-1" placeholder="IP:Port 无线连接" bind:value={connectAddress} />
-        <button class="btn-primary text-sm" onclick={connectDevice}>连接</button>
-      </div>
-    </div>
-  </div>
+  <DeviceList
+    devices={devices}
+    selectedDevice={selectedDevice}
+    selectedDevices={selectedDevices}
+    loading={loading}
+    onSelect={(serial) => { selectedDevice = serial; loadDeviceInfo(); switchTab(activeTab); }}
+    onSelectBatch={(s) => { selectedDevices = s; }}
+    onConnect={(addr) => { connectAddress = addr; connectDevice(); }}
+    onRefresh={() => { listDevices(); if (selectedDevice) loadDeviceInfo(); }}
+  />
 
   {#if selectedDevice}
     <!-- Tabs -->
@@ -995,7 +823,7 @@
     </div>
 
     <!-- Tab Content -->
-    {#if activeTab === 'info' && deviceInfo}
+    {#if activeTab === 'info'}
       <div class="flex items-center gap-2 mb-3">
         <button class="btn-ghost text-xs flex items-center gap-1" onclick={() => loadDeviceInfo()}>
           <span class="material-symbols-outlined text-[14px]">refresh</span>
@@ -1009,125 +837,19 @@
           {autoRefresh ? '自动刷新中 (5s)' : '自动刷新'}
         </button>
       </div>
-      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        <!-- Basic Info -->
-        <div class="info-card p-5 min-w-0">
-          <h3 class="text-sm font-semibold mb-3" style="color: var(--color-text)">基本信息</h3>
-          <div class="space-y-2 text-sm">
-            <div class="info-row"><span style="color: var(--color-text-secondary)">型号</span><span>{deviceInfo.model}</span></div>
-            <div class="info-row"><span style="color: var(--color-text-secondary)">品牌</span><span>{deviceInfo.brand}</span></div>
-            <div class="info-row"><span style="color: var(--color-text-secondary)">制造商</span><span>{deviceInfo.manufacturer}</span></div>
-            <div class="info-row"><span style="color: var(--color-text-secondary)">Android</span><span>{deviceInfo.android_version}</span></div>
-            <div class="info-row"><span style="color: var(--color-text-secondary)">SDK</span><span>{deviceInfo.sdk_version}</span></div>
-            <div class="info-row"><span style="color: var(--color-text-secondary)">ABI</span><span>{deviceInfo.abi}</span></div>
-            <div class="info-row"><span style="color: var(--color-text-secondary)">内核</span><span class="text-xs">{deviceInfo.kernel}</span></div>
-          </div>
-        </div>
 
-        <!-- Status -->
-        <div class="info-card p-5 min-w-0">
-          <h3 class="text-sm font-semibold mb-3" style="color: var(--color-text)">状态</h3>
-          <div class="space-y-2 text-sm">
-            <div class="info-row"><span style="color: var(--color-text-secondary)">电池</span><span>{deviceInfo.battery_level}% ({deviceInfo.battery_status})</span></div>
-            <div class="info-row"><span style="color: var(--color-text-secondary)">存储</span><span>{deviceInfo.storage_used} / {deviceInfo.storage_total}</span></div>
-            <div class="info-row"><span style="color: var(--color-text-secondary)">可用</span><span>{deviceInfo.storage_free}</span></div>
-            <div class="info-row"><span style="color: var(--color-text-secondary)">内存</span><span>已用 {deviceInfo.ram_used || deviceInfo.ram_free} / 共 {deviceInfo.ram_total}</span></div>
-            <div class="info-row"><span style="color: var(--color-text-secondary)">运行时间</span><span>{formatUptime(deviceInfo.uptime)}</span></div>
-            <div class="info-row"><span style="color: var(--color-text-secondary)">Build</span><span class="text-xs">{deviceInfo.build_id}</span></div>
-            <div class="info-row"><span style="color: var(--color-text-secondary)">安全补丁</span><span>{deviceInfo.security_patch}</span></div>
-          </div>
-        </div>
+      <DeviceDetail deviceInfo={deviceInfo} loading={loading} />
 
-        <!-- Root Info -->
-        <div class="info-card p-5 min-w-0">
-          <h3 class="text-sm font-semibold mb-3" style="color: var(--color-text)">Root 状态</h3>
-          <div class="space-y-2 text-sm">
-            <div class="info-row"><span style="color: var(--color-text-secondary)">Magisk</span><span>{deviceInfo.magisk_version || '未安装'}</span></div>
-            <div class="info-row"><span style="color: var(--color-text-secondary)">KernelSU</span><span>{deviceInfo.ksu_version || '未安装'}</span></div>
-            <div class="info-row"><span style="color: var(--color-text-secondary)">APatch</span><span>{deviceInfo.apatch_version || '未安装'}</span></div>
-          </div>
-          <div class="mt-4 flex flex-wrap gap-2">
-            <button class="btn-ghost text-xs" onclick={() => showConfirm('重启设备', '确定要重启设备吗？', 'danger', () => rebootDevice(''))}>重启</button>
-            <button class="btn-ghost text-xs" onclick={() => showConfirm('重启到Recovery', '确定要重启到Recovery模式吗？', 'danger', () => rebootDevice('recovery'))}>Recovery</button>
-            <button class="btn-ghost text-xs" onclick={() => showConfirm('重启到Bootloader', '确定要重启到Bootloader模式吗？', 'danger', () => rebootDevice('bootloader'))}>Bootloader</button>
-          </div>
-        </div>
+      <RootManager serial={selectedDevice} onMsg={msg} />
 
-        <!-- Root Manager Card (2.1) -->
-        <div class="info-card p-5 min-w-0">
-          <h3 class="text-sm font-semibold mb-3" style="color: var(--color-text)">Root 管理器</h3>
-          <div class="space-y-2 text-sm">
-            {#if rootManagers.length === 0}
-              <div class="text-xs" style="color: var(--color-text-muted)">未检测到 Root 管理器，点击扫描</div>
-            {:else}
-              {#each rootManagers as rm}
-                <div class="info-row">
-                  <span style="color: var(--color-text-secondary)">{rm.name}</span>
-                  <span>{rm.version || '未知'} <span class="text-xs" style="color: var(--color-text-muted)">({rm.path})</span></span>
-                </div>
-              {/each}
-            {/if}
-          </div>
-          <div class="mt-4 flex flex-wrap gap-2">
-            <button class="btn-ghost text-xs" onclick={loadRootManagers}>扫描</button>
-            <button class="btn-ghost text-xs" onclick={loadRootPermissions}>权限列表</button>
-            <button class="btn-ghost text-xs" onclick={loadRootModules}>模块列表</button>
-          </div>
-          {#if showRootPermissions}
-            <div class="mt-4 border-t pt-3" style="border-color: var(--color-border)">
-              <h4 class="text-xs font-semibold mb-2" style="color: var(--color-text)">Root 权限管理</h4>
-              <div class="flex gap-2 mb-2">
-                <input type="text" class="input-field text-xs flex-1" placeholder="包名" bind:value={rootPermPackage} />
-                <label class="flex items-center gap-1 text-xs" style="color: var(--color-text-secondary)">
-                  <input type="checkbox" bind:checked={rootPermGrant} /> 授予
-                </label>
-                <button class="btn-primary text-xs" onclick={manageRootPermission}>执行</button>
-              </div>
-              <div class="max-h-32 overflow-y-auto space-y-1">
-                {#each rootPermissions as perm}
-                  <div class="flex justify-between text-xs px-2 py-1 rounded" style="background: var(--color-surface)">
-                    <span style="color: var(--color-text)">{perm.package}</span>
-                    <span style="color: var(--color-success)">{perm.status}</span>
-                  </div>
-                {/each}
-                {#if rootPermissions.length === 0}
-                  <div class="text-xs" style="color: var(--color-text-muted)">无已授权的 Root 权限</div>
-                {/if}
-              </div>
-            </div>
-          {/if}
-          {#if showRootModules}
-            <div class="mt-4 border-t pt-3" style="border-color: var(--color-border)">
-              <h4 class="text-xs font-semibold mb-2" style="color: var(--color-text)">Root 模块</h4>
-              <div class="max-h-32 overflow-y-auto space-y-1">
-                {#each rootModuleList as rm}
-                  <div class="flex justify-between text-xs px-2 py-1 rounded" style="background: var(--color-surface)">
-                    <span style="color: var(--color-text)">{rm.name}</span>
-                    <span class="flex items-center gap-1">
-                      <span style="color: var(--color-text-muted)">{rm.version}</span>
-                      <span class="px-1 py-0.5 rounded text-[10px]" style={rm.enabled ? 'background: var(--color-success-light); color: var(--color-success)' : 'background: var(--color-surface); color: var(--color-text-muted)'}>
-                        {rm.enabled ? '启用' : '禁用'}
-                      </span>
-                    </span>
-                  </div>
-                {/each}
-                {#if rootModuleList.length === 0}
-                  <div class="text-xs" style="color: var(--color-text-muted)">无模块</div>
-                {/if}
-              </div>
-            </div>
-          {/if}
-        </div>
-
-        <!-- Install Module -->
-        <div class="info-card p-5 md:col-span-2 lg:col-span-3 min-w-0">
-          <h3 class="text-sm font-semibold mb-3" style="color: var(--color-text)">安装模块</h3>
-          <div class="flex gap-2">
-            <input type="text" class="input-field flex-1" placeholder="设备上的 ZIP 文件路径，如 /sdcard/module.zip" bind:value={installPath} />
-            <button class="btn-primary text-sm" disabled={installing} onclick={installModule}>
-              {installing ? '安装中...' : '安装'}
-            </button>
-          </div>
+      <!-- Install Module -->
+      <div class="info-card p-5 min-w-0">
+        <h3 class="text-sm font-semibold mb-3" style="color: var(--color-text)">安装模块</h3>
+        <div class="flex gap-2">
+          <input type="text" class="input-field flex-1" placeholder="设备上的 ZIP 文件路径，如 /sdcard/module.zip" bind:value={installPath} />
+          <button class="btn-primary text-sm" disabled={installing} onclick={installModule}>
+            {installing ? '安装中...' : '安装'}
+          </button>
         </div>
       </div>
 
@@ -1204,7 +926,7 @@
               </tr>
             </thead>
             <tbody>
-              {#each filteredModules as mod}
+              {#each filteredModules as mod (mod.name)}
                 <tr style="border-bottom: 1px solid var(--color-border)">
                   {#if showModuleCheckboxes}
                     <td class="px-2 py-3 text-center">
@@ -1212,7 +934,7 @@
                     </td>
                   {/if}
                   <td class="px-4 py-3">
-                    <button class="font-medium text-left" style="color: var(--color-text); text-decoration: underline; text-underline-offset: 2px;" onclick={() => openModuleDetail(mod)}>
+                    <button class="font-medium text-left" style="color: var(--color-text); text-decoration: underline; text-underline-offset: 2px;" onclick={() => selectedModuleDetail = mod}>
                       {mod.name}
                     </button>
                     {#if mod.description}<div class="text-xs" style="color: var(--color-text-muted)">{mod.description}</div>{/if}
@@ -1247,34 +969,12 @@
         {/if}
       </div>
 
-      <!-- Module Detail Modal (1.6) -->
-      {#if showModuleDetail && selectedModuleDetail}
-        <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) showModuleDetail = false; }}>
-          <div class="bg-[var(--color-bg)] rounded-2xl p-6 w-full max-w-lg border border-[var(--color-border)] shadow-2xl" role="dialog" aria-modal="true" tabindex="-1">
-            <div class="flex items-center justify-between mb-4">
-              <h3 class="text-lg font-bold text-[var(--color-text)]">{selectedModuleDetail.name}</h3>
-              <button class="p-1 rounded-lg hover:bg-[var(--color-surface)]" onclick={() => showModuleDetail = false}>
-                <span class="material-symbols-outlined text-[20px]">close</span>
-              </button>
-            </div>
-            <div class="space-y-3">
-              <div class="flex justify-between"><span class="text-sm" style="color: var(--color-text-muted)">版本</span><span class="text-sm text-[var(--color-text)]">{selectedModuleDetail.version}</span></div>
-              <div class="flex justify-between"><span class="text-sm" style="color: var(--color-text-muted)">作者</span><span class="text-sm text-[var(--color-text)]">{selectedModuleDetail.author || '未知'}</span></div>
-              <div class="flex justify-between"><span class="text-sm" style="color: var(--color-text-muted)">来源</span><span class="text-sm text-[var(--color-text)]">{selectedModuleDetail.source || '未知'}</span></div>
-              <div class="flex justify-between"><span class="text-sm" style="color: var(--color-text-muted)">大小</span><span class="text-sm text-[var(--color-text)]">{selectedModuleDetail.size}</span></div>
-              <div class="flex justify-between"><span class="text-sm" style="color: var(--color-text-muted)">描述</span><span class="text-sm text-[var(--color-text)]">{selectedModuleDetail.description || '无描述'}</span></div>
-              <div class="flex justify-between"><span class="text-sm" style="color: var(--color-text-muted)">更新日期</span><span class="text-sm text-[var(--color-text)]">{selectedModuleDetail.update_date || '未知'}</span></div>
-              <div class="flex justify-between"><span class="text-sm" style="color: var(--color-text-muted)">有更新</span><span class="text-sm" style="color: {selectedModuleDetail.has_update ? 'var(--color-success)' : 'var(--color-text-muted)'}">{selectedModuleDetail.has_update ? '是' : '否'}</span></div>
-              <div class="flex justify-between"><span class="text-sm" style="color: var(--color-text-muted)">状态</span><span class="text-sm" style="color: {selectedModuleDetail.enabled ? 'var(--color-success)' : 'var(--color-text-muted)'}">{selectedModuleDetail.enabled ? '已启用' : '已禁用'}</span></div>
-            </div>
-            <div class="flex justify-end gap-2 mt-6">
-              <button class="btn-ghost text-sm" onclick={() => showModuleDetail = false}>关闭</button>
-              <button class="btn-primary text-sm" onclick={() => { exportModule(selectedModuleDetail!.name); showModuleDetail = false; }}>导出</button>
-              <button class="btn-primary text-sm" onclick={() => { backupModule(selectedModuleDetail!.name); showModuleDetail = false; }}>备份</button>
-            </div>
-          </div>
-        </div>
-      {/if}
+      <ModuleDetail
+        mod={selectedModuleDetail}
+        onClose={() => selectedModuleDetail = null}
+        onExport={(name: string) => { exportModule(name); selectedModuleDetail = null; }}
+        onBackup={(name: string) => { backupModule(name); selectedModuleDetail = null; }}
+      />
 
     {:else if activeTab === 'apps'}
       <div class="info-card overflow-hidden">
@@ -1290,7 +990,7 @@
           <button class="btn-ghost text-xs" onclick={loadApps}>刷新</button>
         </div>
         <div class="max-h-[500px] overflow-y-auto">
-          {#each apps as app}
+          {#each apps as app (app.package_name)}
             <div class="flex items-center justify-between px-4 py-2.5 text-sm" style="border-bottom: 1px solid var(--color-border)">
               <div class="flex-1 min-w-0">
                 <div class="font-medium truncate" style="color: var(--color-text)">{app.package_name}</div>
@@ -1347,12 +1047,12 @@
           ondrop={handleDrop}
         >
           {#if dragOver}
-            <div class="absolute inset-0 z-10 flex items-center justify-center rounded-lg" style="background: rgba(139,92,246,0.1); border: 2px dashed var(--color-primary)">
+            <div class="absolute inset-0 z-10 flex items-center justify-center rounded-lg" style="background: color-mix(in srgb, var(--color-primary) 10%, transparent); border: 2px dashed var(--color-primary)">
               <span class="text-sm font-medium" style="color: var(--color-primary)">释放文件以上传</span>
             </div>
           {/if}
         <div class="max-h-[500px] overflow-y-auto">
-          {#each filteredFiles as file}
+          {#each filteredFiles as file (file.path)}
             <div class="flex items-center px-4 py-2 text-sm" style="border-bottom: 1px solid var(--color-border)">
               <span class="material-symbols-outlined text-[18px] mr-2" style="color: {file.is_dir ? 'var(--color-primary)' : 'var(--color-text-muted)'}">
                 {file.is_dir ? 'folder' : 'description'}
@@ -1455,86 +1155,20 @@
           </div>
 
           <div class="flex-1 space-y-4">
-            <div>
-              <p class="text-xs font-medium mb-2" style="color: var(--color-text-secondary)">导航</p>
-              <div class="grid grid-cols-3 gap-2 max-w-[200px]">
-                <div></div>
-                <button class="btn-ghost text-xs py-2" onclick={() => sendKey('KEYCODE_DPAD_UP')}>▲</button>
-                <div></div>
-                <button class="btn-ghost text-xs py-2" onclick={() => sendKey('KEYCODE_DPAD_LEFT')}>◄</button>
-                <button class="btn-ghost text-xs py-2" onclick={() => sendKey('KEYCODE_DPAD_CENTER')}>●</button>
-                <button class="btn-ghost text-xs py-2" onclick={() => sendKey('KEYCODE_DPAD_RIGHT')}>►</button>
-                <div></div>
-                <button class="btn-ghost text-xs py-2" onclick={() => sendKey('KEYCODE_DPAD_DOWN')}>▼</button>
-                <div></div>
-              </div>
-            </div>
-
-            <div>
-              <p class="text-xs font-medium mb-2" style="color: var(--color-text-secondary)">功能键</p>
-              <div class="flex flex-wrap gap-2">
-                <button class="btn-ghost text-xs px-3 py-1.5" onclick={() => sendKey('KEYCODE_HOME')}>Home</button>
-                <button class="btn-ghost text-xs px-3 py-1.5" onclick={() => sendKey('KEYCODE_BACK')}>返回</button>
-                <button class="btn-ghost text-xs px-3 py-1.5" onclick={() => sendKey('KEYCODE_APP_SWITCH')}>最近</button>
-                <button class="btn-ghost text-xs px-3 py-1.5" onclick={() => sendKey('KEYCODE_POWER')}>电源</button>
-                <button class="btn-ghost text-xs px-3 py-1.5" onclick={() => sendKey('KEYCODE_VOLUME_UP')}>音量+</button>
-                <button class="btn-ghost text-xs px-3 py-1.5" onclick={() => sendKey('KEYCODE_VOLUME_DOWN')}>音量-</button>
-              </div>
-            </div>
-
-            <div>
-              <p class="text-xs font-medium mb-2" style="color: var(--color-text-secondary)">文字输入</p>
-              <div class="flex gap-2">
-                <input type="text" class="input-field flex-1 text-xs" bind:value={inputText} placeholder="输入文字..." onkeydown={(e) => { if (e.key === 'Enter') sendInputText(); }} />
-                <button class="btn-primary text-xs" onclick={sendInputText} disabled={!inputText}>发送</button>
-              </div>
-            </div>
-
-            <div>
-              <p class="text-xs font-medium mb-2" style="color: var(--color-text-secondary)">快捷操作</p>
-              <div class="flex flex-wrap gap-2">
-                <button class="btn-ghost text-xs px-3 py-1.5" onclick={() => swipeScreen(screenWidth/2, screenHeight*0.8, screenWidth/2, screenHeight*0.2, 300)}>↓ 向下滑</button>
-                <button class="btn-ghost text-xs px-3 py-1.5" onclick={() => swipeScreen(screenWidth/2, screenHeight*0.2, screenWidth/2, screenHeight*0.8, 300)}>↑ 向上滑</button>
-                <button class="btn-ghost text-xs px-3 py-1.5" onclick={() => swipeScreen(screenWidth*0.8, screenHeight/2, screenWidth*0.2, screenHeight/2, 300)}>→ 向左滑</button>
-                <button class="btn-ghost text-xs px-3 py-1.5" onclick={() => swipeScreen(screenWidth*0.2, screenHeight/2, screenWidth*0.8, screenHeight/2, 300)}>← 向右滑</button>
-                <button class="btn-ghost text-xs px-3 py-1.5" onclick={() => swipeScreen(screenWidth/2, screenHeight/2, screenWidth/2, screenHeight/2, 0)}>点击(无滑动)</button>
-              </div>
-            </div>
-
-            <div>
-              <p class="text-xs font-medium mb-2" style="color: var(--color-text-secondary)">按键组合</p>
-              <div class="flex flex-wrap gap-2">
-                <button class="btn-ghost text-xs px-3 py-1.5" onclick={() => sendKeyCombo(['KEYCODE_CTRL_LEFT', 'KEYCODE_C'])}>Ctrl+C</button>
-                <button class="btn-ghost text-xs px-3 py-1.5" onclick={() => sendKeyCombo(['KEYCODE_CTRL_LEFT', 'KEYCODE_V'])}>Ctrl+V</button>
-                <button class="btn-ghost text-xs px-3 py-1.5" onclick={() => sendKeyCombo(['KEYCODE_CTRL_LEFT', 'KEYCODE_A'])}>Ctrl+A</button>
-                <button class="btn-ghost text-xs px-3 py-1.5" onclick={() => sendKeyCombo(['KEYCODE_CTRL_LEFT', 'KEYCODE_Z'])}>Ctrl+Z</button>
-                <button class="btn-ghost text-xs px-3 py-1.5" onclick={() => sendKeyCombo(['KEYCODE_CTRL_LEFT', 'KEYCODE_S'])}>Ctrl+S</button>
-                <button class="btn-ghost text-xs px-3 py-1.5" onclick={() => sendKeyCombo(['KEYCODE_ALT_LEFT', 'KEYCODE_TAB'])}>Alt+Tab</button>
-              </div>
-            </div>
-
-            <div>
-              <p class="text-xs font-medium mb-2" style="color: var(--color-text-secondary)">屏幕旋转</p>
-              <div class="flex flex-wrap gap-2">
-                <button class="btn-ghost text-xs px-3 py-1.5" onclick={() => rotateScreen('portrait')}>竖屏</button>
-                <button class="btn-ghost text-xs px-3 py-1.5" onclick={() => rotateScreen('landscape')}>横屏</button>
-              </div>
-            </div>
-
-            <div>
-              <p class="text-xs font-medium mb-2" style="color: var(--color-text-secondary)">长按设置</p>
-              <div class="flex items-center gap-2">
-                <span class="text-xs" style="color: var(--color-text-muted)">{holdDuration}ms</span>
-                <input type="range" min="200" max="5000" step="100" bind:value={holdDuration} class="w-32" />
-                {#if holdActive}
-                  <span class="text-xs" style="color: var(--color-primary)">长按中...</span>
-                {/if}
-              </div>
-            </div>
-
-            <div class="p-3 rounded-xl text-xs" style="background: var(--color-info-light); color: var(--color-info)">
-              点击/触摸截图可直接操作。短按=tap，长按=long press，滑动=swipe。支持自动刷新模式。
-            </div>
+            <ScreenControls
+              {screenWidth} {screenHeight} {screenRefreshing} {screenAutoRefresh}
+              {inputText} {holdDuration} {holdActive} {recording}
+              onRefresh={refreshScreen}
+              onToggleAutoRefresh={toggleScreenAutoRefresh}
+              onToggleRecording={toggleScreenRecord}
+              onSendKey={(key) => sendKey(key)}
+              onSendKeyCombo={(keys) => sendKeyCombo(keys)}
+              onSendInputText={sendInputText}
+              onSwipeScreen={(x1, y1, x2, y2, dur) => swipeScreen(x1, y1, x2, y2, dur)}
+              onRotateScreen={(dir) => rotateScreen(dir)}
+              onInputChange={(v) => inputText = v}
+              onHoldDurationChange={(v) => holdDuration = v}
+            />
           </div>
         </div>
       </div>
@@ -1565,13 +1199,6 @@
     border: 1px solid var(--color-border);
     border-radius: var(--radius-lg);
   }
-  .info-row {
-    display: flex;
-    justify-content: space-between;
-    padding: 4px 0;
-    border-bottom: 1px solid var(--color-border);
-  }
-  .info-row:last-child { border-bottom: none; }
   .input-field {
     background: var(--color-surface);
     border: 1px solid var(--color-border);
@@ -1601,26 +1228,4 @@
   }
   .btn-ghost:hover { background: var(--color-surface); }
   .btn-ghost:disabled { opacity: 0.5; cursor: not-allowed; }
-  .saved-device-chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    background: var(--color-surface);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-md);
-    padding: 4px 8px;
-    cursor: pointer;
-    color: var(--color-text);
-    font-size: 12px;
-    transition: border-color 0.15s;
-  }
-  .saved-device-chip:hover { border-color: var(--color-primary); }
-  .delete-chip {
-    color: var(--color-error);
-    font-size: 14px;
-    line-height: 1;
-    margin-left: 2px;
-    cursor: pointer;
-  }
-  .delete-chip:hover { font-weight: bold; }
 </style>

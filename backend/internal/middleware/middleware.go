@@ -6,6 +6,7 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/moduforge/backend/internal/config"
+	"github.com/moduforge/backend/internal/handler/api"
 )
 
 func JWTAuth(cfg *config.Config) fiber.Handler {
@@ -18,14 +19,14 @@ func JWTAuth(cfg *config.Config) fiber.Handler {
 			tokenStr = t
 		}
 		if tokenStr == "" {
-			return c.Status(401).JSON(fiber.Map{"error": "missing token"})
+			return api.Unauthorized(c, "missing authorization header")
 		}
 		token, err := jwt.Parse(tokenStr, func(t *jwt.Token) (interface{}, error) {
 			return []byte(cfg.JWTSecret), nil
 		})
 
 		if err != nil || !token.Valid {
-			return c.Status(401).JSON(fiber.Map{"error": "invalid token"})
+			return api.Unauthorized(c, "invalid token")
 		}
 
 		claims := token.Claims.(jwt.MapClaims)

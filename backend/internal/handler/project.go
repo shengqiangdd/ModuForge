@@ -144,7 +144,17 @@ func (h *ProjectHandler) ListFiles(c fiber.Ctx) error {
 	if projectID == "" {
 		return c.JSON([]interface{}{}) // 空 ID 返回空数组，不报错
 	}
-	files, err := h.svc.ListFiles(c.Context(), projectID)
+	userID := c.Locals("uid")
+	uid := ""
+	if userID != nil {
+		if s, ok := userID.(string); ok {
+			uid = s
+		}
+	}
+	if uid == "" {
+		return Unauthorized(c, "未授权")
+	}
+	files, err := h.svc.ListFiles(c.Context(), projectID, uid)
 	if err != nil {
 		return ErrorResponse(c, 400, err.Error(), ErrCodeInternal)
 	}
@@ -154,7 +164,17 @@ func (h *ProjectHandler) ListFiles(c fiber.Ctx) error {
 func (h *ProjectHandler) GetFile(c fiber.Ctx) error {
 	projectID := c.Params("id")
 	path := c.Params("*")
-	file, err := h.svc.GetFile(c.Context(), projectID, path)
+	userID := c.Locals("uid")
+	uid := ""
+	if userID != nil {
+		if s, ok := userID.(string); ok {
+			uid = s
+		}
+	}
+	if uid == "" {
+		return Unauthorized(c, "未授权")
+	}
+	file, err := h.svc.GetFile(c.Context(), projectID, path, uid)
 	if err != nil {
 		return NotFound(c, "文件不存在")
 	}
@@ -164,6 +184,16 @@ func (h *ProjectHandler) GetFile(c fiber.Ctx) error {
 func (h *ProjectHandler) SaveFile(c fiber.Ctx) error {
 	projectID := c.Params("id")
 	path := c.Params("*")
+	userID := c.Locals("uid")
+	uid := ""
+	if userID != nil {
+		if s, ok := userID.(string); ok {
+			uid = s
+		}
+	}
+	if uid == "" {
+		return Unauthorized(c, "未授权")
+	}
 	var body struct {
 		Content string `json:"content"`
 	}
@@ -173,7 +203,7 @@ func (h *ProjectHandler) SaveFile(c fiber.Ctx) error {
 	if path == "" {
 		return ValidationError(c, "文件路径不能为空")
 	}
-	file, err := h.svc.SaveFile(c.Context(), projectID, path, body.Content)
+	file, err := h.svc.SaveFile(c.Context(), projectID, path, body.Content, uid)
 	if err != nil {
 		return ErrorResponse(c, 400, err.Error(), ErrCodeInternal)
 	}
@@ -250,6 +280,16 @@ func isBuildConfig(path string) bool {
 
 func (h *ProjectHandler) UploadFiles(c fiber.Ctx) error {
 	projectID := c.Params("id")
+	userID := c.Locals("uid")
+	uid := ""
+	if userID != nil {
+		if s, ok := userID.(string); ok {
+			uid = s
+		}
+	}
+	if uid == "" {
+		return Unauthorized(c, "未授权")
+	}
 	form, err := c.MultipartForm()
 	if err != nil {
 		return BadRequest(c, "invalid multipart form")
@@ -270,7 +310,7 @@ func (h *ProjectHandler) UploadFiles(c fiber.Ctx) error {
 		src.Read(buf)
 		src.Close()
 		content := string(buf)
-		if _, err := h.svc.SaveFile(c.Context(), projectID, path, content); err != nil {
+		if _, err := h.svc.SaveFile(c.Context(), projectID, path, content, uid); err != nil {
 			results = append(results, fmt.Sprintf("%s: save error", f.Filename))
 			continue
 		}
@@ -284,6 +324,24 @@ func (h *ProjectHandler) DeleteFile(c fiber.Ctx) error {
 	path := c.Params("*")
 	if path == "" {
 		return ValidationError(c, "文件路径不能为空")
+	}
+	userID := c.Locals("uid")
+	uid := ""
+	if userID != nil {
+		if s, ok := userID.(string); ok {
+			uid = s
+		}
+	}
+	if uid == "" {
+		return Unauthorized(c, "未授权")
+	}
+	// Check project ownership
+	var ownerID string
+	if err := h.db.QueryRow("SELECT user_id FROM projects WHERE id = ? AND deleted_at IS NULL", projectID).Scan(&ownerID); err != nil {
+		return NotFound(c, "项目不存在")
+	}
+	if ownerID != "" && ownerID != uid {
+		return Forbidden(c, "无权访问此项目")
 	}
 	result, err := h.db.Exec(`DELETE FROM project_files WHERE project_id=? AND path=?`, projectID, path)
 	if err != nil {

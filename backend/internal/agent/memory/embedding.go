@@ -185,7 +185,7 @@ func (vs *VectorSearch) updateIDF() {
 // tokenize splits text into lowercase tokens.
 func tokenize(text string) []string {
 	// Remove special characters, keep alphanumeric and CJK
-	reg := regexp.MustCompile(`[a-zA-Z0-9\u4e00-\u9fff]+`)
+	reg := regexp.MustCompile(`[a-zA-Z0-9\x{4e00}-\x{9fff}]+`)
 	words := reg.FindAllString(strings.ToLower(text), -1)
 
 	// Filter short tokens and common stop words

@@ -49,7 +49,7 @@ func (h *MirrorHandler) Mirror(c fiber.Ctx) error {
 	c.Set("Content-Type", "multipart/x-mixed-replace; boundary=MJPEG_BOUNDARY")
 	c.Set("Cache-Control", "no-cache")
 	c.Set("Connection", "keep-alive")
-	c.Set("Access-Control-Allow-Origin", "*")
+	// ACAO set by CORS middleware; do not override
 
 	fctx, ok := c.Context().(*fasthttp.RequestCtx)
 	if !ok {

@@ -402,13 +402,6 @@ func EnhanceSummary(summary string, decisions, files, errors []string) string {
 func StoreEnhancedSummary(db *sql.DB, userID, sessionID, projectID, summary string, decisions, files, errors []string) error {
 	enhanced := EnhanceSummary(summary, decisions, files, errors)
 
-	// Extract lessons as tags
-	var tags []string
-	for _, err := range errors {
-		lessons := ExtractLessons(err)
-		tags = append(tags, lessons...)
-	}
-
 	// Store the enhanced summary
 	decJSON, _ := json.Marshal(decisions)
 	filesJSON, _ := json.Marshal(files)

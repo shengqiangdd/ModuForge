@@ -1,6 +1,6 @@
 import { getToken, isTokenExpiring, tryRefreshToken } from './api/client';
 
-type WSEventCallback = (data: any) => void;
+type WSEventCallback = (data: unknown) => void;
 
 class WSClient {
   private ws: WebSocket | null = null;

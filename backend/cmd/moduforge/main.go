@@ -5,6 +5,8 @@ import (
 	"io/fs"
 	"log"
 	"log/slog"
+	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -17,19 +19,17 @@ import (
 	"github.com/gofiber/fiber/v3/middleware/logger"
 	"github.com/gofiber/fiber/v3/middleware/recover"
 
+	"github.com/moduforge/backend/internal/builder"
 	"github.com/moduforge/backend/internal/config"
 	"github.com/moduforge/backend/internal/database"
 	"github.com/moduforge/backend/internal/handler"
+	apipkg "github.com/moduforge/backend/internal/handler/api"
 	"github.com/moduforge/backend/internal/middleware"
 	"github.com/moduforge/backend/internal/service"
-	"github.com/moduforge/backend/internal/builder"
 	_ "github.com/moduforge/backend/internal/agent/skills"
+	// pprof is imported for side-effect: registers /debug/pprof handlers on default mux
+	_ "net/http/pprof"
 )
-
-type apiError struct {
-	Error string `json:"error"`
-	Code  string `json:"code,omitempty"`
-}
 
 func main() {
 	cfg := config.Load()
@@ -69,7 +69,7 @@ func main() {
 			// Check if it's a Fiber typed error (e.g. 404, 405) and use its status code
 			var fiberErr *fiber.Error
 			if errors.As(err, &fiberErr) {
-				return c.Status(fiberErr.Code).JSON(apiError{Error: fiberErr.Message, Code: "HTTP_ERROR"})
+				return c.Status(fiberErr.Code).JSON(apipkg.Error{Error: fiberErr.Message, Code: "HTTP_ERROR"})
 			}
 			// S3 fix: hide internal error details in production
 			isDev := os.Getenv("MODUFORGE_DEV") == "1"
@@ -78,7 +78,7 @@ func main() {
 				msg = err.Error()
 			}
 			log.Printf("[ERROR] %v", err) // always log full error server-side
-			return c.Status(500).JSON(apiError{Error: msg, Code: "INTERNAL_ERROR"})
+			return c.Status(500).JSON(apipkg.Error{Error: msg, Code: "INTERNAL_ERROR"})
 		},
 	})
 
@@ -123,7 +123,12 @@ func main() {
 				return false
 			}
 			// Development: allow localhost origins only
-			if strings.Contains(origin, "localhost") || strings.Contains(origin, "127.0.0.1") {
+			u, err := url.Parse(origin)
+			if err != nil {
+				return false
+			}
+			host := u.Hostname()
+			if host == "localhost" || host == "127.0.0.1" {
 				return true
 			}
 			// Deny all other origins by default
@@ -154,11 +159,11 @@ func main() {
 	app.Use(middleware.RateLimit(rl, 50, 30))
 
 	// API routes
-	api := app.Group("/api/v1")
-	handler.RegisterRoutes(api, db, cfg)
+	apiGroup := app.Group("/api/v1")
+	handler.RegisterRoutes(apiGroup, db, cfg)
 
 	// Docs
-	handler.RegisterDocs(api, cfg.StoragePath+"/../docs")
+	handler.RegisterDocs(apiGroup, cfg.StoragePath+"/../docs")
 	app.Get("/docs", handler.DocsRedirect)
 
 	// Static uploads (screenshots, etc.)
@@ -171,26 +176,24 @@ func main() {
 		fileParam := c.Params("*")
 		cleanPath := filepath.Clean(fileParam)
 		if strings.Contains(cleanPath, "..") {
-			return c.Status(403).JSON(fiber.Map{"error": "forbidden"})
+			return apipkg.Forbidden(c, "invalid path")
 		}
 		filePath := filepath.Join(cfg.StoragePath, cleanPath)
 		// Ensure the resolved path is still within storageDir
 		absStorage, _ := filepath.Abs(cfg.StoragePath)
 		absFile, _ := filepath.Abs(filePath)
 		if !strings.HasPrefix(absFile, absStorage) {
-			return c.Status(403).JSON(fiber.Map{"error": "forbidden"})
+			return apipkg.Forbidden(c, "path traversal denied")
 		}
 		if _, err := os.Stat(filePath); os.IsNotExist(err) {
-			return c.Status(404).JSON(fiber.Map{"error": "not found"})
+			return apipkg.NotFound(c, "file not found")
 		}
 		return c.SendFile(filePath)
 	})
 
-	// Health check — no version info to avoid information leakage
+	// Health check
 	app.Get("/health", func(c fiber.Ctx) error {
-		return c.JSON(fiber.Map{
-			"status": "ok",
-		})
+		return apipkg.SuccessOK(c)
 	})
 
 	// Serve frontend static files from /app/dist (Docker) or ./dist (local)
@@ -227,6 +230,24 @@ func main() {
 	cacheMgr := builder.NewGlobalCacheManager(builder.DefaultCacheConfig(cfg.StoragePath))
 	cacheMgr.Start()
 	defer cacheMgr.Stop()
+
+	// Start pprof server on debug port (development only by default)
+	pprofPort := os.Getenv("PPROF_PORT")
+	if pprofPort == "" {
+		pprofPort = "6060"
+	}
+	pprofEnabled := os.Getenv("PPROF_ENABLED")
+	if pprofEnabled == "1" || pprofEnabled == "true" {
+		go func() {
+			slog.Info("pprof server starting", "port", pprofPort)
+			// The default mux has pprof handlers registered via the blank import above.
+			if err := http.ListenAndServe(":"+pprofPort, nil); err != nil {
+				slog.Warn("pprof server stopped", "error", err)
+			}
+		}()
+	} else {
+		slog.Info("pprof disabled (set PPROF_ENABLED=1 to enable on port "+pprofPort+")")
+	}
 
 	// Graceful shutdown
 	go func() {

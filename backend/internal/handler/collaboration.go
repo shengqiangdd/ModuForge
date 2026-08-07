@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"strconv"
 
 	"github.com/gofiber/fiber/v3"
@@ -22,6 +23,14 @@ func (h *CollaborationHandler) SetActivitySvc(s *service.ActivityService) { h.ac
 
 func (h *CollaborationHandler) AddCollaborator(c fiber.Ctx) error {
 	projectID := c.Params("id")
+	actor := safeUserID(c)
+	if actor == "" {
+		return Unauthorized(c, "未授权")
+	}
+	// Verify actor is the project owner
+	if !h.isProjectOwner(c.Context(), projectID, actor) {
+		return Forbidden(c, "无权管理此项目")
+	}
 	var req struct {
 		UserID string `json:"user_id"`
 		Role   string `json:"role"`
@@ -31,6 +40,9 @@ func (h *CollaborationHandler) AddCollaborator(c fiber.Ctx) error {
 	}
 	if req.Role == "" {
 		req.Role = "editor"
+	}
+	if req.UserID == "" {
+		return c.Status(400).JSON(fiber.Map{"error": "user_id required"})
 	}
 
 	collab, err := h.collab.AddCollaborator(c.Context(), projectID, req.UserID, req.Role)
@@ -42,6 +54,13 @@ func (h *CollaborationHandler) AddCollaborator(c fiber.Ctx) error {
 
 func (h *CollaborationHandler) ListCollaborators(c fiber.Ctx) error {
 	projectID := c.Params("id")
+	actor := safeUserID(c)
+	if actor == "" {
+		return Unauthorized(c, "未授权")
+	}
+	if !h.isProjectOwner(c.Context(), projectID, actor) {
+		return Forbidden(c, "无权访问此项目")
+	}
 	list, err := h.collab.ListCollaborators(c.Context(), projectID)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
@@ -52,6 +71,13 @@ func (h *CollaborationHandler) ListCollaborators(c fiber.Ctx) error {
 func (h *CollaborationHandler) RemoveCollaborator(c fiber.Ctx) error {
 	projectID := c.Params("id")
 	userID := c.Params("userId")
+	actor := safeUserID(c)
+	if actor == "" {
+		return Unauthorized(c, "未授权")
+	}
+	if !h.isProjectOwner(c.Context(), projectID, actor) {
+		return Forbidden(c, "无权管理此项目")
+	}
 	if err := h.collab.RemoveCollaborator(c.Context(), projectID, userID); err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
@@ -60,18 +86,21 @@ func (h *CollaborationHandler) RemoveCollaborator(c fiber.Ctx) error {
 
 func (h *CollaborationHandler) AddComment(c fiber.Ctx) error {
 	projectID := c.Params("id")
+	actor := safeUserID(c)
+	if actor == "" {
+		return Unauthorized(c, "未授权")
+	}
 	var req struct {
 		FilePath   string `json:"file_path"`
 		Content    string `json:"content"`
 		LineNumber int    `json:"line_number"`
-		UserID     string `json:"user_id"`
 		Username   string `json:"username"`
 	}
 	if err := c.Bind().JSON(&req); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
 	}
-
-	comment, err := h.collab.AddComment(c.Context(), projectID, req.UserID, req.Username, req.FilePath, req.Content, req.LineNumber)
+	// Use JWT user ID, not request body — prevents impersonation
+	comment, err := h.collab.AddComment(c.Context(), projectID, actor, req.Username, req.FilePath, req.Content, req.LineNumber)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
@@ -103,11 +132,16 @@ func (h *CollaborationHandler) ResolveComment(c fiber.Ctx) error {
 
 func (h *CollaborationHandler) UpsertEditSession(c fiber.Ctx) error {
 	projectID := c.Params("id")
+	actor := safeUserID(c)
+	if actor == "" {
+		return Unauthorized(c, "未授权")
+	}
 	var session service.EditSession
 	if err := c.Bind().JSON(&session); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
 	}
 	session.ProjectID = projectID
+	session.UserID = actor // Use JWT user ID, not request body
 
 	if err := h.collab.UpsertEditSession(c.Context(), &session); err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
@@ -117,11 +151,11 @@ func (h *CollaborationHandler) UpsertEditSession(c fiber.Ctx) error {
 
 func (h *CollaborationHandler) ListEditSessions(c fiber.Ctx) error {
 	projectID := c.Params("id")
-	sessions, err := h.collab.ListEditSessions(c.Context(), projectID)
+	list, err := h.collab.ListEditSessions(c.Context(), projectID)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
-	return c.JSON(fiber.Map{"sessions": sessions})
+	return c.JSON(fiber.Map{"sessions": list})
 }
 
 func (h *CollaborationHandler) RemoveEditSession(c fiber.Ctx) error {
@@ -136,6 +170,13 @@ func (h *CollaborationHandler) RemoveEditSession(c fiber.Ctx) error {
 
 func (h *CollaborationHandler) AddTeamMember(c fiber.Ctx) error {
 	projectID := c.Params("id")
+	actor := safeUserID(c)
+	if actor == "" {
+		return Unauthorized(c, "未授权")
+	}
+	if !h.isProjectOwner(c.Context(), projectID, actor) {
+		return Forbidden(c, "无权管理此项目")
+	}
 	var req struct {
 		UserID string `json:"user_id"`
 		Role   string `json:"role"`
@@ -146,10 +187,8 @@ func (h *CollaborationHandler) AddTeamMember(c fiber.Ctx) error {
 	if req.Role == "" {
 		req.Role = "member"
 	}
-	// Get current user from JWT context
-	actor := safeUserID(c)
-	if actor == "" {
-		actor = "unknown"
+	if req.UserID == "" {
+		return c.Status(400).JSON(fiber.Map{"error": "user_id required"})
 	}
 	member, err := h.collab.AddTeamMember(c.Context(), projectID, req.UserID, req.Role, actor)
 	if err != nil {
@@ -174,6 +213,13 @@ func (h *CollaborationHandler) AddTeamMember(c fiber.Ctx) error {
 
 func (h *CollaborationHandler) ListTeamMembers(c fiber.Ctx) error {
 	projectID := c.Params("id")
+	actor := safeUserID(c)
+	if actor == "" {
+		return Unauthorized(c, "未授权")
+	}
+	if !h.isProjectOwner(c.Context(), projectID, actor) {
+		return Forbidden(c, "无权访问此项目")
+	}
 	list, err := h.collab.GetTeamMembers(c.Context(), projectID)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
@@ -184,6 +230,13 @@ func (h *CollaborationHandler) ListTeamMembers(c fiber.Ctx) error {
 func (h *CollaborationHandler) UpdateMemberRole(c fiber.Ctx) error {
 	projectID := c.Params("id")
 	userID := c.Params("userId")
+	actor := safeUserID(c)
+	if actor == "" {
+		return Unauthorized(c, "未授权")
+	}
+	if !h.isProjectOwner(c.Context(), projectID, actor) {
+		return Forbidden(c, "无权管理此项目")
+	}
 	var req struct {
 		Role string `json:"role"`
 	}
@@ -193,7 +246,6 @@ func (h *CollaborationHandler) UpdateMemberRole(c fiber.Ctx) error {
 	if err := h.collab.UpdateMemberRole(c.Context(), projectID, userID, req.Role); err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
-	actor := safeUserID(c)
 	h.collab.LogAudit(c.Context(), projectID, actor, "team_member_role_changed", "Changed user "+userID+" role to "+req.Role)
 	return c.JSON(fiber.Map{"ok": true})
 }
@@ -201,16 +253,29 @@ func (h *CollaborationHandler) UpdateMemberRole(c fiber.Ctx) error {
 func (h *CollaborationHandler) RemoveTeamMember(c fiber.Ctx) error {
 	projectID := c.Params("id")
 	userID := c.Params("userId")
+	actor := safeUserID(c)
+	if actor == "" {
+		return Unauthorized(c, "未授权")
+	}
+	if !h.isProjectOwner(c.Context(), projectID, actor) {
+		return Forbidden(c, "无权管理此项目")
+	}
 	if err := h.collab.RemoveTeamMember(c.Context(), projectID, userID); err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
-	actor := safeUserID(c)
 	h.collab.LogAudit(c.Context(), projectID, actor, "team_member_removed", "Removed user "+userID)
 	return c.JSON(fiber.Map{"ok": true})
 }
 
 func (h *CollaborationHandler) GetAuditLogs(c fiber.Ctx) error {
 	projectID := c.Params("id")
+	actor := safeUserID(c)
+	if actor == "" {
+		return Unauthorized(c, "未授权")
+	}
+	if !h.isProjectOwner(c.Context(), projectID, actor) {
+		return Forbidden(c, "无权访问此项目")
+	}
 	userID := c.Query("user_id")
 	action := c.Query("action")
 	start := c.Query("start")
@@ -306,4 +371,19 @@ func (h *CollaborationHandler) GetAuditLogs(c fiber.Ctx) error {
 	}
 
 	return c.JSON(fiber.Map{"logs": logs, "total": total, "page": page, "limit": limit})
+}
+
+// isProjectOwner checks whether the given user is the owner of the project.
+func (h *CollaborationHandler) isProjectOwner(ctx context.Context, projectID, userID string) bool {
+	if userID == "" {
+		return false
+	}
+	var ownerID string
+	err := h.collab.GetDB().QueryRowContext(ctx,
+		"SELECT user_id FROM projects WHERE id = ? AND deleted_at IS NULL", projectID,
+	).Scan(&ownerID)
+	if err != nil {
+		return false
+	}
+	return ownerID == userID
 }

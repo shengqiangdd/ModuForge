@@ -157,7 +157,7 @@
     </div>
   {:else}
     <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-      {#each items as item}
+      {#each items as item (item.id)}
         <div
           role="button"
           tabindex="0"
@@ -199,8 +199,8 @@
 
 <!-- Edit/Create Modal -->
 {#if showForm}
-  <div class="fixed inset-0 z-50 flex items-center justify-center p-4" style="background: rgba(0,0,0,0.6); backdrop-filter: blur(8px);" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) showForm = false; }}>
-    <div class="card p-6 w-full max-w-lg" role="dialog" tabindex="-1">
+  <div class="fixed inset-0 z-50 flex items-center justify-center p-4" style="background: rgba(0,0,0,0.6); backdrop-filter: blur(8px);" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) showForm = false; }} onkeydown={(e) => { if (e.key === 'Escape') showForm = false; }}>
+    <div class="card p-6 w-full max-w-lg" role="dialog" aria-modal="true" tabindex="-1">
       <div class="flex items-center gap-3 mb-5">
         <div class="w-8 h-8 rounded-xl flex items-center justify-center" style="background: var(--color-info-light)">
           <span class="material-symbols-outlined text-[16px]" style="color: var(--color-info)">menu_book</span>

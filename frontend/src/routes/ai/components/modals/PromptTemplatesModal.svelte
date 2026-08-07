@@ -1,4 +1,5 @@
 <script lang="ts">
+import { focusTrap } from '$lib/utils/focusTrap';
 import { PROMPT_TEMPLATES } from '../../lib/types';
 
 let {
@@ -13,11 +14,11 @@ let {
 </script>
 
 {#if show}
-  <div class="fixed inset-0 z-50 flex items-center justify-center p-4" style="background: rgba(0,0,0,0.4)" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-    <div class="w-full max-w-sm max-h-[70vh] rounded-xl shadow-2xl border border-[var(--color-border)] bg-[var(--color-bg)] flex flex-col" role="dialog" aria-modal="true" tabindex="-1">
+  <div class="fixed inset-0 z-50 flex items-center justify-center p-4" style="background: rgba(0,0,0,0.4)" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) onClose(); }} onkeydown={(e) => { if (e.key === 'Escape') onClose(); }}>
+    <div class="w-full max-w-sm max-h-[70vh] rounded-xl shadow-2xl border border-[var(--color-border)] bg-[var(--color-bg)] flex flex-col" role="dialog" aria-modal="true" tabindex="-1" use:focusTrap>
       <div class="flex items-center justify-between px-4 py-3 border-b border-[var(--color-border)] shrink-0">
         <span class="text-sm font-semibold text-[var(--color-text)]">提示词模板</span>
-        <button class="p-1 rounded-lg hover:bg-[var(--color-surface)] transition-colors" onclick={onClose}>
+        <button class="p-1 rounded-lg hover:bg-[var(--color-surface)] transition-colors" onclick={onClose} aria-label="关闭">
           <span class="material-symbols-outlined text-[16px]" style="color: var(--color-text-muted)">close</span>
         </button>
       </div>

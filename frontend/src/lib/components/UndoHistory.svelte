@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { focusTrap } from '$lib/utils/focusTrap';
   import { historyStore } from '$lib/stores/history';
 
   let { onClose = () => {}, onRollback = (_index: number) => {} }: {
@@ -17,7 +18,7 @@
     onClose();
   }
 
-  function describeAction(a: { type: string; data: any }): string {
+  function describeAction(a: { type: string; data: { path?: string } }): string {
     switch (a.type) {
       case 'file_save': return `保存文件: ${a.data.path || 'unknown'}`;
       case 'file_create': return `创建文件: ${a.data.path || 'unknown'}`;
@@ -39,7 +40,7 @@
 </script>
 
 <div class="overlay" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-  <div class="panel" role="dialog" aria-modal="true" tabindex="-1">
+  <div class="panel" role="dialog" aria-modal="true" tabindex="-1" use:focusTrap>
     <div class="panel-header">
       <h2 class="panel-title">操作历史</h2>
       <button class="close-btn" onclick={onClose} aria-label="关闭">

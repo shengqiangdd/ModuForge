@@ -1,5 +1,13 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import MarketHeader from './components/MarketHeader.svelte';
+  import ModuleGrid from './components/ModuleGrid.svelte';
+  import InstallModal from './components/InstallModal.svelte';
+  import PublishTemplateModal from './components/PublishTemplateModal.svelte';
+  import BatchResultsModal from './components/BatchResultsModal.svelte';
+  import VersionHistoryModal from './components/VersionHistoryModal.svelte';
+  import CompareModal from './components/CompareModal.svelte';
+  import DemoModal from './components/DemoModal.svelte';
 
   interface MarketModule {
     id: string; title: string; slug: string; description: string; category: string;
@@ -44,15 +52,13 @@
   let newChangelog = $state('');
   let updatingVersion = $state(false);
 
-  let debounceTimer: ReturnType<typeof setTimeout> | null = null;
-
   // Favorites
   let favoritedModules = $state<Set<string>>(new Set());
   let favoriteSlugs = $state<Set<string>>(new Set());
 
   // Health Score
   let healthScore: { score: number; level: string; details: { name: string; label: string; score: number; max: number }[] } | null = $state(null);
-  let healthColor = $state('var(--color-success)');
+  let healthColor = $derived(healthScore ? (healthScore.score >= 80 ? '#22c55e' : healthScore.score >= 60 ? '#eab308' : '#ef4444') : 'var(--color-success)');
   let healthLoading = $state(false);
 
   // Tags
@@ -75,7 +81,7 @@
   // Install stats
   let installStats: {period: string; count: number}[] = $state([]);
   let statsPeriod = $state<'day' | 'week' | 'month'>('day');
-  let trendingModules: any[] = $state([]);
+  let trendingModules: MarketModule[] = $state([]);
   let statsLoading = $state(false);
 
   // Install to device modal
@@ -146,10 +152,6 @@
       const r = await fetch(`/api/v1/market/module/${slug}/health`);
       if (r.ok) {
         healthScore = await r.json();
-        const score = healthScore?.score ?? 0;
-        if (score >= 80) healthColor = '#22c55e';
-        else if (score >= 60) healthColor = '#eab308';
-        else healthColor = '#ef4444';
       }
     } catch { healthScore = null; }
     healthLoading = false;
@@ -381,15 +383,7 @@
     publishing = false;
   }
 
-  function renderMarkdown(text: string) {
-    return text
-      .replace(/### (.+)/g, '<strong class="text-sm block mt-2 mb-1">$1</strong>')
-      .replace(/## (.+)/g, '<strong class="text-base block mt-3 mb-1">$1</strong>')
-      .replace(/# (.+)/g, '<strong class="text-lg block mt-3 mb-1">$1</strong>')
-      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-      .replace(/\[(.+?)\]\((.+?)\)/g, '<a href="$2" target="_blank" class="text-primary-600 underline">$1</a>')
-      .replace(/\n/g, '<br>');
-  }
+  import { renderMarkdown } from '$lib/utils/markdown';
 
   async function loadAllTags() {
     try {
@@ -400,14 +394,6 @@
       if (r.status === 401) { allTags = []; return; }
       if (r.ok) { const d = await r.json(); allTags = d.tags || []; }
     } catch { allTags = []; }
-  }
-
-  function onSearchInput() {
-    if (debounceTimer) clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(() => {
-      page = 1;
-      loadModules();
-    }, 300);
   }
 
   const categories = [
@@ -629,72 +615,6 @@
   onMount(() => { loadModules(); loadFavorites(); loadAllTags(); });
 </script>
 
-<style>
-  .market-card {
-    background: var(--color-bg-elevated);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-lg);
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  }
-  .market-card:hover {
-    border-color: var(--color-primary);
-    box-shadow: 0 8px 32px rgba(139,92,246,0.15), 0 0 0 1px rgba(139,92,246,0.1);
-    transform: translateY(-4px);
-  }
-  .cat-btn {
-    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-  }
-  .cat-btn:active {
-    transform: scale(0.96);
-  }
-  .module-grid {
-    animation: fadeIn 0.3s ease-out;
-  }
-  @keyframes fadeIn {
-    from { opacity: 0; transform: translateY(8px); }
-    to { opacity: 1; transform: translateY(0); }
-  }
-  .compare-table {
-    width: 100%;
-    border-collapse: collapse;
-  }
-  .compare-table th,
-  .compare-table td {
-    padding: 10px 12px;
-    text-align: left;
-    border-bottom: 1px solid var(--color-border);
-  }
-  .compare-table th {
-    font-size: 11px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    color: var(--color-text-muted);
-  }
-  .compare-label {
-    width: 80px;
-    font-size: 12px;
-    font-weight: 500;
-    color: var(--color-text-secondary);
-  }
-  .compare-value {
-    font-size: 13px;
-    color: var(--color-text);
-  }
-  .compare-value.winner {
-    color: #22c55e;
-    font-weight: 600;
-  }
-  .compare-value.winner::after {
-    content: ' ✓';
-    font-size: 11px;
-  }
-  @media (max-width: 640px) {
-    .market-header { flex-direction: column !important; align-items: flex-start !important; gap: 0.75rem !important; }
-    .module-grid { grid-template-columns: 1fr !important; }
-  }
-</style>
-
 <div class="p-4 md:p-6 max-w-7xl mx-auto">
   <!-- Header -->
   <div class="market-header flex items-center justify-between mb-8">
@@ -708,234 +628,52 @@
     </a>
   </div>
 
-  <!-- Search -->
-  <div class="relative mb-5">
-    <span class="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-400 text-[20px] z-10">search</span>
-    <div class="absolute left-[38px] top-2.5 bottom-2.5 w-px pointer-events-none z-10" style="background: var(--color-border)"></div>
-    <input
-      type="text"
-      placeholder="搜索模块名称、描述、标签..."
-      class="input-field market-search-input"
-      style="padding-left: 48px;"
-      bind:value={searchQuery}
-      oninput={onSearchInput}
-      onkeydown={(e) => { if (e.key === 'Enter') { if (debounceTimer) clearTimeout(debounceTimer); page = 1; loadModules(); } }}
-    />
-  </div>
+  <!-- Search, Categories, Tags, Sort, Compare, Batch -->
+  <MarketHeader
+    bind:searchQuery
+    bind:selectedCategory
+    bind:sortBy
+    {total}
+    {categories}
+    {allTags}
+    bind:selectedTag
+    bind:compareIds
+    bind:selectedSlugs
+    {batchProcessing}
+    {compareLoading}
+    onSearch={() => { page = 1; loadModules(); }}
+    onCategoryChange={(cat) => { selectedCategory = cat; page = 1; loadModules(); }}
+    onSortChange={(s) => { sortBy = s; page = 1; loadModules(); }}
+    onTagChange={(t) => { selectedTag = t; page = 1; loadModules(); }}
+    onCompare={runCompare}
+    onRunBatch={runBatch}
+    onClearSlugs={() => selectedSlugs = new Set()}
+    onClearCompare={(slug) => { const next = new Set(compareIds); next.delete(slug); compareIds = next; }}
+  />
 
-  <!-- Categories -->
-  <div class="flex gap-2 flex-wrap mb-4">
-    {#each categories as cat}
-      <button
-        class="cat-btn flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium min-h-[44px]"
-        style={selectedCategory === cat.value
-          ? 'background: var(--gradient-brand); color: #fff; box-shadow: var(--shadow-glow)'
-          : 'background: var(--color-surface); color: var(--color-text-secondary); border: 1px solid var(--color-border)'}
-        onclick={() => { selectedCategory = cat.value; page = 1; loadModules(); }}
-      >
-        <span class="material-symbols-outlined text-[16px]">{cat.icon}</span>
-        {cat.label}
-      </button>
-    {/each}
-  </div>
+<PublishTemplateModal
+    show={showPublishTemplate}
+    onClose={() => showPublishTemplate = false}
+    onPublish={publishTemplate}
+    {publishing}
+    bind:publishName
+    bind:publishDesc
+    bind:publishCategory
+  />
 
-  <!-- Tags Filter -->
-  {#if allTags.length > 0}
-    <div class="flex gap-2 flex-wrap mb-4">
-      <button
-        class="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
-        style={!selectedTag ? 'background: var(--color-primary-light); color: var(--color-primary)' : 'background: var(--color-surface); color: var(--color-text-muted); border: 1px solid var(--color-border)'}
-        onclick={() => { selectedTag = null; page = 1; loadModules(); }}
-      >全部</button>
-      {#each allTags as tag}
-        <button
-          class="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
-          style={selectedTag === tag.id ? `background: ${tag.color}20; color: ${tag.color}` : 'background: var(--color-surface); color: var(--color-text-muted); border: 1px solid var(--color-border)'}
-          onclick={() => { selectedTag = tag.id; page = 1; loadModules(); }}
-        >{tag.name}</button>
-      {/each}
-    </div>
-  {/if}
-
-  <!-- Sort & Count -->
-  <div class="flex items-center gap-3 mb-6 text-sm" style="color: var(--color-text-secondary)">
-    <span>排序</span>
-    {#each [{ id: 'stars', label: '热度' }, { id: 'installs', label: '安装量' }, { id: 'newest', label: '最新' }] as s}
-      <button
-        class="px-3 py-1 rounded-lg transition-colors min-h-[36px]"
-        style={sortBy === s.id ? 'background: var(--color-primary-light); color: var(--color-primary); font-weight: 600' : ''}
-        onclick={() => { sortBy = s.id; page = 1; loadModules(); }}
-      >
-        {s.label}
-      </button>
-    {/each}
-    <span class="ml-auto" style="color: var(--color-text-muted)">{total} 个模块</span>
-  </div>
-
-  <!-- Compare bar -->
-  {#if compareIds.size > 0}
-    <div class="flex items-center gap-3 mb-4 px-4 py-3 rounded-xl" style="background: var(--color-primary-light);">
-      <span class="text-sm" style="color: var(--color-primary)">已选 {compareIds.size}/2 个模块</span>
-      <div class="flex gap-2 flex-1 flex-wrap">
-        {#each Array.from(compareIds) as slug}
-          <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-xs" style="background: var(--color-bg-elevated); color: var(--color-text)">
-            {slug}
-            <button class="p-0.5 hover:text-[var(--color-error)]" onclick={() => toggleCompare(slug)}>
-              <span class="material-symbols-outlined text-[12px]">close</span>
-            </button>
-          </span>
-        {/each}
-      </div>
-      {#if compareIds.size === 2}
-        <button class="btn-primary text-sm px-3 py-1.5" onclick={runCompare} disabled={compareLoading}>
-          {compareLoading ? '对比中...' : '对比'}
-        </button>
-      {/if}
-    </div>
-  {/if}
-
-  <!-- Batch Operations Bar -->
-  {#if selectedSlugs.size > 0}
-    <div class="flex items-center gap-3 mb-4 px-4 py-3 rounded-xl" style="background: var(--color-primary-light);">
-      <span class="text-sm font-medium" style="color: var(--color-primary)">已选 {selectedSlugs.size} 个模块</span>
-      <div class="flex gap-2 ml-auto">
-        <button class="btn-ghost text-xs px-3 py-1.5" disabled={batchProcessing} onclick={() => runBatch('install')}>
-          {batchProcessing ? '处理中...' : '安装'}
-        </button>
-        <button class="btn-ghost text-xs px-3 py-1.5" disabled={batchProcessing} onclick={() => runBatch('uninstall')}>
-          卸载
-        </button>
-        <button class="btn-ghost text-xs px-3 py-1.5" disabled={batchProcessing} onclick={() => runBatch('update')}>
-          更新
-        </button>
-        <button class="flex items-center gap-1 text-xs px-2 py-1.5 rounded-lg hover:bg-red-50 transition-colors" style="color: var(--color-error)" onclick={() => selectedSlugs = new Set()}>
-          <span class="material-symbols-outlined text-[14px]">close</span>
-          清除
-        </button>
-    </div>
-  </div>
-{/if}
-
-{#if showPublishTemplate}
-  <div class="fixed inset-0 flex items-center justify-center z-50 p-4 animate-[fadeIn_0.15s_ease-out]" style="background: rgba(0,0,0,0.6); backdrop-filter: blur(8px)" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) showPublishTemplate = false; }}>
-    <div class="rounded-2xl max-w-md w-full border animate-[scaleIn_0.2s_ease-out]" style="background: var(--color-bg-elevated); border-color: var(--color-border); box-shadow: var(--shadow-xl)" role="dialog" aria-modal="true" tabindex="-1">
-      <div class="p-5 border-b flex items-center justify-between" style="border-color: var(--color-border)">
-        <h3 class="text-lg font-bold text-[var(--color-text)]">发布模板</h3>
-        <button class="p-2 rounded-xl hover:bg-[var(--color-surface)] transition-colors" onclick={() => showPublishTemplate = false}>
-          <span class="material-symbols-outlined text-[20px]">close</span>
-        </button>
-      </div>
-      <div class="p-5 space-y-3">
-        <div>
-          <label for="publish-name" class="block text-sm font-medium mb-1">模板名称</label>
-          <input id="publish-name" type="text" placeholder="e.g. System Prop Tweaks" class="w-full px-3 py-2 border border-[var(--color-border)] rounded-lg bg-[var(--color-bg)] text-[var(--color-text)]" bind:value={publishName} />
-        </div>
-        <div>
-          <label for="publish-desc" class="block text-sm font-medium mb-1">描述</label>
-          <textarea id="publish-desc" placeholder="描述此模板的功能..." class="w-full px-3 py-2 border border-[var(--color-border)] rounded-lg bg-[var(--color-bg)] text-[var(--color-text)] h-20 resize-none" bind:value={publishDesc}></textarea>
-        </div>
-        <div>
-          <label for="publish-category" class="block text-sm font-medium mb-1">分类</label>
-          <select id="publish-category" class="w-full px-3 py-2 border border-[var(--color-border)] rounded-lg bg-[var(--color-bg)] text-[var(--color-text)]" bind:value={publishCategory}>
-            <option value="">选择分类</option>
-            <option value="system">系统</option>
-            <option value="ui">界面</option>
-            <option value="audio">音频</option>
-            <option value="display">显示</option>
-            <option value="utility">工具</option>
-          </select>
-        </div>
-      </div>
-      <div class="p-5 border-t flex justify-end gap-2" style="border-color: var(--color-border)">
-        <button class="px-4 py-2 rounded-xl text-sm font-medium transition-colors" style="border: 1px solid var(--color-border); color: var(--color-text-secondary)" onclick={() => showPublishTemplate = false}>取消</button>
-        <button class="px-4 py-2 rounded-xl text-sm font-semibold text-white transition-all" style="background: var(--gradient-brand)" onclick={publishTemplate} disabled={publishing || !publishName.trim()}>
-          {publishing ? '发布中...' : '发布'}
-        </button>
-      </div>
-    </div>
-  </div>
-{/if}
-
-  <!-- Grid -->
-  {#if loading}
-    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-      {#each Array(8) as _}
-        <div class="rounded-2xl border border-[var(--color-border)] p-5">
-          <div class="skeleton h-4 w-24 mb-3"></div>
-          <div class="skeleton h-5 w-full mb-2"></div>
-          <div class="skeleton h-3 w-3/4 mb-4"></div>
-          <div class="skeleton h-3 w-full mb-1"></div>
-          <div class="skeleton h-3 w-2/3"></div>
-        </div>
-      {/each}
-    </div>
-  {:else if modules.length === 0}
-    <div class="text-center py-16">
-      <span class="material-symbols-outlined text-5xl text-neutral-300 mb-3 block">inventory_2</span>
-      <p class="text-[var(--color-text-secondary)]">没有找到匹配的模块</p>
-    </div>
-  {:else}
-    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 module-grid">
-      {#each modules as mod, i}
-        <div
-          role="button"
-          tabindex="0"
-          class="market-card text-left p-5 group cursor-pointer relative overflow-hidden"
-          style="animation-delay: {i * 50}ms"
-          onclick={() => openDetail(mod)}
-          onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDetail(mod); } }}
-        >
-          <!-- Favorite button -->
-          <button class="absolute top-5 left-3 z-10" aria-label="收藏" onclick={(e) => { e.stopPropagation(); toggleFavorite(mod); }}>
-            <span class="material-symbols-outlined text-lg p-1 rounded-full cursor-pointer transition-colors" style="color: {favoritedModules.has(mod.id) ? '#ef4444' : 'var(--color-text-muted)'}; background: {favoritedModules.has(mod.id) ? '#ef444420' : 'transparent'}">{favoritedModules.has(mod.id) ? 'favorite' : 'favorite_border'}</span>
-          </button>
-          <!-- Batch select checkbox -->
-          <button class="absolute top-5 right-16 z-10" aria-label="选择" onclick={(e) => { e.stopPropagation(); toggleSelect(mod.slug); }}>
-            <div class="w-4 h-4 rounded border-2 flex items-center justify-center transition-colors" style={selectedSlugs.has(mod.slug) ? 'background: var(--color-primary); border-color: var(--color-primary)' : 'border-color: var(--color-border); background: transparent'}>
-              {#if selectedSlugs.has(mod.slug)}
-                <span class="material-symbols-outlined text-[10px] text-white">check</span>
-              {/if}
-            </div>
-          </button>
-          <!-- Compare checkbox -->
-          <button class="absolute top-5 right-3 z-10" aria-label="对比" onclick={(e) => { e.stopPropagation(); toggleCompare(mod.slug); }}>
-            <div
-              class="w-5 h-5 rounded border-2 flex items-center justify-center transition-colors"
-              style={compareIds.has(mod.slug) ? 'background: var(--color-primary); border-color: var(--color-primary)' : 'border-color: var(--color-border); background: transparent'}
-            >
-              {#if compareIds.has(mod.slug)}
-                <span class="material-symbols-outlined text-[14px] text-white">check</span>
-              {/if}
-            </div>
-          </button>
-          <!-- Hover gradient overlay -->
-          <div class="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300" style="background: linear-gradient(135deg, rgba(139,92,246,0.05) 0%, rgba(6,182,212,0.03) 100%)"></div>
-          
-          <div class="relative z-10 pl-7">
-            <div class="flex items-center gap-3 mb-3">
-              <span class="flex items-center gap-1 text-xs text-[var(--color-text-muted)]">
-                <span class="material-symbols-outlined text-[14px] text-amber-500">star</span>
-                {mod.stars}
-              </span>
-              <span class="flex items-center gap-1 text-xs text-[var(--color-text-muted)]">
-                <span class="material-symbols-outlined text-[14px]">download</span>
-                {fmt(mod.installs)}
-              </span>
-              <span class="ml-auto badge text-[10px]" style={categoryStyles[mod.category] || 'background: var(--color-surface); color: var(--color-text-muted)'}>
-                {mod.category}
-              </span>
-            </div>
-            <h3 class="font-semibold text-[var(--color-text)] mb-1 line-clamp-1 group-hover:text-[var(--color-primary)] transition-colors duration-200">{mod.title}</h3>
-            <div class="flex items-center gap-2 mb-2">
-              <span class="text-xs px-1.5 py-0.5 rounded-md" style="background: var(--color-primary-light); color: var(--color-primary)">{mod.version}</span>
-              <span class="text-xs" style="color: var(--color-text-muted)">{mod.author}</span>
-            </div>
-            <p class="text-sm text-[var(--color-text-secondary)] line-clamp-2 leading-relaxed">{mod.description}</p>
-          </div>
-        </div>
-      {/each}
-    </div>
-  {/if}
+  <!-- Module Grid -->
+  <ModuleGrid
+    {modules}
+    {loading}
+    {favoritedModules}
+    {selectedSlugs}
+    {compareIds}
+    {categoryStyles}
+    onSelect={toggleSelect}
+    onFavorite={toggleFavorite}
+    onCompare={toggleCompare}
+    onOpenDetail={openDetail}
+  />
 </div>
 
 <!-- Detail Modal -->
@@ -1095,7 +833,7 @@
           <p class="text-sm text-[var(--color-text-muted)] mb-4">暂无评论</p>
         {:else}
           <div class="space-y-2 mb-4 max-h-48 overflow-auto">
-            {#each reviews as rev}
+            {#each reviews as rev (rev.id)}
               <div class="p-3 rounded-xl" style="background: var(--color-surface)">
                 <div class="flex items-center gap-2 mb-1">
                   <span class="text-sm font-medium text-[var(--color-text)]">{rev.username}</span>
@@ -1184,7 +922,7 @@
           <p class="text-xs text-[var(--color-text-muted)]">加载中...</p>
         {:else}
           <div class="space-y-2">
-            {#each trendingModules as mod, i}
+            {#each trendingModules as mod (mod.id)}
               <div class="flex items-center gap-3 py-1.5">
                 <span class="w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold" style="background: {i < 3 ? 'var(--gradient-brand)' : 'var(--color-surface)'}; color: {i < 3 ? 'white' : 'var(--color-text-muted)'}">{i + 1}</span>
                 <div class="flex-1 min-w-0">
@@ -1232,7 +970,7 @@
           <p class="text-xs text-[var(--color-text-muted)] text-center py-8">暂无模板</p>
         {:else}
           <div class="grid grid-cols-2 gap-3">
-            {#each templateList as t}
+            {#each templateList as t (t.id)}
               <div class="p-3 border border-[var(--color-border)] rounded-lg hover:border-primary/50 transition-colors">
                 <div class="flex items-start justify-between mb-2">
                   <div class="flex-1 min-w-0">
@@ -1272,35 +1010,11 @@
   </div>
 {/if}
 
-<!-- Batch Results Modal -->
-{#if showBatchResults}
-  <div class="fixed inset-0 flex items-center justify-center z-50 p-4 animate-[fadeIn_0.15s_ease-out]" style="background: rgba(0,0,0,0.6); backdrop-filter: blur(8px)" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) showBatchResults = false; }}>
-    <div class="rounded-2xl max-w-md w-full border animate-[scaleIn_0.2s_ease-out]" style="background: var(--color-bg-elevated); border-color: var(--color-border); box-shadow: var(--shadow-xl)" role="dialog" aria-modal="true" tabindex="-1">
-      <div class="p-5 border-b flex items-center justify-between" style="border-color: var(--color-border)">
-        <h3 class="text-lg font-bold text-[var(--color-text)]">批量操作结果</h3>
-        <button class="p-1 rounded hover:bg-[var(--color-surface)] transition-colors" onclick={() => showBatchResults = false}>
-          <span class="material-symbols-outlined text-[18px]">close</span>
-        </button>
-      </div>
-      <div class="p-5 space-y-2 max-h-60 overflow-auto">
-        {#each batchResults as res}
-          <div class="flex items-center gap-2 text-sm">
-            <span class="material-symbols-outlined text-[14px]" style="color: {res.status === 'ok' ? 'var(--color-success)' : 'var(--color-error)'}">{res.status === 'ok' ? 'check_circle' : 'error'}</span>
-            <span style="color: var(--color-text)">{res.slug}</span>
-            {#if res.error}
-              <span class="text-xs text-[var(--color-error)] ml-auto">{res.error}</span>
-            {:else}
-              <span class="text-xs text-[var(--color-success)] ml-auto">成功</span>
-            {/if}
-          </div>
-        {/each}
-      </div>
-      <div class="p-5 border-t flex justify-end" style="border-color: var(--color-border)">
-        <button class="btn-primary text-sm" onclick={() => showBatchResults = false}>关闭</button>
-      </div>
-    </div>
-  </div>
-{/if}
+<BatchResultsModal
+    show={showBatchResults}
+    results={batchResults}
+    onClose={() => showBatchResults = false}
+  />
 
 <!-- Fullscreen Screenshot -->
 {#if fullscreenScreenshot}
@@ -1309,349 +1023,51 @@
   </div>
 {/if}
 
-<!-- Version History Modal -->
-{#if showVersions}
-  <div class="fixed inset-0 flex items-center justify-center z-50 p-4 animate-[fadeIn_0.15s_ease-out]" style="background: rgba(0,0,0,0.6); backdrop-filter: blur(8px)" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) showVersions = false; }}>
-    <div class="rounded-2xl max-w-lg w-full max-h-[70vh] overflow-auto border animate-[scaleIn_0.2s_ease-out]" style="background: var(--color-bg-elevated); border-color: var(--color-border); box-shadow: var(--shadow-xl)" role="dialog" aria-modal="true" tabindex="-1">
-      <div class="p-5 border-b flex items-center justify-between" style="border-color: var(--color-border)">
-        <h3 class="text-lg font-bold text-[var(--color-text)]">版本历史</h3>
-        <button class="p-2 rounded-xl hover:bg-[var(--color-surface)] transition-colors" onclick={() => showVersions = false}>
-          <span class="material-symbols-outlined text-[20px]">close</span>
-        </button>
-      </div>
-      <div class="p-4">
-        <button class="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium mb-3 transition-colors" style="background: var(--color-primary-light); color: var(--color-primary)" onclick={() => { showVersions = false; showVersionUpdate = true; }}>
-          <span class="material-symbols-outlined text-[16px]">add</span>
-          发布新版本
-        </button>
-        {#if versionsLoading}
-          <div class="flex justify-center py-8"><div class="animate-spin h-6 w-6 rounded-full" style="border: 2px solid var(--color-primary); border-top-color: transparent"></div></div>
-        {:else if versions.length === 0}
-          <p class="text-center py-8 text-sm text-[var(--color-text-muted)]">暂无版本记录</p>
-        {:else}
-          <div class="space-y-3">
-            {#each versions as ver}
-              <div class="p-4 rounded-xl" style="background: var(--color-surface)">
-                <div class="flex items-start justify-between">
-                  <div>
-                    <div class="flex items-center gap-2 mb-1">
-                      <span class="text-sm font-semibold text-[var(--color-text)]">{ver.version}</span>
-                      <span class="text-xs text-[var(--color-text-muted)]">{ver.version_code}</span>
-                    </div>
-                    {#if ver.changelog}
-                      <p class="text-xs text-[var(--color-text-secondary)] mt-1">{ver.changelog}</p>
-                    {/if}
-                    <p class="text-[11px] text-[var(--color-text-muted)] mt-1">{ver.created_at?.slice(0, 10)}</p>
-                  </div>
-                  <button
-                    class="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
-                    style="background: var(--color-warning-light); color: var(--color-warning)"
-                    disabled={rollingBack === ver.id}
-                    onclick={() => rollback(selectedModule!.slug, ver.id)}
-                  >
-                    {rollingBack === ver.id ? '回滚中...' : '回滚到此版本'}
-                  </button>
-                </div>
-              </div>
-            {/each}
-          </div>
-        {/if}
-      </div>
-    </div>
-  </div>
-{/if}
+<VersionHistoryModal
+    show={showVersions}
+    {versions}
+    {versionsLoading}
+    selectedModuleSlug={selectedModule!.slug}
+    {rollingBack}
+    bind:showVersionUpdate
+    bind:newVersionCode
+    bind:newChangelog
+    {updatingVersion}
+    onClose={() => showVersions = false}
+    onRollback={(versionId) => rollback(selectedModule!.slug, versionId)}
+    onPublishVersion={() => updateVersion(selectedModule!.slug)}
+    onShowUpdate={() => showVersionUpdate = true}
+    onHideUpdate={() => showVersionUpdate = false}
+  />
 
-<!-- Version Update Dialog -->
-{#if showVersionUpdate}
-  <div class="fixed inset-0 flex items-center justify-center z-50 p-4 animate-[fadeIn_0.15s_ease-out]" style="background: rgba(0,0,0,0.6); backdrop-filter: blur(8px)" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) showVersionUpdate = false; }}>
-    <div class="rounded-2xl max-w-md w-full border animate-[scaleIn_0.2s_ease-out]" style="background: var(--color-bg-elevated); border-color: var(--color-border); box-shadow: var(--shadow-xl)" role="dialog" aria-modal="true" tabindex="-1">
-      <div class="p-5 border-b flex items-center justify-between" style="border-color: var(--color-border)">
-        <h3 class="text-lg font-bold text-[var(--color-text)]">发布新版本</h3>
-        <button class="p-2 rounded-xl hover:bg-[var(--color-surface)] transition-colors" onclick={() => showVersionUpdate = false}>
-          <span class="material-symbols-outlined text-[20px]">close</span>
-        </button>
-      </div>
-      <div class="p-5 space-y-4">
-        <div>
-          <label for="version-code" class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1.5">版本代码</label>
-          <input id="version-code" type="text" class="input-field" placeholder="1.1.0" bind:value={newVersionCode} />
-        </div>
-        <div>
-          <label for="version-changelog" class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1.5">更新日志</label>
-          <textarea id="version-changelog" class="input-field resize-none" rows="3" placeholder="描述本次更新内容..." bind:value={newChangelog}></textarea>
-        </div>
-        <div class="flex justify-end gap-3 pt-2">
-          <button class="btn-ghost" onclick={() => showVersionUpdate = false}>取消</button>
-          <button
-            class="btn-primary disabled:opacity-50"
-            disabled={updatingVersion || !newVersionCode.trim()}
-            onclick={() => updateVersion(selectedModule!.slug)}
-          >
-            {updatingVersion ? '发布中...' : '发布'}
-          </button>
-        </div>
-      </div>
-    </div>
-  </div>
-{/if}
+<CompareModal
+    show={compareResult !== null}
+    result={compareResult}
+    onClose={() => compareResult = null}
+    {fmt}
+    {compareWinner}
+  />
 
-<!-- Comparison Modal -->
-{#if compareResult}
-  <div class="fixed inset-0 flex items-center justify-center z-50 p-4 animate-[fadeIn_0.15s_ease-out]" style="background: rgba(0,0,0,0.6); backdrop-filter: blur(8px)" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) compareResult = null; }}>
-    <div class="rounded-2xl max-w-3xl w-full max-h-[85vh] overflow-auto border animate-[scaleIn_0.2s_ease-out]" style="background: var(--color-bg-elevated); border-color: var(--color-border); box-shadow: var(--shadow-xl)" role="dialog" aria-modal="true" tabindex="-1">
-      <div class="p-5 border-b flex items-center justify-between" style="border-color: var(--color-border)">
-        <h3 class="text-lg font-bold text-[var(--color-text)]">模块对比</h3>
-        <button class="p-2 rounded-xl hover:bg-[var(--color-surface)] transition-colors" onclick={() => compareResult = null}>
-          <span class="material-symbols-outlined text-[20px]">close</span>
-        </button>
-      </div>
-      {#if compareResult.error}
-        <div class="p-8 text-center text-[var(--color-error)]">{compareResult.error}</div>
-      {:else}
-        <div class="p-5">
-          <table class="compare-table">
-            <thead>
-              <tr>
-                <th class="compare-label">字段</th>
-                <th class="compare-value" style="color: var(--color-primary)">{compareResult.title_a}</th>
-                <th class="compare-value" style="color: var(--color-primary)">{compareResult.title_b}</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td class="compare-label">描述</td>
-                <td class="compare-value">{compareResult.description_a || '-'}</td>
-                <td class="compare-value">{compareResult.description_b || '-'}</td>
-              </tr>
-              <tr>
-                <td class="compare-label">版本</td>
-                <td class="compare-value">{compareResult.version_a || '-'}</td>
-                <td class="compare-value">{compareResult.version_b || '-'}</td>
-              </tr>
-              <tr>
-                <td class="compare-label">类别</td>
-                <td class="compare-value">{compareResult.category_a || '-'}</td>
-                <td class="compare-value">{compareResult.category_b || '-'}</td>
-              </tr>
-              <tr>
-                <td class="compare-label">作者</td>
-                <td class="compare-value">{compareResult.author_a || '-'}</td>
-                <td class="compare-value">{compareResult.author_b || '-'}</td>
-              </tr>
-              <tr>
-                <td class="compare-label">许可证</td>
-                <td class="compare-value">{compareResult.license_a || '-'}</td>
-                <td class="compare-value">{compareResult.license_b || '-'}</td>
-              </tr>
-              <tr>
-                <td class="compare-label">评分</td>
-                <td class="compare-value" class:winner={compareWinner(compareResult.rating_a, compareResult.rating_b) === 'a'}>{compareResult.rating_a?.toFixed(1) || '-'}</td>
-                <td class="compare-value" class:winner={compareWinner(compareResult.rating_a, compareResult.rating_b) === 'b'}>{compareResult.rating_b?.toFixed(1) || '-'}</td>
-              </tr>
-              <tr>
-                <td class="compare-label">Stars</td>
-                <td class="compare-value" class:winner={compareWinner(compareResult.stars_a, compareResult.stars_b) === 'a'}>{fmt(compareResult.stars_a)}</td>
-                <td class="compare-value" class:winner={compareWinner(compareResult.stars_a, compareResult.stars_b) === 'b'}>{fmt(compareResult.stars_b)}</td>
-              </tr>
-              <tr>
-                <td class="compare-label">安装量</td>
-                <td class="compare-value" class:winner={compareWinner(compareResult.installs_a, compareResult.installs_b) === 'a'}>{fmt(compareResult.installs_a)}</td>
-                <td class="compare-value" class:winner={compareWinner(compareResult.installs_a, compareResult.installs_b) === 'b'}>{fmt(compareResult.installs_b)}</td>
-              </tr>
-              <tr>
-                <td class="compare-label">依赖数</td>
-                <td class="compare-value" class:winner={compareWinner(compareResult.dep_count_b, compareResult.dep_count_a) === 'a'}>{compareResult.dep_count_a}</td>
-                <td class="compare-value" class:winner={compareWinner(compareResult.dep_count_b, compareResult.dep_count_a) === 'b'}>{compareResult.dep_count_b}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      {/if}
-    </div>
-  </div>
-{/if}
+  <!-- Install to Device Modal -->
+<InstallModal
+  show={showInstallModal}
+  moduleName={selectedModule?.title || selectedModule?.slug || ''}
+  moduleVersion={selectedModule?.version || ''}
+  {installing}
+  {installSteps}
+  {installError}
+  {loadingDevices}
+  {installableDevices}
+  bind:selectedDevice={installDevice}
+  onClose={() => showInstallModal = false}
+  onStartInstall={startInstall}
+/>
 
-<!-- Install to Device Modal -->
-{#if showInstallModal}
-  <div class="fixed inset-0 z-50 flex items-center justify-center p-4" style="background: rgba(0,0,0,0.6); backdrop-filter: blur(8px)" role="presentation" onclick={(e) => { if (e.target === e.currentTarget && !installing) showInstallModal = false; }}>
-    <div class="rounded-2xl w-full max-w-md border animate-[scaleIn_0.2s_ease-out]" style="background: var(--color-bg-elevated); border-color: var(--color-border); box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5)" role="dialog" aria-modal="true" tabindex="-1">
-      <!-- Header -->
-      <div class="p-5 border-b flex items-center gap-3" style="border-color: var(--color-border)">
-        <div class="w-10 h-10 rounded-xl flex items-center justify-center" style="background: var(--gradient-brand)">
-          <span class="material-symbols-outlined text-white text-[20px]">download</span>
-        </div>
-        <div class="flex-1 min-w-0">
-          <h3 class="text-base font-bold text-[var(--color-text)] truncate">安装 {selectedModule?.title || selectedModule?.slug}</h3>
-          <p class="text-xs text-[var(--color-text-muted)]">v{selectedModule?.version}</p>
-        </div>
-        {#if !installing}
-          <button class="p-1.5 rounded-lg hover:bg-[var(--color-surface)] transition-colors" onclick={() => showInstallModal = false}>
-            <span class="material-symbols-outlined text-[18px]" style="color: var(--color-text-muted)">close</span>
-          </button>
-        {/if}
-      </div>
-
-      <!-- Steps -->
-      <div class="p-5 space-y-1">
-        {#each installSteps as step, i}
-          <div class="flex items-start gap-3 py-3 {i < installSteps.length - 1 ? 'border-b' : ''}" style={i < installSteps.length - 1 ? 'border-color: var(--color-border)' : ''}>
-            <!-- Step Icon -->
-            <div class="mt-0.5 flex-shrink-0">
-              {#if step.status === 'done'}
-                <div class="w-7 h-7 rounded-full flex items-center justify-center" style="background: var(--color-success-light, rgba(34,197,94,0.15))">
-                  <span class="material-symbols-outlined text-[16px]" style="color: var(--color-success, #22c55e)">check_circle</span>
-                </div>
-              {:else if step.status === 'running'}
-                <div class="w-7 h-7 rounded-full flex items-center justify-center" style="background: var(--color-primary-light, rgba(59,130,246,0.15))">
-                  <div class="animate-spin h-4 w-4 rounded-full" style="border: 2px solid var(--color-primary); border-top-color: transparent"></div>
-                </div>
-              {:else if step.status === 'error'}
-                <div class="w-7 h-7 rounded-full flex items-center justify-center" style="background: var(--color-error-light, rgba(239,68,68,0.15))">
-                  <span class="material-symbols-outlined text-[16px]" style="color: var(--color-error, #ef4444)">error</span>
-                </div>
-              {:else}
-                <div class="w-7 h-7 rounded-full flex items-center justify-center" style="background: var(--color-surface)">
-                  <span class="text-xs font-bold" style="color: var(--color-text-muted)">{i + 1}</span>
-                </div>
-              {/if}
-            </div>
-            <!-- Step Content -->
-            <div class="flex-1 min-w-0">
-              <div class="text-sm font-medium {step.status === 'pending' ? 'text-[var(--color-text-muted)]' : 'text-[var(--color-text)]'}">{step.label}</div>
-              {#if step.detail}
-                <div class="mt-1 text-xs font-mono {step.status === 'error' ? 'text-[var(--color-error)]' : 'text-[var(--color-text-muted)]'} truncate" title={step.detail}>{step.detail}</div>
-              {/if}
-            </div>
-          </div>
-        {/each}
-      </div>
-
-      <!-- Error Banner -->
-      {#if installError}
-        <div class="mx-5 mb-3 p-3 rounded-xl text-xs" style="background: var(--color-error-light, rgba(239,68,68,0.1)); border: 1px solid var(--color-error-border, rgba(239,68,68,0.2))">
-          <span style="color: var(--color-error, #ef4444)">{installError}</span>
-        </div>
-      {/if}
-
-      <!-- Footer -->
-      <div class="p-5 border-t flex items-center gap-3" style="border-color: var(--color-border)">
-        {#if installing}
-          <div class="flex-1 text-xs text-[var(--color-text-muted)]">
-            <span class="animate-pulse">▊</span> 正在安装...
-          </div>
-        {:else if installSteps.every(s => s.status === 'done')}
-          <div class="flex-1"></div>
-          <button class="px-5 py-2 rounded-xl text-sm font-medium text-white transition-colors" style="background: var(--gradient-brand)" onclick={() => showInstallModal = false}>完成</button>
-        {:else if installSteps.some(s => s.status === 'error')}
-          <button class="px-4 py-2 rounded-xl text-sm font-medium transition-colors" style="border: 1px solid var(--color-border); color: var(--color-text-secondary)" onclick={() => showInstallModal = false}>关闭</button>
-          <button class="px-5 py-2 rounded-xl text-sm font-medium text-white transition-colors" style="background: var(--gradient-brand)" onclick={startInstall}>重试</button>
-        {:else}
-          <!-- Device Selector -->
-          <div class="flex-1">
-            {#if loadingDevices}
-              <span class="text-xs text-[var(--color-text-muted)]">检测设备中...</span>
-            {:else if installableDevices.length === 0}
-              <span class="text-xs text-[var(--color-error)]">未发现已连接设备</span>
-            {:else}
-              <select class="w-full px-3 py-2 rounded-xl text-sm border appearance-none" style="background: var(--color-surface); border-color: var(--color-border); color: var(--color-text)" bind:value={installDevice}>
-                <option value="">选择设备...</option>
-                {#each installableDevices as dev}
-                  <option value={dev.serial}>{dev.model || dev.serial} ({dev.serial})</option>
-                {/each}
-              </select>
-            {/if}
-          </div>
-          <button class="px-5 py-2 rounded-xl text-sm font-medium text-white transition-colors disabled:opacity-50" style="background: var(--gradient-brand)" disabled={!installDevice || loadingDevices} onclick={startInstall}>
-            <span class="material-symbols-outlined text-[14px] align-text-bottom">download</span>
-            开始安装
-          </button>
-        {/if}
-      </div>
-    </div>
-  </div>
-{/if}
-
-<!-- Module Demo Modal -->
-{#if showDemo}
-  <div class="fixed inset-0 flex items-center justify-center z-50 p-4 animate-[fadeIn_0.15s_ease-out]" style="background: rgba(0,0,0,0.6); backdrop-filter: blur(8px)" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) closeDemo(); }}>
-    <div class="rounded-2xl max-w-lg w-full max-h-[90vh] overflow-auto border animate-[scaleIn_0.2s_ease-out]" style="background: var(--color-bg-elevated); border-color: var(--color-border); box-shadow: var(--shadow-xl)" role="dialog" aria-modal="true" tabindex="-1">
-      <div class="p-5 border-b flex items-center justify-between" style="border-color: var(--color-border)">
-        <h3 class="text-lg font-bold text-[var(--color-text)] flex items-center gap-2">
-          <span class="material-symbols-outlined text-[20px] text-purple-500">preview</span>
-          试用预览
-        </h3>
-        <button class="p-2 rounded-xl hover:bg-[var(--color-surface)] transition-colors" onclick={closeDemo}>
-          <span class="material-symbols-outlined text-[20px]">close</span>
-        </button>
-      </div>
-      {#if demoLoading}
-        <div class="flex justify-center py-12">
-          <div class="animate-spin h-8 w-8 rounded-full" style="border: 2px solid var(--color-primary); border-top-color: transparent"></div>
-        </div>
-      {:else if demoData?.error}
-        <div class="p-8 text-center text-[var(--color-error)]">{demoData.error}</div>
-      {:else}
-        <div class="p-5 space-y-5">
-          <!-- Simulated Install Output -->
-          <div>
-            <h4 class="text-sm font-semibold text-[var(--color-text)] mb-2">模拟安装过程</h4>
-            <pre class="p-3 rounded-xl text-xs font-mono leading-relaxed overflow-auto max-h-40 whitespace-pre-wrap" style="background: #0a0a0a; color: #4ade80">
-              {#each (demoData?.simulated_output || '').split('\n').slice(0, demoVisibleLines) as line}
-                {line}
-                <br>
-              {/each}
-              {#if demoVisibleLines < (demoData?.simulated_output || '').split('\n').length}
-                <span class="animate-pulse">▊</span>
-              {:else}
-                <span class="text-green-300">✓ 模拟完成</span>
-              {/if}
-            </pre>
-          </div>
-          <!-- Props Comparison -->
-          {#if demoData?.props?.length}
-            <div>
-              <h4 class="text-sm font-semibold text-[var(--color-text)] mb-2">修改的系统属性</h4>
-              <div class="space-y-2">
-                {#each demoData.props as prop}
-                  <div class="p-3 rounded-xl" style="background: var(--color-surface)">
-                    <div class="text-xs font-mono text-[var(--color-text-muted)] mb-1">{prop.path}</div>
-                    <div class="flex items-center gap-2 text-sm">
-                      <span class="font-medium text-[var(--color-text)]">{prop.prop}</span>
-                      <span class="text-xs text-red-500 line-through">{prop.before}</span>
-                      <span class="text-xs text-neutral-500">→</span>
-                      <span class="text-xs text-green-500 font-semibold">{prop.after}</span>
-                    </div>
-                  </div>
-                {/each}
-              </div>
-            </div>
-          {/if}
-          <!-- Affected Files -->
-          {#if demoData?.files?.length}
-            <div>
-              <h4 class="text-sm font-semibold text-[var(--color-text)] mb-2">影响的文件路径</h4>
-              <div class="space-y-1">
-                {#each demoData.files as file}
-                  <div class="flex items-center gap-2 p-2 rounded-lg text-xs font-mono" style="background: var(--color-surface); color: var(--color-text-secondary)">
-                    <span class="material-symbols-outlined text-[14px]">description</span>
-                    {file}
-                  </div>
-                {/each}
-              </div>
-            </div>
-          {/if}
-          <!-- Install Button -->
-          <div class="flex gap-3 pt-2">
-            <button class="flex-1 py-2.5 rounded-xl font-semibold text-sm text-white transition-all flex items-center justify-center gap-2" style="background: var(--gradient-brand)" onclick={() => { closeDemo(); window.location.href = '/devices'; }}>
-              <span class="material-symbols-outlined text-[16px]">smartphone</span>
-              实际安装
-            </button>
-            <button class="py-2.5 px-5 rounded-xl text-sm font-medium transition-colors" style="border: 1px solid var(--color-border); color: var(--color-text-secondary)" onclick={closeDemo}>
-              关闭
-            </button>
-          </div>
-        </div>
-      {/if}
-    </div>
-  </div>
-{/if}
+<DemoModal
+    show={showDemo}
+    loading={demoLoading}
+    data={demoData}
+    visibleLines={demoVisibleLines}
+    onClose={closeDemo}
+    onInstall={() => { closeDemo(); window.location.href = '/devices'; }}
+  />

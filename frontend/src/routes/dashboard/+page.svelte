@@ -2,6 +2,11 @@
   import { onMount } from 'svelte';
   import { t } from '$lib/i18n';
   import ActivityFeed from '$lib/components/ActivityFeed.svelte';
+  import SystemOverviewWidget from './components/SystemOverviewWidget.svelte';
+  import BuildStatsWidget from './components/BuildStatsWidget.svelte';
+  import BuildTrendsWidget from './components/BuildTrendsWidget.svelte';
+  import Skeleton from '$lib/components/ui/Skeleton.svelte';
+  import ListTransition from '$lib/components/ui/ListTransition.svelte';
 
   interface Widget {
     id: number; widget_type: string; title: string; config: string;
@@ -28,7 +33,7 @@
   let buildTrends: any[] = $state([]);
   let moduleStats: any = $state(null);
   let activities = $state<any[]>([]);
-  let trendingMods: any[] = $state([]);
+  let trendingMods: { id: string; title: string; slug: string; category: string; installs: number; stars: number }[] = $state([]);
   let healthData: any = $state(null);
   let showHealthDetail = $state(false);
   let healthDetail: any = $state(null);
@@ -219,7 +224,6 @@
     } catch {}
   }
 
-  let maxTrend = $derived(buildTrends.length === 0 ? 1 : buildTrends.reduce((max, t) => Math.max(max, t.count || 0), 1));
   const gridCols = 'grid grid-cols-1 md:grid-cols-2 gap-4';
 </script>
 
@@ -251,12 +255,12 @@
   {#if loading}
     <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
       {#each Array(4) as _}
-        <div class="card p-5"><div class="skeleton h-4 w-20 mb-2"></div><div class="skeleton h-8 w-16"></div></div>
+        <div class="card p-5"><Skeleton count={2} lines={[60, 40]} /></div>
       {/each}
     </div>
   {:else}
     <div class={gridCols}>
-      {#each visibleWidgets as w, i}
+      {#each visibleWidgets as w, i (w.id)}
         {#if w.is_visible}
           <div role="presentation" class="card p-5 relative group"
             style="{w.width > 1 ? 'grid-column: span ' + Math.min(w.width, 2) : ''}"
@@ -288,72 +292,13 @@
             </div>
 
             {#if w.widget_type === 'system_overview'}
-              <div class="grid grid-cols-2 gap-4">
-                {#each [
-                  { icon: 'folder', label: $t('dashboard.projects'), value: systemStats?.projects ?? 0, color: 'from-violet-500 to-purple-600' },
-                  { icon: 'group', label: $t('dashboard.users'), value: systemStats?.users ?? 0, color: 'from-cyan-500 to-blue-600' },
-                  { icon: 'build', label: $t('dashboard.total_builds'), value: systemStats?.total_builds ?? 0, color: 'from-emerald-500 to-green-600' },
-                  { icon: 'inventory_2', label: $t('dashboard.total_modules'), value: systemStats?.total_modules ?? 0, color: 'from-amber-500 to-orange-600' },
-                ] as card}
-                  <div>
-                    <div class="flex items-center gap-2 mb-1">
-                      <div class="w-8 h-8 rounded-lg flex items-center justify-center" style="background: var(--gradient-brand)">
-                        <span class="material-symbols-outlined text-white text-[14px]">{card.icon}</span>
-                      </div>
-                    </div>
-                    <p class="text-xs font-medium" style="color: var(--color-text-muted)">{card.label}</p>
-                    <p class="text-xl font-bold tabular-nums" style="color: var(--color-text)">{card.value}</p>
-                  </div>
-                {/each}
-              </div>
+              <SystemOverviewWidget data={systemStats} loading={loading} t={$t} />
 
             {:else if w.widget_type === 'build_stats'}
-              <div class="grid grid-cols-2 gap-4 mb-4">
-                {#each [
-                  { label: $t('dashboard.total_builds'), value: buildStats?.total_builds ?? 0 },
-                  { label: $t('dashboard.successful'), value: buildStats?.successful_builds ?? 0, color: 'text-green-600' },
-                  { label: $t('dashboard.failed'), value: buildStats?.failed_builds ?? 0, color: 'text-red-500' },
-                  { label: $t('dashboard.avg_duration'), value: buildStats?.avg_duration_ms ? (buildStats.avg_duration_ms / 1000).toFixed(1) + 's' : '-' },
-                ] as stat}
-                  <div>
-                    <p class="text-xs text-[var(--color-text-muted)] mb-1">{stat.label}</p>
-                    <p class="text-lg font-bold {stat.color || 'text-[var(--color-text)]'} tabular-nums">{stat.value}</p>
-                  </div>
-                {/each}
-              </div>
-              {#if buildStats?.total_builds > 0}
-                <div class="pt-3 border-t border-[var(--color-border)]">
-                  <div class="flex items-center justify-between mb-1">
-                    <span class="text-xs text-[var(--color-text-secondary)]">{$t('dashboard.success_rate')}</span>
-                    <span class="text-xs font-semibold text-[var(--color-text)]">{(buildStats?.success_rate ?? 0).toFixed(1)}%</span>
-                  </div>
-                  <div class="w-full rounded-full h-2" style="background: var(--color-surface)">
-                    <div class="rounded-full h-2 transition-all duration-700" style="width: {buildStats?.success_rate ?? 0}%; background: var(--gradient-brand)"></div>
-                  </div>
-                </div>
-              {/if}
+              <BuildStatsWidget data={buildStats} loading={loading} />
 
             {:else if w.widget_type === 'build_trends'}
-              {#if buildTrends.length === 0}
-                <p class="text-[var(--color-text-muted)] text-center py-8">{$t('dashboard.no_data')}</p>
-              {:else}
-                <div class="flex items-end gap-0.5 h-32">
-                  {#each buildTrends as trend}
-                    <div class="flex-1 flex flex-col items-center gap-0.5 group relative min-w-0">
-                      <div class="absolute bottom-full mb-2 hidden group-hover:block bg-[var(--color-bg-elevated)] rounded-xl shadow-elevated px-2 py-1.5 text-[10px] whitespace-nowrap z-10 border border-[var(--color-border)]">
-                        <div class="font-medium text-[var(--color-text)]">{trend.date}</div>
-                        <div class="text-green-600">成功: {trend.success}</div>
-                        <div class="text-red-500">失败: {trend.failed}</div>
-                      </div>
-                      <div class="w-full flex flex-col justify-end" style="height: 80px;">
-                        <div class="w-full rounded-t-sm" style="height: {((trend.success || 0) / maxTrend) * 100}%; background: var(--color-primary)"></div>
-                        <div class="w-full rounded-t-sm" style="height: {((trend.failed || 0) / maxTrend) * 100}%; background: var(--color-error)"></div>
-                      </div>
-                      <span class="text-[8px] text-[var(--color-text-muted)] truncate w-full text-center">{trend.date?.slice(5)}</span>
-                    </div>
-                  {/each}
-                </div>
-              {/if}
+              <BuildTrendsWidget data={buildTrends} loading={loading} />
 
             {:else if w.widget_type === 'market_stats'}
               <div class="grid grid-cols-3 gap-2 mb-3">
@@ -409,7 +354,7 @@
                 <p class="text-[var(--color-text-muted)] text-center py-8">暂无热门模块</p>
               {:else}
                 <div class="space-y-2">
-                  {#each trendingMods as mod, i}
+                  {#each trendingMods as mod, i (mod.slug)}
                     <div class="flex items-center gap-3 py-1.5">
                       <span class="w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold" style="background: {i < 3 ? 'var(--gradient-brand)' : 'var(--color-surface)'}; color: {i < 3 ? 'white' : 'var(--color-text-muted)'}">{i + 1}</span>
                       <div class="flex-1 min-w-0">

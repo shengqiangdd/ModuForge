@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"github.com/moduforge/backend/internal/agent/registry"
 )
 
 type EditFileSkill struct {
@@ -49,7 +50,7 @@ func (s *EditFileSkill) Execute(ctx context.Context, input map[string]interface{
 		return "", fmt.Errorf("old_text and new_text are identical")
 	}
 
-	projectPath := s.resolvePath(projectID)
+	projectPath := ResolveProjectPath(s.db, s.projectPath, projectID)
 	fullPath := filepath.Join(projectPath, path)
 	if !isPathWithin(projectPath, fullPath) {
 		return "", fmt.Errorf("path traversal not allowed")
@@ -123,12 +124,8 @@ func (s *EditFileSkill) syncToDB(projectID, path, content string) {
 	}
 }
 
-func (s *EditFileSkill) resolvePath(projectID string) string {
-	return ResolveProjectPath(s.db, s.projectPath, projectID)
-}
-
-func (s *EditFileSkill) Metadata() SkillMeta {
-	return SkillMeta{
+func (s *EditFileSkill) Metadata() registry.SkillMeta {
+	return registry.SkillMeta{
 		ReadOnly:  false,
 		Essential: true,
 		Core:      true,

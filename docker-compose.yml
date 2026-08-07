@@ -1,21 +1,47 @@
+version: "3.9"
+
 services:
-  app:
+  moduforge:
     build:
       context: .
       dockerfile: backend/Dockerfile
+    image: moduforge:latest
+    container_name: moduforge
+    restart: unless-stopped
     ports:
       - "8086:8080"
-    volumes:
-      # Data is persisted in ./data/ directory. Use `docker compose down` (without -v) to avoid data loss.
-      - ./data:/app/data
-      # Persist ADB keys across container rebuilds so devices stay authorized
-      - ./data/android:/root/.android
     environment:
-      - PORT=:8080
-      - DATABASE_PATH=/app/data/moduforge.db
-    restart: unless-stopped
+      - PORT=8080
+      - DB_PATH=/data/moduforge.db
+      - BUILD_DIR=/data/builds
+      - MODULES_DIR=/data/modules
+      - PROJECTS_DIR=/data/projects
+      - GIN_MODE=release
+      - MODUFORGE_DEV=0
+      - TZ=Asia/Shanghai
+    volumes:
+      - moduforge_data:/data
+      - moduforge_uploads:/app/uploads
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--spider", "http://localhost:8080/health"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
       interval: 30s
-      timeout: 10s
+      timeout: 3s
       retries: 3
+      start_period: 10s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  moduforge_data:
+    driver: local
+  moduforge_uploads:
+    driver: local

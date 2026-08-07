@@ -27,7 +27,7 @@ func (h *AIStreamHandler) StreamChat(c fiber.Ctx) error {
 	c.Set("Content-Type", "text/event-stream")
 	c.Set("Cache-Control", "no-cache")
 	c.Set("Connection", "keep-alive")
-	c.Set("Access-Control-Allow-Origin", "*")
+	// ACAO set by CORS middleware; do not override
 
 	var req StreamRequest
 	if err := c.Bind().JSON(&req); err != nil {

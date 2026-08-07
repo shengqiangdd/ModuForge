@@ -1,4 +1,5 @@
 <script lang="ts">
+import { focusTrap } from '$lib/utils/focusTrap';
 import type { Provider } from '../../lib/types';
 
 let {
@@ -29,10 +30,10 @@ let providerName = $derived(providers.find(p => p.id === selectedProviderID)?.na
 </script>
 
 {#if show}
-  <div class="fixed inset-0 z-50 flex items-center justify-center p-4" style="background: rgba(0,0,0,0.6); backdrop-filter: blur(8px);" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-    <div class="bg-[var(--color-bg)] rounded-2xl p-6 w-full max-w-md border border-[var(--color-border)] shadow-2xl" role="dialog" tabindex="-1">
+  <div class="fixed inset-0 z-50 flex items-center justify-center p-4" style="background: rgba(0,0,0,0.6); backdrop-filter: blur(8px);" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) onClose(); }} onkeydown={(e) => { if (e.key === 'Escape') onClose(); }}>
+    <div class="bg-[var(--color-bg)] rounded-2xl p-6 w-full max-w-md border border-[var(--color-border)] shadow-2xl" role="dialog" aria-modal="true" tabindex="-1" use:focusTrap>
       <div class="flex items-center gap-3 mb-5">
-        <div class="w-8 h-8 rounded-xl flex items-center justify-center" style="background: linear-gradient(135deg, rgba(6,182,212,0.15), rgba(139,92,246,0.15))">
+        <div class="w-8 h-8 rounded-xl flex items-center justify-center" style="background: linear-gradient(135deg, color-mix(in srgb, var(--color-info) 15%, transparent), color-mix(in srgb, var(--color-primary) 15%, transparent))">
           <span class="material-symbols-outlined text-[16px]" style="color: var(--color-info)">tune</span>
         </div>
         <div>

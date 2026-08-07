@@ -1,13 +1,14 @@
 <script lang="ts">
 import { onMount, onDestroy, tick } from 'svelte';
 import { toast } from '$lib/stores/toast.svelte';
-import { client, computeDiff } from '$lib/api/client';
+
 import ChatSidebar from './components/ChatSidebar.svelte';
-import ChatMessage from './components/ChatMessage.svelte';
 import ChatInput from './components/ChatInput.svelte';
 import AgentSteps from './components/AgentSteps.svelte';
 import ModelSelector from './components/ModelSelector.svelte';
 import CompactToolbar from './components/CompactToolbar.svelte';
+import ChatMessages from './components/ChatMessages.svelte';
+import ChatControls from './components/ChatControls.svelte';
 import ProgressIndicator from './components/ProgressIndicator.svelte';
 import AutoBuildProjectCard from './components/AutoBuildProjectCard.svelte';
 import GatherSpecCard from './components/GatherSpecCard.svelte';
@@ -44,11 +45,7 @@ import {
   memoParseSegments, memoExtractFiles, memoExtractRecFiles,
   memoParseErrorDetail, memoCheckWebUI, preRenderVisibleMessages, setupCopyCode
 } from './lib/markdown';
-import {
-  parseSSEBuffer, analyzeProgressFromContent, updateProgressDetails,
-  buildToolLabel, buildResultPreview, resolveStepIndex, mapAutoBuildPhaseToStep,
-  StreamBatchManager, ProgressUpdateManager, SafetyTimerManager, AgentStepBatcher
-} from './lib/streaming';
+import { StreamHandler } from './lib/stream-handler';
 import {
   loadGenHistory as loadGenHistoryFromStorage, saveGenHistory as saveGenHistoryToStorage,
   addGenHistory as createGenHistoryItem, fetchConversations,
@@ -72,6 +69,7 @@ import { loadProjectFilesState, loadContextProjectListState, addToContextString 
 import { filterStepsByRound } from './lib/rounds';
 
   let { onNavigate }: { onNavigate?: (route: string, id?: string) => void } = $props();
+  let chatMessages: ChatMessages;
 
   // ─── Core state ───
   let providers = $state<Provider[]>([]);
@@ -94,13 +92,9 @@ import { filterStepsByRound } from './lib/rounds';
   let lastAssistantIdx = $derived((() => { for (let j = messages.length - 1; j >= 0; j--) { if (messages[j].role === 'assistant') return j; } return -1; })());
   let streaming = $state(false);
   let buildLog = $state('');
-  let streamCtrl: any = null;
-  let chatEnd: HTMLDivElement | undefined = $state();
   let expandedReasoning = $state(new Set<number>());
   let messageUsages = $state<Map<number, TokenUsage>>(new Map());
   let messageTimes = $state<Map<number, number>>(new Map());
-  let requestStartTime = $state(0);
-  let buildProgressAbort: AbortController | null = null;
 
   // Prompt settings
   let editingMessageIdx = $state(-1);
@@ -132,15 +126,6 @@ import { filterStepsByRound } from './lib/rounds';
   // Progress indicator
   let currentStepIndex = $state(-1);
   let progressStepDetails = $state<ProgressStepDetail[]>([]);
-
-  // Agent steps batching (using extracted AgentStepBatcher)
-  let agentStepBatcherRef: AgentStepBatcher | null = null;
-  function pushAgentStep(step: any) {
-    if (!agentStepBatcherRef) {
-      agentStepBatcherRef = new AgentStepBatcher(allAgentSteps, (steps) => { agentSteps = steps; });
-    }
-    agentStepBatcherRef.push(step);
-  }
 
   // Generation history
   let genHistory = $state<GenHistoryItem[]>([]);
@@ -212,17 +197,6 @@ import { filterStepsByRound } from './lib/rounds';
   let showShortcutPanel = $state(false);
   let onboardingDone = $state(false);
 
-  // Virtual scroll state
-  let scrollTop = $state(0);
-  let containerHeight = $state(0);
-  const ITEM_HEIGHT = 80; // estimated avg message height
-  const OVERSCAN = 5; // extra items above/below viewport
-  let virtualStart = $derived(Math.max(0, Math.floor(scrollTop / ITEM_HEIGHT) - OVERSCAN));
-  let virtualEnd = $derived(Math.min(messages.length, Math.ceil((scrollTop + containerHeight) / ITEM_HEIGHT) + OVERSCAN));
-  let virtualMessages = $derived(messages.slice(virtualStart, virtualEnd));
-  let virtualSpacerTop = $derived(virtualStart * ITEM_HEIGHT);
-  let virtualSpacerBottom = $derived((messages.length - virtualEnd) * ITEM_HEIGHT);
-
   // Generated files
   let viewMode = $state<'diff' | 'files'>('files');
   let generatedFiles = $state<{path: string; content: string; oldContent?: string}[]>([]);
@@ -262,377 +236,8 @@ import { filterStepsByRound } from './lib/rounds';
   let showExportMenu = $state(false);
   const modes = MODES;
 
-  // ─── Streaming batch state (using extracted StreamBatchManager) ───
-  let streamBatchMgr: StreamBatchManager;
-  let lastStreamAssistantIdx = -1;
-  let sseLineBuffer = '';
-  let seenReadPaths = $state(new Set<string>());
-  let currentToolInput = $state<Record<string, any> | null>(null);
-  let stepElapsedTimer: ReturnType<typeof setInterval> | null = null;
-  let autoSaveTimer: ReturnType<typeof setTimeout> | null = null;
-
-  // ─── Progress update debouncing (using extracted ProgressUpdateManager) ───
-  let progressUpdateMgr = new ProgressUpdateManager((content: string) => {
-    const stepIdx = analyzeProgressFromContent(content);
-    if (stepIdx >= 0) currentStepIndex = Math.max(currentStepIndex, stepIdx);
-  });
-
-  // ─── Safety timer (using extracted SafetyTimerManager) ───
-  let safetyTimerMgr = new SafetyTimerManager();
-
-  // ─── Agent step batcher (using extracted AgentStepBatcher) ───
-  let agentStepBatcher: AgentStepBatcher;
-  function ensureAgentStepBatcher(): AgentStepBatcher {
-    if (!agentStepBatcher) {
-      agentStepBatcher = new AgentStepBatcher(allAgentSteps, (steps) => { agentSteps = steps; });
-    }
-    return agentStepBatcher;
-  }
-
-  function ensureStreamBatchMgr(): StreamBatchManager {
-    if (!streamBatchMgr) {
-      streamBatchMgr = new StreamBatchManager(
-        () => messages,
-        (msgs) => { messages = msgs; },
-        () => lastStreamAssistantIdx,
-      );
-    }
-    return streamBatchMgr;
-  }
-  function appendStreamContent(text: string) { ensureStreamBatchMgr().appendContent(text); }
-  function appendStreamReasoning(text: string) { ensureStreamBatchMgr().appendReasoning(text); }
-
-  // ─── Agent step helpers ───
-  function ensureAgentAssistantMsg(): number {
-    if (messages.length > 0 && messages[messages.length - 1].role === 'assistant') return messages.length - 1;
-    messages = [...messages, { role: 'assistant', content: '' }];
-    return messages.length - 1;
-  }
-
-  function createNewAssistantMsg(): number {
-    messages = [...messages, { role: 'assistant', content: '' }];
-    return messages.length - 1;
-  }
-
-  function parseAgentStep(parsed: any): boolean {
-    if (parsed.type === 'round_sync') {
-      const backendRound = parsed.round ?? 0;
-      const backendMaxRound = parsed.max_round ?? backendRound;
-      if (backendRound >= 0) {
-        if (messages.length > 0) {
-          const lastUserIdx = messages.map((m, i) => m.role === 'user' ? i : -1).filter(i => i >= 0).pop();
-          if (lastUserIdx !== undefined && lastUserIdx >= 0) {
-            messages[lastUserIdx] = { ...messages[lastUserIdx], round: backendRound };
-            messages = [...messages];
-          }
-        }
-        maxRoundIndex = Math.max(maxRoundIndex, backendMaxRound);
-        selectedRound = backendRound;
-      }
-      return true;
-    }
-    if (parsed.type === 'step') {
-      const step = parsed.step;
-      const currentRound = selectedRound;
-      if (step === 'think') {
-        pushAgentStep({ type: 'think', content: parsed.content || parsed.message || '', round: currentRound });
-      } else if (step === 'skill_call') {
-        pushAgentStep({ type: 'skill_call', skill: parsed.skill, input: parsed.input, round: currentRound });
-        currentToolInput = parsed.input || null;
-        const idx = ensureAgentAssistantMsg();
-        messages[idx] = { ...messages[idx], content: buildToolLabel(parsed.skill, parsed.input?.path) };
-        messages = [...messages];
-      } else if (step === 'skill_result') {
-        pushAgentStep({ type: 'skill_result', skill: parsed.skill, content: parsed.content, round: currentRound });
-        if (parsed.skill === 'read_file' && currentToolInput?.path) {
-          if (seenReadPaths.has(currentToolInput.path)) { currentToolInput = null; return true; }
-          seenReadPaths.add(currentToolInput.path);
-        }
-        currentToolInput = null;
-        const idx = ensureAgentAssistantMsg();
-        const preview = buildResultPreview(parsed.content);
-        messages[idx] = { ...messages[idx], content: `⚙️ ${parsed.skill} 完成${preview ? ': ' + preview : ''}` };
-        messages = [...messages];
-      } else if (step === 'answer') {
-        if (agentSteps.length > 0 && agentSteps[agentSteps.length - 1].type === 'think') agentSteps = agentSteps.slice(0, -1);
-        pushAgentStep({ type: 'answer', content: parsed.content, round: currentRound });
-        seenReadPaths = new Set();
-        const isMaxIterError = parsed.content && parsed.content.includes('超出最大迭代次数');
-        if (!isMaxIterError) {
-          const idx = createNewAssistantMsg();
-          messages[idx] = { ...messages[idx], content: parsed.content };
-          messages = [...messages];
-        } else { agentHadFinalAnswer = true; }
-      } else if (mode === 'generate' || mode === 'auto-build') {
-        const stepIndex = resolveStepIndex(step);
-        if (stepIndex >= 0) {
-          currentStepIndex = stepIndex;
-          progressStepDetails = updateProgressDetails(progressStepDetails, step, parsed.message);
-        }
-      }
-      return true;
-    }
-    if (parsed.type === 'checkpoint') {
-      pushAgentStep({ type: 'skill_result', skill: 'checkpoint', content: `📝 文件已修改: ${parsed.path || 'unknown'} (可回滚 #${parsed.checkpoint || 0})`, round: selectedRound } as any);
-      return true;
-    }
-    if (parsed.type === 'project_created') {
-      if (parsed.project_id) { selectedContextProject = parsed.project_id; loadProjectFiles(parsed.project_id); toast(`📁 项目已创建: ${parsed.project_id.slice(0, 8)}…`, 'success'); }
-      return true;
-    }
-    if (parsed.type === 'step' && parsed.step === 'compact') {
-      pushAgentStep({ type: 'think', content: `🗜️ ${parsed.content || '上下文已压缩'}`, round: selectedRound });
-      return true;
-    }
-    // Task decomposition events
-    if (parsed.type === 'step' && parsed.step === 'task_plan') {
-      if (parsed.subtasks && Array.isArray(parsed.subtasks)) {
-        subtasks = parsed.subtasks.map((s: any) => ({
-          id: s.id,
-          description: s.description,
-          status: s.status || 'pending',
-          dependencies: s.dependencies || [],
-          files: s.files || [],
-          progress: s.progress || 0,
-          started_at: s.started_at,
-          completed_at: s.completed_at,
-          retry_count: s.retry_count || 0,
-        }));
-      }
-      pushAgentStep({ type: 'think', content: `📋 ${parsed.content || '任务分解完成'}`, round: selectedRound });
-      return true;
-    }
-    if (parsed.type === 'step' && parsed.step === 'task_progress') {
-      const subtaskId = parsed.subtask_id;
-      const status = parsed.status;
-      if (subtaskId && status) {
-        subtasks = subtasks.map(s => {
-          if (s.id === subtaskId) {
-            return {
-              ...s,
-              status: status as Subtask['status'],
-              progress: parsed.progress ?? s.progress,
-              description: parsed.description || s.description,
-            };
-          }
-          return s;
-        });
-      }
-      return true;
-    }
-    return false;
-  }
-
-  // ─── Stream event handlers ───
-  function onStreamData(e: Event) {
-    const safetyMs = (mode === 'agent' || mode === 'auto-build') ? 1800000 : 60000; // 30 minutes for complex tasks
-    safetyTimerMgr.start(safetyMs, () => {
-      if (streaming) { streaming = false; messages = [...messages, { role: 'assistant', content: '⏱️ **连接超时**\n\n后端 30 分钟内无数据。请检查 Agent 是否仍在运行。' }]; toast('AI 连接超时', 'error'); }
-    });
-    const detail = (e as CustomEvent).detail as string;
-    const { dataChunks, leftover, done } = parseSSEBuffer(sseLineBuffer, detail);
-    sseLineBuffer = leftover;
-    // Process data chunks BEFORE checking done — error events may arrive
-    // in the same chunk as [DONE], and we must not discard them.
-    for (const data of dataChunks) {
-      try {
-        const parsed = JSON.parse(data);
-        if (mode === 'agent' && parseAgentStep(parsed)) continue;
-        if (mode === 'auto-build') { handleAutoBuildEvent(parsed); continue; }
-        if (parsed.type === 'step') {
-          if (mode === 'generate' || (mode as string) === 'auto-build') {
-            const stepIndex = resolveStepIndex(parsed.step);
-            if (stepIndex >= 0) {
-              currentStepIndex = stepIndex;
-              progressStepDetails = updateProgressDetails(progressStepDetails, parsed.step, parsed.message);
-            }
-          }
-          // Handle task decomposition events in all modes
-          if (parsed.step === 'task_plan' && parsed.subtasks && Array.isArray(parsed.subtasks)) {
-            subtasks = parsed.subtasks.map((s: any) => ({
-              id: s.id,
-              description: s.description,
-              status: s.status || 'pending',
-              dependencies: s.dependencies || [],
-              files: s.files || [],
-              progress: s.progress || 0,
-              started_at: s.started_at,
-              completed_at: s.completed_at,
-              retry_count: s.retry_count || 0,
-            }));
-          }
-          if (parsed.step === 'task_progress' && parsed.subtask_id) {
-            subtasks = subtasks.map(s => {
-              if (s.id === parsed.subtask_id) {
-                return { ...s, status: parsed.status || s.status, progress: parsed.progress ?? s.progress };
-              }
-              return s;
-            });
-          }
-          return;
-        }
-        if (parsed.type === 'reasoning') {
-          if (lastStreamAssistantIdx < 0 || lastStreamAssistantIdx >= messages.length || messages[lastStreamAssistantIdx]?.role !== 'assistant') {
-            messages = [...messages, { role: 'assistant', content: '', reasoning: '' }];
-            lastStreamAssistantIdx = messages.length - 1;
-          }
-          appendStreamReasoning(parsed.content);
-          return;
-        }
-        if (parsed.type === 'error' || parsed.error) {
-          streaming = false; currentStepIndex = -1;
-          messages = [...messages, { role: 'assistant', content: `❌ **AI 错误**\n\n${parsed.error || '未知错误'}` }];
-          toast((parsed.error || '未知错误').slice(0, 60), 'error');
-          return;
-        }
-        if (parsed.type === 'usage' && parsed.usage) {
-          const msgIdx = messages.length - 1;
-          if (msgIdx >= 0) { messageUsages.set(msgIdx, parsed.usage); messageUsages = messageUsages; }
-          return;
-        }
-        if (mode === 'agent' && (parsed.type === 'stream_delta' || parsed.type === 'reasoning')) {
-          let content = parsed.content || (parsed.choices?.[0]?.delta?.content) || '';
-          if (content && content.trim()) {
-            const lastIdx = agentSteps.length - 1;
-            if (lastIdx >= 0 && agentSteps[lastIdx].type === 'think') {
-              agentSteps[lastIdx] = { ...agentSteps[lastIdx], content: agentSteps[lastIdx].content + content };
-              agentSteps = agentSteps;
-            } else { pushAgentStep({ type: 'think', content }); }
-          }
-          return;
-        }
-        let content = parsed.content || parsed.choices?.[0]?.delta?.content || '';
-        let reasoning = parsed.choices?.[0]?.delta?.reasoning_content || '';
-        if (reasoning) { appendStreamReasoning(reasoning); }
-        if (content) {
-          if ((mode as string) === 'auto-build') return;
-          if (messages.length > 0 && messages[messages.length - 1].role === 'assistant') lastStreamAssistantIdx = messages.length - 1;
-          else { messages = [...messages, { role: 'assistant', content: '' }]; lastStreamAssistantIdx = messages.length - 1; }
-          appendStreamContent(content);
-          progressUpdateMgr.append(content);
-        }
-      } catch {
-        if (mode === 'auto-build') return;
-        if (messages.length > 0 && messages[messages.length - 1].role === 'assistant') { messages[messages.length - 1].content += data; messages = [...messages]; }
-        else messages = [...messages, { role: 'assistant', content: data }];
-        progressUpdateMgr.append(data);
-      }
-    }
-    // Check done AFTER processing data chunks — [DONE] and error events
-    // may arrive in the same TCP chunk; errors must be shown first.
-    if (done) { streaming = false; sseLineBuffer = ''; return; }
-  }
-
-  function handleAutoBuildEvent(parsed: any) {
-    if (parsed.type === 'phase') {
-      autoBuildPhases = autoBuildPhases.map(p => {
-        if (p.phase === parsed.phase) return { ...p, message: parsed.message, status: 'running' as const };
-        if (p.status === 'running') return { ...p, status: 'done' as const };
-        return p;
-      });
-      stepStartTime = Date.now();
-      const mappedStep = mapAutoBuildPhaseToStep(parsed.phase);
-      if (mappedStep) {
-        const stepIndex = resolveStepIndex(mappedStep);
-        if (stepIndex >= 0) currentStepIndex = stepIndex;
-        progressStepDetails = updateProgressDetails(progressStepDetails, mappedStep, parsed.message);
-      }
-    } else if (parsed.type === 'complete') {
-      streaming = false;
-      autoBuildPhases = autoBuildPhases.map(p => ({ ...p, status: 'done' as const }));
-      if (requestStartTime > 0) { const elapsed = Date.now() - requestStartTime; const msgIdx = messages.length - 1; if (msgIdx >= 0) { messageTimes.set(msgIdx, elapsed); messageTimes = messageTimes; } }
-      if (parsed.project_id) autoBuildProjectId = parsed.project_id;
-      if (parsed.project_name) autoBuildProjectName = parsed.project_name;
-      if (parsed.files && Array.isArray(parsed.files)) {
-        showGeneratedFiles = true;
-        const fileListStr = parsed.files.map((f: any) => '- ' + f.path + ' (' + (f.size || 0) + ' bytes)').join('\n');
-        messages = [...messages, { role: 'assistant', content: '✅ **模块开发完成！** 共生成 ' + parsed.files.length + ' 个文件。\n\n文件列表：\n' + fileListStr }];
-        if (parsed.project_id) {
-          const token = localStorage.getItem('moduforge_token') || '';
-          fetch(`/api/v1/projects/${parsed.project_id}/files`, { headers: { 'Authorization': `Bearer ${token}` } })
-            .then(res => res.ok ? res.json() : null)
-            .then(data => { if (data?.files) { autoBuildFiles = data.files; generatedFiles = data.files.map((f: any) => ({ path: f.path, content: f.content })); } })
-            .catch(e => console.error('Failed to fetch project files:', e));
-        }
-      } else { messages = [...messages, { role: 'assistant', content: '✅ **模块开发完成！**' }]; }
-    } else if (parsed.type === 'error') {
-      streaming = false;
-      autoBuildPhases = autoBuildPhases.map(p => p.status === 'running' ? { ...p, status: 'error' as const } : p);
-      messages = [...messages, { role: 'assistant', content: `❌ **构建失败**\n\n${parsed.error}` }];
-      toast(parsed.error || '构建失败', 'error');
-    } else if (parsed.type === 'usage' && parsed.usage) {
-      const msgIdx = messages.length - 1;
-      if (msgIdx >= 0) { messageUsages.set(msgIdx, parsed.usage); messageUsages = messageUsages; }
-    } else if (parsed.type === 'reasoning') {
-      if (messages.length === 0 || messages[messages.length - 1].role !== 'assistant') messages = [...messages, { role: 'assistant', content: '', reasoning: '' }];
-      const lastIdx = messages.length - 1;
-      messages[lastIdx] = { ...messages[lastIdx], reasoning: (messages[lastIdx].reasoning || '') + parsed.content };
-      messages = [...messages];
-    }
-  }
-
-  function onTimeout() {
-    safetyTimerMgr.stop();
-    streaming = false; currentStepIndex = -1;
-    const hint = mode === 'auto-build'
-      ? '⏱️ **智能构建超时**（超过 10 分钟无响应）\n\n可能原因：\n1. LLM 生成复杂模块耗时过长\n2. 模型响应太慢（试试换一个更快的模型）\n3. 网络连接不稳定\n\n建议：切换到更快的模型重试'
-      : '⏱️ **请求超时**（长时间无响应）\n\n建议：切换到免费模型重试，或在设置中检查 LLM 配置。';
-    messages = [...messages, { role: 'assistant', content: hint }];
-    toast('AI 请求超时', 'error');
-  }
-
-  function onStreamError(e: Event) {
-    const detail = (e as CustomEvent).detail || '未知错误';
-    safetyTimerMgr.stop();
-    streaming = false; currentStepIndex = -1;
-    messages = [...messages, { role: 'assistant', content: `❌ **AI 错误**\n\n${detail}` }];
-    toast(detail, 'error');
-  }
-
-  function onStreamDone() {
-    safetyTimerMgr.stop();
-    if (sseLineBuffer.trim()) {
-      const leftover = sseLineBuffer; sseLineBuffer = '';
-      if (leftover.startsWith('data: ')) {
-        const data = leftover.slice(6);
-        if (data !== '[DONE]') { try { const parsed = JSON.parse(data); if (mode === 'agent') parseAgentStep(parsed); } catch {} }
-      }
-    } else { sseLineBuffer = ''; }
-    if (streamBatchMgr) streamBatchMgr.cancel();
-    progressUpdateMgr.flush();
-
-    if (streaming) {
-      streaming = false;
-      if (mode !== 'agent') currentStepIndex = Math.max(currentStepIndex, 4);
-
-      // Record timing
-      if (requestStartTime > 0) {
-        const elapsed = Date.now() - requestStartTime;
-        const msgIdx = messages.length - 1;
-        if (msgIdx >= 0) { messageTimes.set(msgIdx, elapsed); messageTimes = messageTimes; }
-        requestStartTime = 0;
-      }
-
-      // Save to history
-      const lastAssistant = messages.filter(m => m.role === 'assistant').slice(-1)[0];
-      if (lastAssistant && lastAssistant.content) {
-        const item = createGenHistoryItem(lastAssistant.content.slice(0, 60), mode, messages, selectedModel?.name || '', selectedModelID);
-        if (item) { genHistory = [item, ...genHistory].slice(0, 50); saveGenHistoryToStorage(genHistory); }
-      }
-
-      // Check for gathered spec
-      if (mode === 'gather' && lastAssistant) {
-        const spec = extractGatherSpec(lastAssistant.content);
-        if (spec) { gatheredSpec = spec; showSpecCard = true; }
-      }
-
-      // Auto-save conversation
-      autoSaveConversation();
-
-      // Reset step elapsed timer
-      if (stepElapsedTimer) { clearInterval(stepElapsedTimer); stepElapsedTimer = null; }
-    }
-  }
+  // ─── Stream handler ───
+  let handler = $state<StreamHandler>(null!);
 
   // ─── Thin wrappers for extracted modules ───
 
@@ -903,26 +508,10 @@ import { filterStepsByRound } from './lib/rounds';
     showHistorySidebar = false;
     agentStepsCollapsed = true;
     agentHadFinalAnswer = false;
-    seenReadPaths = new Set();
-    currentToolInput = null;
     toast(`已加载对话 (${messages.length} 条消息)`, 'success');
   }
 
   // ─── Auto-save ───
-  function autoSaveConversation() {
-    if (messages.length === 0 || !activeSessionId) return;
-    if (autoSaveTimer) clearTimeout(autoSaveTimer);
-    autoSaveTimer = setTimeout(() => {
-      if (mode === 'agent' && messages.length > 0) {
-        saveConversationToBackend({
-          id: activeSessionId || sessionId, title: '', mode, messages,
-          model: selectedModel?.name || selectedModelID || '',
-          project_id: autoBuildProjectId || '',
-        });
-      }
-    }, 2000);
-  }
-
   // ─── Export ───
   function exportConversation(format: 'json' | 'markdown') {
     exportConversationToFile(messages, format);
@@ -944,7 +533,7 @@ import { filterStepsByRound } from './lib/rounds';
     if (!result) return;
     messages = result.truncated;
     input = result.userInput;
-    setTimeout(() => send(true), 100);
+    setTimeout(() => handler.handler.send(true), 100);
   }
 
   function editMessage(idx: number) {
@@ -969,7 +558,7 @@ import { filterStepsByRound } from './lib/rounds';
     messages = deleteMessageAt(messages, deletingMessageIdx);
     showDeleteConfirm = false;
     deletingMessageIdx = -1;
-    if (activeSessionId) autoSaveConversation();
+    if (activeSessionId) handler.autoSaveConversation();
   }
 
   function replyToMessage(idx: number) {
@@ -991,7 +580,7 @@ import { filterStepsByRound } from './lib/rounds';
     mode = 'generate';
     input = `请根据以下需求规格生成模块：\n\n模块名称: ${gatheredSpec.module_name || ''}\n描述: ${gatheredSpec.description || ''}\n功能: ${(gatheredSpec.features || []).join(', ')}\n目标框架: ${(gatheredSpec.target_frameworks || []).join(', ')}`;
     gatheredSpec = null;
-    setTimeout(() => send(), 100);
+    setTimeout(() => handler.send(), 100);
   }
 
   // ─── Project files ───
@@ -1088,73 +677,6 @@ import { filterStepsByRound } from './lib/rounds';
   // ─── Load gen history ───
   function loadGenHistory() { genHistory = loadGenHistoryFromStorage(); }
 
-  // ─── Stop stream ───
-  function stopStream() {
-    streamCtrl?.close();
-    safetyTimerMgr.stop();
-    streaming = false; currentStepIndex = -1; progressSteps = []; progressStepDetails = [];
-    expandedReasoning = new Set(); agentSteps = []; agentHadFinalAnswer = false;
-    lastStreamAssistantIdx = -1; sseLineBuffer = '';
-    if (streamBatchMgr) streamBatchMgr.cancel();
-    progressUpdateMgr.reset();
-    if (mode === 'auto-build') autoBuildPhases = [];
-  }
-
-  // ─── Progress steps ───
-  let progressSteps = $state<string[]>([]);
-  const progressLabels = PROGRESS_LABELS;
-
-  // ─── Send ───
-  async function send(skipAddUserMsg = false) {
-    const text = input.trim();
-    if (!text && !skipAddUserMsg) return;
-    if (streaming) return;
-    if (!configLoaded) { toast('AI 配置加载中...', 'warning'); return; }
-    if (!selectedProviderID || !selectedModelID) { toast('请先选择 AI 模型', 'error'); return; }
-    if (mode === 'agent' && !selectedContextProject) {
-      toast('💡 建议先选择一个项目上下文，Agent 将更精准地操作文件。', 'info');
-    }
-    input = '';
-    agentSteps = []; seenReadPaths = new Set(); currentToolInput = null;
-    agentStepsCollapsed = true; agentHadFinalAnswer = false;
-    expandedReasoning = new Set();
-    autoBuildPhases = AUTO_BUILD_PHASE_DEFS.map(p => ({ phase: p.phase, message: p.label, status: 'pending' as const }));
-    autoBuildFiles = []; autoBuildProjectId = ''; autoBuildProjectName = '';
-    if (!skipAddUserMsg) {
-      messages = [...messages, { role: 'user', content: text, round: maxRoundIndex + 1 }];
-      maxRoundIndex++; selectedRound = maxRoundIndex;
-      await tick();
-    }
-    streaming = true;
-    requestStartTime = Date.now(); sseLineBuffer = '';
-    progressSteps = Object.values(progressLabels); currentStepIndex = 0; progressStepDetails = [];
-    await saveConfigToBackend(selectedProviderID, selectedModelID);
-    let body: Record<string, unknown> = { messages, session_id: sessionId, provider: selectedProviderID || '', model: selectedModelID || '' };
-    let path: string;
-    if (projectContext.trim()) body.project_context = projectContext.trim();
-    if (selectedContextProject) body.project_id = selectedContextProject;
-    if (mode === 'agent') {
-      path = '/agent/run';
-      body = { task: text, session_id: sessionId, messages, provider_id: selectedProviderID || '', model: selectedModelID || '', project_id: selectedContextProject || '', project_context: projectContext.trim() || '', agent_mode: agentMode };
-    } else if (mode === 'auto-build') { path = '/ai/auto-build'; body = { description: text, session_id: sessionId, project_id: autoBuildProjectId || '', provider: selectedProviderID || '', model: selectedModelID || '' }; }
-    else if (mode === 'gather') { body.message = text; body.provider = selectedProviderID || ''; body.model = selectedModelID || ''; path = '/ai/gather'; }
-    else if (mode === 'generate') { body.description = text; body.provider = selectedProviderID || ''; body.model = selectedModelID || ''; path = '/ai/generate'; }
-    else if (mode === 'repair') { body.build_log = buildLog || text; body.provider = selectedProviderID || ''; body.model = selectedModelID || ''; path = '/ai/repair'; }
-    else { body.message = text; body.provider = selectedProviderID || ''; body.model = selectedModelID || ''; path = '/ai/chat'; }
-    requestAnimationFrame(() => { const el = document.querySelector('.messages-area') as HTMLElement; if (el) el.scrollTop = el.scrollHeight; });
-    const idleMs = (mode === 'auto-build' || mode === 'agent') ? 1800000 : undefined; // 30 minutes for complex tasks
-    streamCtrl = (await import('../../lib/api/client')).streamRequest(path, body, idleMs);
-    const safetyMs = (mode === 'agent' || mode === 'auto-build') ? 1800000 : 60000; // 30 minutes for complex tasks
-    safetyTimerMgr.start(safetyMs, () => {
-      if (streaming) {
-        streaming = false;
-        messages = [...messages, { role: 'assistant', content: '⏱️ **连接超时**\n\n后端 60 秒内无数据。' }];
-        toast('AI 连接超时', 'error');
-        autoSaveConversation();
-      }
-    });
-  }
-
   // ─── Mode switching ───
   function switchMode(m: Mode) {
     if (mode === m) return;
@@ -1168,16 +690,103 @@ import { filterStepsByRound } from './lib/rounds';
   onMount(async () => {
     setupCopyCode();
     initMarkdownWorker();
-    stepElapsedTimer = setInterval(() => {
-      if (streaming && autoBuildPhases.some(p => p.status === 'running')) {
-        const secs = Math.floor((Date.now() - stepStartTime) / 1000);
-        stepElapsed = secs >= 60 ? `${Math.floor(secs / 60)}m${secs % 60}s` : `${secs}s`;
-      }
-    }, 1000);
-    window.addEventListener('ai-stream', onStreamData);
-    window.addEventListener('ai-stream-done', onStreamDone);
-    window.addEventListener('ai-stream-timeout', onTimeout);
-    window.addEventListener('ai-stream-error', onStreamError);
+    handler = new StreamHandler({
+      get messages() { return messages; },
+      set messages(v) { messages = v; },
+      get streaming() { return streaming; },
+      set streaming(v) { streaming = v; },
+      get configLoaded() { return configLoaded; },
+      set configLoaded(v) { configLoaded = v; },
+      get currentStepIndex() { return currentStepIndex; },
+      set currentStepIndex(v) { currentStepIndex = v; },
+      get progressStepDetails() { return progressStepDetails; },
+      set progressStepDetails(v) { progressStepDetails = v; },
+      get agentSteps() { return agentSteps; },
+      set agentSteps(v) { agentSteps = v; },
+      get allAgentSteps() { return allAgentSteps; },
+      set allAgentSteps(v) { allAgentSteps = v; },
+      get agentStepsCollapsed() { return agentStepsCollapsed; },
+      set agentStepsCollapsed(v) { agentStepsCollapsed = v; },
+      get selectedRound() { return selectedRound; },
+      set selectedRound(v) { selectedRound = v; },
+      get maxRoundIndex() { return maxRoundIndex; },
+      set maxRoundIndex(v) { maxRoundIndex = v; },
+      get expandedReasoning() { return expandedReasoning; },
+      set expandedReasoning(v) { expandedReasoning = v; },
+      get messageUsages() { return messageUsages; },
+      set messageUsages(v) { messageUsages = v; },
+      get messageTimes() { return messageTimes; },
+      set messageTimes(v) { messageTimes = v; },
+      get requestStartTime() { return 0; },
+      set requestStartTime(_v) {},
+      get lastStreamAssistantIdx() { return -1; },
+      set lastStreamAssistantIdx(_v) {},
+      get seenReadPaths() { return new Set<string>(); },
+      set seenReadPaths(_v) {},
+      get currentToolInput() { return null; },
+      set currentToolInput(_v) {},
+      get agentHadFinalAnswer() { return agentHadFinalAnswer; },
+      set agentHadFinalAnswer(v) { agentHadFinalAnswer = v; },
+      get subtasks() { return subtasks; },
+      set subtasks(v) { subtasks = v; },
+      get autoBuildPhases() { return autoBuildPhases; },
+      set autoBuildPhases(v) { autoBuildPhases = v; },
+      get autoBuildFiles() { return autoBuildFiles; },
+      set autoBuildFiles(v) { autoBuildFiles = v; },
+      get autoBuildProjectId() { return autoBuildProjectId; },
+      set autoBuildProjectId(v) { autoBuildProjectId = v; },
+      get autoBuildProjectName() { return autoBuildProjectName; },
+      set autoBuildProjectName(v) { autoBuildProjectName = v; },
+      get stepStartTime() { return stepStartTime; },
+      set stepStartTime(v) { stepStartTime = v; },
+      get stepElapsed() { return stepElapsed; },
+      set stepElapsed(v) { stepElapsed = v; },
+      get genHistory() { return genHistory; },
+      set genHistory(v) { genHistory = v; },
+      get gatheredSpec() { return gatheredSpec; },
+      set gatheredSpec(v) { gatheredSpec = v; },
+      get showSpecCard() { return showSpecCard; },
+      set showSpecCard(v) { showSpecCard = v; },
+      get showGeneratedFiles() { return showGeneratedFiles; },
+      set showGeneratedFiles(v) { showGeneratedFiles = v; },
+      get generatedFiles() { return generatedFiles; },
+      set generatedFiles(v) { generatedFiles = v; },
+      get buildLog() { return buildLog; },
+      set buildLog(v) { buildLog = v; },
+      get input() { return input; },
+      set input(v) { input = v; },
+      get mode() { return mode; },
+      set mode(v) { mode = v; },
+      get selectedProviderID() { return selectedProviderID; },
+      set selectedProviderID(v) { selectedProviderID = v; },
+      get selectedModelID() { return selectedModelID; },
+      set selectedModelID(v) { selectedModelID = v; },
+      get selectedModel() { return selectedModel; },
+      set selectedModel(v) { selectedModel = v; },
+      get selectedContextProject() { return selectedContextProject; },
+      set selectedContextProject(v) { selectedContextProject = v; },
+      get projectContext() { return projectContext; },
+      set projectContext(v) { projectContext = v; },
+      get agentMode() { return agentMode; },
+      set agentMode(v) { agentMode = v; },
+      get sessionId() { return sessionId; },
+      set sessionId(v) { sessionId = v; },
+      get activeSessionId() { return activeSessionId; },
+      set activeSessionId(v) { activeSessionId = v; },
+      get showHistorySidebar() { return showHistorySidebar; },
+      set showHistorySidebar(v) { showHistorySidebar = v; },
+      get providers() { return providers; },
+      set providers(v) { providers = v; },
+    }, {
+      loadProjectFiles,
+      loadConversations,
+      loadGenHistory,
+      saveConfigToBackend: (pid, mid) => saveConfigToBackend(pid, mid),
+      scrollToBottom: async () => { await tick(); chatMessages?.scrollToBottom(); },
+      toast,
+    });
+    handler.setupEventListeners();
+    handler.startElapsedTimer();
     document.addEventListener('click', handleModelDropdownClickOutside);
     const savedActiveId = localStorage.getItem('ai_active_session_id');
     if (savedActiveId) activeSessionId = savedActiveId;
@@ -1203,17 +812,8 @@ import { filterStepsByRound } from './lib/rounds';
 
   onDestroy(() => {
     terminateMarkdownWorker();
-    if (stepElapsedTimer) { clearInterval(stepElapsedTimer); stepElapsedTimer = null; }
-    window.removeEventListener('ai-stream', onStreamData);
-    window.removeEventListener('ai-stream-done', onStreamDone);
-    window.removeEventListener('ai-stream-timeout', onTimeout);
-    window.removeEventListener('ai-stream-error', onStreamError);
+    handler.cleanup();
     document.removeEventListener('click', handleModelDropdownClickOutside);
-    if (streamBatchMgr) streamBatchMgr.cancel();
-    if (agentStepBatcherRef) agentStepBatcherRef.cancel();
-    progressUpdateMgr.reset();
-    if (autoSaveTimer) { clearTimeout(autoSaveTimer); autoSaveTimer = null; }
-    buildProgressAbort?.abort(); buildProgressAbort = null;
     if (typeof window !== 'undefined') delete (window as any).copyCode;
   });
 
@@ -1222,24 +822,7 @@ import { filterStepsByRound } from './lib/rounds';
     if (!target.closest('.top-bar-model-wrap')) showModelDropdown = false;
   }
 
-  // ─── Auto-scroll ───
-  let lastScrollTime = 0;
-  $effect(() => {
-    if (chatEnd) {
-      const container = chatEnd.parentElement;
-      if (container) {
-        const nearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 150;
-        if (nearBottom || messages.length <= 1) {
-          const now = Date.now();
-          if (now - lastScrollTime > 100 || messages.length <= 1) {
-            lastScrollTime = now;
-            chatEnd.scrollIntoView({ behavior: messages.length <= 1 ? 'instant' : 'smooth' });
-          }
-        }
-      } else { chatEnd.scrollIntoView({ behavior: 'smooth' }); }
-    }
-  });
-</script>
+  </script>
 
 <div class="flex h-full ai-page" role="presentation" onkeydown={(e) => {
   // Don't trigger shortcuts when typing in inputs
@@ -1269,16 +852,18 @@ import { filterStepsByRound } from './lib/rounds';
   {/if}
 
   <div class="flex-1 flex flex-col min-w-0">
-    <ModelSelector {providers} {selectedProviderID} {selectedModelID} {configLoaded} {showModelDropdown} {editingModelMaxTokens} {editMaxTokensValue} {availableModels} {freeModels} {paidModels} {selectedModel}
+    <ChatControls
+      {providers} {selectedProviderID} {selectedModelID} {configLoaded}
+      {showModelDropdown} {editingModelMaxTokens} {editMaxTokensValue}
+      {availableModels} {freeModels} {paidModels} {selectedModel}
+      {mode} {streaming} {showComparison} {showProjectContext}
+      {showHistorySidebar} {showCapability}
       onProviderChange={(v) => { selectedProviderID = v; onProviderChange(); }}
       onModelSelect={(id) => { selectedModelID = id; showModelDropdown = false; onModelSelect(id); }}
       onEditMaxTokens={(id, val) => { editingModelMaxTokens = id; editMaxTokensValue = val; }}
       onSaveMaxTokens={onSaveMaxTokens}
       onToggleDropdown={() => showModelDropdown = !showModelDropdown}
       onEditMaxTokensStart={(id, val) => { editingModelMaxTokens = id; editMaxTokensValue = val; }}
-    />
-
-    <CompactToolbar {mode} {streaming} {showComparison} {showProjectContext} {showHistorySidebar} {showCapability}
       onModeChange={(m) => { if (mode !== m) { messages = []; currentStepIndex = -1; progressStepDetails = []; autoBuildPhases = []; agentSteps = []; expandedReasoning = new Set(); subtasks = []; } mode = m; }}
       onToggleComparison={() => showComparison = !showComparison}
       onToggleProjectContext={() => showProjectContext = !showProjectContext}
@@ -1299,39 +884,14 @@ import { filterStepsByRound } from './lib/rounds';
 
     <TodoList {subtasks} collapsed={todoCollapsed} onToggleCollapse={() => todoCollapsed = !todoCollapsed} />
 
-    <!-- Messages with virtual scrolling -->
-    <div class="flex-1 overflow-y-auto px-3 py-1.5 space-y-1.5 messages-area"
-      onscroll={(e) => { scrollTop = e.currentTarget.scrollTop; }}
-      bind:clientHeight={containerHeight}>
-      {#if messages.length === 0}
-        <div class="flex items-center justify-center h-full">
-          <div class="text-center">
-            <div class="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4" style="background: var(--gradient-brand-subtle)">
-              <span class="material-symbols-outlined text-3xl" style="color: var(--color-primary)">psychology</span>
-            </div>
-            <p class="text-lg font-semibold text-[var(--color-text)]">{modes.find(m => m.value === mode)?.desc}</p>
-            <p class="text-sm text-[var(--color-text-muted)] mt-1">
-              {#if mode === 'auto-build'}AI 自动完成模块开发全流程{:else if mode === 'generate'}生成兼容 Magisk / KernelSU / APatch 的通用模块{:else if mode === 'repair'}粘贴构建日志，AI 分析问题并给出修复建议{:else if mode === 'gather'}描述你的模块想法，AI 引导你完善需求{:else}随时提问关于模块开发的问题{/if}
-            </p>
-          </div>
-        </div>
-      {:else}
-        <!-- Virtual scroll spacer top -->
-        {#if virtualSpacerTop > 0}<div style="height:{virtualSpacerTop}px"></div>{/if}
-        {#each virtualMessages as msg, i (virtualStart + i + '-' + msg.role)}
-          <ChatMessage {msg} index={virtualStart + i} {mode} {streaming} {expandedReasoning} {messageUsages} {messageTimes}
-            onToggleReasoning={(idx) => { const next = new Set(expandedReasoning); if (next.has(idx)) next.delete(idx); else next.add(idx); expandedReasoning = next; }}
-            onEdit={editMessage} onDelete={confirmDeleteMessage} onReply={replyToMessage}
-            onCopy={(text) => safeCopyText(text).then(ok => { if (ok) toast('已复制', 'success'); })}
-            onOpenImportDialog={openImportDialog} onOpenPreview={(files: {path: string; content: string}[]) => openPreview(files)}
-            onInsertToInput={(text) => input = text}
-          />
-        {/each}
-        <!-- Virtual scroll spacer bottom -->
-        {#if virtualSpacerBottom > 0}<div style="height:{virtualSpacerBottom}px"></div>{/if}
-        <div bind:this={chatEnd}></div>
-      {/if}
-    </div>
+    <ChatMessages bind:this={chatMessages}
+      bind:messages {mode} {streaming} {expandedReasoning} {messageUsages} {messageTimes}
+      onToggleReasoning={(idx) => { const next = new Set(expandedReasoning); if (next.has(idx)) next.delete(idx); else next.add(idx); expandedReasoning = next; }}
+      onEdit={editMessage} onDelete={confirmDeleteMessage} onReply={replyToMessage}
+      onCopy={(text) => safeCopyText(text).then(ok => { if (ok) toast('已复制', 'success'); })}
+      onOpenImportDialog={openImportDialog} onOpenPreview={(files: {path: string; content: string}[]) => openPreview(files)}
+      onInsertToInput={(text) => input = text}
+    />
 
     <GatherSpecCard show={showSpecCard} spec={gatheredSpec} onClose={() => showSpecCard = false} onGenerate={switchToGenerateWithSpec} />
     <GeneratedFilesPanel show={showGeneratedFiles} files={generatedFiles} {mode} {viewMode} onClose={() => showGeneratedFiles = false} onViewModeChange={(m) => viewMode = m} onDeploy={deployAutoBuild} />
@@ -1343,7 +903,7 @@ import { filterStepsByRound } from './lib/rounds';
     />
 
     <ChatInput {input} {mode} {streaming} {buildLog}
-      onSend={() => send()} onStop={stopStream}
+      onSend={() => handler.send()} onStop={handler.stopStream}
       onInputChange={(v) => input = v}
       onBuildLogChange={(v) => buildLog = v}
     />

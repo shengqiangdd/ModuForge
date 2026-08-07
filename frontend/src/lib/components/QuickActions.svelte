@@ -29,7 +29,7 @@
 <!-- Floating Action Button -->
 <button
   class="fixed bottom-20 md:bottom-6 right-4 z-40 w-14 h-14 rounded-full flex items-center justify-center shadow-lg transition-all duration-300 hover:scale-110 hover:shadow-xl active:scale-95"
-  style="background: var(--gradient-brand); color: white; box-shadow: 0 4px 20px rgba(139,92,246,0.4)"
+  style="background: var(--gradient-brand); color: white; box-shadow: 0 4px 20px color-mix(in srgb, var(--color-primary) 40%, transparent)"
   onclick={() => open = !open}
   title="快捷操作 (Ctrl+Q)"
 >

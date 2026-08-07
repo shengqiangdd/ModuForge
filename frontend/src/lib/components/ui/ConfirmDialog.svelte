@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { focusTrap } from '$lib/utils/focusTrap';
   let { open = $bindable(false), title = '确认', message = '', confirmText = '确认', cancelText = '取消', variant = 'primary', onConfirm = () => {}, onCancel = () => {} }: {
     open?: boolean;
     title?: string;
@@ -24,7 +25,7 @@
 {#if open}
   <div class="confirm-overlay fixed inset-0 z-50 flex items-center justify-center p-4" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) handleCancel(); }}>
     <div class="confirm-backdrop absolute inset-0"></div>
-    <div class="confirm-dialog relative w-full max-w-md rounded-2xl shadow-2xl border overflow-hidden animate-[scaleIn_0.2s_ease-out]" role="dialog" aria-modal="true" aria-labelledby="confirm-title" tabindex="-1">
+    <div class="confirm-dialog relative w-full max-w-md rounded-2xl shadow-2xl border overflow-hidden animate-[scaleIn_0.2s_ease-out]" role="dialog" aria-modal="true" aria-labelledby="confirm-title" tabindex="-1" use:focusTrap>
       <!-- Header -->
       <div class="confirm-header px-6 pt-6 pb-4" class:danger={variant === 'danger'}>
         <div class="flex items-center gap-3">
@@ -120,7 +121,7 @@
     border: none;
   }
   .confirm-btn-primary:hover {
-    box-shadow: 0 0 20px rgba(139,92,246,0.3);
+    box-shadow: 0 0 20px color-mix(in srgb, var(--color-primary) 30%, transparent);
     transform: translateY(-1px);
   }
   

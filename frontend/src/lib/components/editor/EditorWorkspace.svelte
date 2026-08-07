@@ -8,7 +8,12 @@
   import CollaborationCursors from '$lib/components/CollaborationCursors.svelte';
   import { toast } from '$lib/stores/toast.svelte';
   import { historyStore } from '$lib/stores/history';
+  import { focusTrap } from '$lib/utils/focusTrap';
   import { loadShortcuts, matchShortcut, shortcutLabel } from '$lib/stores/shortcuts';
+  import { debounce } from '$lib/utils/performance';
+  import FileTree from './FileTree.svelte';
+  import EditorToolbar from './EditorToolbar.svelte';
+  import EditorTabs from './EditorTabs.svelte';
 
   let { projectId = '' }: { projectId?: string } = $props();
 
@@ -35,12 +40,9 @@
   );
 
   function onFileSearchInput(e: Event) {
-    const val = (e.target as HTMLInputElement).value;
-    // Debounce: update query after 150ms of no typing
-    if (_fileSearchTimer) clearTimeout(_fileSearchTimer);
-    _fileSearchTimer = setTimeout(() => { fileSearchQuery = val; }, 150);
+    debouncedFileSearch((e.target as HTMLInputElement).value);
   }
-  let _fileSearchTimer: ReturnType<typeof setTimeout> | null = null;
+  const debouncedFileSearch = debounce((val: string) => { fileSearchQuery = val; }, 150);
 
   // Diff view
   let diffMode = $state(false);
@@ -444,27 +446,6 @@
 </script>
 
 <style>
-  .file-tree-item {
-    color: var(--color-text-secondary);
-  }
-  .file-tree-item:hover {
-    background: var(--color-surface);
-  }
-  .file-tree-item.active {
-    background: var(--gradient-brand-subtle);
-    color: var(--color-primary);
-    font-weight: 500;
-  }
-  .diff-file-item {
-    transition: all 0.15s ease;
-  }
-  .diff-file-item:hover {
-    background: var(--color-surface);
-  }
-  .diff-file-item.active {
-    background: var(--gradient-brand-subtle);
-    color: var(--color-primary);
-  }
   .terminal-resize-handle {
     height: 3px;
     background: var(--color-border);
@@ -478,10 +459,6 @@
   .terminal-container {
     flex-shrink: 0;
     overflow: hidden;
-  }
-  .drag-over {
-    position: relative;
-    min-height: 100px;
   }
 </style>
 
@@ -502,239 +479,54 @@
       </div>
     </div>
   {:else}
-    <!-- Sidebar Toggle -->
-    {#if !sidebarOpen}
-      <button
-        class="fixed left-2 top-20 z-10 w-9 h-9 rounded-xl bg-[var(--color-bg-elevated)] border border-[var(--color-border)] flex items-center justify-center shadow-md hover:bg-[var(--color-surface)] hover:shadow-lg transition-all"
-        onclick={() => sidebarOpen = true}
-        title="展开侧边栏"
-      >
-        <span class="material-symbols-outlined text-[18px]">menu</span>
-      </button>
-    {/if}
-
-    <!-- File Tree Sidebar -->
-    <aside
-      class="border-r border-[var(--color-border)] bg-[var(--color-bg-elevated)] flex flex-col flex-shrink-0 transition-all duration-200
-        {sidebarOpen ? 'w-60 max-md:fixed max-md:top-0 max-md:bottom-16 max-md:left-0 max-md:z-20 max-md:shadow-elevated-lg' : 'w-0 max-md:hidden overflow-hidden border-r-0'}"
-      ondragover={(e) => { e.preventDefault(); dragOver = true; }}
-      ondragleave={() => dragOver = false}
-      ondrop={handleDrop}
-    >
-      <div class="px-4 h-12 flex items-center border-b border-[var(--color-border)] min-w-[240px]">
-        <h3 class="text-sm font-semibold text-[var(--color-text)] truncate flex-1">{project?.name || '项目'}</h3>
-        <button
-          class="flex items-center justify-center w-7 h-7 rounded-lg text-[var(--color-text-secondary)] hover:bg-[var(--color-surface)] transition-colors"
-          onclick={openFileSearch}
-          title="搜索文件 (Ctrl+P)"
-        >
-          <span class="material-symbols-outlined !text-[16px]">search</span>
-        </button>
-        <button
-          class="flex items-center justify-center w-7 h-7 rounded-lg text-[var(--color-text-secondary)] hover:bg-[var(--color-surface)] transition-colors ml-1"
-          onclick={() => sidebarOpen = false}
-          title="折叠侧边栏"
-        >
-          <span class="material-symbols-outlined !text-[16px]">menu_open</span>
-        </button>
-        <span class="text-xs text-[var(--color-text-muted)] ml-1">{files.length}</span>
-      </div>
-      <div class="flex-1 overflow-y-auto p-2 space-y-0.5" class:drag-over={dragOver}>
-        <!-- Drag-over overlay -->
-        {#if dragOver}
-          <div class="absolute inset-0 z-10 flex items-center justify-center rounded-xl pointer-events-none" style="background: rgba(139,92,246,0.08); border: 2px dashed var(--color-primary);">
-            <div class="text-center">
-              <span class="material-symbols-outlined text-3xl block mb-2" style="color: var(--color-primary)">cloud_upload</span>
-              <p class="text-sm font-medium" style="color: var(--color-primary)">拖放到这里上传</p>
-            </div>
-          </div>
-        {/if}
-        {#if uploadProgress}
-          <div class="px-3 py-2 text-xs text-[var(--color-primary)]">{uploadProgress}</div>
-        {/if}
-        {#each files as file}
-          <div class="group flex items-center">
-            <button
-              class="file-tree-item flex-1 flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-all duration-200 text-left
-                {selectedFile === file.path ? 'active' : ''}"
-              onclick={() => { selectFile(file.path); if (window.innerWidth < 768) sidebarOpen = false; }}
-            >
-              <span class="material-symbols-outlined text-[16px] flex-shrink-0" style="color: {getFileIconColor(file.path)}">{getFileIcon(file.path)}</span>
-              <span class="truncate">{file.path.split('/').pop()}</span>
-              {#if selectedFile === file.path}
-                <div class="ml-auto w-1.5 h-1.5 rounded-full" style="background: var(--gradient-brand)"></div>
-              {/if}
-            </button>
-            <button
-              class="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-[var(--color-error-light)] transition-opacity mr-1 cursor-pointer"
-              title="删除文件"
-              onclick={async (e) => {
-                e.stopPropagation();
-                if (!confirm(`确定删除 ${file.path}？`)) return;
-                try {
-                  const token = localStorage.getItem('moduforge_token') || '';
-                  const res = await fetch(`/api/v1/projects/${projectId}/files/${encodeURIComponent(file.path)}`, {
-                    method: 'DELETE',
-                    headers: { 'Authorization': `Bearer ${token}` },
-                  });
-                  if (res.ok) {
-                    files = files.filter(f => f.path !== file.path);
-                    if (selectedFile === file.path) { selectedFile = null; editorContent = ''; }
-                    toast('文件已删除', 'success');
-                  }
-                } catch { toast('删除失败', 'error'); }
-              }}
-            >
-              <span class="material-symbols-outlined text-[14px] text-[var(--color-error)]">delete</span>
-            </button>
-          </div>
-        {:else}
-          <div class="text-center py-12">
-            <span class="material-symbols-outlined text-4xl mb-2" style="color: var(--color-text-muted)">folder_open</span>
-            <p class="text-xs" style="color: var(--color-text-muted)">暂无文件</p>
-          </div>
-        {/each}
-      </div>
-      <div class="px-3 py-2 border-t border-[var(--color-border)]">
-        <div class="text-[10px] text-[var(--color-text-muted)] flex items-center gap-3">
-          <span><kbd class="px-1 py-0.5 rounded bg-[var(--color-surface)]">⌘P</kbd> 搜索</span>
-          <span><kbd class="px-1 py-0.5 rounded bg-[var(--color-surface)]">⌘S</kbd> 保存</span>
-        </div>
-      </div>
-    </aside>
-
-    {#if sidebarOpen}
-      <div class="fixed inset-0 bg-black/20 z-10 max-md:block md:hidden" role="presentation" onclick={() => sidebarOpen = false}></div>
-    {/if}
+    <FileTree
+      {files} {selectedFile} {project} {sidebarOpen} {dragOver} {uploadProgress}
+      {showFileSearch} {fileSearchQuery} {fileSearchInput} {filteredFiles}
+      onSelect={selectFile}
+      onDelete={async (path: string) => {
+        if (!confirm(`确定删除 ${path}？`)) return;
+        try {
+          const token = localStorage.getItem('moduforge_token') || '';
+          const res = await fetch(`/api/v1/projects/${projectId}/files/${encodeURIComponent(path)}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } });
+          if (res.ok) { files = files.filter(f => f.path !== path); if (selectedFile === path) { selectedFile = null; editorContent = ''; } toast('文件已删除', 'success'); }
+        } catch { toast('删除失败', 'error'); }
+      }}
+      onToggleSidebar={() => sidebarOpen = !sidebarOpen}
+      onOpenFileSearch={openFileSearch}
+      onFileSearchInput={onFileSearchInput}
+      onFileSearchKeydown={handleFileSearchKeydown}
+      onSelectFileFromSearch={selectFileFromSearch}
+      onCloseFileSearch={closeFileSearch}
+      {getFileIcon} {getFileIconColor}
+      onDrop={handleDrop}
+      onDragOver={(e) => { e.preventDefault(); dragOver = true; }}
+      onDragLeave={() => dragOver = false}
+    />
 
     <!-- Main Editor Area + Panels (wrapped in flex column) -->
     <div class="flex-1 flex flex-col overflow-hidden">
       <!-- Editor Content Area -->
       <div class="flex-1 flex flex-col overflow-hidden">
-        <!-- Toolbar -->
-        <div class="h-12 flex items-center justify-between px-2 sm:px-4 border-b border-[var(--color-border)] bg-[var(--color-bg-elevated)] flex-shrink-0">
-          <div class="flex items-center gap-2 sm:gap-3 min-w-0">
-            <span class="text-sm font-medium text-[var(--color-text)] hidden sm:block truncate">{project?.name}</span>
-            <span class="badge-primary text-[10px] hidden sm:inline-flex">Universal</span>
-            <CollaborationCursors {projectId} currentUserId={''} />
-            {#if showDiffList && diffFiles.length > 0}
-              <span class="text-xs text-primary-500 flex items-center gap-1 hidden sm:flex">
-                <span class="material-symbols-outlined text-[14px]">compare_arrows</span>
-                {diffFiles.length} 待审查
-              </span>
-            {/if}
-          </div>
-          <div class="flex items-center gap-1 sm:gap-2 flex-shrink-0 overflow-x-auto">
-            {#if showDiffList && diffFiles.length > 0}
-              <button
-                class="flex items-center gap-1.5 px-2 sm:px-3 py-1.5 rounded-lg text-xs font-medium bg-primary-600 text-white hover:bg-primary-700 transition-colors whitespace-nowrap"
-                onclick={closeDiffView}
-              >
-                <span class="material-symbols-outlined text-[14px]">check</span>
-                <span class="hidden sm:inline">完成审查</span>
-              </button>
-            {/if}
-            <button
-              class="flex items-center gap-1.5 px-2 sm:px-3 py-1.5 rounded-lg text-xs font-medium transition-colors whitespace-nowrap"
-              style="background: var(--color-surface); color: var(--color-text-secondary)"
-              onclick={formatCode}
-              disabled={formatting}
-              title="格式化代码 ({shortcutLabel(shortcuts.find(s => s.id === 'format-code')!)})"
-            >
-              <span class="material-symbols-outlined !text-[14px] {formatting ? 'animate-spin' : ''}">{formatting ? 'progress_activity' : 'align_horizontal_left'}</span>
-              <span class="hidden md:inline">{formatting ? '格式化中...' : '格式化'}</span>
-            </button>
-            <button
-              class="flex items-center gap-1.5 px-2 sm:px-3 py-1.5 rounded-lg text-xs font-medium transition-colors disabled:opacity-50 whitespace-nowrap"
-              style="background: var(--color-surface); color: {getSecurityColor()}"
-              onclick={runSecurityScan}
-              disabled={securityScanning}
-              title="安全扫描"
-            >
-              <span class="material-symbols-outlined !text-[14px] {securityScanning ? 'animate-spin' : ''}">{securityScanning ? 'progress_activity' : getSecurityIcon()}</span>
-              <span class="hidden md:inline">{securityScanning ? '扫描中...' : '安全扫描'}</span>
-            </button>
-            <button
-              class="flex items-center justify-center w-8 h-8 rounded-lg bg-[var(--color-surface)] text-[var(--color-text-secondary)] hover:bg-[var(--color-border)] transition-colors"
-              onclick={validateProject}
-              title="项目完整性校验"
-            >
-              <span class="material-symbols-outlined !text-[16px]">checklist</span>
-            </button>
-            <a href="/projects/{projectId}/build" class="flex items-center justify-center w-8 h-8 rounded-lg bg-[var(--color-surface)] text-[var(--color-text-secondary)] hover:bg-[var(--color-border)] transition-colors no-underline" title="构建模块">
-              <span class="material-symbols-outlined !text-[16px]">build</span>
-            </a>
-            <button
-              class="flex items-center justify-center w-8 h-8 rounded-lg transition-colors"
-              style={showTerminal ? 'background: var(--color-primary); color: white' : 'background: var(--color-surface); color: var(--color-text-secondary)'}
-              onclick={() => showTerminal = !showTerminal}
-              title="终端 ({shortcutLabel(shortcuts.find(s => s.id === 'toggle-terminal')!)})"
-            >
-              <span class="material-symbols-outlined !text-[16px]">terminal</span>
-            </button>
-            <button
-              class="flex items-center justify-center w-8 h-8 rounded-lg transition-colors"
-              style="background: var(--color-surface); color: var(--color-text-secondary)"
-              onclick={() => showUndoHistory = true}
-              title="操作历史"
-            >
-              <span class="material-symbols-outlined !text-[16px]">history</span>
-            </button>
-            <button
-              class="flex items-center gap-1.5 px-2 sm:px-3 py-1.5 rounded-lg text-xs font-medium transition-colors disabled:opacity-50 whitespace-nowrap
-                {saving ? 'text-[var(--color-text-muted)]' : 'bg-primary-600 text-white hover:bg-primary-700'}"
-              style={saving ? 'background: var(--color-surface)' : ''}
-              onclick={saveFile}
-              disabled={saving || !selectedFile}
-            >
-              <span class="material-symbols-outlined !text-[14px]">{saving ? 'hourglass_top' : 'save'}</span>
-              <span class="hidden sm:inline">{saving ? '保存中...' : '保存'}</span>
-            </button>
-          </div>
-        </div>
+        <EditorToolbar
+          {project} {projectId} {selectedFile} {saving} {formatting}
+          {securityScanning} {securityResult} {showTerminal}
+          {showDiffList} {diffFiles} {shortcuts}
+          onFormatCode={formatCode}
+          onRunSecurityScan={runSecurityScan}
+          onValidateProject={validateProject}
+          onToggleTerminal={() => showTerminal = !showTerminal}
+          onSave={saveFile}
+          {getSecurityIcon} {getSecurityColor}
+        />
 
-        <!-- Tab Bar -->
-        {#if openTabs.length > 0 && !diffMode}
-          <div class="h-9 flex items-center border-b border-[var(--color-border)] bg-[var(--color-bg)] overflow-x-auto flex-shrink-0">
-            {#each openTabs as tab}
-              <button
-                class="flex items-center gap-1.5 px-3 h-full text-xs border-r border-[var(--color-border)] transition-colors whitespace-nowrap flex-shrink-0
-                  {activeTab === tab ? 'bg-[var(--color-bg-elevated)] text-[var(--color-text)] font-medium border-t-2 border-t-primary-500' : 'text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]'}"
-                onclick={() => switchTab(tab)}
-              >
-                <span>{tab.split('/').pop()}</span>
-                <span
-                  role="button"
-                  tabindex="-1"
-                  class="material-symbols-outlined text-[12px] p-0.5 rounded hover:bg-black/10 transition-colors"
-                  onclick={(e) => { e.stopPropagation(); closeTab(tab); }}
-                  onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); closeTab(tab); } }}
-                >close</span>
-              </button>
-            {/each}
-          </div>
-        {/if}
-
-        <!-- Diff File List (shown when diff view is active) -->
-        {#if showDiffList && diffFiles.length > 0}
-          <div class="h-10 flex items-center px-3 gap-1 border-b border-[var(--color-border)] bg-[var(--color-bg)] overflow-x-auto flex-shrink-0">
-            {#each diffFiles as df}
-              <button
-                class="diff-file-item flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs whitespace-nowrap
-                  {selectedDiffFile === df.path ? 'active' : 'text-[var(--color-text-secondary)]'}"
-                onclick={() => selectedDiffFile = df.path}
-              >
-                <span class="material-symbols-outlined text-[12px]" style="color: {getFileIconColor(df.path)}">{getFileIcon(df.path)}</span>
-                <span>{df.path.split('/').pop()}</span>
-                {#if df.current !== df.incoming}
-                  <span class="w-2 h-2 rounded-full bg-amber-500"></span>
-                {:else}
-                  <span class="w-2 h-2 rounded-full bg-green-500"></span>
-                {/if}
-              </button>
-            {/each}
-          </div>
-        {/if}
+        <EditorTabs
+          {openTabs} {activeTab} {diffMode}
+          {showDiffList} {diffFiles} {selectedDiffFile}
+          {getFileIcon} {getFileIconColor}
+          onSwitchTab={switchTab}
+          onCloseTab={closeTab}
+          onSelectDiffFile={(path) => selectedDiffFile = path}
+        />
 
         <!-- Editor -->
         <div class="flex-1 flex flex-col overflow-hidden relative min-h-0" style={showDiffList && diffMode ? 'display: none;' : ''}>
@@ -782,8 +574,8 @@
 
 <!-- Security Panel Modal -->
 {#if showSecurityPanel}
-  <div class="fixed inset-0 z-50 flex items-center justify-center" style="background: rgba(0,0,0,0.4); backdrop-filter: blur(4px);" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) showSecurityPanel = false; }}>
-    <div class="w-[480px] max-h-[80vh] rounded-xl shadow-2xl border border-[var(--color-border)] overflow-hidden bg-[var(--color-bg)]" role="dialog" aria-modal="true" tabindex="-1">
+  <div class="fixed inset-0 z-50 flex items-center justify-center" style="background: rgba(0,0,0,0.4); backdrop-filter: blur(4px);" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) showSecurityPanel = false; }} onkeydown={(e) => { if (e.key === 'Escape') showSecurityPanel = false; }}>
+    <div class="w-[480px] max-h-[80vh] rounded-xl shadow-2xl border border-[var(--color-border)] overflow-hidden bg-[var(--color-bg)]" role="dialog" aria-modal="true" tabindex="-1" use:focusTrap>
       <div class="flex items-center justify-between px-4 py-3 border-b border-[var(--color-border)]" style="background: var(--color-bg-elevated)">
         <div class="flex items-center gap-2">
           <span class="material-symbols-outlined text-[18px]" style="color: {getSecurityColor()}">{getSecurityIcon()}</span>
@@ -855,43 +647,4 @@
 
 {#if showUndoHistory}
 <UndoHistory onClose={() => showUndoHistory = false} onRollback={(idx) => { loadFiles(); toast('已回滚到历史操作', 'info'); }} />
-{/if}
-
-<!-- File Search Overlay (Ctrl+P) -->
-{#if showFileSearch}
-  <div class="fixed inset-0 z-50 flex items-start justify-center pt-24" style="background: rgba(0,0,0,0.4); backdrop-filter: blur(4px);" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) closeFileSearch(); }}>
-    <div class="w-96 rounded-xl shadow-2xl border border-[var(--color-border)] overflow-hidden bg-[var(--color-bg)]" role="presentation" onclick={(e) => e.stopPropagation()}>
-      <div class="px-3 py-2 border-b border-[var(--color-border)]">
-        <input
-          bind:this={fileSearchInput}
-          type="text"
-          class="w-full px-3 py-2 rounded-lg text-sm bg-[var(--color-bg)] border border-[var(--color-border)] text-[var(--color-text)] outline-none focus:border-primary-500"
-          placeholder="搜索文件..."
-          value={fileSearchQuery}
-          oninput={onFileSearchInput}
-          onkeydown={handleFileSearchKeydown}
-        />
-      </div>
-      {#if filteredFiles.length > 0}
-        <div class="max-h-72 overflow-y-auto p-2 space-y-0.5">
-          {#each filteredFiles as file}
-            <button
-              class="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs text-left transition-colors text-[var(--color-text-secondary)] hover:bg-[var(--color-surface)]"
-              onclick={() => selectFileFromSearch(file.path)}
-            >
-              <span class="material-symbols-outlined text-[14px]" style="color: {getFileIconColor(file.path)}">{getFileIcon(file.path)}</span>
-              <span class="truncate flex-1">{file.path}</span>
-              <span class="text-[10px] text-[var(--color-text-muted)]">{file.path.split('/').pop()}</span>
-            </button>
-          {/each}
-        </div>
-        <div class="px-3 py-1.5 border-t border-[var(--color-border)] text-[10px] text-[var(--color-text-muted)] flex items-center justify-between">
-          <span>{filteredFiles.length} 个文件</span>
-          <span><kbd class="px-1 py-0.5 rounded bg-[var(--color-surface)]">Esc</kbd> 关闭</span>
-        </div>
-      {:else}
-        <div class="px-4 py-6 text-center text-xs text-[var(--color-text-muted)]">未找到匹配文件</div>
-      {/if}
-    </div>
-  </div>
 {/if}

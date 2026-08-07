@@ -72,13 +72,13 @@
 
   /* Info */
   .toast-item.info {
-    background: rgba(6, 182, 212, 0.15);
-    border-color: rgba(6, 182, 212, 0.3);
+    background: color-mix(in srgb, var(--color-info) 15%, transparent);
+    border-color: color-mix(in srgb, var(--color-info) 30%, transparent);
     color: #22d3ee;
   }
   :global([data-theme="light"]) .toast-item.info {
-    background: rgba(6, 182, 212, 0.1);
-    border-color: rgba(6, 182, 212, 0.2);
+    background: color-mix(in srgb, var(--color-info) 10%, transparent);
+    border-color: color-mix(in srgb, var(--color-info) 20%, transparent);
     color: #0891b2;
   }
 

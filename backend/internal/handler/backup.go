@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"path/filepath"
 	"strconv"
 
 	"github.com/gofiber/fiber/v3"
@@ -77,7 +78,10 @@ func (h *BackupHandler) ImportDatabase(c fiber.Ctx) error {
 }
 
 func (h *BackupHandler) ExportProject(c fiber.Ctx) error {
-	projectID := c.Params("id")
+	projectID := filepath.Base(c.Params("id"))
+	if projectID == "." || projectID == ".." {
+		return BadRequest(c, "invalid project id")
+	}
 
 	var req struct {
 		Files map[string]string `json:"files"`
@@ -109,7 +113,7 @@ func (h *BackupHandler) ImportProject(c fiber.Ctx) error {
 		return BadRequest(c, "请选择要导入的 ZIP 文件")
 	}
 
-	tmpPath := "data/tmp_import_" + files[0].Filename
+	tmpPath := filepath.Join("data", "tmp_import_"+filepath.Base(files[0].Filename))
 	if err := c.SaveFile(files[0], tmpPath); err != nil {
 		return InternalError(c, "保存文件失败: "+err.Error())
 	}
@@ -170,6 +174,7 @@ func (h *BackupHandler) UpdateSchedule(c fiber.Ctx) error {
 	if err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid id"})
 	}
+	uid := userIDFromLocals(c)
 	var req struct {
 		Name      *string `json:"name"`
 		Frequency *string `json:"frequency"`
@@ -179,13 +184,13 @@ func (h *BackupHandler) UpdateSchedule(c fiber.Ctx) error {
 		return BadRequest(c, "invalid request")
 	}
 	if req.Name != nil {
-		h.svc.GetDB().Exec("UPDATE backup_schedules SET name = ? WHERE id = ?", *req.Name, id)
+		h.svc.GetDB().Exec("UPDATE backup_schedules SET name = ? WHERE id = ? AND user_id = ?", *req.Name, id, uid)
 	}
 	if req.Frequency != nil {
-		h.svc.GetDB().Exec("UPDATE backup_schedules SET frequency = ? WHERE id = ?", *req.Frequency, id)
+		h.svc.GetDB().Exec("UPDATE backup_schedules SET frequency = ? WHERE id = ? AND user_id = ?", *req.Frequency, id, uid)
 	}
 	if req.KeepCount != nil {
-		h.svc.GetDB().Exec("UPDATE backup_schedules SET keep_count = ? WHERE id = ?", *req.KeepCount, id)
+		h.svc.GetDB().Exec("UPDATE backup_schedules SET keep_count = ? WHERE id = ? AND user_id = ?", *req.KeepCount, id, uid)
 	}
 	return c.JSON(fiber.Map{"ok": true})
 }
@@ -195,7 +200,8 @@ func (h *BackupHandler) DeleteSchedule(c fiber.Ctx) error {
 	if err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid id"})
 	}
-	if err := h.svc.DeleteSchedule(id); err != nil {
+	uid := userIDFromLocals(c)
+	if err := h.svc.DeleteScheduleByUser(id, uid); err != nil {
 		return InternalError(c, err.Error())
 	}
 	return c.JSON(fiber.Map{"ok": true})

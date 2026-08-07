@@ -298,11 +298,11 @@ func (s *BackupService) DeleteSchedule(scheduleID int64) error {
 }
 
 func (s *BackupService) DeleteScheduleByUser(scheduleID int64, userID string) error {
-	if userID != "" {
-		_, err := s.db.Exec("DELETE FROM backup_schedules WHERE id = ? AND user_id = ?", scheduleID, userID)
-		return err
+	if userID == "" {
+		return fmt.Errorf("user_id required")
 	}
-	return s.DeleteSchedule(scheduleID)
+	_, err := s.db.Exec("DELETE FROM backup_schedules WHERE id = ? AND user_id = ?", scheduleID, userID)
+	return err
 }
 
 func (s *BackupService) ToggleSchedule(scheduleID int64, active bool) error {
