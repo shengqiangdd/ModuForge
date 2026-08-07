@@ -51,7 +51,7 @@ COPY --chown=moduforge:moduforge docker-entrypoint.sh /docker-entrypoint.sh
 RUN chmod +x /docker-entrypoint.sh
 
 # 运行时配置默认值
-ENV PORT=8080 \
+ENV PORT=:8080 \
     DB_PATH=/data/moduforge.db \
     BUILD_DIR=/data/builds \
     MODULES_DIR=/data/modules \
