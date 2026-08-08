@@ -250,6 +250,7 @@ func RegisterRoutes(api fiber.Router, db *database.DB, cfg *config.Config) {
 
 	// Health
 	api.Get("/health/system", healthH.Check)
+	api.Get("/health/cache", healthH.CacheStats)
 
 	// Glossary
 	api.Get("/glossary", glossaryH.List)
@@ -292,6 +293,18 @@ func RegisterRoutes(api fiber.Router, db *database.DB, cfg *config.Config) {
 	// AI prompts
 	r("PUT", "/ai/prompts", aiH.UpdatePrompt)
 	r("POST", "/ai/prompts/:mode/reset", aiH.ResetPrompt)
+
+	// MD-based prompts (embedded prompts for agent)
+	r("GET", "/md-prompts", NewMDPromptsHandler().ListMDPrompts)
+	r("GET", "/md-prompts/:name", NewMDPromptsHandler().GetMDPrompt)
+	r("PUT", "/md-prompts/:name", NewMDPromptsHandler().UpdateMDPrompt)
+	r("POST", "/md-prompts/:name/reset", NewMDPromptsHandler().ResetMDPrompt)
+	r("POST", "/md-prompts/reload", NewMDPromptsHandler().ReloadMDPrompts)
+
+	// Skills API (list and execute agent skills)
+	r("GET", "/skills", NewSkillsHandler(nil).ListSkills)
+	r("GET", "/skills/:name", NewSkillsHandler(nil).GetSkill)
+	r("POST", "/skills/:name/execute", NewSkillsHandler(nil).ExecuteSkill)
 
 	// AI capability scoring
 	r("GET", "/ai/capability", aiH.GetAICapability)
@@ -491,8 +504,12 @@ func RegisterRoutes(api fiber.Router, db *database.DB, cfg *config.Config) {
 	r("GET", "/agent/custom-skills/:id/optimize", agentH.GetSkillOptimization)
 	// NEW: Statistics and monitoring endpoints
 	r("GET", "/agent/stats", agentH.GetToolStats)
+	r("GET", "/agent/cache", agentH.GetCacheStats)
 	r("GET", "/agent/audit", agentH.GetAuditHistory)
 	r("GET", "/agent/denials", agentH.GetPermissionDenials)
+	r("GET", "/agent/security/audit", agentH.GetSecurityAuditLog)
+	r("GET", "/agent/security/rules", agentH.GetSecurityRules)
+	r("POST", "/agent/security/check", agentH.CheckCommandSecurity)
 	r("GET", "/agent/session/:sessionId", agentH.GetSessionState)
 	// NEW: Agent session management
 	r("GET", "/agent/sessions", agentH.ListSessions)
