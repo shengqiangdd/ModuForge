@@ -19,10 +19,16 @@ type HealthHandler struct {
 	db      *sql.DB
 	llmURL  string
 	adbAddr string
+	agentRunner interface{ GetCacheStats() map[string]interface{} }
 }
 
 func NewHealthHandler(db *sql.DB) *HealthHandler {
 	return &HealthHandler{db: db}
+}
+
+// SetAgentRunner configures the agent runner for cache statistics
+func (h *HealthHandler) SetAgentRunner(runner interface{ GetCacheStats() map[string]interface{} }) {
+	h.agentRunner = runner
 }
 
 // SetLLMURL configures the LLM endpoint for connectivity checks
@@ -199,6 +205,22 @@ func (h *HealthHandler) Check(c fiber.Ctx) error {
 		"uptime":    uptimeStr,
 		"checked_at": checkedAt,
 		"checks":    checks,
+	})
+}
+
+// CacheStats returns cache statistics for the agent
+func (h *HealthHandler) CacheStats(c fiber.Ctx) error {
+	if h.agentRunner == nil {
+		return c.JSON(fiber.Map{
+			"status":  "unavailable",
+			"message": "Agent runner not configured",
+		})
+	}
+
+	stats := h.agentRunner.GetCacheStats()
+	return c.JSON(fiber.Map{
+		"status": "ok",
+		"caches": stats,
 	})
 }
 
