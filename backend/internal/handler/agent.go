@@ -2,6 +2,7 @@ package handler
 
 import (
 	"bufio"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -60,6 +61,22 @@ func NewAgentHandler(cfg *config.Config, db *database.DB) *AgentHandler {
 		db:     db,
 		cfg:    cfg,
 	}
+}
+
+// GetCacheStats returns cache statistics for the agent
+func (h *AgentHandler) GetCacheStats(c fiber.Ctx) error {
+	if h.runner == nil {
+		return c.JSON(fiber.Map{
+			"status":  "unavailable",
+			"message": "Agent runner not configured",
+		})
+	}
+
+	stats := h.runner.GetCacheStats()
+	return c.JSON(fiber.Map{
+		"status": "ok",
+		"caches": stats,
+	})
 }
 
 func (h *AgentHandler) Run(c fiber.Ctx) error {
@@ -129,12 +146,108 @@ func (h *AgentHandler) Run(c fiber.Ctx) error {
 		}
 		log.Printf("[Agent] resolved provider=%s endpoint=%s model=%s max_tokens=%d", req.ProviderID, runCfg.LLMEndpoint, runCfg.LLMModel, runCfg.MaxOutputTokens)
 	} else {
-		// Fallback: use the in-memory config (set by UpdateLLMConfig)
+		// Not a preset provider — try custom_providers table first, then fall back to global config
 		runCfg.ProviderID = req.ProviderID
-		runCfg.LLMEndpoint = h.cfg.LLMEndpoint
-		runCfg.LLMModel = h.cfg.LLMModel
-		runCfg.LLMApiKey = h.cfg.EffectiveLLMKey()
-		log.Printf("[Agent] provider=%s not in presets, using in-memory config endpoint=%s model=%s", req.ProviderID, runCfg.LLMEndpoint, runCfg.LLMModel)
+		if h.db != nil {
+			var cpEndpoint, cpKey, cpModel string
+			// Try by name first, then by UUID id
+			err := h.db.Conn.QueryRow(
+				"SELECT endpoint, api_key, COALESCE(model_id,'') FROM custom_providers WHERE name=? AND user_id=?",
+				req.ProviderID, uid,
+			).Scan(&cpEndpoint, &cpKey, &cpModel)
+			if err != nil {
+				err = h.db.Conn.QueryRow(
+					"SELECT endpoint, api_key, COALESCE(model_id,'') FROM custom_providers WHERE id=? AND user_id=?",
+					req.ProviderID, uid,
+				).Scan(&cpEndpoint, &cpKey, &cpModel)
+			}
+			if err == nil && cpEndpoint != "" {
+				runCfg.LLMEndpoint = cpEndpoint
+				runCfg.LLMModel = req.Model
+				if cpModel != "" && req.Model == "" {
+					runCfg.LLMModel = cpModel
+				}
+				// Decode base64-encoded API key if needed
+				runCfg.LLMApiKey = cpKey
+				if cpKey != "" {
+					if decoded, dErr := base64.StdEncoding.DecodeString(cpKey); dErr == nil {
+						runCfg.LLMApiKey = string(decoded)
+					}
+				}
+				log.Printf("[Agent] resolved custom provider=%s endpoint=%s model=%s key_len=%d",
+					req.ProviderID, runCfg.LLMEndpoint, runCfg.LLMModel, len(runCfg.LLMApiKey))
+			} else {
+				// Fallback: first try loading from llm_config DB, then in-memory config
+				resolved := false
+				if h.db != nil {
+					var llmProvider, llmModelID, llmEndpoint string
+					if err := h.db.Conn.QueryRow(
+						"SELECT provider, model_id, endpoint FROM llm_config WHERE id='default'",
+					).Scan(&llmProvider, &llmModelID, &llmEndpoint); err == nil && llmProvider != "" {
+						// Check if the configured provider is a preset
+						if preset := llm.FindProvider(llmProvider); preset != nil {
+							runCfg.ProviderID = llmProvider
+							runCfg.LLMEndpoint = preset.Endpoint
+							if req.Model != "" {
+								runCfg.LLMModel = req.Model
+							} else if llmModelID != "" {
+								runCfg.LLMModel = llmModelID
+							} else if len(preset.Models) > 0 {
+								runCfg.LLMModel = preset.Models[0].ID
+							}
+							h.cfg.Lock()
+							saved := h.cfg.LLMProvider
+							h.cfg.LLMProvider = llmProvider
+							runCfg.LLMApiKey = h.cfg.EffectiveLLMKey()
+							h.cfg.LLMProvider = saved
+							h.cfg.Unlock()
+							resolved = true
+							log.Printf("[Agent] fallback: loaded from llm_config provider=%s endpoint=%s model=%s key_len=%d",
+								llmProvider, runCfg.LLMEndpoint, runCfg.LLMModel, len(runCfg.LLMApiKey))
+						} else {
+							// Configured provider is custom — look it up
+							var cpEndpoint, cpKey, cpModel string
+							cpErr := h.db.Conn.QueryRow(
+								"SELECT endpoint, api_key, COALESCE(model_id,'') FROM custom_providers WHERE name=? AND user_id=?",
+								llmProvider, uid,
+							).Scan(&cpEndpoint, &cpKey, &cpModel)
+							if cpErr != nil {
+								cpErr = h.db.Conn.QueryRow(
+									"SELECT endpoint, api_key, COALESCE(model_id,'') FROM custom_providers WHERE id=? AND user_id=?",
+									llmProvider, uid,
+								).Scan(&cpEndpoint, &cpKey, &cpModel)
+							}
+							if cpErr == nil && cpEndpoint != "" {
+								runCfg.ProviderID = llmProvider
+								runCfg.LLMEndpoint = cpEndpoint
+								if req.Model != "" {
+									runCfg.LLMModel = req.Model
+								} else if cpModel != "" {
+									runCfg.LLMModel = cpModel
+								}
+								runCfg.LLMApiKey = cpKey
+								if cpKey != "" {
+									if decoded, dErr := base64.StdEncoding.DecodeString(cpKey); dErr == nil {
+										runCfg.LLMApiKey = string(decoded)
+									}
+								}
+								resolved = true
+								log.Printf("[Agent] fallback: loaded custom provider=%s endpoint=%s model=%s key_len=%d",
+									llmProvider, runCfg.LLMEndpoint, runCfg.LLMModel, len(runCfg.LLMApiKey))
+							}
+						}
+					}
+				}
+				if !resolved {
+					// Final fallback: use the in-memory config (set by UpdateLLMConfig)
+					runCfg.LLMEndpoint = h.cfg.LLMEndpoint
+					runCfg.LLMModel = h.cfg.LLMModel
+					runCfg.LLMApiKey = h.cfg.EffectiveLLMKey()
+					log.Printf("[Agent] provider=%s not in presets or custom_providers, using in-memory config endpoint=%s model=%s",
+						req.ProviderID, runCfg.LLMEndpoint, runCfg.LLMModel)
+				}
+			}
+		}
 	}
 
 	// 从数据库读取用户 Agent 设置
@@ -883,6 +996,38 @@ func (h *AgentHandler) GetPermissionDenials(c fiber.Ctx) error {
 	fmt.Sscanf(limitStr, "%d", &limit)
 	denials := h.runner.GetPermissionDenials(limit)
 	return c.JSON(fiber.Map{"denials": denials})
+}
+
+// GetSecurityAuditLog returns recent security audit entries.
+func (h *AgentHandler) GetSecurityAuditLog(c fiber.Ctx) error {
+	limitStr := c.Query("limit", "100")
+	limit := 100
+	fmt.Sscanf(limitStr, "%d", &limit)
+	entries := h.runner.GetSecurityAuditLog(limit)
+	return c.JSON(fiber.Map{"entries": entries})
+}
+
+// GetSecurityRules returns all security rules.
+func (h *AgentHandler) GetSecurityRules(c fiber.Ctx) error {
+	rules := h.runner.GetSecurityRules()
+	return c.JSON(fiber.Map{"rules": rules})
+}
+
+// CheckCommandSecurity checks a command against security rules.
+func (h *AgentHandler) CheckCommandSecurity(c fiber.Ctx) error {
+	var req struct {
+		Command string `json:"command"`
+	}
+	if err := c.Bind().JSON(&req); err != nil || req.Command == "" {
+		return BadRequest(c, "command required")
+	}
+	level, riskScore, rules := h.runner.CheckCommandSecurity(req.Command)
+	return c.JSON(fiber.Map{
+		"command":    req.Command,
+		"level":      level,
+		"risk_score": riskScore,
+		"rules":      rules,
+	})
 }
 
 // GetSessionState returns session state for a given session ID.
