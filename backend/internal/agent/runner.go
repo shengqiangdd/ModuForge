@@ -153,6 +153,7 @@ type AgentRunner struct {
 	// NEW: Enhanced modules
 	auditLog       *AuditLog
 	permChecker    *PermissionChecker
+	securityEngine *SecurityEngine
 	sessionPersist *SessionPersistence
 	depGraph       *DependencyGraph
 
@@ -167,6 +168,12 @@ type AgentRunner struct {
 
 	// P2: Progress tracking per session
 	progressTrackers sync.Map // sessionID -> *ProgressTracker
+
+	// NEW: Context caching improvements (based on OpenHands/Aider/GPTCache)
+	prefixCache    *PrefixCache    // LLM prompt prefix optimization
+	semanticCache  *SemanticCache  // Cache similar LLM responses
+	contextCondenser *ContextCondenser // LLM-based context summarization
+	sessionLearner *SessionLearner // Learn from successful patterns
 }
 
 func NewAgentRunner(registry *SkillRegistry, apiKey, endpoint, model string, db *sql.DB) *AgentRunner {
@@ -182,9 +189,15 @@ func NewAgentRunner(registry *SkillRegistry, apiKey, endpoint, model string, db 
 		// Initialize new modules
 		auditLog:       NewAuditLog(""),
 		permChecker:    NewPermissionChecker(),
+		securityEngine: NewSecurityEngine(),
 		sessionPersist: NewSessionPersistence(""),
 		depGraph:       NewDependencyGraph(),
 		perfMetrics:    NewPerformanceMetrics(),
+		// NEW: Context caching improvements
+		prefixCache:      NewPrefixCache(100, 5*time.Minute),
+		semanticCache:    NewSemanticCache(500, 0.85),
+		contextCondenser: NewContextCondenser(30, 6, 1),
+		sessionLearner:   NewSessionLearner(100),
 	}
 	go r.startSessionCacheCleanup()
 	return r
@@ -1741,43 +1754,41 @@ You are running WITHOUT a project context. This means:
 		currentModel: resolvedModel,
 	}
 
-	// P2-1: Task decomposer for complex tasks
-	taskDecomposer := &TaskDecomposer{db: r.db}
-	var subtasks []Subtask
-	// Try LLM-based decomposition first for complex tasks, fallback to keyword matching
+	// P2-1: Task planner V2 - Improved task decomposition
+	// Reference: OpenHands (PLAN.md) + MetaGPT (role-based SOP) + AutoGPT (loop execution)
+	taskPlanner := NewTaskPlannerV2(r.db)
+	var executionPlan *V2Plan
+	var planInjected bool // Track if we've injected the first plan context
+
+	// Try LLM-based planning for complex tasks
 	if isComplexTask(task) {
-		llmSubtasks := r.decomposeWithLLM(ctx, task, cfg.ProjectContext, cfg)
-		if len(llmSubtasks) > 0 {
-			subtasks = llmSubtasks
+		plan, err := taskPlanner.CreatePlan(ctx, task, cfg.ProjectContext, r, cfg)
+		if err == nil && plan != nil {
+			executionPlan = plan
+			log.Printf("[Agent] task planned into %d steps", len(plan.Steps))
 		} else {
-			subtasks = taskDecomposer.DecomposeTask(task, cfg.ProjectContext)
+			log.Printf("[Agent] LLM planning failed, using fallback: %v", err)
 		}
-	} else {
-		subtasks = taskDecomposer.DecomposeTask(task, cfg.ProjectContext)
-	}
-	currentSubtask := taskDecomposer.GetNextSubtask(subtasks)
-	if currentSubtask != nil {
-		log.Printf("[Agent] task decomposed into %d subtasks, starting: %s", len(subtasks), currentSubtask.Description)
 	}
 
 	// SSE: Send task plan to frontend
-	if len(subtasks) > 0 {
+	if executionPlan != nil && len(executionPlan.Steps) > 0 {
 		w.WriteSSE(map[string]interface{}{
-			"type":     "step",
-			"step":     "task_plan",
-			"content":  fmt.Sprintf("任务分解完成，共 %d 个子任务", len(subtasks)),
-			"subtasks": subtasks,
+			"type":  "step",
+			"step":  "task_plan",
+			"content": fmt.Sprintf("📋 任务计划完成，共 %d 个步骤", len(executionPlan.Steps)),
+			"plan": executionPlan,
 		})
-		// Mark first subtask as in_progress and notify
-		if currentSubtask != nil {
-			currentSubtask.Status = "in_progress"
-			currentSubtask.StartedAt = time.Now().UnixMilli()
+		// Mark first step as in_progress
+		if step := taskPlanner.GetCurrentStep(executionPlan); step != nil {
+			step.Status = "in_progress"
 			w.WriteSSE(map[string]interface{}{
 				"type":       "step",
 				"step":       "task_progress",
-				"subtask_id": currentSubtask.ID,
+				"step_id":    step.ID,
 				"status":     "in_progress",
-				"content":    currentSubtask.Description,
+				"content":    step.Description,
+				"progress":   taskPlanner.GetProgress(executionPlan),
 			})
 		}
 	}
@@ -1895,6 +1906,17 @@ You are running WITHOUT a project context. This means:
 			})
 		}
 
+		// P2-1 V2: Inject plan context at start of each iteration
+		// This ensures the LLM always knows the current task
+		if executionPlan != nil && !planInjected {
+			stepContext := taskPlanner.BuildContextMessage(executionPlan)
+			if stepContext != "" {
+				conversation = appendRoleMessage(conversation, "system", stepContext)
+				planInjected = true
+				log.Printf("[Agent] injected plan context into conversation")
+			}
+		}
+
 		// Per-iteration timeout: create a child context with shorter deadline
 		// This prevents a single slow LLM call or tool execution from consuming
 		// the entire 30-minute budget
@@ -1945,32 +1967,47 @@ You are running WITHOUT a project context. This means:
 				answer += "\n\n📊 " + reflectionSummary
 			}
 
-			// P2-1: Mark subtask as completed if applicable
-			if currentSubtask != nil {
-				currentSubtask.Status = "completed"
-				currentSubtask.CompletedAt = time.Now().UnixMilli()
-				currentSubtask.Progress = 100
-				// SSE: Notify subtask completion
-				w.WriteSSE(map[string]interface{}{
-					"type":       "step",
-					"step":       "task_progress",
-					"subtask_id": currentSubtask.ID,
-					"status":     "completed",
-					"content":    currentSubtask.Description,
-					"progress":   100,
-				})
-				currentSubtask = taskDecomposer.GetNextSubtask(subtasks)
-				// SSE: Notify next subtask start
-				if currentSubtask != nil {
-					currentSubtask.Status = "in_progress"
-					currentSubtask.StartedAt = time.Now().UnixMilli()
-					w.WriteSSE(map[string]interface{}{
-						"type":       "step",
-						"step":       "task_progress",
-						"subtask_id": currentSubtask.ID,
-						"status":     "in_progress",
-						"content":    currentSubtask.Description,
-					})
+			// P2-1 V2: Task plan step completion
+			if executionPlan != nil {
+				currentStep := taskPlanner.GetCurrentStep(executionPlan)
+				if currentStep != nil {
+					// Check if agent indicates completion
+					if taskPlanner.IsStepDone(answer) || iter > 2 {
+						// Mark current step as completed
+						currentStep.Status = "completed"
+						currentStep.Result = truncateString(answer, 200)
+
+						// SSE: Notify step completion
+						w.WriteSSE(map[string]interface{}{
+							"type":       "step",
+							"step":       "task_progress",
+							"step_id":    currentStep.ID,
+							"status":     "completed",
+							"content":    currentStep.Description,
+							"progress":   taskPlanner.GetProgress(executionPlan),
+						})
+
+						// Advance to next step
+						nextStep := taskPlanner.AdvanceToNextStep(executionPlan)
+						if nextStep != nil {
+							// SSE: Notify next step start
+							w.WriteSSE(map[string]interface{}{
+								"type":       "step",
+								"step":       "task_progress",
+								"step_id":    nextStep.ID,
+								"status":     "in_progress",
+								"content":    nextStep.Description,
+								"progress":   taskPlanner.GetProgress(executionPlan),
+							})
+
+							// Inject next step context into conversation
+							stepContext := taskPlanner.BuildContextMessage(executionPlan)
+							conversation = appendRoleMessage(conversation, "system", stepContext)
+							log.Printf("[Agent] advancing to step: %s", nextStep.Description)
+						} else {
+							log.Printf("[Agent] all plan steps completed")
+						}
+					}
 				}
 			}
 
@@ -2175,6 +2212,37 @@ You are running WITHOUT a project context. This means:
 				continue
 			}
 
+			// NEW: Security check for bash commands
+			if st.skillName == "bash" {
+				if command, ok := st.skillInput["command"].(string); ok {
+					allowed, needsConfirm, riskScore, secMsg := r.securityEngine.AuditAndCheck(command, sessionID)
+					if !allowed {
+						log.Printf("[Security] DENIED session=%s risk=%d", sessionID, riskScore)
+						w.WriteSSE(map[string]interface{}{
+							"type":       "step",
+							"step":       "skill_result",
+							"skill":      st.skillName,
+							"content":    secMsg,
+							"blocked":    true,
+							"risk_score": riskScore,
+						})
+						conversation = r.appendToolResult(conversation, sessionID, st.tc.ID, secMsg)
+						continue
+					}
+					if needsConfirm {
+						notifyData := map[string]interface{}{
+							"type":       "step",
+							"step":       "security_confirm",
+							"skill":      st.skillName,
+							"command":    command,
+							"risk_score": riskScore,
+							"message":    secMsg,
+						}
+						w.WriteSSE(notifyData)
+					}
+				}
+			}
+
 			// Notify frontend with permission info
 			notifyData := map[string]interface{}{
 				"type":  "step",
@@ -2294,32 +2362,27 @@ You are running WITHOUT a project context. This means:
 				m.toolConsecutiveErrors[st.skillName] = 0 // reset on success
 			}
 
-			// P2-1: Track subtask progress based on tool execution
-			if currentSubtask != nil && err != nil {
-				currentSubtask.RetryCount++
-				// Mark subtask as failed after 3 retries
-				if currentSubtask.RetryCount >= 3 {
-					currentSubtask.Status = "failed"
+			// P2-1 V2: Track step progress based on tool execution
+			if executionPlan != nil && err != nil {
+				currentStep := taskPlanner.GetCurrentStep(executionPlan)
+				if currentStep != nil {
+					taskPlanner.MarkStepFailed(executionPlan, err.Error())
+					// SSE: Notify step failure
 					w.WriteSSE(map[string]interface{}{
 						"type":       "step",
 						"step":       "task_progress",
-						"subtask_id": currentSubtask.ID,
-						"status":     "failed",
-						"content":    currentSubtask.Description,
+						"step_id":    currentStep.ID,
+						"status":     currentStep.Status,
+						"content":    currentStep.Description,
 						"error":      err.Error(),
+						"progress":   taskPlanner.GetProgress(executionPlan),
 					})
-					// Try to move to next subtask
-					currentSubtask = taskDecomposer.GetNextSubtask(subtasks)
-					if currentSubtask != nil {
-						currentSubtask.Status = "in_progress"
-						currentSubtask.StartedAt = time.Now().UnixMilli()
-						w.WriteSSE(map[string]interface{}{
-							"type":       "step",
-							"step":       "task_progress",
-							"subtask_id": currentSubtask.ID,
-							"status":     "in_progress",
-							"content":    currentSubtask.Description,
-						})
+
+					// If we moved to next step, inject context
+					if nextStep := taskPlanner.GetCurrentStep(executionPlan); nextStep != nil && nextStep.ID != currentStep.ID {
+						stepContext := taskPlanner.BuildContextMessage(executionPlan)
+						conversation = appendRoleMessage(conversation, "system", stepContext)
+						log.Printf("[Agent] after tool failure, advancing to step: %s", nextStep.Description)
 					}
 				}
 			}
@@ -2677,6 +2740,22 @@ func (r *AgentRunner) GetAuditHistory(toolName string, limit int) []AuditEntry {
 // GetPermissionDenials returns recent permission denials.
 func (r *AgentRunner) GetPermissionDenials(limit int) []DenialRecord {
 	return r.permChecker.GetDenials(limit)
+}
+
+// GetSecurityAuditLog returns recent security audit entries.
+func (r *AgentRunner) GetSecurityAuditLog(limit int) []DangerousOperation {
+	return r.securityEngine.GetAuditLog(limit)
+}
+
+// GetSecurityRules returns all security rules.
+func (r *AgentRunner) GetSecurityRules() []SecurityRule {
+	return r.securityEngine.GetRules()
+}
+
+// CheckCommandSecurity checks a command against security rules.
+func (r *AgentRunner) CheckCommandSecurity(command string) (level int, riskScore int, rules []SecurityRule) {
+	l, score, matchedRules := r.securityEngine.CheckCommand(command)
+	return int(l), score, matchedRules
 }
 
 // GetSessionState returns the session state for a given session ID.
