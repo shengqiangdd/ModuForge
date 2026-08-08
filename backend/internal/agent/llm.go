@@ -753,12 +753,215 @@ func (r *AgentRunner) parseStreamingResponse(ctx context.Context, resp *http.Res
 	// Validate and repair tool calls from weak models
 	toolCalls = repairToolCalls(toolCalls)
 
+	// P0: If no native tool calls, try to extract text-format tool calls from content
+	if len(toolCalls) == 0 && fullContent.Len() > 0 {
+		toolCalls = extractTextToolCalls(fullContent.String())
+		if len(toolCalls) > 0 {
+			log.Printf("[Agent] extracted %d text-format tool calls from content", len(toolCalls))
+		}
+	}
+
 	return &LLMResponse{
 		Role:         "assistant",
 		Content:      fullContent.String(),
 		ToolCalls:    toolCalls,
 		FinishReason: finishReason,
 	}, nil
+}
+
+// extractTextToolCalls attempts to parse tool calls from LLM text content.
+// Some models (especially free ones) output tool calls as text instead of
+// using the native function calling format. This function detects and extracts
+// them so they can be executed.
+func extractTextToolCalls(content string) []LLMToolCall {
+	if content == "" {
+		return nil
+	}
+
+	var toolCalls []LLMToolCall
+
+	// Pattern 1: ```tool_call\n{...}\n``` or ```json\n{...}\n```
+	codeBlockRegex := []string{
+		"```tool_call\n",
+		"```tool_call\r\n",
+		"```json\n",
+		"```json\r\n",
+		"```\n{\"name\":",
+		"```\n{\"function\":",
+	}
+
+	for _, prefix := range codeBlockRegex {
+		idx := strings.Index(content, prefix)
+		if idx < 0 {
+			continue
+		}
+		start := idx + len(prefix)
+		// Find closing ```
+		endIdx := strings.Index(content[start:], "```")
+		if endIdx < 0 {
+			continue
+		}
+		jsonStr := strings.TrimSpace(content[start : start+endIdx])
+
+		// Try to parse as a tool call object
+		var tc LLMToolCall
+		if err := json.Unmarshal([]byte(jsonStr), &tc); err == nil && tc.Function.Name != "" {
+			toolCalls = append(toolCalls, tc)
+			continue
+		}
+
+		// Try as {"name": "...", "arguments": {...}} format
+		var named struct {
+			Name      string                 `json:"name"`
+			Arguments map[string]interface{} `json:"arguments"`
+		}
+		if err := json.Unmarshal([]byte(jsonStr), &named); err == nil && named.Name != "" {
+			argsBytes, _ := json.Marshal(named.Arguments)
+			toolCalls = append(toolCalls, LLMToolCall{
+				ID:   fmt.Sprintf("text_%d", len(toolCalls)),
+				Type: "function",
+				Function: ToolCallFunction{
+					Name:      named.Name,
+					Arguments: string(argsBytes),
+				},
+			})
+			continue
+		}
+
+		// Try as array of tool calls
+		var arr []struct {
+			Name      string                 `json:"name"`
+			Arguments map[string]interface{} `json:"arguments"`
+		}
+		if err := json.Unmarshal([]byte("["+jsonStr+"]"), &arr); err == nil {
+			for _, item := range arr {
+				if item.Name != "" {
+					argsBytes, _ := json.Marshal(item.Arguments)
+					toolCalls = append(toolCalls, LLMToolCall{
+						ID:   fmt.Sprintf("text_%d", len(toolCalls)),
+						Type: "function",
+						Function: ToolCallFunction{
+							Name:      item.Name,
+							Arguments: string(argsBytes),
+						},
+					})
+				}
+			}
+		}
+	}
+
+	// Pattern 2: Inline text like "I'll call write_file(path=\"foo.rs\", content=\"...\")"
+	if len(toolCalls) == 0 {
+		toolCalls = extractInlineToolCalls(content)
+	}
+
+	return toolCalls
+}
+
+// extractInlineToolCalls tries to find tool calls in natural language text.
+// Detects patterns like: write_file(path="...", content="...")
+func extractInlineToolCalls(content string) []LLMToolCall {
+	var toolCalls []LLMToolCall
+
+	// Known tool names to look for
+	toolNames := []string{"write_file", "edit_file", "read_file", "bash", "build_module", "test_module", "grep_search", "glob_search"}
+
+	for _, name := range toolNames {
+		// Look for tool_name(...) pattern
+		searchStr := name + "("
+		idx := 0
+		for {
+			pos := strings.Index(content[idx:], searchStr)
+			if pos < 0 {
+				break
+			}
+			start := idx + pos + len(searchStr)
+			// Find matching closing paren
+			depth := 1
+			end := start
+			for end < len(content) && depth > 0 {
+				if content[end] == '(' {
+					depth++
+				} else if content[end] == ')' {
+					depth--
+				}
+				end++
+			}
+			if depth != 0 {
+				idx = start
+				continue
+			}
+
+			argsStr := content[start : end-1]
+			// Parse key=value pairs
+			args := make(map[string]interface{})
+			// Simple parsing: key="value" or key=value
+			parts := smartSplitArgs(argsStr)
+			for _, part := range parts {
+				eqIdx := strings.Index(part, "=")
+				if eqIdx < 0 {
+					continue
+				}
+				key := strings.TrimSpace(part[:eqIdx])
+				val := strings.TrimSpace(part[eqIdx+1:])
+				// Remove quotes
+				if (strings.HasPrefix(val, "\"") && strings.HasSuffix(val, "\"")) ||
+					(strings.HasPrefix(val, "'") && strings.HasSuffix(val, "'")) {
+					val = val[1 : len(val)-1]
+				}
+				args[key] = val
+			}
+
+			if len(args) > 0 {
+				argsBytes, _ := json.Marshal(args)
+				toolCalls = append(toolCalls, LLMToolCall{
+					ID:   fmt.Sprintf("inline_%d", len(toolCalls)),
+					Type: "function",
+					Function: ToolCallFunction{
+						Name:      name,
+						Arguments: string(argsBytes),
+					},
+				})
+			}
+
+			idx = end
+		}
+	}
+
+	return toolCalls
+}
+
+// smartSplitArgs splits a string like 'a="hello world", b=42' respecting quotes
+func smartSplitArgs(s string) []string {
+	var parts []string
+	var current strings.Builder
+	inQuote := false
+	quoteChar := byte(0)
+
+	for i := 0; i < len(s); i++ {
+		ch := s[i]
+		if inQuote {
+			current.WriteByte(ch)
+			if ch == quoteChar && (i == 0 || s[i-1] != '\\') {
+				inQuote = false
+			}
+		} else {
+			if ch == '"' || ch == '\'' {
+				inQuote = true
+				quoteChar = ch
+				current.WriteByte(ch)
+			} else if ch == ',' {
+				parts = append(parts, current.String())
+				current.Reset()
+			} else {
+				current.WriteByte(ch)
+			}
+		}
+	}
+	if current.Len() > 0 {
+		parts = append(parts, current.String())
+	}
+	return parts
 }
 
 // streamToolCallDelta is the tool_calls portion of a streaming SSE delta chunk.
@@ -940,7 +1143,7 @@ func (r *AgentRunner) resolveLLMConfig(userID, reqProviderID, reqModel string, c
 		if reqModel != "" {
 			model = reqModel
 		}
-		// If API key is empty, try to load from provider_configs table
+		// If API key is empty, try to load from provider_configs or custom_providers table
 		if apiKey == "" && reqProviderID != "" && r.db != nil {
 			var encKey string
 			err := r.db.QueryRow(
@@ -948,10 +1151,35 @@ func (r *AgentRunner) resolveLLMConfig(userID, reqProviderID, reqModel string, c
 				reqProviderID, userID,
 			).Scan(&encKey)
 			if err == nil && encKey != "" {
-				// Decode the base64-encoded key
-				if b, err := base64.StdEncoding.DecodeString(encKey); err == nil {
+				if b, dErr := base64.StdEncoding.DecodeString(encKey); dErr == nil {
 					apiKey = string(b)
 					log.Printf("[Agent] resolveLLMConfig: loaded API key from provider_configs for provider=%s", reqProviderID)
+				}
+			}
+			// Also try custom_providers table (try by name first, then by UUID id)
+			if apiKey == "" {
+				var cpKey, cpEp string
+				cpErr := r.db.QueryRow(
+					"SELECT api_key, endpoint FROM custom_providers WHERE name=? AND user_id=?",
+					reqProviderID, userID,
+				).Scan(&cpKey, &cpEp)
+				if cpErr != nil {
+					cpErr = r.db.QueryRow(
+						"SELECT api_key, endpoint FROM custom_providers WHERE id=? AND user_id=?",
+						reqProviderID, userID,
+					).Scan(&cpKey, &cpEp)
+				}
+				if cpErr == nil && cpKey != "" {
+					if b, dErr := base64.StdEncoding.DecodeString(cpKey); dErr == nil {
+						apiKey = string(b)
+					} else {
+						apiKey = cpKey
+					}
+					// Also override endpoint from custom provider
+					if cpEp != "" {
+						endpoint = cpEp
+					}
+					log.Printf("[Agent] resolveLLMConfig: loaded API key+endpoint from custom_providers for provider=%s", reqProviderID)
 				}
 			}
 		}
@@ -964,6 +1192,7 @@ func (r *AgentRunner) resolveLLMConfig(userID, reqProviderID, reqModel string, c
 	model := r.model
 
 	if reqProviderID != "" && r.db != nil {
+		// First try llm_providers (preset providers)
 		var ep, key, mdl string
 		err := r.db.QueryRow(
 			"SELECT endpoint, api_key, model_id FROM llm_providers WHERE id=? AND user_id=?",
@@ -980,6 +1209,36 @@ func (r *AgentRunner) resolveLLMConfig(userID, reqProviderID, reqModel string, c
 				model = mdl
 			}
 			log.Printf("[Agent] resolveLLMConfig: provider=%s endpoint=%s model=%s", reqProviderID, endpoint, model)
+			return endpoint, apiKey, model
+		}
+		// Then try custom_providers table (try by name first, then by UUID id)
+		var cpEp, cpKey, cpModel string
+		cpErr := r.db.QueryRow(
+			"SELECT endpoint, api_key, COALESCE(model_id,'') FROM custom_providers WHERE name=? AND user_id=?",
+			reqProviderID, userID,
+		).Scan(&cpEp, &cpKey, &cpModel)
+		if cpErr != nil {
+			cpErr = r.db.QueryRow(
+				"SELECT endpoint, api_key, COALESCE(model_id,'') FROM custom_providers WHERE id=? AND user_id=?",
+				reqProviderID, userID,
+			).Scan(&cpEp, &cpKey, &cpModel)
+		}
+		if cpErr == nil && cpEp != "" {
+			endpoint = cpEp
+			if cpKey != "" {
+				// Decode base64-encoded API key if needed
+				if decoded, dErr := base64.StdEncoding.DecodeString(cpKey); dErr == nil {
+					apiKey = string(decoded)
+				} else {
+					apiKey = cpKey
+				}
+			}
+			if reqModel != "" {
+				model = reqModel
+			} else if cpModel != "" {
+				model = cpModel
+			}
+			log.Printf("[Agent] resolveLLMConfig: custom provider=%s endpoint=%s model=%s", reqProviderID, endpoint, model)
 			return endpoint, apiKey, model
 		}
 		log.Printf("[Agent] resolveLLMConfig: provider=%s not found in db, fallback to default", reqProviderID)

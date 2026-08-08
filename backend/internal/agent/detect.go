@@ -12,14 +12,9 @@ import (
 
 // ═══════════════════════════════════════════════════════════════════
 // O(1) Pattern Matching — Pre-compiled regex for claimsFileModification
-//
-// Instead of O(n*k) string contains checks (k=40 patterns),
-// we use a single pre-compiled regex that matches any pattern in O(n).
-// The regex is compiled once at init time and reused for all calls.
 // ═══════════════════════════════════════════════════════════════════
 
 // Pre-compiled regex for strong modification claims (Chinese + English).
-// Matches any of the 40+ patterns in a single pass through the text.
 var strongClaimsRegex = regexp.MustCompile(
 	`(?:已修改|已写入|已保存|已更新|已创建|已完成` +
 		`|have modified|have written|have saved|have created` +
@@ -62,7 +57,6 @@ func claimsFileModification(text string) bool {
 func detectLoop(toolCallHistory map[string]int, uniqueOps map[string]bool, totalCalls int,
 	uniqueTargetsPerSkill map[string]int) string {
 	// Total call budget — hard limit (raised to 15 for large projects)
-	// O(1): Use pre-computed uniqueOps count
 	if totalCalls >= 15 && len(uniqueOps) < totalCalls/2 {
 		return fmt.Sprintf("Made %d tool calls total with only %d unique targets. You must stop using tools and provide your final answer now. Summarize what you accomplished.", totalCalls, len(uniqueOps))
 	}
@@ -104,7 +98,6 @@ func detectLoop(toolCallHistory map[string]int, uniqueOps map[string]bool, total
 }
 
 // isGarbageOutput detects garbled/meaningless LLM output.
-// Heuristics are lenient about code-heavy text (generics, templates, unicode).
 func isGarbageOutput(text string) bool {
 	if len(text) == 0 {
 		return true
@@ -113,7 +106,7 @@ func isGarbageOutput(text string) bool {
 		return true // Too short to be meaningful
 	}
 
-	// Repeated full-width garbage patterns (e.g. ｜｜, |||)
+	// Repeated full-width garbage patterns
 	if strings.Contains(text, "｜｜") || strings.Contains(text, "|||") {
 		return true
 	}
@@ -240,4 +233,94 @@ func (r *AgentRunner) forceAnswer(ctx context.Context, conversation []map[string
 
 	w.WriteSSEPlain("[DONE]")
 	return nil
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Self-reflection: detect and break thought loops
+// ═══════════════════════════════════════════════════════════════════
+
+// selfReflect detects if the LLM is stuck in a thought/plan loop (repeating the
+// same analysis without taking action). Returns true if a corrective measure was
+// injected into the conversation.
+func selfReflect(conversation []map[string]interface{}, consecutiveIdentical int, w SSEWriter) bool {
+	// Only reflect after 3+ consecutive identical results
+	if consecutiveIdentical < 3 {
+		return false
+	}
+
+	msgCount := len(conversation)
+	if msgCount < 10 {
+		return false
+	}
+
+	// Look at recent assistant messages for repeated patterns
+	thoughtCounts := make(map[string]int)
+	for i := msgCount - 1; i >= 0 && i >= msgCount-8; i-- {
+		msg := conversation[i]
+		if role, _ := msg["role"].(string); role == "assistant" {
+			content, _ := msg["content"].(string)
+			if content != "" && !strings.HasPrefix(content, "##") {
+				normalized := strings.TrimSpace(content)
+				if len(normalized) > 50 {
+					cleaned := strings.ReplaceAll(normalized, "#", "")
+					cleaned = strings.ReplaceAll(cleaned, "\n", " ")
+					cleaned = strings.TrimSpace(cleaned)
+					if len(cleaned) > 100 {
+						cleaned = cleaned[:100]
+					}
+					thoughtCounts[cleaned]++
+				}
+			}
+		}
+	}
+
+	// If any thought appears 3+ times, inject corrective nudge
+	for thought, count := range thoughtCounts {
+		if count >= 3 {
+			nudge := fmt.Sprintf(
+				"[SYSTEM SELF-REFLECTION]\nYou appear to be analyzing the same pattern repeatedly without making progress. "+
+					"Pattern detected: \"%s\" (appeared %d times).\n"+
+					"IMMEDIATE ACTION REQUIRED:\n"+
+					"- If you know what to fix: call write_file NOW with the corrected code\n"+
+					"- If you need more info: call read_file on ONE specific file, then write\n"+
+					"- Do NOT continue analyzing. Take action on your next response.\n"+
+					"- If unsure: call build_module to check for errors, then fix them",
+				truncateStr(thought, 80), count)
+			conversation = appendRoleMessage(conversation, "user", nudge)
+			log.Printf("[Agent] selfReflect: thought loop detected (pattern: %s, count=%d), injected nudge",
+				truncateStr(thought, 40), count)
+			return true
+		}
+	}
+
+	// Detect: repeated "plan" output without write_file calls
+	planCount := 0
+	for i := msgCount - 1; i >= 0 && i >= msgCount-8; i-- {
+		msg := conversation[i]
+		if role, _ := msg["role"].(string); role == "assistant" {
+			content, _ := msg["content"].(string)
+			if strings.Contains(content, "## Implementation") || strings.Contains(content, "### Step") {
+				planCount++
+			}
+		}
+	}
+
+	if planCount >= 2 {
+		nudge := "[SYSTEM SELF-REFLECTION]\nYou have output implementation plans multiple times without calling write_file. " +
+			"PLANS ARE NOT ACCEPTABLE OUTPUT. You must call write_file with actual code. " +
+			"If you're not sure what code to write, call build_module and analyze the errors."
+		conversation = appendRoleMessage(conversation, "user", nudge)
+		log.Printf("[Agent] selfReflect: plan loop detected (count=%d), injected write nudge", planCount)
+		return true
+	}
+
+	return false
+}
+
+// truncateStr truncates a string to maxLen, adding "..." if truncated
+func truncateStr(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
 }
