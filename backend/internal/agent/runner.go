@@ -157,6 +157,12 @@ type AgentRunner struct {
 	sessionPersist *SessionPersistence
 	depGraph       *DependencyGraph
 
+	// NEW: High-value optimization modules
+	buildHealer    *BuildHealer        // Auto-fix build errors
+	atomicWriter   *AtomicWriter       // Multi-file atomic writes
+	enhancedPlan   *EnhancedPlanner    // File-level granularity planning
+	fileDepGraph   *FileDependencyGraph // File dependency tracking for smart reads
+
 	// Optimization 51: Performance metrics tracking
 	perfMetrics *PerformanceMetrics
 
@@ -193,6 +199,11 @@ func NewAgentRunner(registry *SkillRegistry, apiKey, endpoint, model string, db 
 		sessionPersist: NewSessionPersistence(""),
 		depGraph:       NewDependencyGraph(),
 		perfMetrics:    NewPerformanceMetrics(),
+		// NEW: High-value optimization modules
+		buildHealer:    NewBuildHealer(),
+		atomicWriter:   NewAtomicWriter(""),
+		enhancedPlan:   nil, // initialized per-session with project path
+		fileDepGraph:   nil, // initialized per-session with project path
 		// NEW: Context caching improvements
 		prefixCache:      NewPrefixCache(100, 5*time.Minute),
 		semanticCache:    NewSemanticCache(500, 0.85),
@@ -1754,41 +1765,56 @@ You are running WITHOUT a project context. This means:
 		currentModel: resolvedModel,
 	}
 
-	// P2-1: Task planner V2 - Improved task decomposition
+	// P2-1: Enhanced Task planner with file-level granularity
 	// Reference: OpenHands (PLAN.md) + MetaGPT (role-based SOP) + AutoGPT (loop execution)
-	taskPlanner := NewTaskPlannerV2(r.db)
-	var executionPlan *V2Plan
+	// NEW: Use EnhancedPlanner for file-level granularity planning
+	var enhancedPlanner *EnhancedPlanner
+	var enhancedPlan *EnhancedPlan
 	var planInjected bool // Track if we've injected the first plan context
+
+	// Initialize enhanced planner with project path
+	if cfg.ProjectID != "" && r.db != nil {
+		var storagePath string
+		r.db.QueryRow(`SELECT COALESCE(storage_path,'') FROM projects WHERE id=?`, cfg.ProjectID).Scan(&storagePath)
+		if storagePath != "" {
+			enhancedPlanner = NewEnhancedPlanner(r.db, storagePath)
+		}
+	}
+	if enhancedPlanner == nil {
+		enhancedPlanner = NewEnhancedPlanner(r.db, "")
+	}
 
 	// Try LLM-based planning for complex tasks
 	if isComplexTask(task) {
-		plan, err := taskPlanner.CreatePlan(ctx, task, cfg.ProjectContext, r, cfg)
+		plan, err := enhancedPlanner.GeneratePlan(ctx, task, cfg.ProjectContext, r, cfg)
 		if err == nil && plan != nil {
-			executionPlan = plan
-			log.Printf("[Agent] task planned into %d steps", len(plan.Steps))
+			enhancedPlan = plan
+			log.Printf("[Agent] enhanced plan generated: %d steps (depth=%d)", len(plan.Steps), plan.Depth)
 		} else {
-			log.Printf("[Agent] LLM planning failed, using fallback: %v", err)
+			log.Printf("[Agent] enhanced planning failed, using fallback: %v", err)
 		}
 	}
 
 	// SSE: Send task plan to frontend
-	if executionPlan != nil && len(executionPlan.Steps) > 0 {
+	if enhancedPlan != nil && len(enhancedPlan.Steps) > 0 {
 		w.WriteSSE(map[string]interface{}{
-			"type":  "step",
-			"step":  "task_plan",
-			"content": fmt.Sprintf("📋 任务计划完成，共 %d 个步骤", len(executionPlan.Steps)),
-			"plan": executionPlan,
+			"type":    "step",
+			"step":    "task_plan",
+			"content": fmt.Sprintf("📋 任务计划完成，共 %d 个步骤 (深度: %d)", len(enhancedPlan.Steps), enhancedPlan.Depth),
+			"plan":    enhancedPlan,
 		})
 		// Mark first step as in_progress
-		if step := taskPlanner.GetCurrentStep(executionPlan); step != nil {
+		if step := enhancedPlanner.GetCurrentStep(enhancedPlan); step != nil {
 			step.Status = "in_progress"
+			step.StartedAt = time.Now().Unix()
 			w.WriteSSE(map[string]interface{}{
 				"type":       "step",
 				"step":       "task_progress",
 				"step_id":    step.ID,
 				"status":     "in_progress",
 				"content":    step.Description,
-				"progress":   taskPlanner.GetProgress(executionPlan),
+				"progress":   enhancedPlanner.GetProgress(enhancedPlan),
+				"files":      step.Files,
 			})
 		}
 	}
@@ -1908,12 +1934,12 @@ You are running WITHOUT a project context. This means:
 
 		// P2-1 V2: Inject plan context at start of each iteration
 		// This ensures the LLM always knows the current task
-		if executionPlan != nil && !planInjected {
-			stepContext := taskPlanner.BuildContextMessage(executionPlan)
+		if enhancedPlan != nil && !planInjected {
+			stepContext := enhancedPlanner.BuildContextMessage(enhancedPlan)
 			if stepContext != "" {
 				conversation = appendRoleMessage(conversation, "system", stepContext)
 				planInjected = true
-				log.Printf("[Agent] injected plan context into conversation")
+				log.Printf("[Agent] injected enhanced plan context into conversation")
 			}
 		}
 
@@ -1968,13 +1994,14 @@ You are running WITHOUT a project context. This means:
 			}
 
 			// P2-1 V2: Task plan step completion
-			if executionPlan != nil {
-				currentStep := taskPlanner.GetCurrentStep(executionPlan)
+			if enhancedPlan != nil {
+				currentStep := enhancedPlanner.GetCurrentStep(enhancedPlan)
 				if currentStep != nil {
 					// Check if agent indicates completion
-					if taskPlanner.IsStepDone(answer) || iter > 2 {
+					if enhancedPlanner.IsStepDone(answer) || iter > 2 {
 						// Mark current step as completed
 						currentStep.Status = "completed"
+						currentStep.CompletedAt = time.Now().Unix()
 						currentStep.Result = truncateString(answer, 200)
 
 						// SSE: Notify step completion
@@ -1984,28 +2011,32 @@ You are running WITHOUT a project context. This means:
 							"step_id":    currentStep.ID,
 							"status":     "completed",
 							"content":    currentStep.Description,
-							"progress":   taskPlanner.GetProgress(executionPlan),
+							"progress":   enhancedPlanner.GetProgress(enhancedPlan),
+							"files":      currentStep.Files,
 						})
 
 						// Advance to next step
-						nextStep := taskPlanner.AdvanceToNextStep(executionPlan)
+						nextStep := enhancedPlanner.AdvanceToNextStep(enhancedPlan)
 						if nextStep != nil {
 							// SSE: Notify next step start
+							nextStep.Status = "in_progress"
+							nextStep.StartedAt = time.Now().Unix()
 							w.WriteSSE(map[string]interface{}{
 								"type":       "step",
 								"step":       "task_progress",
 								"step_id":    nextStep.ID,
 								"status":     "in_progress",
 								"content":    nextStep.Description,
-								"progress":   taskPlanner.GetProgress(executionPlan),
+								"progress":   enhancedPlanner.GetProgress(enhancedPlan),
+								"files":      nextStep.Files,
 							})
 
 							// Inject next step context into conversation
-							stepContext := taskPlanner.BuildContextMessage(executionPlan)
+							stepContext := enhancedPlanner.BuildContextMessage(enhancedPlan)
 							conversation = appendRoleMessage(conversation, "system", stepContext)
 							log.Printf("[Agent] advancing to step: %s", nextStep.Description)
 						} else {
-							log.Printf("[Agent] all plan steps completed")
+							log.Printf("[Agent] all enhanced plan steps completed")
 						}
 					}
 				}
@@ -2363,10 +2394,10 @@ You are running WITHOUT a project context. This means:
 			}
 
 			// P2-1 V2: Track step progress based on tool execution
-			if executionPlan != nil && err != nil {
-				currentStep := taskPlanner.GetCurrentStep(executionPlan)
+			if enhancedPlan != nil && err != nil {
+				currentStep := enhancedPlanner.GetCurrentStep(enhancedPlan)
 				if currentStep != nil {
-					taskPlanner.MarkStepFailed(executionPlan, err.Error())
+					enhancedPlanner.MarkStepFailed(enhancedPlan, err.Error())
 					// SSE: Notify step failure
 					w.WriteSSE(map[string]interface{}{
 						"type":       "step",
@@ -2375,12 +2406,13 @@ You are running WITHOUT a project context. This means:
 						"status":     currentStep.Status,
 						"content":    currentStep.Description,
 						"error":      err.Error(),
-						"progress":   taskPlanner.GetProgress(executionPlan),
+						"progress":   enhancedPlanner.GetProgress(enhancedPlan),
+						"files":      currentStep.Files,
 					})
 
 					// If we moved to next step, inject context
-					if nextStep := taskPlanner.GetCurrentStep(executionPlan); nextStep != nil && nextStep.ID != currentStep.ID {
-						stepContext := taskPlanner.BuildContextMessage(executionPlan)
+					if nextStep := enhancedPlanner.GetCurrentStep(enhancedPlan); nextStep != nil && nextStep.ID != currentStep.ID {
+						stepContext := enhancedPlanner.BuildContextMessage(enhancedPlan)
 						conversation = appendRoleMessage(conversation, "system", stepContext)
 						log.Printf("[Agent] after tool failure, advancing to step: %s", nextStep.Description)
 					}
@@ -2511,6 +2543,27 @@ You are running WITHOUT a project context. This means:
 				cfg.UserID,
 				cfg.ProjectID,
 			)
+
+			// NEW: Build error auto-healing for build_module failures
+			if st.skillName == "build_module" && err != nil {
+				projectPath := ""
+				if cfg.ProjectID != "" && r.db != nil {
+					var storagePath string
+					r.db.QueryRow(`SELECT COALESCE(storage_path,'') FROM projects WHERE id=?`, cfg.ProjectID).Scan(&storagePath)
+					projectPath = storagePath
+				}
+				if projectPath != "" {
+					healResult, shouldHeal := r.buildHealer.HandleBuildFailure(ctx, sessionID, result, projectPath, w)
+					if shouldHeal && healResult.ContextForLLM != "" {
+						// Inject build error context into conversation for LLM to fix
+						conversation = appendRoleMessage(conversation, "system", healResult.ContextForLLM)
+						log.Printf("[Agent] build_healer: injected error context for %d diagnostics", len(healResult.Diagnostics))
+					} else if healResult.Strategy == HealForceAnswer || healResult.Strategy == HealAbort {
+						// Too many attempts or critical error — force answer
+						result = fmt.Sprintf("%s\n\n%s", result, healResult.UserMessage)
+					}
+				}
+			}
 
 			// NEW: Session persistence for checkpoints
 			if sessionID != "" && st.skillName == "write_file" {
