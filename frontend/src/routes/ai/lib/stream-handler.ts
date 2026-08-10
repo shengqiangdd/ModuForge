@@ -198,7 +198,25 @@ export class StreamHandler {
       return true;
     }
     if (parsed.type === 'step' && parsed.step === 'task_plan') {
-      if (parsed.subtasks && Array.isArray(parsed.subtasks)) {
+      // Support both V1 (subtasks) and V2 (plan) formats
+      if (parsed.plan && typeof parsed.plan === 'object') {
+        // V2 format: plan with steps
+        const plan = parsed.plan as Record<string, unknown>;
+        const steps = plan.steps as Array<Record<string, unknown>> | undefined;
+        if (steps && Array.isArray(steps)) {
+          s.subtasks = steps.map((st: Record<string, unknown>, idx: number) => ({
+            id: st.id as string || `step_${idx + 1}`,
+            description: st.description as string,
+            status: (st.status as Subtask['status']) || 'pending',
+            dependencies: [],
+            files: (st.files as string[]) || [],
+            tools: (st.tools as string[]) || [],
+            progress: 0,
+            retry_count: (st.retry_count as number) || 0,
+          }));
+        }
+      } else if (parsed.subtasks && Array.isArray(parsed.subtasks)) {
+        // V1 format: subtasks array
         s.subtasks = parsed.subtasks.map((st: Record<string, unknown>) => ({
           id: st.id as string,
           description: st.description as string,
@@ -215,12 +233,19 @@ export class StreamHandler {
       return true;
     }
     if (parsed.type === 'step' && parsed.step === 'task_progress') {
-      const subtaskId = parsed.subtask_id as string | undefined;
+      // Support both V1 (subtask_id) and V2 (step_id) formats
+      const stepId = (parsed.step_id as string) || (parsed.subtask_id as string);
       const status = parsed.status as string | undefined;
-      if (subtaskId && status) {
+      const progress = parsed.progress as number | undefined;
+      if (stepId && status) {
         s.subtasks = s.subtasks.map(st => {
-          if (st.id === subtaskId) {
-            return { ...st, status: status as Subtask['status'], progress: (parsed.progress as number) ?? st.progress, description: (parsed.description as string) || st.description };
+          if (st.id === stepId) {
+            return {
+              ...st,
+              status: status as Subtask['status'],
+              progress: progress ?? st.progress,
+              description: (parsed.content as string) || st.description,
+            };
           }
           return st;
         });

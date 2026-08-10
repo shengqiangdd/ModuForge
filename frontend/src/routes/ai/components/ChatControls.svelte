@@ -34,6 +34,7 @@
     onToggleHistory,
     onLoadCapability,
     onOpenPromptSettings,
+    onOpenMDPrompts,
     onNavigate,
   }: {
     providers?: Provider[];
@@ -65,6 +66,7 @@
     onToggleHistory?: () => void;
     onLoadCapability?: () => void;
     onOpenPromptSettings?: () => void;
+    onOpenMDPrompts?: () => void;
     onNavigate?: (route: string, id?: string) => void;
   } = $props();
 </script>
@@ -85,5 +87,6 @@
   onToggleHistory={() => onToggleHistory?.()}
   onLoadCapability={() => onLoadCapability?.()}
   onOpenPromptSettings={() => onOpenPromptSettings?.()}
+  onOpenMDPrompts={() => onOpenMDPrompts?.()}
   {onNavigate}
 />

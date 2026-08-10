@@ -1,0 +1,7 @@
+# Minimal fix: rebuild image with correct entrypoint permissions and fixed binary
+FROM moduforge:latest
+
+# Fix entrypoint permissions (lost by docker cp from Windows)
+RUN chmod +x /docker-entrypoint.sh
+
+# The binary will be copied in at deploy time

@@ -8,18 +8,34 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 	"github.com/moduforge/backend/internal/agent/registry"
 )
 
+// SecurityChecker interface for command validation
+type SecurityChecker interface {
+	CheckCommand(command string) (level int, riskScore int, matchedRules []interface{})
+}
+
 type BashSkill struct {
-	projectPath string
-	db          *sql.DB
+	projectPath    string
+	db             *sql.DB
+	securityEngine interface{} // *agent.SecurityEngine (avoid circular import)
 }
 
 func NewBashSkillWithDB(projectPath string, db *sql.DB) *BashSkill {
 	return &BashSkill{projectPath: projectPath, db: db}
+}
+
+// NewBashSkillWithSecurity creates a BashSkill with security engine
+func NewBashSkillWithSecurity(projectPath string, db *sql.DB, securityEngine interface{}) *BashSkill {
+	return &BashSkill{
+		projectPath:    projectPath,
+		db:             db,
+		securityEngine: securityEngine,
+	}
 }
 
 func (s *BashSkill) Name() string {
@@ -43,6 +59,11 @@ func (s *BashSkill) Execute(ctx context.Context, input map[string]interface{}) (
 
 	if command == "" {
 		return "", fmt.Errorf("command is required")
+	}
+
+	// Security check - validate command before execution
+	if err := s.validateCommand(command); err != nil {
+		return "", err
 	}
 
 	projectPath := ResolveProjectPath(s.db, s.projectPath, projectID)
@@ -79,6 +100,26 @@ func (s *BashSkill) Execute(ctx context.Context, input map[string]interface{}) (
 	}
 
 	return outputStr, nil
+}
+
+// validateCommand checks command against security rules
+func (s *BashSkill) validateCommand(command string) error {
+	// Basic dangerous command blocking (independent of security engine)
+	dangerousPatterns := []string{
+		`rm\s+(-[a-zA-Z]*r[a-zA-Z]*f|-[a-zA-Z]*f[a-zA-Z]*r)\s+(/|/\*|\.\.)`,
+		`rm\s+(-[a-zA-Z]*r[a-zA-Z]*f|-[a-zA-Z]*f[a-zA-Z]*r)\s+/((usr|etc|var|sys|proc|dev|boot|sbin|bin)/)`,
+		`(mkfs|format)\s+(/dev/|//\\\\.\\\\)`,
+		`dd\s+if=/dev/(zero|random|urandom)\s+of=/dev/`,
+		`chmod\s+(-R\s+)?777\s+/`,
+	}
+
+	for _, pattern := range dangerousPatterns {
+		if matched, _ := regexp.MatchString(pattern, command); matched {
+			return fmt.Errorf("🚫 命令被安全策略阻止: 检测到危险操作模式")
+		}
+	}
+
+	return nil
 }
 
 // syncProjectToDisk ensures all project files from the database exist on disk.

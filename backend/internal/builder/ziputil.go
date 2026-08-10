@@ -38,6 +38,7 @@ var ModuleExcludePatterns = []string{
 	// Build cache & artifacts
 	".build_cache/",
 	".build_cache.json",
+	".cargo-artifact-lock",
 	"*.o",
 	"*.a",
 	"*.so",
@@ -89,6 +90,9 @@ var ModuleExcludePatterns = []string{
 	"docker-compose*.yml",
 	"Dockerfile*",
 	"*.gradle",
+	// Empty / leftover component directories
+	"native_component/",
+	"rust_component/",
 }
 
 // ZipModuleForBuild zips a module directory for build output,
@@ -168,8 +172,9 @@ func ZipDirExcludingWithProgress(sourceDir, outputZip string, excludePatterns []
 			lower := strings.ToLower(relPath)
 			for _, pat := range excludePatterns {
 				if strings.HasSuffix(pat, "/") {
-					// Directory pattern: path starts with it
-					if strings.HasPrefix(lower, strings.ToLower(pat)) {
+					// Directory pattern: match dir name exactly or as a path prefix
+					patDir := strings.ToLower(pat)
+					if lower == strings.TrimSuffix(patDir, "/") || strings.HasPrefix(lower+"/", patDir) {
 						if info.IsDir() {
 							return filepath.SkipDir
 						}
@@ -190,24 +195,21 @@ func ZipDirExcludingWithProgress(sourceDir, outputZip string, excludePatterns []
 			}
 		}
 
+		// Skip directories — they'll be created implicitly by files
+		if info.IsDir() {
+			return nil
+		}
+
 		// Create zip entry
 		header, err := zip.FileInfoHeader(info)
 		if err != nil {
 			return err
 		}
 		header.Name = relPath
-		if info.IsDir() {
-			header.Name += "/"
-		}
 
 		writer, err := w.CreateHeader(header)
 		if err != nil {
 			return err
-		}
-
-		// Skip directories (already handled by name)
-		if info.IsDir() {
-			return nil
 		}
 
 		// Copy file content
@@ -237,7 +239,8 @@ func isExcluded(relPath string, excludePatterns []string) bool {
 	lower := strings.ToLower(relPath)
 	for _, pat := range excludePatterns {
 		if strings.HasSuffix(pat, "/") {
-			if strings.HasPrefix(lower, strings.ToLower(pat)) {
+			patDir := strings.ToLower(pat)
+			if lower == strings.TrimSuffix(patDir, "/") || strings.HasPrefix(lower+"/", patDir) {
 				return true
 			}
 		} else if strings.Contains(pat, "*") {

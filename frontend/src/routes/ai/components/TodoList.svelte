@@ -5,6 +5,7 @@
     status: 'pending' | 'in_progress' | 'completed' | 'failed' | 'running' | 'done' | 'error' | 'skipped';
     dependencies?: string[];
     files?: string[];
+    tools?: string[];
     progress?: number;
     started_at?: number | string;
     completed_at?: number | string;
@@ -119,6 +120,18 @@
                   {/each}
                   {#if subtask.files.length > 3}
                     <span class="text-[9px] text-[var(--color-text-muted)]">+{subtask.files.length - 3}</span>
+                  {/if}
+                </div>
+              {/if}
+              {#if subtask.tools && subtask.tools.length > 0}
+                <div class="flex flex-wrap gap-1 mt-0.5">
+                  {#each subtask.tools.slice(0, 2) as tool}
+                    <span class="text-[9px] px-1 py-0 rounded bg-primary-500/10 text-primary-500 font-mono">
+                      🔧 {tool}
+                    </span>
+                  {/each}
+                  {#if subtask.tools.length > 2}
+                    <span class="text-[9px] text-[var(--color-text-muted)]">+{subtask.tools.length - 2}</span>
                   {/if}
                 </div>
               {/if}

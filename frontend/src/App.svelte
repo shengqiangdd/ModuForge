@@ -6,7 +6,7 @@
   import { globalLoading } from '$lib/stores/loading.svelte';
   import { ws } from '$lib/ws';
   import { debounce } from '$lib/utils/performance';
-  import ListTransition from '$lib/components/ui/ListTransition.svelte';
+  // ListTransition removed - using {#each} for Svelte 5 compatibility
   import LocaleSwitcher from '$lib/components/LocaleSwitcher.svelte';
   import NotificationBell from '$lib/components/NotificationBell.svelte';
   import Onboarding from '$lib/components/Onboarding.svelte';
@@ -669,8 +669,7 @@
                 <p class="text-xs mt-1" style="color: var(--color-text-muted)">Create a new universal module</p>
               </button>
               <!-- Existing Projects -->
-              <ListTransition items={filteredProjects} key="id">
-                {#snippet children(project, _i)}
+              {#each filteredProjects as project, i (project.id)}
                 <div
                   role="button"
                   tabindex="0"
@@ -702,8 +701,7 @@
                     </div>
                   </div>
                 </div>
-                {/snippet}
-              </ListTransition>
+              {/each}
             </div>
           {/if}
         </div>

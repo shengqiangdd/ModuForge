@@ -1,0 +1,46 @@
+# ============================================================
+# ModuForge — 简化构建 (使用预编译前端)
+# ============================================================
+# Stage 1: Go 后端编译 (CGO_ENABLED=1 for go-sqlite3)
+FROM golang:1.25-alpine AS backend-builder
+
+RUN apk add --no-cache gcc musl-dev
+
+WORKDIR /app
+COPY backend/go.mod backend/go.sum ./
+RUN go mod download
+
+COPY backend/ .
+RUN CGO_ENABLED=1 go build -ldflags="-s -w" -trimpath -o /server ./cmd/moduforge/
+
+# ============================================================
+# Stage 2: 运行时镜像
+FROM alpine:3.20
+
+LABEL org.opencontainers.image.title="ModuForge"
+
+RUN apk add --no-cache wget ca-certificates tzdata openssl && \
+    addgroup -S moduforge && adduser -S moduforge -G moduforge
+
+COPY --from=backend-builder --chown=moduforge:moduforge /server /server
+COPY --chown=moduforge:moduforge frontend/dist /app/dist
+
+COPY --chown=moduforge:moduforge docker-entrypoint.sh /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh /server
+
+ENV PORT=:8080 \
+    DB_PATH=/data/moduforge.db \
+    BUILD_DIR=/data/builds \
+    MODULES_DIR=/data/modules \
+    PROJECTS_DIR=/data/projects \
+    GIN_MODE=release \
+    DIST_DIR=/app/dist
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://localhost:${PORT}/health || exit 1
+
+RUN mkdir -p /data /app/uploads && chown -R moduforge:moduforge /data /app/uploads
+
+EXPOSE 8080
+USER moduforge
+ENTRYPOINT ["/docker-entrypoint.sh"]

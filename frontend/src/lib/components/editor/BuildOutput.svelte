@@ -119,14 +119,7 @@
         </div>
       </div>
     </div>
-    <pre class="p-4 text-xs font-mono overflow-auto max-h-96 whitespace-pre-wrap leading-relaxed" style="background: #0a0a0a; color: #4ade80">
-      {#each logLines as line, i}
-        <div class="flex gap-3">
-          <span class="user-select-none flex-shrink-0 w-6 text-right" style="color: rgba(74,222,128,0.3)">{String(i + 1).padStart(3, ' ')}</span>
-          <span class:text-red-400={line.startsWith('[ERROR]')} class:text-amber-400={line.startsWith('[WARN]')} class:text-green-300={line.startsWith('[SUCCESS]')} class:text-green-400={!line.startsWith('[') || line.startsWith('[INFO]')}>{line}</span>
-        </div>
-      {/each}
-    </pre>
+    <div class="p-2 text-[11px] font-mono overflow-auto max-h-80 log-container" style="background: #0a0a0a; color: #4ade80; white-space: pre">{#each logLines as line, i}<div class="log-line">{String(i + 1).padStart(3, ' ')} <span class:text-red-400={line.startsWith('[ERROR]')} class:text-amber-400={line.startsWith('[WARN]')} class:text-green-300={line.startsWith('[SUCCESS]')} class:text-green-400={!line.startsWith('[') || line.startsWith('[INFO]')}>{line}</span></div>{/each}</div>
   </div>
 {:else if building}
   <div class="rounded-2xl border p-8 text-center" style="border-color: var(--color-border); background: var(--color-bg-elevated)">
@@ -159,3 +152,15 @@
     下载构建产物
   </a>
 {/if}
+
+<style>
+  .log-container {
+    line-height: 1.2;
+  }
+  .log-line {
+    margin: 0;
+    padding: 0;
+    line-height: 1.2;
+    min-height: 1.2em;
+  }
+</style>

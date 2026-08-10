@@ -32,6 +32,7 @@ export interface Subtask {
   status: 'pending' | 'in_progress' | 'completed' | 'failed' | 'running' | 'done' | 'error' | 'skipped';
   dependencies?: string[];
   files?: string[];
+  tools?: string[];
   progress?: number;
   started_at?: string | number;
   completed_at?: string | number;

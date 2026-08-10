@@ -15,6 +15,7 @@ let {
   onToggleHistory,
   onLoadCapability,
   onOpenPromptSettings,
+  onOpenMDPrompts,
   onNavigate,
 }: {
   mode: Mode;
@@ -29,6 +30,7 @@ let {
   onToggleHistory: () => void;
   onLoadCapability: () => void;
   onOpenPromptSettings: () => void;
+  onOpenMDPrompts: () => void;
   onNavigate?: (route: string) => void;
 } = $props();
 </script>
@@ -65,6 +67,9 @@ let {
     </button>
     <button class="flex-shrink-0 flex items-center justify-center p-1.5 rounded-lg text-[var(--color-text-secondary)] hover:bg-[var(--color-surface)] transition-all min-h-[32px]" onclick={onOpenPromptSettings} title="提示词设置">
       <span class="material-symbols-outlined text-[16px]">edit_note</span>
+    </button>
+    <button class="flex-shrink-0 flex items-center justify-center p-1.5 rounded-lg text-[var(--color-text-secondary)] hover:bg-[var(--color-surface)] transition-all min-h-[32px]" onclick={onOpenMDPrompts} title="MD 提示词编辑器">
+      <span class="material-symbols-outlined text-[16px]">code</span>
     </button>
   </div>
 </div>

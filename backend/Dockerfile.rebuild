@@ -1,0 +1,27 @@
+# ModuForge patch: rebuild with correct permissions
+FROM alpine:3.20
+
+RUN apk add --no-cache wget ca-certificates tzdata openssl && \
+    addgroup -S moduforge && adduser -S moduforge -G moduforge
+
+# Copy the fixed binary
+COPY server /server
+RUN chmod +x /server
+
+# Copy entrypoint with correct permissions
+COPY entrypoint.sh /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh
+
+ENV PORT=:8080 \
+    DB_PATH=/data/moduforge.db \
+    BUILD_DIR=/data/builds \
+    MODULES_DIR=/data/modules \
+    PROJECTS_DIR=/data/projects \
+    GIN_MODE=release \
+    DIST_DIR=/app/dist
+
+RUN mkdir -p /data /app/dist /app/uploads && chown -R moduforge:moduforge /data /app /app/uploads
+
+EXPOSE 8080
+USER moduforge
+ENTRYPOINT ["/docker-entrypoint.sh"]

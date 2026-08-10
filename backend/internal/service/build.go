@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -99,13 +100,33 @@ func (s *BuildService) DeleteBuild(ctx context.Context, id string) error {
 }
 
 // DeleteFailedBuilds removes all failed build tasks for a project.
+// Retries on transient SQLite busy/locked errors.
 func (s *BuildService) DeleteFailedBuilds(ctx context.Context, projectID string) (int64, error) {
-	result, err := s.db.ExecContext(ctx,
-		`DELETE FROM build_tasks WHERE project_id=? AND status='failed'`, projectID)
-	if err != nil {
-		return 0, err
+	var lastErr error
+	for attempt := 0; attempt < 3; attempt++ {
+		result, err := s.db.ExecContext(ctx,
+			`DELETE FROM build_tasks WHERE project_id=? AND status='failed'`, projectID)
+		if err != nil {
+			lastErr = err
+			log.Printf("[BuildService] DeleteFailedBuilds attempt %d failed for project %s: %v", attempt+1, projectID, err)
+			// Brief pause before retry on DB lock
+			select {
+			case <-ctx.Done():
+				return 0, ctx.Err()
+			case <-time.After(time.Duration(attempt+1) * 100 * time.Millisecond):
+			}
+			continue
+		}
+		n, err := result.RowsAffected()
+		if err != nil {
+			log.Printf("[BuildService] DeleteFailedBuilds rows affected failed for project %s: %v", projectID, err)
+			return 0, fmt.Errorf("rows affected: %w", err)
+		}
+		log.Printf("[BuildService] DeleteFailedBuilds deleted %d failed builds for project %s", n, projectID)
+		return n, nil
 	}
-	return result.RowsAffected()
+	log.Printf("[BuildService] DeleteFailedBuilds all retries exhausted for project %s: %v", projectID, lastErr)
+	return 0, fmt.Errorf("delete failed builds after retries: %w", lastErr)
 }
 
 func (s *BuildService) checkBuildCache(projectID, filesHash string) *string {

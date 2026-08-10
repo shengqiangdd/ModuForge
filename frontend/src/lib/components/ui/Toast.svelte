@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { getToasts, subscribe, dismiss } from '$lib/stores/toast.svelte';
+  import { getToasts, subscribe, dismiss, dismissAll } from '$lib/stores/toast.svelte';
   import type { Toast } from '$lib/stores/toast.svelte';
 
   let toasts = $state<Toast[]>([]);
@@ -9,6 +9,11 @@
     toasts = getToasts();
     const unsub = subscribe(() => { toasts = getToasts(); });
     return unsub;
+  });
+
+  onDestroy(() => {
+    // Safety: ensure no orphaned timers survive component teardown
+    dismissAll();
   });
 
   const icons: Record<string, string> = {

@@ -2,6 +2,7 @@ package handler
 
 import (
 	"bufio"
+	"log"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/moduforge/backend/internal/builder"
@@ -225,10 +226,13 @@ func (h *BuildHandler) Delete(c fiber.Ctx) error {
 // DeleteFailed removes all failed build records for a project.
 func (h *BuildHandler) DeleteFailed(c fiber.Ctx) error {
 	projectID := c.Params("id")
+	log.Printf("[BuildHandler] DeleteFailed called for project %s", projectID)
 	n, err := h.svc.DeleteFailedBuilds(c.Context(), projectID)
 	if err != nil {
+		log.Printf("[BuildHandler] DeleteFailed error for project %s: %v", projectID, err)
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
+	log.Printf("[BuildHandler] DeleteFailed success for project %s: deleted %d", projectID, n)
 	return c.JSON(fiber.Map{"ok": true, "deleted": n})
 }
 

@@ -23,6 +23,7 @@ import PreviewModal from './components/modals/PreviewModal.svelte';
 import ComparisonModal from './components/modals/ComparisonModal.svelte';
 import PromptSettingsModal from './components/modals/PromptSettingsModal.svelte';
 import PromptTemplatesModal from './components/modals/PromptTemplatesModal.svelte';
+import MDPromptsModal from './components/modals/MDPromptsModal.svelte';
 import AICapabilityModal from './components/modals/AICapabilityModal.svelte';
 import DiffPanelModal from './components/modals/DiffPanelModal.svelte';
 import OnboardingGuide from './components/OnboardingGuide.svelte';
@@ -102,6 +103,7 @@ import { filterStepsByRound } from './lib/rounds';
   let deletingMessageIdx = $state(-1);
   let showDeleteConfirm = $state(false);
   let showPromptSettings = $state(false);
+  let showMDPrompts = $state(false);
   let promptTab = $state<Mode>('generate');
   let prompts = $state<AIPrompt[]>([]);
   let promptDraft = $state('');
@@ -831,7 +833,7 @@ import { filterStepsByRound } from './lib/rounds';
   if (e.ctrlKey && e.key === 'k') { e.preventDefault(); messages = []; currentStepIndex = -1; progressStepDetails = []; autoBuildPhases = []; agentSteps = []; allAgentSteps = []; selectedRound = -1; maxRoundIndex = 0; expandedReasoning = new Set(); activeSessionId = ''; sessionId = generateUUID(); mode = 'generate'; autoBuildProjectId = ''; autoBuildProjectName = ''; autoBuildFiles = []; subtasks = []; }
   if (e.ctrlKey && e.key === 'e') { e.preventDefault(); if (messages.length > 0) exportConversation('markdown'); }
   if (e.key === '?') { e.preventDefault(); showShortcutPanel = !showShortcutPanel; }
-  if (e.key === 'Escape') { showHistorySidebar = false; showPromptSettings = false; showProviderConfig = false; showPreviewModal = false; showImportDialog = false; showComparison = false; showPromptTemplates = false; showDiffPanel = false; showCapability = false; showShortcutPanel = false; }
+  if (e.key === 'Escape') { showHistorySidebar = false; showPromptSettings = false; showMDPrompts = false; showProviderConfig = false; showPreviewModal = false; showImportDialog = false; showComparison = false; showPromptTemplates = false; showDiffPanel = false; showCapability = false; showShortcutPanel = false; }
   if (!e.ctrlKey && !e.metaKey && !e.altKey && ['1','2','3','4','5','6'].includes(e.key)) {
     const idx = parseInt(e.key) - 1;
     if (idx >= 0 && idx < modes.length && !streaming && mode !== modes[idx].value) { messages = []; currentStepIndex = -1; progressStepDetails = []; autoBuildPhases = []; agentSteps = []; expandedReasoning = new Set(); activeSessionId = ''; sessionId = generateUUID(); mode = modes[idx].value; subtasks = []; }
@@ -870,6 +872,7 @@ import { filterStepsByRound } from './lib/rounds';
       onToggleHistory={() => { if (!showHistorySidebar) { loadConversations(); loadSessions(); loadGenHistory(); } showHistorySidebar = !showHistorySidebar; }}
       onLoadCapability={() => { loadCapability(); showCapability = !showCapability; }}
       onOpenPromptSettings={openPromptSettings}
+      onOpenMDPrompts={() => showMDPrompts = true}
       {onNavigate}
     />
 
@@ -918,6 +921,7 @@ import { filterStepsByRound } from './lib/rounds';
   <ComparisonModal show={showComparison} results={comparisonResults} running={comparisonRunning} input={comparisonInput} onClose={() => showComparison = false} onInputChange={(v) => comparisonInput = v} onRun={runComparison} />
   <PromptSettingsModal show={showPromptSettings} {promptTab} {promptDraft} {promptLoading} {promptSaving} onClose={() => showPromptSettings = false} onTabChange={switchPromptTab} onDraftChange={(v) => promptDraft = v} onSave={savePrompt} onReset={resetPrompt} />
   <PromptTemplatesModal show={showPromptTemplates} onClose={() => showPromptTemplates = false} onSelect={(prompt) => { input = prompt; showPromptTemplates = false; }} />
+  <MDPromptsModal open={showMDPrompts} onClose={() => showMDPrompts = false} />
   <AICapabilityModal show={showCapability} {capability} loading={capabilityLoading} onClose={() => showCapability = false} />
   <DiffPanelModal show={showDiffPanel} diffs={diffDiffs} filePath={diffFilePath} onClose={() => showDiffPanel = false} />
   <BuildProgressBar show={buildProgressActive} progress={buildProgress} />

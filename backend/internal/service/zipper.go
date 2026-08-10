@@ -41,12 +41,16 @@ var excludedPatterns = []string{
 	"*.kt",
 	// Build system
 	"build.sh",
+	"compile.sh",
+	"build_module.sh",
+	"build_binary.sh",
+	"Makefile",
+	"makefile",
 	"go.mod",
 	"go.sum",
 	"Cargo.toml",
 	"Cargo.lock",
 	"target/",
-	"Makefile",
 	// Build cache & artifacts
 	".build_cache/",
 	".build_cache.json",
@@ -61,21 +65,116 @@ var excludedPatterns = []string{
 	"*.tmp",
 	"*.xml",
 	"*.gradle",
+	// Documentation
+	"README*",
+	"LICENSE*",
+	"CHANGELOG*",
+	"CONTRIBUTING*",
+	"*.md",
+	"docs/",
+	"doc/",
+	// Test files
+	"test/",
+	"tests/",
+	"*_test.go",
+	"*_test.rs",
+	"*_test.cpp",
+	"test_*",
+	// Temp and debug files
+	"tmp/",
+	"upload",
+	// Build artifacts
+	"*.o",
+	"*.a",
+	"*.so",
+	"*.dylib",
+	"*.class",
+	"*.jar",
+	"*.apk",
+	"*.dex",
+	// IDE & editor
+	".idea/",
+	".vscode/",
+	".vs/",
+	"*.iml",
+	"*.ipr",
+	"*.iws",
+	".project",
+	".classpath",
+	"*.swp",
+	"*.swo",
+	"*~",
+	// OS files
+	"Thumbs.db",
+	"desktop.ini",
+	// Version control
+	".gitignore",
+	".gitattributes",
+	".svn/",
+	".hg/",
+	// Config files that shouldn't be in module
+	".env",
+	".env.*",
+	"docker-compose*.yml",
+	"Dockerfile*",
+	// Cargo lock files
+	".cargo-*",
+	// Debug symbols
+	"*.d",
+	// Backend source (should be excluded)
+	"app/backend/",
+}
+
+// Frontend file patterns that should be wrapped in webroot/
+var frontendPatterns = []string{
+	"index.html",
+	"css/",
+	"js/",
+	"app/",
+	"fonts/",
+	"assets/",
+	"manifest.json",
+	"sw.js",
+	"icon-*.svg",
 }
 
 func isExcluded(path string) bool {
+	lower := strings.ToLower(path)
 	for _, pat := range excludedPatterns {
 		if strings.HasSuffix(pat, "/") {
-			if strings.Contains(path, pat) {
+			if strings.HasPrefix(lower, strings.ToLower(pat)) {
 				return true
 			}
-		} else if strings.HasPrefix(pat, "*") {
-			suffix := pat[1:]
-			if strings.HasSuffix(path, suffix) {
+		} else if strings.Contains(pat, "*") {
+			suffix := strings.TrimPrefix(pat, "*")
+			if strings.HasSuffix(lower, strings.ToLower(suffix)) {
 				return true
 			}
-		} else if path == pat {
-			return true
+		} else {
+			if lower == strings.ToLower(pat) || strings.HasSuffix(lower, "/"+strings.ToLower(pat)) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func isFrontendFile(path string) bool {
+	lower := strings.ToLower(path)
+	for _, pat := range frontendPatterns {
+		if strings.HasSuffix(pat, "/") {
+			if strings.HasPrefix(lower, strings.ToLower(pat)) {
+				return true
+			}
+		} else if strings.Contains(pat, "*") {
+			suffix := strings.TrimPrefix(pat, "*")
+			if strings.HasSuffix(lower, strings.ToLower(suffix)) {
+				return true
+			}
+		} else {
+			if lower == strings.ToLower(pat) {
+				return true
+			}
 		}
 	}
 	return false
@@ -110,18 +209,24 @@ func (s *ZipperService) BuildModuleZip(_ context.Context, _ string, files []Modu
 			continue // skip malicious paths
 		}
 
+		// Wrap frontend files in webroot/
+		zipPath := cleanPath
+		if isFrontendFile(cleanPath) {
+			zipPath = "webroot/" + cleanPath
+		}
+
 		if f.IsDir {
-			if _, err := zw.Create(cleanPath + "/"); err != nil {
-				return "", fmt.Errorf("create dir %s: %w", cleanPath, err)
+			if _, err := zw.Create(zipPath + "/"); err != nil {
+				return "", fmt.Errorf("create dir %s: %w", zipPath, err)
 			}
 			continue
 		}
 
 		header := &zip.FileHeader{
-			Name:   cleanPath,
+			Name:   zipPath,
 			Method: zip.Deflate,
 		}
-		if strings.HasSuffix(cleanPath, ".sh") || cleanPath == "META-INF/com/google/android/update-binary" {
+		if strings.HasSuffix(zipPath, ".sh") || zipPath == "META-INF/com/google/android/update-binary" {
 			header.SetMode(0755)
 		} else {
 			header.SetMode(0644)
@@ -130,11 +235,11 @@ func (s *ZipperService) BuildModuleZip(_ context.Context, _ string, files []Modu
 
 		w, err := zw.CreateHeader(header)
 		if err != nil {
-			return "", fmt.Errorf("create file %s: %w", cleanPath, err)
+			return "", fmt.Errorf("create file %s: %w", zipPath, err)
 		}
 
 		if _, err := io.WriteString(w, f.Content); err != nil {
-			return "", fmt.Errorf("write file %s: %w", cleanPath, err)
+			return "", fmt.Errorf("write file %s: %w", zipPath, err)
 		}
 	}
 

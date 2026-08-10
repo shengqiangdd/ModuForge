@@ -596,7 +596,7 @@ func (h *AIHandler) UpdateLLMConfig(c fiber.Ctx) error {
 		return BadRequest(c, "unknown provider: "+req.Provider)
 	}
 
-	// Validate model exists in provider
+	// Validate model exists in provider (skip for custom providers with empty models)
 	model := llm.FindModel(req.Provider, req.ModelID)
 	if model == nil && provider != nil {
 		for _, m := range provider.Models {
@@ -607,7 +607,8 @@ func (h *AIHandler) UpdateLLMConfig(c fiber.Ctx) error {
 			}
 		}
 	}
-	if model == nil {
+	if model == nil && len(provider.Models) > 0 {
+		// Only reject if provider has a model list but the model isn't in it
 		return BadRequest(c, "model not found in provider: "+req.ModelID)
 	}
 

@@ -1,11 +1,31 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { toast } from '$lib/stores/toast.svelte';
   import BuildConfig from './BuildConfig.svelte';
   import BuildOutput from './BuildOutput.svelte';
   import BuildHistory from './BuildHistory.svelte';
 
   let { projectId = '', onNavigate }: { projectId?: string; onNavigate?: (route: string, projectId?: string) => void } = $props();
+
+  // Persist active build across page navigation
+  const BUILD_STATE_KEY = 'moduforge_active_build';
+  function saveBuildState() {
+    if (taskId && building) {
+      try { localStorage.setItem(BUILD_STATE_KEY, JSON.stringify({ taskId, projectId, status, startTime: Date.now() })); } catch {}
+    } else {
+      try { localStorage.removeItem(BUILD_STATE_KEY); } catch {}
+    }
+  }
+  function loadBuildState(): { taskId: string; projectId: string } | null {
+    try {
+      const raw = localStorage.getItem(BUILD_STATE_KEY);
+      if (!raw) return null;
+      const s = JSON.parse(raw);
+      // Expire after 30 minutes
+      if (Date.now() - (s.startTime || 0) > 30 * 60 * 1000) { localStorage.removeItem(BUILD_STATE_KEY); return null; }
+      return s;
+    } catch { return null; }
+  }
 
   interface ArchTarget {
     value: string;
@@ -86,10 +106,10 @@
         body: JSON.stringify({ git_url: gitConfig.url, git_branch: gitConfig.branch, auto_build: !!gitConfig.url }),
       });
       if (res.ok) {
-        toast('Git 配置已保存', 'success');
+        toast('Git 配置已保存', 'success', 3000);
         project = { ...project, git_url: gitConfig.url, git_branch: gitConfig.branch, auto_build: !!gitConfig.url };
       }
-    } catch { toast('保存失败', 'error'); }
+    } catch { toast('保存失败', 'error', 5000); }
     savingGitConfig = false;
   }
 
@@ -104,10 +124,10 @@
         body: JSON.stringify({ cron_expr: scheduleConfig.cron, target: scheduleConfig.target, arch: scheduleConfig.arch }),
       });
       if (res.ok) {
-        toast('定时任务已创建', 'success');
+        toast('定时任务已创建', 'success', 3000);
         loadBuildSchedules();
       }
-    } catch { toast('创建失败', 'error'); }
+    } catch { toast('创建失败', 'error', 5000); }
     savingSchedule = false;
   }
 
@@ -131,7 +151,7 @@
         headers: { 'Authorization': `Bearer ${token}` },
       });
       buildSchedules = buildSchedules.filter(s => s.id !== id);
-      toast('已删除', 'info');
+      toast('已删除', 'info', 3000);
     } catch {}
   }
 
@@ -151,6 +171,16 @@
       loadBuildHistory();
       loadCacheStatus();
       loadBuildSchedules();
+
+      // Resume build if we navigated away and came back
+      const saved = loadBuildState();
+      if (saved && saved.projectId === projectId && saved.taskId) {
+        taskId = saved.taskId;
+        building = true;
+        status = 'running';
+        toast('检测到进行中的构建，已恢复轮询', 'info', 4000);
+        pollStatus();
+      }
     })();
     return () => { if (pollTimer) clearInterval(pollTimer); };
   });
@@ -163,13 +193,13 @@
         headers: { 'Authorization': `Bearer ${localStorage.getItem('moduforge_token') || ''}` },
       });
       if (res.ok) {
-        toast('构建缓存已清除', 'info');
+        toast('构建缓存已清除', 'info', 3000);
         cacheStatus = null;
         loadCacheStatus();
       } else {
-        toast('清除缓存失败', 'error');
+        toast('清除缓存失败', 'error', 5000);
       }
-    } catch { toast('清除缓存失败', 'error'); }
+    } catch { toast('清除缓存失败', 'error', 5000); }
   }
 
   async function startBuild() {
@@ -197,20 +227,21 @@
         logLines = ['[CACHE] 缓存命中，使用缓存产物'];
         taskId = data.task?.id || '';
         building = false;
-        toast('缓存命中！', 'success');
+        toast('缓存命中！', 'success', 4000);
         loadCacheStatus();
         return;
       }
       const task = data;
       taskId = task.id;
       status = task.status;
-      toast('构建任务已启动', 'info');
+      toast('构建任务已启动', 'info', 4000);
+      saveBuildState();
       pollStatus();
     } catch (e: any) {
       logLines = [`[ERROR] ${e.message}`];
       status = 'failed';
       building = false;
-      toast(e.message, 'error');
+      toast(e.message, 'error', 5000);
     }
   }
 
@@ -222,7 +253,7 @@
         const res = await fetch(`/api/v1/builds/${taskId}`, {
           headers: { 'Authorization': `Bearer ${localStorage.getItem('moduforge_token') || ''}` },
         });
-        if (!res.ok) { building = false; clearInterval(pollTimer!); return; }
+        if (!res.ok) { building = false; saveBuildState(); clearInterval(pollTimer!); return; }
         const task = await res.json();
         status = task.status;
         if (task.log) logLines = task.log.split('\n').filter((l: string) => l);
@@ -230,12 +261,25 @@
           clearInterval(pollTimer!);
           pollTimer = null;
           building = false;
-          toast('构建成功！', 'success');
+          saveBuildState();
+          toast('构建成功！', 'success', 5000);
           loadCacheStatus();
+          loadBuildHistory();
         }
-        else if (status === 'failed') { clearInterval(pollTimer!); pollTimer = null; building = false; toast('构建失败', 'error'); }
-      } catch { clearInterval(pollTimer!); pollTimer = null; building = false; }
-    }, 1000);
+        else if (status === 'failed') {
+          clearInterval(pollTimer!);
+          pollTimer = null;
+          building = false;
+          saveBuildState();
+          toast('构建失败', 'error', 5000);
+          loadBuildHistory();
+        }
+        else {
+          // Still running — persist state for page navigation
+          saveBuildState();
+        }
+      } catch { clearInterval(pollTimer!); pollTimer = null; building = false; saveBuildState(); }
+    }, 2000);
   }
 
   async function cancelBuild() {
@@ -247,12 +291,14 @@
       });
       if (res.ok) {
         status = 'cancelled';
-        toast('构建已取消', 'info');
+        toast('构建已取消', 'info', 4000);
       }
     } catch {}
     if (pollTimer) clearInterval(pollTimer);
     pollTimer = null;
     building = false;
+    saveBuildState();
+    loadBuildHistory();
   }
 
   async function deleteBuild(buildId: string, e: Event) {
@@ -266,9 +312,14 @@
       });
       if (res.ok) {
         buildHistory = buildHistory.filter(b => b.id !== buildId);
-        toast('已删除', 'info');
+        toast('已删除', 'info', 3000);
+      } else {
+        const body = await res.json().catch(() => ({ error: '未知错误' }));
+        toast(`删除失败: ${body.error || res.statusText}`, 'error', 5000);
       }
-    } catch {}
+    } catch (e: any) {
+      toast(`删除失败: ${e.message || '网络错误'}`, 'error', 5000);
+    }
   }
 
   async function deleteFailedBuilds() {
@@ -283,9 +334,14 @@
       });
       if (res.ok) {
         buildHistory = buildHistory.filter(b => b.status !== 'failed');
-        toast(`已删除 ${failedCount} 条失败记录`, 'info');
+        toast(`已删除 ${failedCount} 条失败记录`, 'success', 4000);
+      } else {
+        const body = await res.json().catch(() => ({ error: '未知错误' }));
+        toast(`清除失败: ${body.error || res.statusText}`, 'error', 5000);
       }
-    } catch {}
+    } catch (e: any) {
+      toast(`清除失败: ${e.message || '网络错误'}`, 'error', 5000);
+    }
   }
 
   // Parse incremental info from build log
@@ -373,7 +429,7 @@
         if (task._cancel) { taskId = task.id; cancelBuild(); return; }
         taskId = task.id;
         status = task.status || '';
-        logLines = task.log ? task.log.split('\n') : [];
+        logLines = task.log ? task.log.split('\n').filter((l: string) => l) : [];
         if (task.status === 'running' || task.status === 'pending') { building = true; pollStatus(); }
       }}
       onDeleteBuild={deleteBuild}
