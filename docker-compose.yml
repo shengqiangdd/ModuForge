@@ -10,7 +10,7 @@ services:
       - "8086:8080"
     environment:
       - PORT=:8080
-      - DB_PATH=/data/moduforge.db
+      - DATABASE_PATH=/data/moduforge.db
       - BUILD_DIR=/data/builds
       - MODULES_DIR=/data/modules
       - PROJECTS_DIR=/data/projects

@@ -15,7 +15,7 @@ fi
 
 export JWT_SECRET
 export PORT=${PORT:-8080}
-export DB_PATH=${DB_PATH:-/data/moduforge.db}
+export DATABASE_PATH=${DATABASE_PATH:-/data/moduforge.db}
 
 echo "[entrypoint] Starting ModuForge on port $PORT"
 exec /server
