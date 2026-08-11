@@ -22,4 +22,11 @@ fi
 
 # ── 启动服务 ──
 log "Starting ModuForge on port ${PORT:-:8080}..."
-exec /app/server "$@"
+
+# Fix volume ownership if running as root (e.g. after a host-level backup/restore).
+if [ "$(id -u)" = '0' ]; then
+  chown -R moduforge:moduforge /data /app/uploads 2>/dev/null || true
+  exec su -s /bin/sh -c 'exec "$0" "$@"' -- /app/server "$@"
+else
+  exec /app/server "$@"
+fi

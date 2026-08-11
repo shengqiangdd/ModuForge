@@ -34,7 +34,7 @@ LABEL org.opencontainers.image.source="https://github.com/moduforge/ModuForge"
 
 # --- Runtime deps + gcompat (NDK glibc compatibility on Alpine) ---
 RUN apk add --no-cache wget ca-certificates tzdata openssl curl bash xz zip unzip cmake make gcompat gcc musl-dev \
-    && addgroup -S moduforge && adduser -S moduforge -G moduforge
+    && addgroup -S moduforge && adduser -S moduforge -G moduforge -u 1000
 
 # --- Rust toolchain ---
 ENV CARGO_HOME=/usr/local/cargo RUSTUP_HOME=/usr/local/rustup
@@ -83,5 +83,7 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
 RUN mkdir -p /data /app/uploads && chown -R moduforge:moduforge /data /app/uploads
 
 EXPOSE 8080
-USER moduforge
+
+# Run as root so the entrypoint can adjust volume ownership if needed (e.g. after a host backup).
+# The entrypoint script handles JWT setup before starting the server.
 ENTRYPOINT ["/docker-entrypoint.sh"]
