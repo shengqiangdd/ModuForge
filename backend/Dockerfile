@@ -62,7 +62,7 @@ COPY --from=backend-builder --chown=moduforge:moduforge /server /app/server
 COPY --from=frontend-builder --chown=moduforge:moduforge /app/dist /app/dist
 
 # --- Entrypoint ---
-COPY --chown=moduforge:moduforge docker-entrypoint.sh /docker-entrypoint.sh
+COPY docker-entrypoint.sh /docker-entrypoint.sh
 RUN chmod +x /docker-entrypoint.sh
 
 # --- Runtime defaults ---
