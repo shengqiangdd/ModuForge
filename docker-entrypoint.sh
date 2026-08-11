@@ -22,4 +22,4 @@ fi
 
 # ── 启动服务 ──
 log "Starting ModuForge on port ${PORT:-:8080}..."
-exec /server "$@"
+exec /app/server "$@"
