@@ -51,7 +51,10 @@ def main() -> None:
     # Git pull (optional)
     if args.pull:
         print("\n[2/6] Pulling latest code...")
-        run(ssh, f"cd {remote} && git pull origin main", timeout=60)
+        # Safe fetch + reset: avoids merge conflicts on remote with local tweaks
+        run(ssh, f"cd {remote} && git fetch origin main", timeout=60)
+        run(ssh, f"cd {remote} && git reset --hard origin/main", timeout=30)
+        run(ssh, f"cd {remote} && git clean -fd", timeout=30)
     else:
         print("\n[2/6] Skipping git pull (use --pull to enable)")
 
