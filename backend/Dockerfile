@@ -86,4 +86,5 @@ EXPOSE 8080
 
 # Run as root so the entrypoint can adjust volume ownership if needed (e.g. after a host backup).
 # The entrypoint script handles JWT setup before starting the server.
-ENTRYPOINT ["/docker-entrypoint.sh"]
+# Use /bin/sh to execute the entrypoint so +x permission is not required.
+ENTRYPOINT ["/bin/sh", "/docker-entrypoint.sh"]
