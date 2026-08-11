@@ -1,6 +1,7 @@
 package service
 
 import (
+	"archive/zip"
 	"bufio"
 	"bytes"
 	"context"
@@ -23,6 +24,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/moduforge/backend/internal/builder"
 )
 
 // ─── ADB Path Resolution ───
@@ -1409,10 +1412,22 @@ func (s *ADBService) InstallModule(ctx context.Context, serial, zipPath string) 
 	if _, err := s.PushFile(ctx, serial, zipPath, remotePath); err != nil {
 		return "", err
 	}
-	out, err := s.RunShell(ctx, serial, "su -c 'magisk --install-module "+remotePath+"'")
-	if err != nil {
-		return "", fmt.Errorf("install failed: %w", err)
+
+	// Detect root manager and use the correct install command
+	mgr, installCmd := s.detectRootManagerAndInstallCmd(serial)
+	if installCmd == "" {
+		return "", fmt.Errorf("no supported root manager found (tried APatch/KernelSU/Magisk)")
 	}
+
+	log.Printf("[ADB] Installing module via %s: %s", mgr, installCmd+remotePath+"'")
+	out, err := s.RunShell(ctx, serial, installCmd+remotePath+"'")
+	if err != nil {
+		return "", fmt.Errorf("install failed (%s): %w", mgr, err)
+	}
+
+	// Cleanup temp zip
+	s.RunShell(ctx, serial, "rm -f "+remotePath)
+
 	return strings.TrimSpace(out), nil
 }
 
@@ -1456,13 +1471,20 @@ func (s *ADBService) InstallModuleFromURL(ctx context.Context, serial, moduleURL
 		return nil, fmt.Errorf("push to device failed: %w", err)
 	}
 
-	// 3. Install
-	installOut, err := s.RunShell(ctx, serial, "su -c 'magisk --install-module "+remotePath+"'")
+	// 3. Install via detected root manager
+	mgr, installCmd := s.detectRootManagerAndInstallCmd(serial)
+	if installCmd == "" {
+		os.Remove(tmpFile)
+		return nil, fmt.Errorf("no supported root manager found (tried APatch/KernelSU/Magisk)")
+	}
+	log.Printf("[ADB] Installing module from URL via %s", mgr)
+	installOut, err := s.RunShell(ctx, serial, installCmd+remotePath+"'")
 	if err != nil {
 		os.Remove(tmpFile)
-		return nil, fmt.Errorf("module install failed: %w", err)
+		return nil, fmt.Errorf("module install failed (%s): %w", mgr, err)
 	}
 	result["install_output"] = strings.TrimSpace(installOut)
+	result["root_manager"] = mgr
 
 	// 4. Cleanup
 	os.Remove(tmpFile)
@@ -1609,6 +1631,41 @@ func (s *ADBService) CheckModuleUpdate(ctx context.Context, serial, moduleName s
 
 func (s *ADBService) getModuleBasePath(ctx context.Context, serial string) string {
 	return "/data/adb/modules"
+}
+
+// detectRootManagerAndInstallCmd detects the root manager on the device and returns
+// the appropriate install command prefix. The returned cmd already includes the
+// trailing space, so callers just append the zip path.
+// Priority: APatch > KernelSU > Magisk (each has a unique binary).
+func (s *ADBService) detectRootManagerAndInstallCmd(serial string) (string, string) {
+	run := func(args ...string) string {
+		cmdArgs := append([]string{"-s", serial, "shell"}, args...)
+		out, err := s.run(context.Background(), cmdArgs...)
+		if err != nil {
+			return ""
+		}
+		return strings.TrimSpace(out)
+	}
+
+	// APatch: apd binary is unique to APatch
+	apVer := run("su", "-c", "apd --version")
+	if apVer != "" && !strings.Contains(apVer, "not found") && !strings.Contains(apVer, "No such") {
+		return "APatch", "su -c 'apd module install "
+	}
+
+	// KernelSU: ksud binary is unique to KernelSU
+	ksuVer := run("su", "-c", "ksud --version")
+	if ksuVer != "" && !strings.Contains(ksuVer, "not found") && !strings.Contains(ksuVer, "No such") {
+		return "KernelSU", "su -c 'ksud module install "
+	}
+
+	// Magisk: magisk binary is unique to Magisk
+	magVer := run("su", "-c", "magisk -v")
+	if magVer != "" && !strings.Contains(magVer, "not found") && !strings.Contains(magVer, "No such") {
+		return "Magisk", "su -c 'magisk --install-module "
+	}
+
+	return "", ""
 }
 
 // ─── Root Manager (2.1-2.3) ───
@@ -2502,4 +2559,167 @@ func (s *ADBService) ScreenshotRaw(ctx context.Context, serial string) ([]byte, 
 		return nil, err
 	}
 	return stdout.Bytes(), nil
+}
+
+// ─── Enhanced Module Push (Folder + Build) ───
+
+// PushModuleFolder zips a local module directory (excluding source code) and installs
+// it on the device via the detected root manager (APatch/KernelSU/Magisk).
+// The root manager handles: unzip → execute customize.sh → place in /data/adb/modules/.
+func (s *ADBService) PushModuleFolder(ctx context.Context, serial, localDir, moduleName string, install bool) (map[string]interface{}, error) {
+	result := make(map[string]interface{})
+
+	// 1. Zip the directory locally (excluding source code, build cache, etc.)
+	tmpZip := filepath.Join(os.TempDir(), fmt.Sprintf("module_push_%d.zip", time.Now().UnixMilli()))
+	if err := builder.ZipDirExcluding(localDir, tmpZip, builder.ModuleExcludePatterns); err != nil {
+		return nil, fmt.Errorf("zip module directory failed: %w", err)
+	}
+	defer os.Remove(tmpZip)
+
+	zipInfo, _ := os.Stat(tmpZip)
+	result["zip_size"] = zipInfo.Size()
+
+	// 2. Push zip to device
+	remotePath := "/data/local/tmp/module_push.zip"
+	if _, err := s.PushFile(ctx, serial, tmpZip, remotePath); err != nil {
+		return nil, fmt.Errorf("push zip to device failed: %w", err)
+	}
+
+	// 3. If install=true, detect root manager and install
+	if install {
+		mgr, installCmd := s.detectRootManagerAndInstallCmd(serial)
+		if installCmd == "" {
+			return nil, fmt.Errorf("no supported root manager found (tried APatch/KernelSU/Magisk)")
+		}
+		log.Printf("[ADB] Installing module via %s", mgr)
+		out, err := s.RunShell(ctx, serial, installCmd+remotePath+"'")
+		if err != nil {
+			return nil, fmt.Errorf("install failed (%s): %w", mgr, err)
+		}
+		result["install_output"] = strings.TrimSpace(out)
+		result["root_manager"] = mgr
+	}
+
+	// Cleanup
+	s.RunShell(ctx, serial, "rm -f "+remotePath)
+
+	result["module_name"] = moduleName
+	result["source_dir"] = localDir
+	result["message"] = "Module zip pushed" + map[bool]string{true: " and installed", false: ""}[install] + "."
+	return result, nil
+}
+
+// PushBuildModule pushes a build artifact zip to the device and installs it
+// via the detected root manager.
+func (s *ADBService) PushBuildModule(ctx context.Context, serial, zipPath, moduleName string, install bool) (map[string]interface{}, error) {
+	result := make(map[string]interface{})
+
+	zipInfo, err := os.Stat(zipPath)
+	if err != nil {
+		return nil, fmt.Errorf("zip file not found: %w", err)
+	}
+	result["zip_size"] = zipInfo.Size()
+
+	// 1. Push zip to device
+	remotePath := "/data/local/tmp/module_push.zip"
+	if _, err := s.PushFile(ctx, serial, zipPath, remotePath); err != nil {
+		return nil, fmt.Errorf("push zip to device failed: %w", err)
+	}
+
+	// 2. If install=true, detect root manager and install
+	if install {
+		mgr, installCmd := s.detectRootManagerAndInstallCmd(serial)
+		if installCmd == "" {
+			return nil, fmt.Errorf("no supported root manager found (tried APatch/KernelSU/Magisk)")
+		}
+		log.Printf("[ADB] Installing module via %s", mgr)
+		out, err := s.RunShell(ctx, serial, installCmd+remotePath+"'")
+		if err != nil {
+			return nil, fmt.Errorf("install failed (%s): %w", mgr, err)
+		}
+		result["install_output"] = strings.TrimSpace(out)
+		result["root_manager"] = mgr
+	}
+
+	// Cleanup
+	s.RunShell(ctx, serial, "rm -f "+remotePath)
+
+	result["module_name"] = moduleName
+	result["source_zip"] = zipPath
+	result["message"] = "Module zip pushed" + map[bool]string{true: " and installed", false: ""}[install] + "."
+	return result, nil
+}
+
+// PushBuildByID pushes a build artifact by build ID to the device and installs it.
+func (s *ADBService) PushBuildByID(ctx context.Context, serial, buildID, moduleName string, install bool) (map[string]interface{}, error) {
+	// Query database for artifact path
+	var artifactPath string
+	err := s.db.QueryRowContext(ctx, "SELECT artifact_path FROM build_tasks WHERE id = ?", buildID).Scan(&artifactPath)
+	if err != nil {
+		return nil, fmt.Errorf("build not found: %w", err)
+	}
+
+	// Resolve full path
+	fullPath := artifactPath
+	if !filepath.IsAbs(fullPath) {
+		storagePath := os.Getenv("STORAGE_PATH")
+		if storagePath == "" {
+			storagePath = "/data/storage"
+		}
+		fullPath = filepath.Join(storagePath, artifactPath)
+	}
+
+	if _, err := os.Stat(fullPath); os.IsNotExist(err) {
+		return nil, fmt.Errorf("artifact file not found: %s", fullPath)
+	}
+
+	return s.PushBuildModule(ctx, serial, fullPath, moduleName, install)
+}
+
+// extractZip extracts a zip file to a destination directory.
+func extractZip(src, dst string) error {
+	r, err := zip.OpenReader(src)
+	if err != nil {
+		return err
+	}
+	defer r.Close()
+
+	for _, f := range r.File {
+		path := filepath.Join(dst, f.Name)
+
+		// Security: prevent path traversal
+		if !strings.HasPrefix(path, filepath.Clean(dst)+string(os.PathSeparator)) {
+			return fmt.Errorf("illegal file path: %s", f.Name)
+		}
+
+		if f.FileInfo().IsDir() {
+			os.MkdirAll(path, 0755)
+			continue
+		}
+
+		// Ensure parent directory exists
+		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+			return err
+		}
+
+		outFile, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, f.Mode())
+		if err != nil {
+			return err
+		}
+
+		rc, err := f.Open()
+		if err != nil {
+			outFile.Close()
+			return err
+		}
+
+		_, err = io.Copy(outFile, rc)
+		rc.Close()
+		outFile.Close()
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }

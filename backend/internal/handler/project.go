@@ -377,3 +377,93 @@ func (h *ProjectHandler) ListTemplates(c fiber.Ctx) error {
 	}
 	return c.JSON(templates)
 }
+
+// FileTreeNode represents a node in the file tree
+type FileTreeNode struct {
+	Name     string         `json:"name"`
+	Path     string         `json:"path"`
+	Type     string         `json:"type"` // "file" or "directory"
+	Children []*FileTreeNode `json:"children,omitempty"`
+	Size     int64          `json:"size,omitempty"`
+	Modified string         `json:"modified,omitempty"`
+}
+
+// GetFileTree returns a hierarchical file tree for a project
+func (h *ProjectHandler) GetFileTree(c fiber.Ctx) error {
+	projectID := c.Params("id")
+	if projectID == "" {
+		return c.JSON(&FileTreeNode{})
+	}
+	
+	userID := c.Locals("uid")
+	uid := ""
+	if userID != nil {
+		if s, ok := userID.(string); ok {
+			uid = s
+		}
+	}
+	if uid == "" {
+		return Unauthorized(c, "未授权")
+	}
+	
+	// Get all files for the project
+	files, err := h.svc.ListFiles(c.Context(), projectID, uid)
+	if err != nil {
+		return ErrorResponse(c, 400, err.Error(), ErrCodeInternal)
+	}
+	
+	// Build tree structure
+	root := &FileTreeNode{
+		Name:     "root",
+		Path:     "",
+		Type:     "directory",
+		Children: []*FileTreeNode{},
+	}
+	
+	for _, file := range files {
+		path := file.Path
+		if path == "" {
+			continue
+		}
+		
+		// Split path into components
+		parts := strings.Split(path, "/")
+		current := root
+		
+		// Traverse or create directory structure
+		for i, part := range parts {
+			if i == len(parts)-1 {
+				// This is a file
+				current.Children = append(current.Children, &FileTreeNode{
+					Name:     part,
+					Path:     path,
+					Type:     "file",
+					Size:     int64(len(file.Content)),
+					Modified: file.UpdatedAt,
+				})
+			} else {
+				// This is a directory - find or create it
+				found := false
+				for _, child := range current.Children {
+					if child.Name == part && child.Type == "directory" {
+						current = child
+						found = true
+						break
+					}
+				}
+				if !found {
+					newDir := &FileTreeNode{
+						Name:     part,
+						Path:     strings.Join(parts[:i+1], "/"),
+						Type:     "directory",
+						Children: []*FileTreeNode{},
+					}
+					current.Children = append(current.Children, newDir)
+					current = newDir
+				}
+			}
+		}
+	}
+	
+	return c.JSON(root)
+}

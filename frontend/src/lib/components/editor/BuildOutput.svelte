@@ -58,7 +58,7 @@
 <!-- Status -->
 {#if status}
   {@const cfg = statusConfig[status] || statusConfig.pending}
-  <div class="mb-4 p-4 rounded-2xl border {cfg.bg} flex flex-wrap items-center gap-2 sm:gap-3 overflow-hidden" style="border-color: var(--color-border)">
+  <div class="mb-4 p-4 rounded-2xl border {cfg.bg} flex flex-wrap items-center gap-2 sm:gap-3 overflow-x-hidden" style="border-color: var(--color-border)">
     <span class="material-symbols-outlined text-[22px] {cfg.color}">{cfg.icon}</span>
     <span class="text-sm font-semibold {cfg.color} uppercase">{status}</span>
     <span class="text-xs px-2 py-0.5 rounded-full flex items-center gap-1 whitespace-nowrap" style="background: var(--color-bg-elevated); color: var(--color-text-muted)">
@@ -106,7 +106,7 @@
 
 <!-- Log -->
 {#if logLines.length > 0}
-  <div class="rounded-2xl border overflow-hidden" style="border-color: rgba(34,197,94,0.2); box-shadow: 0 0 30px rgba(34, 197, 94, 0.1)">
+  <div class="rounded-2xl border overflow-hidden min-w-0" style="border-color: rgba(34,197,94,0.2); box-shadow: 0 0 30px rgba(34, 197, 94, 0.1)">
     <div class="px-4 py-2.5 flex items-center gap-2" style="background: rgba(34,197,94,0.1); border-bottom: 1px solid rgba(34,197,94,0.2)">
       <span class="material-symbols-outlined text-[16px]" style="color: #4ade80">terminal</span>
       <span class="text-xs font-medium" style="color: #4ade80">构建日志</span>
@@ -119,7 +119,7 @@
         </div>
       </div>
     </div>
-    <div class="p-2 text-[11px] font-mono overflow-auto max-h-80 log-container" style="background: #0a0a0a; color: #4ade80; white-space: pre">{#each logLines as line, i}<div class="log-line">{String(i + 1).padStart(3, ' ')} <span class:text-red-400={line.startsWith('[ERROR]')} class:text-amber-400={line.startsWith('[WARN]')} class:text-green-300={line.startsWith('[SUCCESS]')} class:text-green-400={!line.startsWith('[') || line.startsWith('[INFO]')}>{line}</span></div>{/each}</div>
+    <div class="p-2 text-[11px] font-mono overflow-x-auto overflow-y-auto max-h-80 min-w-0 log-container" style="background: #0a0a0a; color: #4ade80; white-space: pre-wrap; word-break: break-all">{#each logLines as line, i}<div class="log-line">{String(i + 1).padStart(3, ' ')} <span class:text-red-400={line.startsWith('[ERROR]')} class:text-amber-400={line.startsWith('[WARN]')} class:text-green-300={line.startsWith('[SUCCESS]')} class:text-green-400={!line.startsWith('[') || line.startsWith('[INFO]')}>{line}</span></div>{/each}</div>
   </div>
 {:else if building}
   <div class="rounded-2xl border p-8 text-center" style="border-color: var(--color-border); background: var(--color-bg-elevated)">

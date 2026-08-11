@@ -22,7 +22,9 @@
   // Virtual scroll state
   let scrollTop = $state(0);
   let containerHeight = $state(0);
+  let containerEl: HTMLDivElement | undefined = $state();
   let chatEnd: HTMLDivElement | undefined = $state();
+  let lastMsgCount = $state(0);
 
   const ITEM_HEIGHT = 80;
   const OVERSCAN = 5;
@@ -32,22 +34,18 @@
   let virtualSpacerTop = $derived(virtualStart * ITEM_HEIGHT);
   let virtualSpacerBottom = $derived((messages.length - virtualEnd) * ITEM_HEIGHT);
 
-  // Auto-scroll
-  let lastScrollTime = 0;
+  // Auto-scroll when new messages are added
   $effect(() => {
-    if (chatEnd) {
-      const container = chatEnd.parentElement;
-      if (container) {
-        const nearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 150;
-        if (nearBottom || messages.length <= 1) {
-          const now = Date.now();
-          if (now - lastScrollTime > 100 || messages.length <= 1) {
-            lastScrollTime = now;
-            chatEnd.scrollIntoView({ behavior: messages.length <= 1 ? 'instant' : 'smooth' });
-          }
+    const count = messages.length;
+    if (count > lastMsgCount && containerEl) {
+      lastMsgCount = count;
+      requestAnimationFrame(() => {
+        if (containerEl) {
+          containerEl.scrollTop = containerEl.scrollHeight;
         }
-      } else { chatEnd.scrollIntoView({ behavior: 'smooth' }); }
+      });
     }
+    lastMsgCount = count;
   });
 
   // Exposed for parent to call after sending a message
@@ -59,6 +57,7 @@
 
 <div class="flex-1 overflow-y-auto px-3 py-1.5 space-y-1.5 messages-area"
   onscroll={(e) => { scrollTop = e.currentTarget.scrollTop; }}
+  bind:this={containerEl}
   bind:clientHeight={containerHeight}>
   {#if messages.length === 0}
     <div class="flex items-center justify-center h-full">

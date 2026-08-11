@@ -1,6 +1,16 @@
 <script lang="ts">
+  interface TreeNode {
+    name: string;
+    path: string;
+    type: 'file' | 'directory';
+    size?: number;
+    modified?: string;
+    children?: TreeNode[];
+  }
+
   let {
     files = [],
+    treeData = null,
     selectedFile = null,
     project = null,
     sidebarOpen = true,
@@ -23,8 +33,12 @@
     onDrop,
     onDragOver,
     onDragLeave,
+    onRefreshTree,
+    viewMode = 'flat',
+    onViewModeChange,
   }: {
     files?: { id?: number; path: string; content?: string }[];
+    treeData?: TreeNode | null;
     selectedFile?: string | null;
     project?: { id: string; name: string; path: string } | null;
     sidebarOpen?: boolean;
@@ -47,7 +61,48 @@
     onDrop?: (e: DragEvent) => void;
     onDragOver?: (e: DragEvent) => void;
     onDragLeave?: () => void;
+    onRefreshTree?: () => void;
+    viewMode?: 'flat' | 'tree';
+    onViewModeChange?: (mode: 'flat' | 'tree') => void;
   } = $props();
+
+  let expandedDirs = $state<Set<string>>(new Set());
+
+  function toggleDir(path: string) {
+    if (expandedDirs.has(path)) {
+      expandedDirs.delete(path);
+    } else {
+      expandedDirs.add(path);
+    }
+    expandedDirs = expandedDirs; // trigger reactivity
+  }
+
+  function formatSize(bytes?: number): string {
+    if (bytes == null) return '';
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
+  function getDirFileCount(node: TreeNode): number {
+    if (!node.children) return 0;
+    let count = 0;
+    for (const child of node.children) {
+      if (child.type === 'file') count++;
+      else count += getDirFileCount(child);
+    }
+    return count;
+  }
+
+  function getIcon(node: TreeNode): string {
+    if (node.type === 'directory') return expandedDirs.has(node.path) ? 'folder_open' : 'folder';
+    return getFileIcon?.(node.path) || 'description';
+  }
+
+  function getIconColor(node: TreeNode): string {
+    if (node.type === 'directory') return 'var(--color-warning)';
+    return getFileIconColor?.(node.path) || 'var(--color-text-muted)';
+  }
 </script>
 
 {#if !sidebarOpen}
@@ -62,21 +117,37 @@
 
 <aside
   class="border-r border-[var(--color-border)] bg-[var(--color-bg-elevated)] flex flex-col flex-shrink-0 transition-all duration-200
-    {sidebarOpen ? 'w-60 max-md:fixed max-md:top-0 max-md:bottom-16 max-md:left-0 max-md:z-20 max-md:shadow-elevated-lg' : 'w-0 max-md:hidden overflow-hidden border-r-0'}"
+    {sidebarOpen ? 'w-64 max-md:fixed max-md:top-0 max-md:bottom-16 max-md:left-0 max-md:z-20 max-md:shadow-elevated-lg' : 'w-0 max-md:hidden overflow-hidden border-r-0'}"
   ondragover={onDragOver}
   ondragleave={onDragLeave}
   ondrop={onDrop}
 >
-  <div class="px-4 h-12 flex items-center border-b border-[var(--color-border)] min-w-[240px]">
+  <!-- Header -->
+  <div class="px-3 h-12 flex items-center border-b border-[var(--color-border)] min-w-[256px]">
     <h3 class="text-sm font-semibold text-[var(--color-text)] truncate flex-1">{project?.name || '项目'}</h3>
     <button class="flex items-center justify-center w-7 h-7 rounded-lg text-[var(--color-text-secondary)] hover:bg-[var(--color-surface)] transition-colors" onclick={onOpenFileSearch} title="搜索文件 (Ctrl+P)">
       <span class="material-symbols-outlined !text-[16px]">search</span>
     </button>
-    <button class="flex items-center justify-center w-7 h-7 rounded-lg text-[var(--color-text-secondary)] hover:bg-[var(--color-surface)] transition-colors ml-1" onclick={onToggleSidebar} title="折叠侧边栏">
+    <!-- View mode toggle -->
+    <button
+      class="flex items-center justify-center w-7 h-7 rounded-lg text-[var(--color-text-secondary)] hover:bg-[var(--color-surface)] transition-colors ml-0.5"
+      onclick={() => onViewModeChange?.(viewMode === 'flat' ? 'tree' : 'flat')}
+      title={viewMode === 'flat' ? '切换为文件夹视图' : '切换为平铺视图'}
+    >
+      <span class="material-symbols-outlined !text-[16px]">{viewMode === 'flat' ? 'folder' : 'view_list'}</span>
+    </button>
+    {#if onRefreshTree}
+      <button class="flex items-center justify-center w-7 h-7 rounded-lg text-[var(--color-text-secondary)] hover:bg-[var(--color-surface)] transition-colors ml-0.5" onclick={onRefreshTree} title="刷新文件树">
+        <span class="material-symbols-outlined !text-[16px]">refresh</span>
+      </button>
+    {/if}
+    <button class="flex items-center justify-center w-7 h-7 rounded-lg text-[var(--color-text-secondary)] hover:bg-[var(--color-surface)] transition-colors ml-0.5" onclick={onToggleSidebar} title="折叠侧边栏">
       <span class="material-symbols-outlined !text-[16px]">menu_open</span>
     </button>
     <span class="text-xs text-[var(--color-text-muted)] ml-1">{files.length}</span>
   </div>
+
+  <!-- File list -->
   <div class="flex-1 overflow-y-auto p-2 space-y-0.5 relative" class:drag-over={dragOver}>
     {#if dragOver}
       <div class="absolute inset-0 z-10 flex items-center justify-center rounded-xl pointer-events-none" style="background: color-mix(in srgb, var(--color-primary) 8%, transparent); border: 2px dashed var(--color-primary);">
@@ -89,33 +160,161 @@
     {#if uploadProgress}
       <div class="px-3 py-2 text-xs text-[var(--color-primary)]">{uploadProgress}</div>
     {/if}
-    {#each files as file}
-      <div class="group flex items-center">
-        <button
-          class="flex-1 flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-all duration-200 text-left {selectedFile === file.path ? 'bg-[var(--gradient-brand-subtle)] text-[var(--color-primary)] font-medium' : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-surface)]'}"
-          onclick={() => { onSelect?.(file.path); if (typeof window !== 'undefined' && window.innerWidth < 768) onToggleSidebar?.(); }}
-        >
-          <span class="material-symbols-outlined text-[16px] flex-shrink-0" style="color: {getFileIconColor?.(file.path) || 'var(--color-text-muted)'}">{getFileIcon?.(file.path) || 'description'}</span>
-          <span class="truncate">{file.path.split('/').pop()}</span>
-          {#if selectedFile === file.path}
-            <div class="ml-auto w-1.5 h-1.5 rounded-full" style="background: var(--gradient-brand)"></div>
+
+    {#if viewMode === 'tree' && treeData}
+      <!-- Tree view: recursive directory structure -->
+      {#if treeData.children && treeData.children.length > 0}
+        {#each treeData.children as node}
+          {#if node.type === 'directory'}
+            <!-- Directory node -->
+            <div>
+              <button
+                class="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm text-left transition-all duration-150 text-[var(--color-text-secondary)] hover:bg-[var(--color-surface)]"
+                onclick={() => toggleDir(node.path)}
+              >
+                <span class="material-symbols-outlined text-[14px] transition-transform duration-150" style="transform: rotate({expandedDirs.has(node.path) ? '90' : '0'}deg); color: var(--color-text-muted)">chevron_right</span>
+                <span class="material-symbols-outlined text-[16px] flex-shrink-0" style="color: {getIconColor(node)}">{getIcon(node)}</span>
+                <span class="truncate flex-1 text-[var(--color-text)] font-medium text-xs">{node.name}</span>
+                <span class="text-[10px] text-[var(--color-text-muted)]">{getDirFileCount(node)}</span>
+              </button>
+              {#if expandedDirs.has(node.path) && node.children}
+                <div class="ml-4 pl-2 border-l border-[var(--color-border)]">
+                  {#each node.children as child}
+                    {#if child.type === 'directory'}
+                      <!-- Nested directory (1 level deep) -->
+                      <div>
+                        <button
+                          class="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm text-left transition-all duration-150 text-[var(--color-text-secondary)] hover:bg-[var(--color-surface)]"
+                          onclick={() => toggleDir(child.path)}
+                        >
+                          <span class="material-symbols-outlined text-[14px] transition-transform duration-150" style="transform: rotate({expandedDirs.has(child.path) ? '90' : '0'}deg); color: var(--color-text-muted)">chevron_right</span>
+                          <span class="material-symbols-outlined text-[16px] flex-shrink-0" style="color: {getIconColor(child)}">{getIcon(child)}</span>
+                          <span class="truncate flex-1 text-[var(--color-text)] font-medium text-xs">{child.name}</span>
+                          <span class="text-[10px] text-[var(--color-text-muted)]">{getDirFileCount(child)}</span>
+                        </button>
+                        {#if expandedDirs.has(child.path) && child.children}
+                          <div class="ml-4 pl-2 border-l border-[var(--color-border)]">
+                            {#each child.children as file}
+                              <div class="group flex items-center">
+                                <button
+                                  class="flex-1 flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm transition-all duration-150 text-left {selectedFile === file.path ? 'bg-[var(--gradient-brand-subtle)] text-[var(--color-primary)] font-medium' : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-surface)]'}"
+                                  onclick={() => { onSelect?.(file.path); if (typeof window !== 'undefined' && window.innerWidth < 768) onToggleSidebar?.(); }}
+                                >
+                                  <span class="material-symbols-outlined text-[14px] flex-shrink-0" style="color: {getIconColor(file)}">{getIcon(file)}</span>
+                                  <span class="truncate text-xs">{file.name}</span>
+                                  {#if file.size != null}
+                                    <span class="ml-auto text-[10px] text-[var(--color-text-muted)]">{formatSize(file.size)}</span>
+                                  {/if}
+                                  {#if selectedFile === file.path}
+                                    <div class="w-1.5 h-1.5 rounded-full" style="background: var(--gradient-brand)"></div>
+                                  {/if}
+                                </button>
+                                <button
+                                  class="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-[var(--color-error-light)] transition-opacity mr-1 cursor-pointer"
+                                  title="删除文件"
+                                  onclick={(e) => { e.stopPropagation(); onDelete?.(file.path); }}
+                                >
+                                  <span class="material-symbols-outlined text-[14px] text-[var(--color-error)]">delete</span>
+                                </button>
+                              </div>
+                            {/each}
+                          </div>
+                        {/if}
+                      </div>
+                    {:else}
+                      <!-- File inside sub-directory -->
+                      <div class="group flex items-center">
+                        <button
+                          class="flex-1 flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm transition-all duration-150 text-left {selectedFile === child.path ? 'bg-[var(--gradient-brand-subtle)] text-[var(--color-primary)] font-medium' : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-surface)]'}"
+                          onclick={() => { onSelect?.(child.path); if (typeof window !== 'undefined' && window.innerWidth < 768) onToggleSidebar?.(); }}
+                        >
+                          <span class="material-symbols-outlined text-[14px] flex-shrink-0" style="color: {getIconColor(child)}">{getIcon(child)}</span>
+                          <span class="truncate text-xs">{child.name}</span>
+                          {#if child.size != null}
+                            <span class="ml-auto text-[10px] text-[var(--color-text-muted)]">{formatSize(child.size)}</span>
+                          {/if}
+                          {#if selectedFile === child.path}
+                            <div class="w-1.5 h-1.5 rounded-full" style="background: var(--gradient-brand)"></div>
+                          {/if}
+                        </button>
+                        <button
+                          class="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-[var(--color-error-light)] transition-opacity mr-1 cursor-pointer"
+                          title="删除文件"
+                          onclick={(e) => { e.stopPropagation(); onDelete?.(child.path); }}
+                        >
+                          <span class="material-symbols-outlined text-[14px] text-[var(--color-error)]">delete</span>
+                        </button>
+                      </div>
+                    {/if}
+                  {/each}
+                </div>
+              {/if}
+            </div>
+          {:else}
+            <!-- Root-level file -->
+            <div class="group flex items-center">
+              <button
+                class="flex-1 flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm transition-all duration-150 text-left {selectedFile === node.path ? 'bg-[var(--gradient-brand-subtle)] text-[var(--color-primary)] font-medium' : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-surface)]'}"
+                onclick={() => { onSelect?.(node.path); if (typeof window !== 'undefined' && window.innerWidth < 768) onToggleSidebar?.(); }}
+              >
+                <span class="w-[14px]"></span>
+                <span class="material-symbols-outlined text-[16px] flex-shrink-0" style="color: {getIconColor(node)}">{getIcon(node)}</span>
+                <span class="truncate text-xs">{node.name}</span>
+                {#if node.size != null}
+                  <span class="ml-auto text-[10px] text-[var(--color-text-muted)]">{formatSize(node.size)}</span>
+                {/if}
+                {#if selectedFile === node.path}
+                  <div class="w-1.5 h-1.5 rounded-full" style="background: var(--gradient-brand)"></div>
+                {/if}
+              </button>
+              <button
+                class="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-[var(--color-error-light)] transition-opacity mr-1 cursor-pointer"
+                title="删除文件"
+                onclick={(e) => { e.stopPropagation(); onDelete?.(node.path); }}
+              >
+                <span class="material-symbols-outlined text-[14px] text-[var(--color-error)]">delete</span>
+              </button>
+            </div>
           {/if}
-        </button>
-        <button
-          class="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-[var(--color-error-light)] transition-opacity mr-1 cursor-pointer"
-          title="删除文件"
-          onclick={(e) => { e.stopPropagation(); onDelete?.(file.path); }}
-        >
-          <span class="material-symbols-outlined text-[14px] text-[var(--color-error)]">delete</span>
-        </button>
-      </div>
+        {/each}
+      {:else}
+        <div class="text-center py-12">
+          <span class="material-symbols-outlined text-4xl mb-2" style="color: var(--color-text-muted)">folder_open</span>
+          <p class="text-xs" style="color: var(--color-text-muted)">暂无文件</p>
+        </div>
+      {/if}
     {:else}
-      <div class="text-center py-12">
-        <span class="material-symbols-outlined text-4xl mb-2" style="color: var(--color-text-muted)">folder_open</span>
-        <p class="text-xs" style="color: var(--color-text-muted)">暂无文件</p>
-      </div>
-    {/each}
+      <!-- Flat view: original behavior -->
+      {#each files as file}
+        <div class="group flex items-center">
+          <button
+            class="flex-1 flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-all duration-200 text-left {selectedFile === file.path ? 'bg-[var(--gradient-brand-subtle)] text-[var(--color-primary)] font-medium' : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-surface)]'}"
+            onclick={() => { onSelect?.(file.path); if (typeof window !== 'undefined' && window.innerWidth < 768) onToggleSidebar?.(); }}
+          >
+            <span class="material-symbols-outlined text-[16px] flex-shrink-0" style="color: {getFileIconColor?.(file.path) || 'var(--color-text-muted)'}">{getFileIcon?.(file.path) || 'description'}</span>
+            <span class="truncate">{file.path.split('/').pop()}</span>
+            {#if selectedFile === file.path}
+              <div class="ml-auto w-1.5 h-1.5 rounded-full" style="background: var(--gradient-brand)"></div>
+            {/if}
+          </button>
+          <button
+            class="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-[var(--color-error-light)] transition-opacity mr-1 cursor-pointer"
+            title="删除文件"
+            onclick={(e) => { e.stopPropagation(); onDelete?.(file.path); }}
+          >
+            <span class="material-symbols-outlined text-[14px] text-[var(--color-error)]">delete</span>
+          </button>
+        </div>
+      {:else}
+        <div class="text-center py-12">
+          <span class="material-symbols-outlined text-4xl mb-2" style="color: var(--color-text-muted)">folder_open</span>
+          <p class="text-xs" style="color: var(--color-text-muted)">暂无文件</p>
+        </div>
+      {/each}
+    {/if}
   </div>
+
+  <!-- Footer -->
   <div class="px-3 py-2 border-t border-[var(--color-border)]">
     <div class="text-[10px] text-[var(--color-text-muted)] flex items-center gap-3">
       <span><kbd class="px-1 py-0.5 rounded bg-[var(--color-surface)]">⌘P</kbd> 搜索</span>

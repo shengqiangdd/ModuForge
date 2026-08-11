@@ -50,7 +50,7 @@
   let triggerMode = $state<'manual' | 'git' | 'schedule'>('manual');
   let buildHistory = $state<any[]>([]);
   let buildCached = $state(false);
-  let gitConfig = $state({ url: '', branch: 'main' });
+  let gitConfig = $state<{ url: string; branch: string; commitMsg: string; author: string; excludePatterns: string; includePatterns: string; token: string }>({ url: '', branch: 'main', commitMsg: '', author: '', excludePatterns: '', includePatterns: '', token: '' });
   let scheduleConfig = $state({ cron: '0 2 * * *', target: 'universal', arch: 'arm64' });
   let buildSchedules = $state<any[]>([]);
   let savingGitConfig = $state(false);
@@ -103,11 +103,11 @@
       const res = await fetch(`/api/v1/projects/${projectId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ git_url: gitConfig.url, git_branch: gitConfig.branch, auto_build: !!gitConfig.url }),
+        body: JSON.stringify({ git_url: gitConfig.url, git_branch: gitConfig.branch, git_author: gitConfig.author, git_commit_msg: gitConfig.commitMsg, auto_build: !!gitConfig.url }),
       });
       if (res.ok) {
         toast('Git 配置已保存', 'success', 3000);
-        project = { ...project, git_url: gitConfig.url, git_branch: gitConfig.branch, auto_build: !!gitConfig.url };
+        project = { ...project, git_url: gitConfig.url, git_branch: gitConfig.branch, git_author: gitConfig.author, git_commit_msg: gitConfig.commitMsg, auto_build: !!gitConfig.url };
       }
     } catch { toast('保存失败', 'error', 5000); }
     savingGitConfig = false;
@@ -166,6 +166,8 @@
           project = await res.json();
           gitConfig.url = project.git_url || '';
           gitConfig.branch = project.git_branch || 'main';
+          gitConfig.author = project.git_author || '';
+          gitConfig.commitMsg = project.git_commit_msg || '';
         }
       } catch {}
       loadBuildHistory();
@@ -279,7 +281,7 @@
           saveBuildState();
         }
       } catch { clearInterval(pollTimer!); pollTimer = null; building = false; saveBuildState(); }
-    }, 2000);
+    }, 500);
   }
 
   async function cancelBuild() {
@@ -344,6 +346,33 @@
     }
   }
 
+  async function publishRelease(buildId: string) {
+    if (!projectId) return;
+    try {
+      const token = localStorage.getItem('moduforge_token') || '';
+      const res = await fetch(`/api/v1/projects/${projectId}/builds/${buildId}/release`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({}),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        toast(`Release ${data.tag_name} 已发布！`, 'success', 5000);
+        if (data.html_url) {
+          window.open(data.html_url, '_blank');
+        }
+      } else {
+        const body = await res.json().catch(() => ({ error: '未知错误' }));
+        toast(`发布失败: ${body.error || res.statusText}`, 'error', 5000);
+      }
+    } catch (e: any) {
+      toast(`发布失败: ${e.message || '网络错误'}`, 'error', 5000);
+    }
+  }
+
   // Parse incremental info from build log
   $effect(() => {
     const logText = logLines.join('\n');
@@ -369,7 +398,7 @@
 <style>
 </style>
 
-<div class="p-4 sm:p-6 max-w-3xl mx-auto pb-28">
+<div class="p-4 sm:p-6 max-w-3xl mx-auto pb-28 overflow-x-hidden min-w-0">
   {#if !projectId}
     <div class="text-center py-16 text-[var(--color-text-secondary)]">
       <span class="material-symbols-outlined text-5xl mb-3 text-neutral-300">build</span>
@@ -413,7 +442,7 @@
       onDeleteSchedule={deleteSchedule}
       onSelectTarget={(t) => selectedTarget = t}
       onSelectTriggerMode={(m) => triggerMode = m}
-      onGitConfigChange={(cfg) => gitConfig = cfg}
+      onGitConfigChange={(cfg) => gitConfig = { url: cfg.url || '', branch: cfg.branch || 'main', commitMsg: cfg.commitMsg || '', author: cfg.author || '', excludePatterns: cfg.excludePatterns || '', includePatterns: cfg.includePatterns || '', token: cfg.token || '' }}
       onScheduleConfigChange={(cfg) => scheduleConfig = cfg}
     />
 
@@ -425,8 +454,12 @@
 
     <BuildHistory
       {buildHistory}
+      {projectId}
       onSelectBuild={(task) => {
         if (task._cancel) { taskId = task.id; cancelBuild(); return; }
+        // Stop any running poll before switching to a different build
+        if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+        building = false;
         taskId = task.id;
         status = task.status || '';
         logLines = task.log ? task.log.split('\n').filter((l: string) => l) : [];
@@ -435,6 +468,7 @@
       onDeleteBuild={deleteBuild}
       onDeleteFailedBuilds={deleteFailedBuilds}
       onRefresh={loadBuildHistory}
+      onPublishRelease={publishRelease}
     />
   {/if}
 </div>

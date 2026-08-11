@@ -196,13 +196,35 @@ linker = "cc"
 	buildCtx, buildCancel := context.WithTimeout(ctx, 180*time.Second)
 	cmd := exec.CommandContext(buildCtx, cargoPath, "build", "--release", "--target", rustTarget)
 	cmd.Dir = cargoDir
+	// Compute env-var key fragments from the rust target triple
+	// e.g. "aarch64-linux-android" → "AARCH64_LINUX_ANDROID"
+	targetEnvKey := strings.ReplaceAll(strings.ToUpper(rustTarget), "-", "_")
+
+	// Derive the clang and llvm-ar paths from the linker path
+	// linkerPath is typically ".../bin/aarch64-linux-android21-clang"
+	ndkBinDir := filepath.Dir(linkerPath)
+	ndkClang := linkerPath // e.g. ".../bin/aarch64-linux-android21-clang"
+	ndkAr := filepath.Join(ndkBinDir, "llvm-ar")
+
+	// cc crate uses lowercase target triple (hyphens→underscores, NOT uppercased)
+	// e.g. "aarch64-linux-android" → "aarch64_linux_android"
+	targetEnvKeyLower := strings.ReplaceAll(rustTarget, "-", "_")
+
 	cmd.Env = append(os.Environ(),
 		"HOME=/root",
 		"CARGO_HOME="+rustInstallDir,
 		"RUSTUP_HOME="+rustupHome,
 		"PATH="+rustInstallDir+"/bin:"+os.Getenv("PATH"),
-		// Set linker via environment variable as backup
-		"CARGO_TARGET_"+strings.ReplaceAll(strings.ToUpper(rustTarget), "-", "_")+"_LINKER="+linkerPath,
+		// Cargo env vars use UPPERCASE target triple
+		"CARGO_TARGET_"+targetEnvKey+"_LINKER="+ndkClang,
+		"CARGO_TARGET_"+targetEnvKey+"_AR="+ndkAr,
+		// cc crate env vars use lowercase target triple (case-sensitive!)
+		"CC_"+targetEnvKeyLower+"="+ndkClang,
+		"CXX_"+targetEnvKeyLower+"="+strings.Replace(ndkClang, "-clang", "-clang++", 1),
+		"AR_"+targetEnvKeyLower+"="+ndkAr,
+		// Host linker for build scripts (Alpine musl)
+		"CC="+ndkClang,
+		"CXX="+strings.Replace(ndkClang, "-clang", "-clang++", 1),
 	)
 
 	out, err := cmd.CombinedOutput()

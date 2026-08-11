@@ -1,17 +1,23 @@
 <script lang="ts">
   let {
     buildHistory = [],
+    projectId = '',
     onSelectBuild,
     onDeleteBuild,
     onDeleteFailedBuilds,
     onRefresh,
+    onPublishRelease,
   }: {
-    buildHistory?: { id: string; status: string; timestamp: string; branch: string; target: string; version: string; trigger?: string; commit_hash?: string; created_at?: string; _cancel?: boolean }[];
+    buildHistory?: { id: string; status: string; timestamp: string; branch: string; target: string; version: string; trigger?: string; commit_hash?: string; created_at?: string; artifact_path?: string; _cancel?: boolean }[];
+    projectId?: string;
     onSelectBuild?: (task: { id: string; _cancel?: boolean; status?: string; log?: string }) => void;
     onDeleteBuild?: (buildId: string, e: Event) => void;
     onDeleteFailedBuilds?: () => void;
     onRefresh?: () => void;
+    onPublishRelease?: (buildId: string) => void;
   } = $props();
+
+  let publishingId = $state<string | null>(null);
 
   const statusConfig: Record<string, { color: string; bg: string; icon: string }> = {
     pending: { color: 'text-[var(--color-warning)]', bg: 'bg-[var(--color-warning-light)]', icon: 'schedule' },
@@ -69,6 +75,16 @@
                 </button>
               {/if}
               {#if task.status !== 'running' && task.status !== 'pending'}
+                {#if task.status === 'success' && task.artifact_path && onPublishRelease}
+                  <button
+                    class="p-1 rounded hover:bg-[var(--color-success-light)] transition-colors"
+                    title="发布到 GitHub Release"
+                    disabled={publishingId === task.id}
+                    onclick={(e) => { e.stopPropagation(); publishingId = task.id; onPublishRelease(task.id); setTimeout(() => { publishingId = null; }, 3000); }}
+                  >
+                    <span class="material-symbols-outlined text-[16px] text-[var(--color-success)]">{publishingId === task.id ? 'sync' : 'rocket_launch'}</span>
+                  </button>
+                {/if}
                 <button class="p-1 rounded hover:bg-[var(--color-surface)]" onclick={(e) => onDeleteBuild?.(task.id, e)}>
                   <span class="material-symbols-outlined text-[16px] text-[var(--color-text-muted)] hover:text-[var(--color-error)]">delete</span>
                 </button>

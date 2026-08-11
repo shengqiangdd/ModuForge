@@ -8,11 +8,16 @@ import (
 )
 
 type GitHandler struct {
-	svc *service.GitManagerService
+	svc     *service.GitManagerService
+	authSvc *service.AuthService
 }
 
 func NewGitHandler(svc *service.GitManagerService) *GitHandler {
 	return &GitHandler{svc: svc}
+}
+
+func (h *GitHandler) SetAuthService(authSvc *service.AuthService) {
+	h.authSvc = authSvc
 }
 
 type CommitRequest struct {
@@ -136,15 +141,92 @@ func (h *GitHandler) Push(c fiber.Ctx) error {
 		ProjectID string `json:"project_id"`
 		Remote    string `json:"remote"`
 		Branch    string `json:"branch"`
+		Token     string `json:"token"`
 	}
 	if err := c.Bind().JSON(&req); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
 	}
-	output, err := h.svc.Push(c.Context(), req.ProjectID, req.Remote, req.Branch)
+
+	// Auto-fallback: if no token provided, use the user's stored GitHub token
+	token := req.Token
+	if token == "" && h.authSvc != nil {
+		userID := safeUserID(c)
+		if userID != "" {
+			if storedToken, err := h.authSvc.GetGitHubToken(userID); err == nil && storedToken != "" {
+				token = storedToken
+			}
+		}
+	}
+
+	output, err := h.svc.PushWithToken(c.Context(), req.ProjectID, req.Remote, req.Branch, token)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error(), "output": output})
 	}
 	return c.JSON(fiber.Map{"status": "pushed", "output": output})
+}
+
+// PushOptimized pushes with advanced options including file filtering
+func (h *GitHandler) PushOptimized(c fiber.Ctx) error {
+	var req struct {
+		ProjectID       string   `json:"project_id"`
+		Remote          string   `json:"remote"`
+		Branch          string   `json:"branch"`
+		Token           string   `json:"token"`
+		IncludePatterns []string `json:"include_patterns"`
+		ExcludePatterns []string `json:"exclude_patterns"`
+		CommitMessage   string   `json:"commit_message"`
+		DryRun          bool     `json:"dry_run"`
+	}
+	if err := c.Bind().JSON(&req); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
+	}
+
+	// Auto-fallback: if no token provided, use the user's stored GitHub token
+	token := req.Token
+	if token == "" && h.authSvc != nil {
+		userID := safeUserID(c)
+		if userID != "" {
+			if storedToken, err := h.authSvc.GetGitHubToken(userID); err == nil && storedToken != "" {
+				token = storedToken
+			}
+		}
+	}
+
+	opts := service.PushOptions{
+		IncludePatterns: req.IncludePatterns,
+		ExcludePatterns: req.ExcludePatterns,
+		CommitMessage:   req.CommitMessage,
+		DryRun:          req.DryRun,
+	}
+
+	output, err := h.svc.PushWithOptions(c.Context(), req.ProjectID, req.Remote, req.Branch, token, opts)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error(), "output": output})
+	}
+	return c.JSON(fiber.Map{"status": "pushed", "output": output})
+}
+
+// PreviewFilesToPush returns list of files that would be pushed
+func (h *GitHandler) PreviewFilesToPush(c fiber.Ctx) error {
+	var req struct {
+		ProjectID       string   `json:"project_id"`
+		IncludePatterns []string `json:"include_patterns"`
+		ExcludePatterns []string `json:"exclude_patterns"`
+	}
+	if err := c.Bind().JSON(&req); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
+	}
+
+	opts := service.PushOptions{
+		IncludePatterns: req.IncludePatterns,
+		ExcludePatterns: req.ExcludePatterns,
+	}
+
+	files, err := h.svc.GetFilesToPush(c.Context(), req.ProjectID, opts)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(fiber.Map{"files": files, "count": len(files)})
 }
 
 func (h *GitHandler) Pull(c fiber.Ctx) error {

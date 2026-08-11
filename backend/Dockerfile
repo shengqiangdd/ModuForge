@@ -33,7 +33,7 @@ LABEL org.opencontainers.image.description="Modular software forge platform"
 LABEL org.opencontainers.image.source="https://github.com/moduforge/ModuForge"
 
 # --- Runtime deps + gcompat (NDK glibc compatibility on Alpine) ---
-RUN apk add --no-cache wget ca-certificates tzdata openssl curl bash xz zip unzip cmake make gcompat \
+RUN apk add --no-cache wget ca-certificates tzdata openssl curl bash xz zip unzip cmake make gcompat gcc musl-dev \
     && addgroup -S moduforge && adduser -S moduforge -G moduforge
 
 # --- Rust toolchain ---
@@ -56,7 +56,7 @@ RUN mkdir -p /opt/android-ndk && cd /tmp \
     && chmod -R 755 /opt/android-ndk
 
 # --- Copy backend binary ---
-COPY --from=backend-builder --chown=moduforge:moduforge /server /server
+COPY --from=backend-builder --chown=moduforge:moduforge /server /app/server
 
 # --- Copy frontend dist ---
 COPY --from=frontend-builder --chown=moduforge:moduforge /app/dist /app/dist

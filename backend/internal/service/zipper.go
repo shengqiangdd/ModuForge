@@ -117,6 +117,9 @@ var excludedPatterns = []string{
 	".env.*",
 	"docker-compose*.yml",
 	"Dockerfile*",
+	// Shell/Editor temp & config files
+	".es*",
+	".shell*",
 	// Cargo lock files
 	".cargo-*",
 	// Debug symbols

@@ -739,6 +739,7 @@ func (db *DB) migrate() error {
 		"ALTER TABLE users ADD COLUMN bio TEXT DEFAULT ''",
 		"ALTER TABLE users ADD COLUMN location TEXT DEFAULT ''",
 		"ALTER TABLE users ADD COLUMN website TEXT DEFAULT ''",
+		"ALTER TABLE users ADD COLUMN github_token TEXT DEFAULT ''",
 		"CREATE INDEX IF NOT EXISTS idx_project_files_project ON project_files(project_id)",
 		// Add project_id to ai_conversations for linking conversations to projects
 		"ALTER TABLE ai_conversations ADD COLUMN project_id TEXT DEFAULT ''",

@@ -125,61 +125,61 @@ func TestRelativePath(t *testing.T) {
 
 func TestIsExcluded_DirectoryPattern(t *testing.T) {
 	patterns := []string{"src/", ".git/"}
-	if !isExcluded("src/main.go", patterns) {
+	if !IsExcluded("src/main.go", patterns) {
 		t.Error("expected src/main.go to be excluded by src/")
 	}
-	if !isExcluded(".git/config", patterns) {
+	if !IsExcluded(".git/config", patterns) {
 		t.Error("expected .git/config to be excluded")
 	}
-	if isExcluded("README.md", patterns) {
+	if IsExcluded("README.md", patterns) {
 		t.Error("expected README.md to NOT be excluded")
 	}
 }
 
 func TestIsExcluded_GlobPattern(t *testing.T) {
 	patterns := []string{"*.go", "*.md"}
-	if !isExcluded("main.go", patterns) {
+	if !IsExcluded("main.go", patterns) {
 		t.Error("expected main.go to be excluded by *.go")
 	}
-	if !isExcluded("sub/dir/test.go", patterns) {
+	if !IsExcluded("sub/dir/test.go", patterns) {
 		t.Error("expected sub/dir/test.go to be excluded")
 	}
-	if !isExcluded("README.md", patterns) {
+	if !IsExcluded("README.md", patterns) {
 		t.Error("expected README.md to be excluded by *.md")
 	}
-	if isExcluded("main.c", patterns) {
+	if IsExcluded("main.c", patterns) {
 		t.Error("expected main.c to NOT be excluded")
 	}
 }
 
 func TestIsExcluded_ExactPattern(t *testing.T) {
 	patterns := []string{"Makefile", "go.mod"}
-	if !isExcluded("Makefile", patterns) {
+	if !IsExcluded("Makefile", patterns) {
 		t.Error("expected Makefile to be excluded")
 	}
-	if !isExcluded("sub/Makefile", patterns) {
+	if !IsExcluded("sub/Makefile", patterns) {
 		t.Error("expected sub/Makefile to be excluded")
 	}
-	if !isExcluded("go.mod", patterns) {
+	if !IsExcluded("go.mod", patterns) {
 		t.Error("expected go.mod to be excluded")
 	}
-	if isExcluded("main.go", patterns) {
+	if IsExcluded("main.go", patterns) {
 		t.Error("expected main.go to NOT be excluded")
 	}
 }
 
 func TestIsExcluded_NilPatterns(t *testing.T) {
-	if isExcluded("anything", nil) {
+	if IsExcluded("anything", nil) {
 		t.Error("expected nil patterns to not exclude anything")
 	}
 }
 
 func TestIsExcluded_CaseInsensitive(t *testing.T) {
 	patterns := []string{"makefile"}
-	if !isExcluded("Makefile", patterns) {
+	if !IsExcluded("Makefile", patterns) {
 		t.Error("expected case-insensitive matching for Makefile")
 	}
-	if !isExcluded("MAKEFILE", patterns) {
+	if !IsExcluded("MAKEFILE", patterns) {
 		t.Error("expected case-insensitive matching for MAKEFILE")
 	}
 }

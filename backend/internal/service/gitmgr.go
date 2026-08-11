@@ -17,6 +17,36 @@ type CommitInfo struct {
 	Timestamp time.Time `json:"timestamp"`
 }
 
+// PushOptions contains options for optimized git push
+type PushOptions struct {
+	IncludePatterns []string `json:"include_patterns"`
+	ExcludePatterns []string `json:"exclude_patterns"`
+	CommitMessage   string   `json:"commit_message"`
+	DryRun          bool     `json:"dry_run"`
+}
+
+// Default exclusion patterns for git push
+var defaultExcludePatterns = []string{
+	"*.log",
+	"*.tmp",
+	"*.cache",
+	"node_modules/",
+	"__pycache__/",
+	".env",
+	".env.local",
+	"build/",
+	"dist/",
+	"*.zip",
+	"*.tar.gz",
+	".DS_Store",
+	"Thumbs.db",
+	".git/",
+	"*.exe",
+	"*.dll",
+	"*.so",
+	"*.dylib",
+}
+
 type GitManagerService struct {
 	projectsDir string
 }
@@ -250,6 +280,13 @@ func (s *GitManagerService) GetCurrentBranch(ctx context.Context, projectID stri
 }
 
 func (s *GitManagerService) Push(ctx context.Context, projectID, remote, branch string) (string, error) {
+	return s.PushWithToken(ctx, projectID, remote, branch, "")
+}
+
+// PushWithToken pushes to a remote with optional authentication token.
+// If token is provided, the remote URL is temporarily rewritten to include the token
+// (GitHub format: https://TOKEN@github.com/user/repo.git), then restored after push.
+func (s *GitManagerService) PushWithToken(ctx context.Context, projectID, remote, branch, token string) (string, error) {
 	dir := s.projectDir(projectID)
 	if remote == "" {
 		remote = "origin"
@@ -261,6 +298,35 @@ func (s *GitManagerService) Push(ctx context.Context, projectID, remote, branch 
 		}
 		branch = b
 	}
+
+	// If token is provided, inject it into the remote URL
+	var originalURL string
+	if token != "" {
+		// Get current remote URL
+		getURL := exec.CommandContext(ctx, "git", "remote", "get-url", remote)
+		getURL.Dir = dir
+		out, err := getURL.CombinedOutput()
+		if err != nil {
+			return string(out), fmt.Errorf("failed to get remote URL: %v", string(out))
+		}
+		originalURL = strings.TrimSpace(string(out))
+
+		// Inject token: https://github.com/user/repo.git -> https://TOKEN@github.com/user/repo.git
+		tokenURL := injectToken(originalURL, token)
+		setURL := exec.CommandContext(ctx, "git", "remote", "set-url", remote, tokenURL)
+		setURL.Dir = dir
+		if out, err := setURL.CombinedOutput(); err != nil {
+			return string(out), fmt.Errorf("failed to set remote URL: %v", string(out))
+		}
+
+		// Restore original URL after push (defer)
+		defer func() {
+			restore := exec.CommandContext(ctx, "git", "remote", "set-url", remote, originalURL)
+			restore.Dir = dir
+			restore.Run()
+		}()
+	}
+
 	cmd := exec.CommandContext(ctx, "git", "push", remote, branch)
 	cmd.Dir = dir
 	out, err := cmd.CombinedOutput()
@@ -268,6 +334,24 @@ func (s *GitManagerService) Push(ctx context.Context, projectID, remote, branch 
 		return string(out), fmt.Errorf("git push failed: %v", string(out))
 	}
 	return string(out), nil
+}
+
+// injectToken injects a token into a git remote URL for authentication.
+// Supports HTTPS URLs (GitHub/GitLab/Bitbucket format).
+func injectToken(url, token string) string {
+	// https://github.com/user/repo.git -> https://TOKEN@github.com/user/repo.git
+	// https://gitlab.com/user/repo.git -> https://oauth2:TOKEN@gitlab.com/user/repo.git
+	if strings.HasPrefix(url, "https://") {
+		host := url[8:]
+		// Determine if it's GitHub (use TOKEN directly) or other (use oauth2:TOKEN prefix)
+		if strings.Contains(host, "github.com") {
+			return "https://" + token + "@" + host
+		}
+		// GitLab, Bitbucket, etc. use oauth2:TOKEN format
+		return "https://oauth2:" + token + "@" + host
+	}
+	// SSH URLs - can't inject token, return as-is
+	return url
 }
 
 func (s *GitManagerService) Pull(ctx context.Context, projectID, remote, branch string) (string, error) {
@@ -289,4 +373,180 @@ func (s *GitManagerService) Pull(ctx context.Context, projectID, remote, branch 
 		return string(out), fmt.Errorf("git pull failed: %v", string(out))
 	}
 	return string(out), nil
+}
+
+// PushWithOptions pushes to a remote with advanced options including file filtering
+func (s *GitManagerService) PushWithOptions(ctx context.Context, projectID, remote, branch, token string, opts PushOptions) (string, error) {
+	dir := s.projectDir(projectID)
+	if remote == "" {
+		remote = "origin"
+	}
+	if branch == "" {
+		b, err := s.GetCurrentBranch(ctx, projectID)
+		if err != nil {
+			return "", err
+		}
+		branch = b
+	}
+
+	// Merge default exclude patterns with user-provided patterns
+	excludePatterns := append(defaultExcludePatterns, opts.ExcludePatterns...)
+
+	// Create .gitignore file with exclusion patterns
+	gitignorePath := filepath.Join(dir, ".gitignore")
+	if err := s.createGitignore(gitignorePath, excludePatterns); err != nil {
+		return "", fmt.Errorf("failed to create .gitignore: %v", err)
+	}
+
+	// If token is provided, inject it into the remote URL
+	var originalURL string
+	if token != "" {
+		// Get current remote URL
+		getURL := exec.CommandContext(ctx, "git", "remote", "get-url", remote)
+		getURL.Dir = dir
+		out, err := getURL.CombinedOutput()
+		if err != nil {
+			return string(out), fmt.Errorf("failed to get remote URL: %v", string(out))
+		}
+		originalURL = strings.TrimSpace(string(out))
+
+		// Inject token: https://github.com/user/repo.git -> https://TOKEN@github.com/user/repo.git
+		tokenURL := injectToken(originalURL, token)
+		setURL := exec.CommandContext(ctx, "git", "remote", "set-url", remote, tokenURL)
+		setURL.Dir = dir
+		if out, err := setURL.CombinedOutput(); err != nil {
+			return string(out), fmt.Errorf("failed to set remote URL: %v", string(out))
+		}
+
+		// Restore original URL after push (defer)
+		defer func() {
+			restore := exec.CommandContext(ctx, "git", "remote", "set-url", remote, originalURL)
+			restore.Dir = dir
+			restore.Run()
+		}()
+	}
+
+	// Add files with patterns
+	if len(opts.IncludePatterns) > 0 {
+		// Add specific files
+		for _, pattern := range opts.IncludePatterns {
+			cmd := exec.CommandContext(ctx, "git", "add", pattern)
+			cmd.Dir = dir
+			if out, err := cmd.CombinedOutput(); err != nil {
+				return string(out), fmt.Errorf("git add %s failed: %v", pattern, string(out))
+			}
+		}
+	} else {
+		// Add all files (respects .gitignore)
+		cmd := exec.CommandContext(ctx, "git", "add", "-A")
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			return string(out), fmt.Errorf("git add failed: %v", string(out))
+		}
+	}
+
+	// Check if there are changes to commit
+	statusCmd := exec.CommandContext(ctx, "git", "status", "--porcelain")
+	statusCmd.Dir = dir
+	statusOut, err := statusCmd.CombinedOutput()
+	if err != nil {
+		return string(statusOut), fmt.Errorf("git status failed: %v", string(statusOut))
+	}
+
+	// If no changes, skip commit and push
+	if strings.TrimSpace(string(statusOut)) == "" {
+		return "No changes to commit", nil
+	}
+
+	// Commit with custom message
+	commitMsg := opts.CommitMessage
+	if commitMsg == "" {
+		commitMsg = "Auto-commit: " + time.Now().Format("2006-01-02 15:04:05")
+	}
+
+	commitCmd := exec.CommandContext(ctx, "git", "commit", "-m", commitMsg)
+	commitCmd.Dir = dir
+	if out, err := commitCmd.CombinedOutput(); err != nil {
+		return string(out), fmt.Errorf("git commit failed: %v", string(out))
+	}
+
+	// Dry run check
+	if opts.DryRun {
+		return "Dry run: changes committed but not pushed", nil
+	}
+
+	// Push to remote
+	pushCmd := exec.CommandContext(ctx, "git", "push", remote, branch)
+	pushCmd.Dir = dir
+	out, err := pushCmd.CombinedOutput()
+	if err != nil {
+		return string(out), fmt.Errorf("git push failed: %v", string(out))
+	}
+
+	return string(out), nil
+}
+
+// createGitignore creates or updates .gitignore file with exclusion patterns
+func (s *GitManagerService) createGitignore(path string, patterns []string) error {
+	// Read existing .gitignore if it exists
+	var existingPatterns []string
+	if data, err := os.ReadFile(path); err == nil {
+		lines := strings.Split(string(data), "\n")
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if line != "" && !strings.HasPrefix(line, "#") {
+				existingPatterns = append(existingPatterns, line)
+			}
+		}
+	}
+
+	// Merge patterns (avoid duplicates)
+	allPatterns := make(map[string]bool)
+	for _, p := range existingPatterns {
+		allPatterns[p] = true
+	}
+	for _, p := range patterns {
+		allPatterns[p] = true
+	}
+
+	// Write .gitignore
+	var content strings.Builder
+	content.WriteString("# Auto-generated by ModuForge Git Manager\n")
+	content.WriteString("# Optimized for module development\n\n")
+	for pattern := range allPatterns {
+		content.WriteString(pattern + "\n")
+	}
+
+	return os.WriteFile(path, []byte(content.String()), 0644)
+}
+
+// GetFilesToPush returns list of files that would be pushed (for preview)
+func (s *GitManagerService) GetFilesToPush(ctx context.Context, projectID string, opts PushOptions) ([]string, error) {
+	dir := s.projectDir(projectID)
+	
+	// Create temporary .gitignore
+	excludePatterns := append(defaultExcludePatterns, opts.ExcludePatterns...)
+	gitignorePath := filepath.Join(dir, ".gitignore.tmp")
+	if err := s.createGitignore(gitignorePath, excludePatterns); err != nil {
+		return nil, err
+	}
+	defer os.Remove(gitignorePath) // Clean up
+
+	// Get list of files that would be added
+	cmd := exec.CommandContext(ctx, "git", "ls-files", "--cached", "--others", "--exclude-standard")
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("git ls-files failed: %v", string(out))
+	}
+
+	var files []string
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			files = append(files, line)
+		}
+	}
+
+	return files, nil
 }

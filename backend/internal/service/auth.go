@@ -395,3 +395,19 @@ func (s *AuthService) ChangePassword(userID, oldPassword, newPassword string) er
 	_, err = s.db.Exec(`UPDATE users SET password_hash = ?, password_changed_at = datetime('now') WHERE id = ?`, string(newHash), userID)
 	return err
 }
+
+// GetGitHubToken retrieves the user's stored GitHub token.
+func (s *AuthService) GetGitHubToken(userID string) (string, error) {
+	var token string
+	err := s.db.QueryRow(`SELECT COALESCE(github_token, '') FROM users WHERE id = ?`, userID).Scan(&token)
+	if err != nil {
+		return "", fmt.Errorf("user not found")
+	}
+	return token, nil
+}
+
+// SetGitHubToken saves or clears the user's GitHub token.
+func (s *AuthService) SetGitHubToken(userID, token string) error {
+	_, err := s.db.Exec(`UPDATE users SET github_token = ? WHERE id = ?`, token, userID)
+	return err
+}

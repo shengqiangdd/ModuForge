@@ -1,19 +1,17 @@
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount } from 'svelte';
   import { getToasts, subscribe, dismiss, dismissAll } from '$lib/stores/toast.svelte';
   import type { Toast } from '$lib/stores/toast.svelte';
 
-  let toasts = $state<Toast[]>([]);
+  let toasts = $state<Toast[]>([...getToasts()]);
 
+  // Subscribe to toast changes and clean up on destroy
+  let unsub: (() => void) | null = null;
   onMount(() => {
-    toasts = getToasts();
-    const unsub = subscribe(() => { toasts = getToasts(); });
-    return unsub;
-  });
-
-  onDestroy(() => {
-    // Safety: ensure no orphaned timers survive component teardown
-    dismissAll();
+    unsub = subscribe(() => {
+      toasts = [...getToasts()];
+    });
+    return () => { if (unsub) unsub(); unsub = null; };
   });
 
   const icons: Record<string, string> = {

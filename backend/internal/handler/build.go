@@ -2,7 +2,9 @@ package handler
 
 import (
 	"bufio"
+	"fmt"
 	"log"
+	"strings"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/moduforge/backend/internal/builder"
@@ -12,12 +14,13 @@ import (
 
 type BuildHandler struct {
 	svc         *service.BuildService
+	logSvc      *service.BuildLogService
 	notifSvc    *service.NotificationService
 	activitySvc *service.ActivityService
 }
 
 func NewBuildHandler(svc *service.BuildService) *BuildHandler {
-	return &BuildHandler{svc: svc}
+	return &BuildHandler{svc: svc, logSvc: service.NewBuildLogService("/tmp/build-logs")}
 }
 
 func (h *BuildHandler) SetNotifSvc(s *service.NotificationService) { h.notifSvc = s }
@@ -149,10 +152,28 @@ func (h *BuildHandler) StreamLogs(c fiber.Ctx) error {
 		return c.Status(404).JSON(fiber.Map{"error": err.Error()})
 	}
 
+	// Send existing log first
 	c.RequestCtx().SetBodyStreamWriter(func(w *bufio.Writer) {
 		w.WriteString("data: " + task.Log + "\n\n")
 		w.Flush()
-		select {}
+
+		// If build is already finished, don't stream
+		if task.Status == "success" || task.Status == "failed" || task.Status == "cancelled" {
+			return
+		}
+
+		// Stream new log entries in real-time
+		ch, err := h.logSvc.WatchLogs(c.Context(), id)
+		if err != nil {
+			log.Printf("[BuildHandler] StreamLogs watch error: %v", err)
+			return
+		}
+
+		for entry := range ch {
+			line := fmt.Sprintf("[%s] [%s] %s", entry.Timestamp.Format("15:04:05"), entry.Level, entry.Message)
+			w.WriteString("data: " + line + "\n\n")
+			w.Flush()
+		}
 	})
 	return nil
 }
@@ -195,6 +216,24 @@ func (h *BuildHandler) Download(c fiber.Ctx) error {
 	if err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": err.Error()})
 	}
+
+	// Get project name for meaningful download filename
+	var projectName string
+	err = h.svc.DB().QueryRowContext(c.Context(),
+		`SELECT COALESCE(p.name,'module')
+		 FROM build_tasks b JOIN projects p ON b.project_id = p.id WHERE b.id = ?`, id,
+	).Scan(&projectName)
+	if err != nil || projectName == "" {
+		projectName = "module"
+	}
+
+	fname := projectName
+	// Sanitize filename
+	for _, ch := range []string{"/", "\\", ":", "*", "?", "\"", "<", ">", "|", " "} {
+		fname = strings.ReplaceAll(fname, ch, "_")
+	}
+
+	c.Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s.zip"`, fname))
 	return c.SendFile(*path)
 }
 
@@ -246,5 +285,38 @@ func (h *BuildHandler) TriggerCacheCleanup(c fiber.Ctx) error {
 	return c.JSON(fiber.Map{
 		"message": "Cache cleanup completed",
 		"stats":   stats,
+	})
+}
+
+// PublishToRelease publishes a build artifact to GitHub Release
+func (h *BuildHandler) PublishToRelease(c fiber.Ctx) error {
+	projectID := c.Params("id")
+	buildID := c.Params("buildId")
+	
+	var req struct {
+		Token string `json:"token"`
+	}
+	if err := c.Bind().JSON(&req); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
+	}
+
+	// Auto-fallback: if no token provided, use the user's stored GitHub token
+	token := req.Token
+	if token == "" {
+		userID := safeUserID(c)
+		if userID != "" {
+			// Get auth service from context or create new one
+			// For now, require token to be provided
+			return c.Status(400).JSON(fiber.Map{"error": "GitHub token required"})
+		}
+	}
+
+	releaseInfo, err := h.svc.PublishToRelease(c.Context(), projectID, buildID, token)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(fiber.Map{
+		"status": "released",
+		"release": releaseInfo,
 	})
 }

@@ -288,8 +288,8 @@ func serveFrontend(app *fiber.App, fsys fs.FS) {
 	app.Use(func(c fiber.Ctx) error {
 		path := c.Path()
 
-		// Skip API, WebSocket, health, docs routes — let them through
-		if strings.HasPrefix(path, "/api/") || strings.HasPrefix(path, "/ws") || path == "/health" || path == "/docs" || strings.HasPrefix(path, "/uploads/") {
+		// Skip API, WebSocket, health, docs, auth routes — let them through
+		if strings.HasPrefix(path, "/api/") || strings.HasPrefix(path, "/ws") || path == "/health" || path == "/docs" || strings.HasPrefix(path, "/uploads/") || strings.HasPrefix(path, "/auth/") {
 			return c.Next()
 		}
 

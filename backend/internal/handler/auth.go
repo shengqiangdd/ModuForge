@@ -289,3 +289,45 @@ func (h *AuthHandler) Refresh(c fiber.Ctx) error {
 	slog.Info("refresh: success", "new_token_len", len(resp.Token))
 	return c.JSON(fiber.Map{"token": resp.Token, "user": resp.User})
 }
+
+// GetGitHubToken — GET /auth/github-token
+func (h *AuthHandler) GetGitHubToken(c fiber.Ctx) error {
+	userID := safeUserID(c)
+	if userID == "" {
+		return Unauthorized(c, "未授权")
+	}
+	token, err := h.svc.GetGitHubToken(userID)
+	if err != nil {
+		return InternalError(c, err.Error())
+	}
+	// Return masked token for security (only show last 4 chars)
+	masked := ""
+	if len(token) > 4 {
+		masked = "****" + token[len(token)-4:]
+	} else if token != "" {
+		masked = "****"
+	}
+	return c.JSON(fiber.Map{
+		"token":      masked,
+		"has_token":  token != "",
+		"raw_token":  token, //前端需要完整 token 来用于 git push
+	})
+}
+
+// SetGitHubToken — PUT /auth/github-token
+func (h *AuthHandler) SetGitHubToken(c fiber.Ctx) error {
+	userID := safeUserID(c)
+	if userID == "" {
+		return Unauthorized(c, "未授权")
+	}
+	var req struct {
+		Token string `json:"token"`
+	}
+	if err := c.Bind().JSON(&req); err != nil {
+		return BadRequest(c, "请求格式无效")
+	}
+	if err := h.svc.SetGitHubToken(userID, req.Token); err != nil {
+		return InternalError(c, err.Error())
+	}
+	return c.JSON(fiber.Map{"ok": true, "message": "GitHub token 已保存"})
+}

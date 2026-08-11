@@ -3,6 +3,7 @@ package builder
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -270,6 +271,17 @@ func (b *Builder) buildWithDocker(ctx context.Context, sourceDir, target, artifa
 	if _, err := os.Stat(outputZip); os.IsNotExist(err) {
 		return "", fmt.Errorf("build container did not produce output zip")
 	}
+
+	// Wrap webui files into webroot/ directory
+	if err := WrapWebroot(outputZip); err != nil {
+		log.Printf("[Builder] docker webroot wrap skipped: %v", err)
+	}
+
+	// P1: Ensure META-INF/com/google/android/{update-binary, updater-script} exists
+	if err := EnsureMetaInf(outputZip); err != nil {
+		log.Printf("[Builder] docker metainf ensure skipped: %v", err)
+	}
+
 	return outputZip, nil
 }
 
@@ -281,6 +293,18 @@ func (b *Builder) buildNative(ctx context.Context, sourceDir, target, artifactDi
 	if err := ZipModuleForBuild(sourceDir, outputZip); err != nil {
 		return "", fmt.Errorf("zip failed: %w", err)
 	}
+
+	// Wrap webui files (HTML/CSS/JS at root level) into webroot/ directory
+	if err := WrapWebroot(outputZip); err != nil {
+		// Non-fatal: log but don't fail the build
+		log.Printf("[Builder] webroot wrap skipped: %v", err)
+	}
+
+	// P1: Ensure META-INF/com/google/android/{update-binary, updater-script} exists
+	if err := EnsureMetaInf(outputZip); err != nil {
+		log.Printf("[Builder] metainf ensure skipped: %v", err)
+	}
+
 	return outputZip, nil
 }
 

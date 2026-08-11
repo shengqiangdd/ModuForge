@@ -6,6 +6,7 @@
   import ProfileSection from './components/ProfileSection.svelte';
   import SecuritySection from './components/SecuritySection.svelte';
   import ProviderSection from './components/ProviderSection.svelte';
+  import GitTokenSection from './components/GitTokenSection.svelte';
   import ShortcutsSection from './components/ShortcutsSection.svelte';
   import AppearanceSection from './components/AppearanceSection.svelte';
   import AdvancedSection from './components/AdvancedSection.svelte';
@@ -932,6 +933,9 @@
 
   <!-- LLM Providers -->
   <ProviderSection />
+
+  <!-- GitHub Token -->
+  <GitTokenSection />
 
   <!-- Keyboard Shortcuts -->
   <ShortcutsSection />

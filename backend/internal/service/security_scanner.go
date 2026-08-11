@@ -34,6 +34,7 @@ var (
 	reCurlPipeSh     = regexp.MustCompile(`curl\s+.*\|\s*(sh|bash)`)
 	reRmRf           = regexp.MustCompile(`rm\s+(-rf|--recursive)\s+/`)
 	reUnquotedVar    = regexp.MustCompile(`[^"'\$]\$[A-Za-z_][A-Za-z0-9_]*`)
+	reSimpleVar      = regexp.MustCompile(`\$[A-Za-z_][A-Za-z0-9_]*`)
 	reMissingSetEuo  = regexp.MustCompile(`set\s+-[^ ]*e[^ ]*u[^ ]*o[^ ]*pipefail`)
 	reShebang        = regexp.MustCompile(`^#!`)
 	reWhich          = regexp.MustCompile(`\bwhich\b`)
@@ -143,9 +144,42 @@ func (s *SecurityScanner) ScanFile(filename string, content string) SecurityScan
 				addIssue("critical", "RM_RF_ROOT", "rm -rf / is extremely dangerous", lineNum)
 			}
 
-			matches := reUnquotedVar.FindAllString(line, -1)
-			for _, m := range matches {
-				addIssue("warning", "UNQUOTED_VARIABLE", fmt.Sprintf("unquoted variable %s may cause command injection", strings.TrimSpace(m)), lineNum)
+			// Check for unquoted variable expansion — only flag if $VAR appears
+			// outside of double quotes and not as part of ${VAR} or $(( )) or $()
+			if strings.Contains(line, "$") {
+				// Skip lines that are purely comments
+				trimmed := strings.TrimSpace(line)
+				if strings.HasPrefix(trimmed, "#") {
+					continue
+				}
+				// Skip known safe Magisk/KernelSU/APatch module variables
+				safeModuleVars := map[string]bool{
+					"$MODPATH": true, "$MODID": true, "$MODDIR": true,
+					"$MODNAME": true, "$MODVER": true, "$MINAPI": true,
+					"$ARCH": true, "$BITS": true, "$API": true,
+					"$KSU": true, "$KSU_KERNEL_VER_CODE": true,
+					"$KSU_VER": true, "$KSU_VER_CODE": true,
+					"$APATCH": true, "$APATCH_VER_CODE": true,
+					"$TMPDIR": true, "$PKG": true,
+					"$BOOTMODE": true, "$INSTIMG": true,
+				}
+				// Split line by double-quoted regions and check unquoted parts
+				unquotedParts := splitByQuotedRegions(line, '"')
+				for _, part := range unquotedParts {
+					// Find $VAR patterns in unquoted parts
+					for _, m := range reSimpleVar.FindAllStringSubmatch(part, -1) {
+						varName := m[0]
+						// Skip safe module variables
+						if safeModuleVars[varName] {
+							continue
+						}
+						// Skip $((, $(, ${ — these are safe constructs
+						if strings.Contains(part, "$(("+varName[1:]) || strings.Contains(part, "$("+varName[1:]) {
+							continue
+						}
+						addIssue("warning", "UNQUOTED_VARIABLE", fmt.Sprintf("unquoted variable %s may cause word splitting", varName), lineNum)
+					}
+				}
 			}
 		}
 
@@ -283,4 +317,39 @@ func (s *SecurityScanner) ScanFiles(files map[string]string) SecurityScanResult 
 	}
 
 	return combined
+}
+
+// splitByQuotedRegions splits a string by quoted regions of the given quote character,
+// returning only the unquoted parts. This is used to check for unquoted variable expansion.
+func splitByQuotedRegions(s string, quote byte) []string {
+	var parts []string
+	inQuote := false
+	start := 0
+
+	for i := 0; i < len(s); i++ {
+		if s[i] == quote {
+			if inQuote {
+				// End of quoted region — the part before this was unquoted
+				if start < i {
+					parts = append(parts, s[start:i])
+				}
+				inQuote = false
+				start = i + 1
+			} else {
+				// Start of quoted region — the part before this was unquoted
+				if start < i {
+					parts = append(parts, s[start:i])
+				}
+				inQuote = true
+				start = i + 1
+			}
+		}
+	}
+
+	// Remaining unquoted part
+	if !inQuote && start < len(s) {
+		parts = append(parts, s[start:])
+	}
+
+	return parts
 }

@@ -98,6 +98,7 @@ func RegisterRoutes(api fiber.Router, db *database.DB, cfg *config.Config) {
 
 	gitSvc := service.NewGitManagerService(cfg.StoragePath + "/projects")
 	gitH := NewGitHandler(gitSvc)
+	gitH.SetAuthService(authSvc)
 
 	marketSvc := service.NewSQLiteMarketService(db)
 	marketH := NewMarketHandlerWithDB(marketSvc, cfg.StoragePath, db.Conn)
@@ -275,6 +276,10 @@ func RegisterRoutes(api fiber.Router, db *database.DB, cfg *config.Config) {
 	r("POST", "/auth/avatar", authH.UploadAvatar)
 	r("POST", "/auth/resend-verification", authH.ResendVerification)
 
+	// GitHub Token (per-user, shared across all projects)
+	r("GET", "/auth/github-token", authH.GetGitHubToken)
+	r("PUT", "/auth/github-token", authH.SetGitHubToken)
+
 	// LLM config
 	r("POST", "/llm/config", aiH.UpdateLLMConfig)
 	r("GET", "/llm/config", aiH.GetLLMConfig)
@@ -376,6 +381,9 @@ func RegisterRoutes(api fiber.Router, db *database.DB, cfg *config.Config) {
 	r("POST", "/adb/module/restore", adbH.RestoreModule)
 	r("GET", "/adb/module/check-update", adbH.CheckModuleUpdate)
 	r("POST", "/adb/module/export", adbH.ExportModule)
+	r("POST", "/adb/module/push", adbH.PushModuleFolder)
+	r("POST", "/adb/module/push-build", adbH.PushBuildModule)
+	r("POST", "/adb/module/push-zip", adbH.PushBuildZip)
 
 	// ADB root manager
 	r("GET", "/adb/root/managers", adbH.GetAvailableRootManagers)
@@ -448,6 +456,9 @@ func RegisterRoutes(api fiber.Router, db *database.DB, cfg *config.Config) {
 	r("POST", "/projects/:id/files/upload", projectH.UploadFiles)
 	r("DELETE", "/projects/:id/files/*", projectH.DeleteFile)
 	r("POST", "/projects/:id/validate", projectH.ValidateProject)
+	
+	// Project file tree (NEW)
+	r("GET", "/projects/:id/tree", projectH.GetFileTree)
 
 	// Builds
 	r("POST", "/projects/:id/build", buildH.Create)
@@ -467,6 +478,9 @@ func RegisterRoutes(api fiber.Router, db *database.DB, cfg *config.Config) {
 	r("POST", "/projects/:id/build/auto", buildH.CreateAuto)
 	r("POST", "/builds/:id/cancel", buildH.Cancel)
 	r("GET", "/builds/:id/progress", aiH.StreamBuildProgress)
+	
+	// Build release (NEW)
+	r("POST", "/projects/:id/builds/:buildId/release", buildH.PublishToRelease)
 
 	// Global cache management (admin only for cleanup, all users can view stats)
 	r("GET", "/cache/stats", buildH.GetGlobalCacheStats)
@@ -482,6 +496,10 @@ func RegisterRoutes(api fiber.Router, db *database.DB, cfg *config.Config) {
 	r("POST", "/git/checkout-branch", gitH.CheckoutBranch)
 	r("POST", "/git/push", gitH.Push)
 	r("POST", "/git/pull", gitH.Pull)
+	
+	// Git optimized push (NEW)
+	r("POST", "/git/push-optimized", gitH.PushOptimized)
+	r("POST", "/git/preview-files", gitH.PreviewFilesToPush)
 
 	// API keys
 	apiKeyH := NewAPIKeyHandler(db.Conn)
@@ -539,9 +557,9 @@ func RegisterRoutes(api fiber.Router, db *database.DB, cfg *config.Config) {
 	collabWS := NewCollaborationWS(collabSvc)
 	r("GET", "/projects/:id/collab-status", collabWS.GetCollaborationStatus)
 
-	// Webhook
-	webhookH := NewWebhookHandler(cfg, buildSvc)
-	r("POST", "/webhook/git", webhookH.HandleGitWebhook)
+	// Webhook (REMOVED - no longer needed)
+	// webhookH := NewWebhookHandler(cfg, buildSvc)
+	// r("POST", "/webhook/git", webhookH.HandleGitWebhook)
 
 	// Plugin write
 	r("POST", "/plugins/hooks/execute", pluginH.ExecuteHook)
@@ -624,12 +642,12 @@ func RegisterRoutes(api fiber.Router, db *database.DB, cfg *config.Config) {
 	r("POST", "/projects/:id/format", formatH.FormatProject)
 	r("POST", "/projects/:id/format/preview", formatH.PreviewFormat)
 
-	// Webhook deliveries
-	webhookH.SetDB(db.Conn)
-	r("GET", "/webhooks/:hookId/deliveries", webhookH.ListDeliveries)
-	r("POST", "/webhooks/:hookId/test", webhookH.TestWebhook)
-	r("DELETE", "/webhooks/deliveries/:id", webhookH.DeleteDelivery)
-	r("GET", "/webhooks/deliveries/stats", webhookH.DeliveryStats)
+	// Webhook deliveries (REMOVED - no longer needed)
+	// webhookH.SetDB(db.Conn)
+	// r("GET", "/webhooks/:hookId/deliveries", webhookH.ListDeliveries)
+	// r("POST", "/webhooks/:hookId/test", webhookH.TestWebhook)
+	// r("DELETE", "/webhooks/deliveries/:id", webhookH.DeleteDelivery)
+	// r("GET", "/webhooks/deliveries/stats", webhookH.DeliveryStats)
 
 	// Backup schedules
 	r("GET", "/backup/schedules", backupH.ListSchedules)

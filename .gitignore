@@ -1,14 +1,54 @@
-ModuForge/
-.mimocode/
-data/
-backend/data/
+# Build artifacts & dependencies
 node_modules/
 dist/
+bin/
+backend/bin/
+
+# Runtime data & databases
+data/
+backend/data/
 *.db
 *.db-wal
 *.db-shm
-opencode.json
-opencode_analysis.txt
+
+# Secrets
 .env
 .env.local
 .env.*.local
+
+# Editor / tooling
+.mimocode/
+.vscode/
+.idea/
+*.bak
+
+# OS files
+Thumbs.db
+.DS_Store
+
+# Python runtime
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+
+# Logs
+*.log
+
+# Archives & binaries (local only)
+*.tar
+*.zip
+moduforge-server-linux
+moduforge-server.exe
+server
+server-linux
+server.exe
+test_ziputil.exe
+backend/moduforge-server.exe
+backend/moduforge.exe
+backend/moduforge_enhanced.exe
+
+# Local / generated scripts
+scripts/

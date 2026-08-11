@@ -198,6 +198,32 @@ type ExportModuleRequest struct {
 	ModuleName string `json:"module_name"`
 }
 
+// ─── Enhanced Module Push Request Types ───
+
+type PushModuleFolderRequest struct {
+	Serial     string `json:"serial"`
+	LocalDir   string `json:"local_dir"`
+	ModuleName string `json:"module_name"`
+	Install    bool   `json:"install"`
+	Reboot     bool   `json:"reboot"`
+}
+
+type PushBuildModuleRequest struct {
+	Serial     string `json:"serial"`
+	BuildID    string `json:"build_id"`
+	ModuleName string `json:"module_name,omitempty"`
+	Install    bool   `json:"install"`
+	Reboot     bool   `json:"reboot"`
+}
+
+type PushBuildZipRequest struct {
+	Serial     string `json:"serial"`
+	ZipPath    string `json:"zip_path"`
+	ModuleName string `json:"module_name,omitempty"`
+	Install    bool   `json:"install"`
+	Reboot     bool   `json:"reboot"`
+}
+
 type RootPermissionRequest struct {
 	Serial      string `json:"serial"`
 	PackageName string `json:"package_name"`
@@ -1209,4 +1235,69 @@ func (h *ADBHandler) Screenshot(c fiber.Ctx) error {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 	return c.JSON(fiber.Map{"path": path})
+}
+
+// ─── Enhanced Module Push Handlers ───
+
+// PushModuleFolder pushes a complete module folder structure to the device.
+func (h *ADBHandler) PushModuleFolder(c fiber.Ctx) error {
+	var req PushModuleFolderRequest
+	if err := c.Bind().JSON(&req); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
+	}
+	if req.Serial == "" || req.LocalDir == "" {
+		return c.Status(400).JSON(fiber.Map{"error": "serial and local_dir required"})
+	}
+
+	result, err := h.svc.PushModuleFolder(c.Context(), req.Serial, req.LocalDir, req.ModuleName, req.Install)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	if req.Reboot {
+		h.svc.RebootDevice(c.Context(), req.Serial, "normal")
+		result["rebooting"] = true
+	}
+	return c.JSON(result)
+}
+
+// PushBuildModule pushes a build artifact by build ID to the device as a complete folder.
+func (h *ADBHandler) PushBuildModule(c fiber.Ctx) error {
+	var req PushBuildModuleRequest
+	if err := c.Bind().JSON(&req); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
+	}
+	if req.Serial == "" || req.BuildID == "" {
+		return c.Status(400).JSON(fiber.Map{"error": "serial and build_id required"})
+	}
+
+	result, err := h.svc.PushBuildByID(c.Context(), req.Serial, req.BuildID, req.ModuleName, req.Install)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	if req.Reboot {
+		h.svc.RebootDevice(c.Context(), req.Serial, "normal")
+		result["rebooting"] = true
+	}
+	return c.JSON(result)
+}
+
+// PushBuildZip pushes a local module.zip to the device as a complete folder.
+func (h *ADBHandler) PushBuildZip(c fiber.Ctx) error {
+	var req PushBuildZipRequest
+	if err := c.Bind().JSON(&req); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
+	}
+	if req.Serial == "" || req.ZipPath == "" {
+		return c.Status(400).JSON(fiber.Map{"error": "serial and zip_path required"})
+	}
+
+	result, err := h.svc.PushBuildModule(c.Context(), req.Serial, req.ZipPath, req.ModuleName, req.Install)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	if req.Reboot {
+		h.svc.RebootDevice(c.Context(), req.Serial, "normal")
+		result["rebooting"] = true
+	}
+	return c.JSON(result)
 }

@@ -1,6 +1,45 @@
 import { toast } from '$lib/stores/toast.svelte';
 import type { Provider, Model } from './types';
 
+interface CustomProviderPayload {
+  id?: string;
+  name?: string;
+  endpoint?: string;
+  api_key?: string;
+  models_json?: string;
+}
+
+function toCustomProvider(cp: CustomProviderPayload): Provider {
+  let models: Model[] = [];
+  try {
+    const raw = JSON.parse(cp.models_json || '[]');
+    if (Array.isArray(raw)) {
+      models = raw
+        .map((m: { id?: string; name?: string }) => ({
+          id: m.id || '',
+          name: m.name || m.id || '',
+          provider: cp.id || '',
+          max_tokens: 0,
+          supports_stream: true,
+          price_input_per_m: 0,
+          price_output_per_m: 0,
+        }))
+        .filter(m => m.id);
+    }
+  } catch {}
+  return {
+    id: cp.id || '',
+    name: cp.name || cp.id || '',
+    endpoint: cp.endpoint || '',
+    models,
+    requires_key: !!cp.api_key,
+    is_free: false,
+    tier: 'paid',
+    models_json: cp.models_json,
+    api_key: cp.api_key,
+  };
+}
+
 // ─── Load providers from backend ───
 export async function loadProvidersFromBackend(): Promise<{
   providers: Provider[];
@@ -15,6 +54,23 @@ export async function loadProvidersFromBackend(): Promise<{
     const res = await fetch('/api/v1/llm/providers');
     const data = await res.json();
     providers = data.providers || [];
+
+    // /api/v1/llm/providers 请求未带 token，后端不会合并自定义提供商，需单独拉取并按 id 去重合并
+    const token = localStorage.getItem('moduforge_token') || '';
+    if (token) {
+      try {
+        const customRes = await fetch('/api/v1/llm/custom-providers', { headers: { 'Authorization': `Bearer ${token}` } });
+        if (customRes.ok) {
+          const customData = await customRes.json();
+          const knownIDs = new Set(providers.map(p => p.id));
+          for (const cp of customData.providers || []) {
+            if (knownIDs.has(cp.id)) continue;
+            knownIDs.add(cp.id);
+            providers.push(toCustomProvider(cp));
+          }
+        }
+      } catch {}
+    }
 
     let savedProvider = '';
     let savedModel = '';

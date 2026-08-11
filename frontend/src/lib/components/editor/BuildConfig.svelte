@@ -9,7 +9,7 @@
     buildCached = false,
     savingGitConfig = false,
     savingSchedule = false,
-    gitConfig = { url: '', branch: 'main' },
+    gitConfig = { url: '', branch: 'main', commitMsg: '', author: '', excludePatterns: '', includePatterns: '', token: '' },
     scheduleConfig = { cron: '0 2 * * *', target: 'universal', arch: 'arm64' },
     buildSchedules = [],
     onStartBuild,
@@ -33,7 +33,7 @@
     buildCached?: boolean;
     savingGitConfig?: boolean;
     savingSchedule?: boolean;
-    gitConfig?: { url: string; branch: string };
+    gitConfig?: { url: string; branch: string; commitMsg?: string; author?: string; excludePatterns?: string; includePatterns?: string; token?: string };
     scheduleConfig?: { cron: string; target: string; arch: string };
     buildSchedules?: { id: string; cron: string; target: string; arch: string; active: boolean }[];
     onStartBuild?: () => void;
@@ -45,7 +45,7 @@
     onDeleteSchedule?: (id: string) => void;
     onSelectTarget?: (t: string) => void;
     onSelectTriggerMode?: (m: 'manual' | 'git' | 'schedule') => void;
-    onGitConfigChange?: (cfg: { url: string; branch: string }) => void;
+    onGitConfigChange?: (cfg: { url: string; branch: string; commitMsg?: string; author?: string; excludePatterns?: string; includePatterns?: string; token?: string }) => void;
     onScheduleConfigChange?: (cfg: { cron: string; target: string; arch: string }) => void;
   } = $props();
 
@@ -116,18 +116,67 @@
       <span class="material-symbols-outlined text-[18px] text-[var(--color-info)]">cloud_upload</span>
       <span class="text-sm font-semibold text-[var(--color-text)]">推送触发配置</span>
     </div>
-    <p class="text-xs text-[var(--color-text-muted)] mb-3">配置 Git 仓库地址和分支，Webhook 收到 push 事件时自动触发构建。</p>
+    <p class="text-xs text-[var(--color-text-muted)] mb-3">配置 Git 仓库地址、认证 Token 和分支，支持推送到 GitHub/GitLab/Bitbucket。</p>
     <div class="space-y-3">
       <div>
         <label for="git-url" class="text-xs font-medium text-[var(--color-text-secondary)] mb-1 block">仓库地址</label>
         <input id="git-url" type="text" class="input-field w-full text-sm" placeholder="https://github.com/user/repo.git" value={gitConfig.url} oninput={(e) => onGitConfigChange?.({ ...gitConfig, url: (e.target as HTMLInputElement).value })} />
       </div>
       <div>
-        <label for="git-branch" class="text-xs font-medium text-[var(--color-text-secondary)] mb-1 block">监听分支</label>
+        <label for="git-token" class="text-xs font-medium text-[var(--color-text-secondary)] mb-1 block">认证 Token <span class="text-[var(--color-text-muted)]">(可选，私有仓库必填)</span></label>
+        <input id="git-token" type="password" class="input-field w-full text-sm" placeholder="ghp_xxx / glpat-xxx" value={gitConfig.token || ''} oninput={(e) => onGitConfigChange?.({ ...gitConfig, token: (e.target as HTMLInputElement).value })} />
+        <p class="text-[10px] text-[var(--color-text-muted)] mt-1">GitHub: Personal Access Token | GitLab: Access Token | Bitbucket: App Password</p>
+      </div>
+      <div>
+        <label for="git-branch" class="text-xs font-medium text-[var(--color-text-secondary)] mb-1 block">推送分支</label>
         <input id="git-branch" type="text" class="input-field w-full text-sm" placeholder="main" value={gitConfig.branch} oninput={(e) => onGitConfigChange?.({ ...gitConfig, branch: (e.target as HTMLInputElement).value })} />
       </div>
-      <div class="flex items-center justify-between">
-        <span class="text-xs text-[var(--color-text-muted)]">Webhook URL: <code class="text-[var(--color-primary)]">POST /api/v1/webhook/git</code></span>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div>
+          <label for="git-author" class="text-xs font-medium text-[var(--color-text-secondary)] mb-1 block">提交者</label>
+          <input id="git-author" type="text" class="input-field w-full text-sm" placeholder="User Name" value={gitConfig.author || ''} oninput={(e) => onGitConfigChange?.({ ...gitConfig, author: (e.target as HTMLInputElement).value })} />
+        </div>
+        <div>
+          <label for="git-commit-msg" class="text-xs font-medium text-[var(--color-text-secondary)] mb-1 block">提交信息</label>
+          <input id="git-commit-msg" type="text" class="input-field w-full text-sm" placeholder="Auto build from push" value={gitConfig.commitMsg || ''} oninput={(e) => onGitConfigChange?.({ ...gitConfig, commitMsg: (e.target as HTMLInputElement).value })} />
+        </div>
+      </div>
+      <!-- File Filtering -->
+      <div class="pt-2 border-t" style="border-color: var(--color-border)">
+        <div class="flex items-center gap-2 mb-2">
+          <span class="material-symbols-outlined text-[14px] text-[var(--color-info)]">filter_alt</span>
+          <span class="text-xs font-medium text-[var(--color-text-secondary)]">文件过滤</span>
+          <span class="text-[10px] text-[var(--color-text-muted)]">(可选)</span>
+        </div>
+        <div class="space-y-2">
+          <div>
+            <label for="git-exclude" class="text-[10px] font-medium text-[var(--color-text-muted)] mb-0.5 block">排除模式 (每行一个)</label>
+            <textarea
+              id="git-exclude"
+              class="input-field w-full text-xs font-mono"
+              rows="3"
+              placeholder={"*.log\nnode_modules/\nbuild/\n.env"}
+              value={gitConfig.excludePatterns || ''}
+              oninput={(e) => onGitConfigChange?.({ ...gitConfig, excludePatterns: (e.target as HTMLTextAreaElement).value })}
+            ></textarea>
+          </div>
+          <div>
+            <label for="git-include" class="text-[10px] font-medium text-[var(--color-text-muted)] mb-0.5 block">包含模式 (留空=全部，每行一个)</label>
+            <input
+              id="git-include"
+              type="text"
+              class="input-field w-full text-xs font-mono"
+              placeholder={"src/**\n*.go"}
+              value={gitConfig.includePatterns || ''}
+              oninput={(e) => onGitConfigChange?.({ ...gitConfig, includePatterns: (e.target as HTMLInputElement).value })}
+            />
+          </div>
+          <p class="text-[10px] text-[var(--color-text-muted)]">默认排除: *.log, node_modules/, build/, dist/, *.zip, .env, .git/, *.exe 等</p>
+        </div>
+      </div>
+
+      <div class="flex items-center justify-between pt-2">
+        <span class="text-xs text-[var(--color-text-muted)]">推送含源码，构建产物发布到 Release</span>
         <button class="px-3 py-1.5 rounded-xl text-xs font-semibold text-white transition-colors" style="background: var(--gradient-brand)" onclick={onSaveGitConfig} disabled={savingGitConfig || !gitConfig.url}>
           {savingGitConfig ? '保存中...' : '保存配置'}
         </button>
