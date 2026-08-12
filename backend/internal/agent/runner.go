@@ -1772,7 +1772,8 @@ You are running WITHOUT a project context. This means:
 		uniqueTargetsPerSkill:    make(map[string]int),
 	}
 	writeFileCalled := false
-	anyWriteCalled := false // P0-2: Track if any write tool was called
+	anyWriteCalled := false       // P0-2: Track if any write tool was called
+	buildModuleCalled := false    // Auto-trigger: track if build_module was called
 	// P1-2: Dynamic limits based on project complexity
 	// P0-1: Reduced base limits to prevent excessive reads
 	baseMaxReadFilePerTurn := 25
@@ -2590,6 +2591,11 @@ You are running WITHOUT a project context. This means:
 				cfg.ProjectID,
 			)
 
+			// Track build_module calls for auto-trigger
+			if st.skillName == "build_module" {
+				buildModuleCalled = true
+			}
+
 			// NEW: Build error auto-healing for build_module failures
 			if st.skillName == "build_module" && err != nil {
 				projectPath := ""
@@ -2686,6 +2692,36 @@ You are running WITHOUT a project context. This means:
 					"This is unacceptable. You MUST now stop all tool calls and provide your final answer "+
 					"based on what you have already read. Do NOT call any more tools.", iter+1))
 			break
+		}
+	}
+
+	// Auto-trigger build_module: if files were written but build_module was never called,
+	// automatically trigger it to ensure the module is compiled and packaged.
+	if anyWriteCalled && !buildModuleCalled && cfg.ProjectID != "" {
+		log.Printf("[Agent] Auto-trigger: files written but build_module not called, triggering build for project %s", cfg.ProjectID)
+		w.WriteSSE(map[string]interface{}{
+			"type":  "step",
+			"step":  "skill_call",
+			"skill": "build_module",
+			"input": map[string]interface{}{"project_id": cfg.ProjectID},
+		})
+		buildTimeout := toolTimeoutForName("build_module")
+		buildCtx, buildCancel := context.WithTimeout(ctx, buildTimeout)
+		buildResult, buildErr := r.executeSkill(buildCtx, "build_module", map[string]interface{}{
+			"project_id": cfg.ProjectID,
+		})
+		buildCancel()
+		if buildErr != nil {
+			log.Printf("[Agent] Auto-trigger build_module failed: %v", buildErr)
+		} else {
+			log.Printf("[Agent] Auto-trigger build_module result: %s", truncateString(buildResult, 200))
+			// Send build result to frontend
+			w.WriteSSE(map[string]interface{}{
+				"type":    "step",
+				"step":    "skill_result",
+				"skill":   "build_module",
+				"content": buildResult,
+			})
 		}
 	}
 
