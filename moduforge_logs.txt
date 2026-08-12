@@ -1,0 +1,120 @@
+{"time":"2026-08-10T17:12:37+08:00","method":"GET","path":"/api/v1/llm/models","status":404,"latency":"     38.903µs","ip":"172.18.0.1","request_id":"d4999458-20e7-4640-a294-e086d64724fb"}
+{"time":"2026-08-10T17:12:37+08:00","method":"GET","path":"/api/v1/providers/list","status":404,"latency":"     15.999µs","ip":"172.18.0.1","request_id":"a08e0bac-e93e-4e46-86ab-3bf3b28354a5"}
+{"time":"2026-08-10T17:12:37+08:00","method":"GET","path":"/api/v1/agent/providers","status":404,"latency":"     12.313µs","ip":"172.18.0.1","request_id":"445daa65-5464-43fb-b2ec-e70622e95531"}
+{"time":"2026-08-10T17:12:37+08:00","method":"GET","path":"/api/v1/providers","status":404,"latency":"     12.894µs","ip":"172.18.0.1","request_id":"69ae55ca-6cd5-4a69-a19a-31d6b73d290a"}
+{"time":"2026-08-10T17:12:37+08:00","method":"GET","path":"/api/v1/custom-providers/list","status":404,"latency":"     11.792µs","ip":"172.18.0.1","request_id":"cee21dfd-900a-4bc6-8f6b-cbcd7a43e278"}
+{"time":"2026-08-10T17:12:57+08:00","method":"HEAD","path":"/health","status":200,"latency":"     30.066µs","ip":"127.0.0.1","request_id":"8f425274-ba5a-4ebb-9a91-f40fd3fdab13"}
+{"time":"2026-08-10T17:13:06+08:00","method":"POST","path":"/api/v1/auth/login","status":200,"latency":"   50.48774ms","ip":"172.18.0.1","request_id":"214594eb-55cc-4502-b345-769aa9030e89"}
+{"time":"2026-08-10T17:13:06+08:00","method":"GET","path":"/api/v1/llm/providers","status":200,"latency":"    330.257µs","ip":"172.18.0.1","request_id":"bfb23f5e-291a-4a1a-b439-19ee45d79106"}
+{"time":"2026-08-10T17:13:06+08:00","method":"POST","path":"/api/v1/auth/login","status":200,"latency":"  50.393173ms","ip":"172.18.0.1","request_id":"3c05b4cc-32ec-4fc6-a641-14e90ab69ed4"}
+{"time":"2026-08-10T17:13:06+08:00","method":"GET","path":"/api/v1/llm/providers","status":200,"latency":"    265.506µs","ip":"172.18.0.1","request_id":"fadd2446-a1df-47e2-becd-3e7c8b546e94"}
+{"time":"2026-08-10T17:13:18+08:00","method":"POST","path":"/api/v1/auth/login","status":200,"latency":"  50.430542ms","ip":"172.18.0.1","request_id":"a8229ee0-219e-4fd0-8b31-bb940fa141f8"}
+{"time":"2026-08-10T17:13:18+08:00","method":"PUT","path":"/api/v1/llm/config","status":405,"latency":"     39.765µs","ip":"172.18.0.1","request_id":"08baf04b-6ede-44c2-b775-3074ec188166"}
+{"time":"2026-08-10T17:13:18+08:00","method":"PUT","path":"/api/v1/llm/providers","status":405,"latency":"     34.304µs","ip":"172.18.0.1","request_id":"8be4d8df-ef5e-43c2-9f6e-161cb2ce2865"}
+{"time":"2026-08-10T17:13:18+08:00","method":"POST","path":"/api/v1/auth/login","status":200,"latency":"  49.346647ms","ip":"172.18.0.1","request_id":"441e11b1-f78c-454e-bb31-0e8ff9af1f80"}
+{"time":"2026-08-10T17:13:18+08:00","method":"PUT","path":"/api/v1/llm/config","status":405,"latency":"     29.285µs","ip":"172.18.0.1","request_id":"1d7a0621-9f97-4fbd-8d0f-6425f9110140"}
+{"time":"2026-08-10T17:13:18+08:00","method":"PUT","path":"/api/v1/llm/providers","status":405,"latency":"     21.279µs","ip":"172.18.0.1","request_id":"5ccfc14a-174e-47f4-b9e4-8d1f95acc29e"}
+{"time":"2026-08-10T17:13:27+08:00","method":"HEAD","path":"/health","status":200,"latency":"     13.836µs","ip":"127.0.0.1","request_id":"cf578862-00a3-46e8-9efc-21a5986fac7b"}
+{"time":"2026-08-10T17:13:57+08:00","method":"HEAD","path":"/health","status":200,"latency":"     30.137µs","ip":"127.0.0.1","request_id":"e6d4cca6-8fd1-4a9d-b134-752ac2266637"}
+{"time":"2026-08-10T17:14:28+08:00","method":"HEAD","path":"/health","status":200,"latency":"     39.604µs","ip":"127.0.0.1","request_id":"0446e1d9-4785-46d1-a660-61a961bfafda"}
+{"time":"2026-08-10T17:14:58+08:00","method":"HEAD","path":"/health","status":200,"latency":"     34.194µs","ip":"127.0.0.1","request_id":"e272aea7-72f4-44e7-b237-e7a1e5720821"}
+{"time":"2026-08-10T17:15:06+08:00","method":"GET","path":"/","status":200,"latency":"    184.955µs","ip":"192.168.2.22","request_id":"1fc3579f-45a8-4eeb-9342-18c87d973119"}
+{"time":"2026-08-10T17:15:06+08:00","method":"GET","path":"/assets/index-D46g29Gp.js","status":200,"latency":"    157.795µs","ip":"192.168.2.22","request_id":"f9624289-90ee-4a87-b9b7-09993df68530"}
+{"time":"2026-08-10T17:15:06+08:00","method":"GET","path":"/assets/svelte-hteFZCvg.css","status":200,"latency":"    948.211µs","ip":"192.168.2.22","request_id":"9de61806-2bad-4fae-bfc4-2d90a3b03559"}
+{"time":"2026-08-10T17:15:06+08:00","method":"GET","path":"/assets/i18n-C4nJqCt-.js","status":200,"latency":"   1.534115ms","ip":"192.168.2.22","request_id":"75acc333-5c3b-43f6-9cee-d74cbc8379a0"}
+{"time":"2026-08-10T17:15:06+08:00","method":"GET","path":"/assets/index-TBMW7CZN.css","status":200,"latency":"   1.086458ms","ip":"192.168.2.22","request_id":"c2fe85cf-6064-41e6-887e-507658032fff"}
+{"time":"2026-08-10T17:15:06+08:00","method":"GET","path":"/manifest.json","status":200,"latency":"    123.661µs","ip":"192.168.2.22","request_id":"0df05c4c-9a9e-4011-8830-4d4587404374"}
+{"time":"2026-08-10T17:15:06+08:00","method":"GET","path":"/assets/codemirror-lang-DRc9KHPz.js","status":200,"latency":"   5.843944ms","ip":"192.168.2.22","request_id":"bdd370ff-bb5b-465d-9f9e-484fb1650171"}
+{"time":"2026-08-10T17:15:06+08:00","method":"GET","path":"/assets/codemirror-DYH2DdWT.js","status":200,"latency":"   7.559588ms","ip":"192.168.2.22","request_id":"225a7061-21a5-46d9-b161-15a4054fecfa"}
+{"time":"2026-08-10T17:15:06+08:00","method":"GET","path":"/assets/svelte-CPJTEBXw.js","status":200,"latency":"   9.490673ms","ip":"192.168.2.22","request_id":"faaeebea-b366-4dfc-a6a7-e8c850edda1d"}
+{"time":"2026-08-10T17:15:06+08:00","method":"GET","path":"/api/v1/projects","status":200,"latency":"    757.154µs","ip":"192.168.2.22","request_id":"0d0b28ed-5090-489c-a2fc-12b129a60399"}
+{"time":"2026-08-10T17:15:06.935601415+08:00","level":"INFO","msg":"ws connected","user_id":"a4c50d84-a58d-4fbc-a64d-adf93ca14446"}
+{"time":"2026-08-10T17:15:06+08:00","method":"GET","path":"/api/v1/notifications/unread-count","status":200,"latency":"    159.437µs","ip":"192.168.2.22","request_id":"216f0394-7bef-42ca-b1a0-da7b7ab3cef9"}
+{"time":"2026-08-10T17:15:06+08:00","method":"GET","path":"/api/v1/notifications/unread-count","status":200,"latency":"    110.857µs","ip":"192.168.2.22","request_id":"8f7a33b1-7cfd-4125-b610-3a1ba39c3353"}
+{"time":"2026-08-10T17:15:06+08:00","method":"GET","path":"/fonts/MaterialSymbolsOutlined.woff2","status":200,"latency":"  22.335711ms","ip":"192.168.2.22","request_id":"d2859b48-6066-4b40-b60f-1368bb5ed1f5"}
+{"time":"2026-08-10T17:15:07+08:00","method":"GET","path":"/vite.svg","status":200,"latency":"    228.056µs","ip":"192.168.2.22","request_id":"13cc127b-768a-4cbf-a6cc-86d6314941e4"}
+{"time":"2026-08-10T17:15:28+08:00","method":"HEAD","path":"/health","status":200,"latency":"     33.894µs","ip":"127.0.0.1","request_id":"0136d8ad-580b-42b8-8361-62ff8e9da533"}
+{"time":"2026-08-10T17:15:29+08:00","method":"GET","path":"/api/v1/llm/config","status":200,"latency":"    261.248µs","ip":"192.168.2.22","request_id":"92604cb8-eac8-4252-9319-6c5e1434ef39"}
+{"time":"2026-08-10T17:15:29+08:00","method":"GET","path":"/api/v1/settings/agent","status":200,"latency":"   2.962733ms","ip":"192.168.2.22","request_id":"bd6ebe92-9db9-46da-81d4-142873d338b7"}
+{"time":"2026-08-10T17:15:29+08:00","method":"GET","path":"/api/v1/auth/profile","status":200,"latency":"   3.139473ms","ip":"192.168.2.22","request_id":"1645252d-912f-4492-a79b-6f00c60ef649"}
+{"time":"2026-08-10T17:15:29+08:00","method":"GET","path":"/vite.svg","status":200,"latency":"     171.48µs","ip":"192.168.2.22","request_id":"b581b782-22f2-40bb-a5ac-524e1d854870"}
+{"time":"2026-08-10T17:15:29+08:00","method":"GET","path":"/api/v1/llm/providers","status":200,"latency":"    392.222µs","ip":"192.168.2.22","request_id":"619a0361-0810-4dbe-b807-06cdf906f729"}
+{"time":"2026-08-10T17:15:29+08:00","method":"GET","path":"/api/v1/ai/memory","status":200,"latency":"    263.802µs","ip":"192.168.2.22","request_id":"df70ad76-f154-4309-a680-a77b87581ab4"}
+{"time":"2026-08-10T17:15:29+08:00","method":"GET","path":"/api/v1/favorites","status":200,"latency":"    313.465µs","ip":"192.168.2.22","request_id":"2f6ae648-ef6e-4e3c-a418-09973de870e7"}
+{"time":"2026-08-10T17:15:29+08:00","method":"GET","path":"/api/v1/recycle-bin","status":200,"latency":"   1.469504ms","ip":"192.168.2.22","request_id":"e6fe2b15-95d5-4dc4-914e-8b0bf3f5beb3"}
+{"time":"2026-08-10T17:15:29+08:00","method":"GET","path":"/api/v1/agent/skills","status":200,"latency":"   1.498758ms","ip":"192.168.2.22","request_id":"fc2c1932-c8da-4ba5-8c1a-8a9637bfebb9"}
+{"time":"2026-08-10T17:15:29+08:00","method":"GET","path":"/api/v1/search/history","status":200,"latency":"   2.344148ms","ip":"192.168.2.22","request_id":"6689aa1d-b693-4dc1-9cb7-116e00480c8b"}
+{"time":"2026-08-10T17:15:29+08:00","method":"GET","path":"/api/v1/backup/schedules","status":200,"latency":"    194.974µs","ip":"192.168.2.22","request_id":"2545dd71-6cdc-4674-a7f3-69b80f85b97a"}
+{"time":"2026-08-10T17:15:29+08:00","method":"GET","path":"/api/v1/llm/provider-configs","status":200,"latency":"    270.956µs","ip":"192.168.2.22","request_id":"ce75c08c-9811-4f07-a12f-840e74bdf851"}
+{"time":"2026-08-10T17:15:29+08:00","method":"GET","path":"/api/v1/agent/custom-skills","status":200,"latency":"    164.007µs","ip":"192.168.2.22","request_id":"307f5a9f-7c88-4e27-97b6-d2d59d36397d"}
+{"time":"2026-08-10T17:15:29+08:00","method":"GET","path":"/api/v1/llm/custom-providers","status":200,"latency":"    100.248µs","ip":"192.168.2.22","request_id":"2a872644-78bc-4562-8172-9be13ef5015f"}
+{"time":"2026-08-10T17:15:36+08:00","method":"GET","path":"/api/v1/notifications/unread-count","status":200,"latency":"    274.272µs","ip":"192.168.2.22","request_id":"d5d4878b-c8e4-4821-90e9-861e0db828f8"}
+{"time":"2026-08-10T17:15:36+08:00","method":"GET","path":"/api/v1/notifications/unread-count","status":200,"latency":"    127.989µs","ip":"192.168.2.22","request_id":"4a702fad-d312-44f5-8196-3a36b3a443b2"}
+{"time":"2026-08-10T17:15:58+08:00","method":"HEAD","path":"/health","status":200,"latency":"     28.313µs","ip":"127.0.0.1","request_id":"686d94f9-395a-4cc6-a1d0-f43aa9df1e73"}
+{"time":"2026-08-10T17:16:06+08:00","method":"GET","path":"/api/v1/notifications/unread-count","status":200,"latency":"    226.253µs","ip":"192.168.2.22","request_id":"ce9f2219-2b0f-49d1-9fd6-b1f49473950f"}
+{"time":"2026-08-10T17:16:06+08:00","method":"GET","path":"/api/v1/notifications/unread-count","status":200,"latency":"    126.466µs","ip":"192.168.2.22","request_id":"67efe0b5-2795-4ff6-9784-73ce37e3bac0"}
+{"time":"2026-08-10T17:16:28+08:00","method":"HEAD","path":"/health","status":200,"latency":"     29.094µs","ip":"127.0.0.1","request_id":"69e9648d-bd3c-4b84-9f62-4ea642e05edb"}
+{"time":"2026-08-10T17:16:36+08:00","method":"GET","path":"/api/v1/notifications/unread-count","status":200,"latency":"    215.102µs","ip":"192.168.2.22","request_id":"a2c883ee-6138-4027-93fa-18ce869f69b5"}
+{"time":"2026-08-10T17:16:36+08:00","method":"GET","path":"/api/v1/notifications/unread-count","status":200,"latency":"    126.255µs","ip":"192.168.2.22","request_id":"88cd5ef8-5b56-47c6-b052-f7c2d83ccae2"}
+{"time":"2026-08-10T17:16:48+08:00","method":"POST","path":"/api/v1/auth/login","status":200,"latency":"  49.887456ms","ip":"172.18.0.1","request_id":"b7534941-e062-47e2-ba09-1571d4d9932b"}
+{"time":"2026-08-10T17:16:48+08:00","method":"GET","path":"/api/v1/llm/custom-providers","status":200,"latency":"    148.448µs","ip":"172.18.0.1","request_id":"1fb799ee-5c2c-45ae-8cec-e3efe355b26b"}
+{"time":"2026-08-10T17:16:48+08:00","method":"GET","path":"/api/v1/llm/custom-providers","status":200,"latency":"     69.199µs","ip":"172.18.0.1","request_id":"0ef633cf-3666-4f47-ae69-69baaad8a564"}
+{"time":"2026-08-10T17:16:49.041925898+08:00","level":"ERROR","msg":"CreateCustomProvider","error":"attempt to write a readonly database"}
+{"time":"2026-08-10T17:16:48+08:00","method":"POST","path":"/api/v1/llm/custom-providers","status":500,"latency":"    138.068µs","ip":"172.18.0.1","request_id":"3c73b64c-5a10-43e0-bcc5-c21dbfb5bd27"}
+{"time":"2026-08-10T17:16:49.042700855+08:00","level":"ERROR","msg":"CreateCustomProvider","error":"attempt to write a readonly database"}
+{"time":"2026-08-10T17:16:48+08:00","method":"POST","path":"/api/v1/llm/custom-providers","status":500,"latency":"     66.535µs","ip":"172.18.0.1","request_id":"0bd23c52-ec91-410f-936e-751a41f11d3a"}
+{"time":"2026-08-10T17:16:48+08:00","method":"PUT","path":"/api/v1/llm/config","status":405,"latency":"      26.85µs","ip":"172.18.0.1","request_id":"0a8dac72-611d-4f2d-b8b2-155576c04b63"}
+{"time":"2026-08-10T17:16:48+08:00","method":"PUT","path":"/api/v1/llm/config","status":405,"latency":"     18.414µs","ip":"172.18.0.1","request_id":"03622e46-bcdc-4e80-8dd5-432b772bead9"}
+{"time":"2026-08-10T17:16:48+08:00","method":"POST","path":"/api/v1/ai/stream","status":200,"latency":"    131.054µs","ip":"172.18.0.1","request_id":"25918229-e4bd-4430-a55a-6532cc9b8d24"}
+{"time":"2026-08-10T17:16:51+08:00","method":"POST","path":"/api/v1/ai/stream","status":200,"latency":"    119.363µs","ip":"172.18.0.1","request_id":"49c5add9-37e5-4475-bafd-98b83a07276e"}
+{"time":"2026-08-10T17:16:53+08:00","method":"POST","path":"/api/v1/auth/login","status":200,"latency":"  50.509178ms","ip":"172.18.0.1","request_id":"65a01293-c32d-4274-a7a7-193fff9d4204"}
+{"time":"2026-08-10T17:16:53+08:00","method":"GET","path":"/api/v1/llm/custom-providers","status":200,"latency":"    210.483µs","ip":"172.18.0.1","request_id":"6a28c26c-5e28-4d22-8bcc-7e5d1553c2ec"}
+{"time":"2026-08-10T17:16:53+08:00","method":"GET","path":"/api/v1/llm/custom-providers","status":200,"latency":"    120.645µs","ip":"172.18.0.1","request_id":"41a7e78d-48d0-4782-abac-29676cced505"}
+{"time":"2026-08-10T17:16:53.520991889+08:00","level":"ERROR","msg":"CreateCustomProvider","error":"attempt to write a readonly database"}
+{"time":"2026-08-10T17:16:53+08:00","method":"POST","path":"/api/v1/llm/custom-providers","status":500,"latency":"    109.664µs","ip":"172.18.0.1","request_id":"359c0ff9-39aa-40a8-b6c3-1e9584ef4c11"}
+{"time":"2026-08-10T17:16:53.521850984+08:00","level":"ERROR","msg":"CreateCustomProvider","error":"attempt to write a readonly database"}
+{"time":"2026-08-10T17:16:53+08:00","method":"POST","path":"/api/v1/llm/custom-providers","status":500,"latency":"     71.624µs","ip":"172.18.0.1","request_id":"791982e8-5db0-4106-94fc-0958d90b305f"}
+{"time":"2026-08-10T17:16:53+08:00","method":"PUT","path":"/api/v1/llm/config","status":405,"latency":"     22.883µs","ip":"172.18.0.1","request_id":"9fcb51e1-5427-4b0e-b66a-b3bb7216d366"}
+{"time":"2026-08-10T17:16:53+08:00","method":"PUT","path":"/api/v1/llm/config","status":405,"latency":"     12.884µs","ip":"172.18.0.1","request_id":"ec105a9e-cb5c-4052-8626-2e4b94753765"}
+{"time":"2026-08-10T17:16:53+08:00","method":"POST","path":"/api/v1/ai/stream","status":200,"latency":"     49.943µs","ip":"172.18.0.1","request_id":"6b17e45d-a557-47b1-a0db-c0346e63d52c"}
+{"time":"2026-08-10T17:16:55+08:00","method":"POST","path":"/api/v1/ai/stream","status":200,"latency":"     97.081µs","ip":"172.18.0.1","request_id":"01b77cf0-20b2-4d91-9884-bf1ef2eec157"}
+{"time":"2026-08-10T17:16:58+08:00","method":"HEAD","path":"/health","status":200,"latency":"      15.92µs","ip":"127.0.0.1","request_id":"c7f128af-7cb9-49bd-a422-966d214821cf"}
+{"time":"2026-08-10T17:17:06+08:00","method":"GET","path":"/api/v1/notifications/unread-count","status":200,"latency":"    207.067µs","ip":"192.168.2.22","request_id":"848f132a-6f53-4af4-81db-2e99b4fc5ffa"}
+{"time":"2026-08-10T17:17:06+08:00","method":"GET","path":"/api/v1/notifications/unread-count","status":200,"latency":"    137.016µs","ip":"192.168.2.22","request_id":"b756e912-0f8f-4346-aa5e-7d357940ee56"}
+{"time":"2026-08-10T17:17:28+08:00","method":"HEAD","path":"/health","status":200,"latency":"     35.416µs","ip":"127.0.0.1","request_id":"68b3cb01-6962-47a6-b326-d22bb9bae2f5"}
+{"time":"2026-08-10T17:17:36+08:00","method":"GET","path":"/api/v1/notifications/unread-count","status":200,"latency":"     289.19µs","ip":"192.168.2.22","request_id":"bbb4eeba-7a4d-4288-a4dd-af2db7531a1a"}
+{"time":"2026-08-10T17:17:36+08:00","method":"GET","path":"/api/v1/notifications/unread-count","status":200,"latency":"    179.946µs","ip":"192.168.2.22","request_id":"7d3e1769-ac19-48cb-8955-835618cfc56b"}
+{"time":"2026-08-10T17:17:44+08:00","method":"POST","path":"/api/v1/auth/login","status":200,"latency":"  50.343757ms","ip":"172.18.0.1","request_id":"cdb26a1f-d4ca-444f-af44-2b5d8e536912"}
+{"time":"2026-08-10T17:17:44.548732982+08:00","level":"ERROR","msg":"CreateCustomProvider","error":"attempt to write a readonly database"}
+{"time":"2026-08-10T17:17:44+08:00","method":"POST","path":"/api/v1/llm/custom-providers","status":500,"latency":"    177.591µs","ip":"172.18.0.1","request_id":"4934f715-cae9-48dc-b63a-36130162aebd"}
+{"time":"2026-08-10T17:17:44.549710488+08:00","level":"ERROR","msg":"CreateCustomProvider","error":"attempt to write a readonly database"}
+{"time":"2026-08-10T17:17:44+08:00","method":"POST","path":"/api/v1/llm/custom-providers","status":500,"latency":"     65.803µs","ip":"172.18.0.1","request_id":"a9c215bf-5865-4393-9161-958eb672099b"}
+{"time":"2026-08-10T17:17:44.550534076+08:00","level":"ERROR","msg":"CreateCustomProvider","error":"attempt to write a readonly database"}
+{"time":"2026-08-10T17:17:44+08:00","method":"POST","path":"/api/v1/llm/custom-providers","status":500,"latency":"     60.533µs","ip":"172.18.0.1","request_id":"ece0bad0-3b99-4fa9-9ae4-a5061ddd9da0"}
+{"time":"2026-08-10T17:17:44.55132893+08:00","level":"ERROR","msg":"CreateCustomProvider","error":"attempt to write a readonly database"}
+{"time":"2026-08-10T17:17:44+08:00","method":"POST","path":"/api/v1/llm/custom-providers","status":500,"latency":"     57.157µs","ip":"172.18.0.1","request_id":"5600d43d-8df8-4d07-980b-c017171e2d92"}
+{"time":"2026-08-10T17:17:44.552188745+08:00","level":"INFO","msg":"UpdateLLMConfig","provider":"rhythm","model_id":""}
+{"time":"2026-08-10T17:17:44.552204385+08:00","level":"WARN","msg":"UpdateLLMConfig: missing fields","provider":"rhythm","model_id":""}
+{"time":"2026-08-10T17:17:44+08:00","method":"POST","path":"/api/v1/llm/config","status":400,"latency":"       58.6µs","ip":"172.18.0.1","request_id":"9a5e230e-6a2a-460b-a525-68edf4412cbd"}
+{"time":"2026-08-10T17:17:44.552926443+08:00","level":"INFO","msg":"UpdateLLMConfig","provider":"rhythm","model_id":""}
+{"time":"2026-08-10T17:17:44.552937804+08:00","level":"WARN","msg":"UpdateLLMConfig: missing fields","provider":"rhythm","model_id":""}
+{"time":"2026-08-10T17:17:44+08:00","method":"POST","path":"/api/v1/llm/config","status":400,"latency":"     35.767µs","ip":"172.18.0.1","request_id":"fa949094-906f-462c-b678-e395987f4cb9"}
+{"time":"2026-08-10T17:17:44+08:00","method":"POST","path":"/api/v1/auth/login","status":200,"latency":"  50.517241ms","ip":"172.18.0.1","request_id":"8340401d-8a61-4a0d-9ed4-d9a3713f4ee7"}
+{"time":"2026-08-10T17:17:44.695583527+08:00","level":"ERROR","msg":"CreateCustomProvider","error":"attempt to write a readonly database"}
+{"time":"2026-08-10T17:17:44+08:00","method":"POST","path":"/api/v1/llm/custom-providers","status":500,"latency":"    204.552µs","ip":"172.18.0.1","request_id":"e58fda9f-acf5-48e9-831f-faf83fbe30a0"}
+{"time":"2026-08-10T17:17:44.696906738+08:00","level":"ERROR","msg":"CreateCustomProvider","error":"attempt to write a readonly database"}
+{"time":"2026-08-10T17:17:44+08:00","method":"POST","path":"/api/v1/llm/custom-providers","status":500,"latency":"     88.675µs","ip":"172.18.0.1","request_id":"190dbdbb-7c0b-4811-8931-a31c598f5d04"}
+{"time":"2026-08-10T17:17:44.698178643+08:00","level":"ERROR","msg":"CreateCustomProvider","error":"attempt to write a readonly database"}
+{"time":"2026-08-10T17:17:44+08:00","method":"POST","path":"/api/v1/llm/custom-providers","status":500,"latency":"    140.031µs","ip":"172.18.0.1","request_id":"9a2e099d-ad98-44f4-991e-6287a7b873a3"}
+{"time":"2026-08-10T17:17:44.699020736+08:00","level":"ERROR","msg":"CreateCustomProvider","error":"attempt to write a readonly database"}
+{"time":"2026-08-10T17:17:44+08:00","method":"POST","path":"/api/v1/llm/custom-providers","status":500,"latency":"     61.716µs","ip":"172.18.0.1","request_id":"102d28b8-15bb-4ad4-b7a1-c13cdb2a81a3"}
+{"time":"2026-08-10T17:17:44.699795893+08:00","level":"INFO","msg":"UpdateLLMConfig","provider":"rhythm","model_id":""}
+{"time":"2026-08-10T17:17:44.699809519+08:00","level":"WARN","msg":"UpdateLLMConfig: missing fields","provider":"rhythm","model_id":""}
+{"time":"2026-08-10T17:17:44+08:00","method":"POST","path":"/api/v1/llm/config","status":400,"latency":"     43.471µs","ip":"172.18.0.1","request_id":"14631a97-a44b-4032-99f3-588a7f825dca"}
+{"time":"2026-08-10T17:17:44.70053849+08:00","level":"INFO","msg":"UpdateLLMConfig","provider":"rhythm","model_id":""}
+{"time":"2026-08-10T17:17:44.70054957+08:00","level":"WARN","msg":"UpdateLLMConfig: missing fields","provider":"rhythm","model_id":""}
+{"time":"2026-08-10T17:17:44+08:00","method":"POST","path":"/api/v1/llm/config","status":400,"latency":"     38.201µs","ip":"172.18.0.1","request_id":"b00d2617-696b-4b87-9012-095f65140b03"}
+{"time":"2026-08-10T17:17:58+08:00","method":"HEAD","path":"/health","status":200,"latency":"     14.357µs","ip":"127.0.0.1","request_id":"894047a2-852a-4b0b-a463-08d0be4f2138"}
+{"time":"2026-08-10T17:18:06+08:00","method":"GET","path":"/api/v1/notifications/unread-count","status":200,"latency":"    213.889µs","ip":"192.168.2.22","request_id":"b45f62ef-b1a8-4389-8f79-b261ebc1d137"}
+{"time":"2026-08-10T17:18:06+08:00","method":"GET","path":"/api/v1/notifications/unread-count","status":200,"latency":"    132.267µs","ip":"192.168.2.22","request_id":"8f5603c0-6de5-4214-98d6-184b3cc09912"}
+{"time":"2026-08-10T17:18:28+08:00","method":"HEAD","path":"/health","status":200,"latency":"     29.686µs","ip":"127.0.0.1","request_id":"79f5d86a-883b-4407-8a50-8b04a5c5b0ba"}

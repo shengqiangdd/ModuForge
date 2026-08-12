@@ -3,6 +3,7 @@ node_modules/
 dist/
 bin/
 backend/bin/
+inspect_*.py
 
 # Runtime data & databases
 data/

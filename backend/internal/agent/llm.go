@@ -78,7 +78,8 @@ func PrewarmConnection(endpoint string) {
 }
 
 // llmMaxRetries is the maximum number of retries for transient LLM errors (429, 5xx, network).
-const llmMaxRetries = 3
+// Free models get more retries since 429 is expected behavior.
+const llmMaxRetries = 5
 
 // isLLMRetryableError returns true for errors worth retrying (rate limit, server errors, network).
 func isLLMRetryableError(statusCode int) bool {
@@ -86,14 +87,14 @@ func isLLMRetryableError(statusCode int) bool {
 }
 
 // llmRetryBackoff returns the sleep duration for attempt number (1-based).
-// Uses exponential backoff: 2s, 4s, 8s. For 429 with Retry-After header, uses that instead.
+// Uses exponential backoff: 3s, 6s, 12s, 24s. For 429 with Retry-After header, uses that instead.
 func llmRetryBackoff(attempt int, retryAfter string) time.Duration {
 	if retryAfter != "" {
-		if d, err := time.ParseDuration(retryAfter + "s"); err == nil && d > 0 && d <= 30*time.Second {
+		if d, err := time.ParseDuration(retryAfter + "s"); err == nil && d > 0 && d <= 120*time.Second {
 			return d
 		}
 	}
-	return time.Duration(1<<uint(attempt)) * time.Second // 2s, 4s, 8s
+	return time.Duration(3<<uint(attempt)) * time.Second // 3s, 6s, 12s, 24s
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -202,13 +203,13 @@ func (r *rateLimitTracker) ConfigureForModel(modelName string) {
 	defer r.mu.Unlock()
 
 	lower := strings.ToLower(modelName)
-	// Free models: conservative limits to avoid 429s
+	// Free models: minimal client-side limits — rely on server 429 + Retry-After
 	if strings.Contains(lower, "free") || strings.Contains(lower, "mini") || strings.Contains(lower, "lite") {
-		r.maxPerMinute = 6              // 6 requests per minute (reduced from 10)
-		r.minInterval = 12 * time.Second // at least 12s between requests (increased from 6s)
-		log.Printf("[RateLimit] configured for free model: %d req/min, %v interval", r.maxPerMinute, r.minInterval)
+		r.maxPerMinute = 0              // no client-side cap, trust server
+		r.minInterval = 2 * time.Second // tiny 2s gap to avoid bursts
+		log.Printf("[RateLimit] configured for free model: no cap, %v min interval", r.minInterval)
 	} else {
-		// Paid models: no client-side limits
+		// Paid models: no limits
 		r.maxPerMinute = 0
 		r.minInterval = 0
 	}
@@ -642,10 +643,10 @@ func handleLLMHTTPError(resp *http.Response, modelTier ModelTier, reqProviderID 
 	// Record 429 for rate limit tracking
 	if resp.StatusCode == 429 {
 		globalRateLimiter.Record429()
-		// Circuit breaker: record failure for free models
-		if modelTier == TierFree && reqProviderID != "" {
-			globalCircuitBreaker.RecordFailure(reqProviderID)
-		}
+		// IMPORTANT: Do NOT record 429 as circuit breaker failure for free models.
+		// 429 is expected behavior for free-tier providers — it just means "slow down".
+		// Only record actual server errors (5xx) as failures.
+		// Circuit breaker should only open on persistent server failures, not rate limits.
 	}
 	// Extract Retry-After header for 429
 	if retryAfter := resp.Header.Get("Retry-After"); retryAfter != "" {

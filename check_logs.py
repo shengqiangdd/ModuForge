@@ -1,29 +1,40 @@
-#!/usr/bin/env python3
-import paramiko
-import time
+import paramiko, json, time
 
-ssh = paramiko.SSHClient()
-ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-ssh.connect('192.168.2.9', username='admin', password='csq0216', timeout=10)
+client = paramiko.SSHClient()
+client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+client.connect('192.168.2.9', 22, 'admin', 'csq0216', timeout=15)
 
 def run(cmd):
-    stdin, stdout, stderr = ssh.exec_command(cmd)
-    return stdout.read().decode().strip()
+    stdin, stdout, stderr = client.exec_command(cmd, timeout=30)
+    return stdout.read().decode('utf-8', errors='replace'), stderr.read().decode('utf-8', errors='replace')
 
-print("=== Check container status ===")
-print(run("docker ps -a --filter name=moduforge --format '{{.Names}} {{.Status}}'"))
+# Check container status
+print("=== Container status ===")
+out, err = run("docker ps -a | grep moduforge")
+print(out)
 
-print("\n=== Check logs ===")
-print(run("docker logs --tail 20 moduforge 2>&1"))
+# Check container logs
+print("\n=== Container logs ===")
+out, err = run("docker logs moduforge --tail 30 2>&1")
+# Filter out binary noise
+lines = out.split('\n')
+for line in lines:
+    if any(x in line for x in ['Error', 'error', 'FATAL', 'fatal', 'panic', 'listen', 'bind', 'port', 'Starting', 'Started', 'health', 'migrate', 'seed', 'database', 'sqlite']):
+        print(line[:200])
 
-print("\n=== Check if /server binary is OK ===")
-# Start container and immediately check
-run("docker start moduforge")
-time.sleep(3)
-print(run("docker exec moduforge ls -la /server /app/server 2>&1"))
-print(run("docker exec moduforge file /server 2>&1"))
+# Try to check if the port is actually listening
+print("\n=== Port check ===")
+out, err = run("docker exec moduforge sh -c 'wget -q -O /dev/null http://localhost:8080/health 2>&1 && echo OK || echo FAIL'")
+print(f"Internal health: {out.strip()}")
 
-# Check the webroot count again
-print(run("docker exec moduforge strings /server | grep webroot | head -5 2>&1"))
+# Check if port 8086 is accessible from host
+print("\n=== Host port check ===")
+out, err = run("curl -s -o /dev/null -w '%{http_code}' http://localhost:8086/health 2>&1")
+print(f"Host health: {out.strip()}")
 
-ssh.close()
+# Check the container's environment
+print("\n=== Container env ===")
+out, err = run("docker inspect moduforge --format='{{range .Config.Env}}{{println .}}{{end}}' | grep -E 'PORT|DB|DATA|MODE'")
+print(out)
+
+client.close()

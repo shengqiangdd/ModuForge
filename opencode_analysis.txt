@@ -1,0 +1,565 @@
+[0m
+> build · deepseek-v4-flash
+[0m
+[0m→ [0mRead internal/agent
+[0m
+[0m$ [0mgit -C "C:\Users\22875\.qwenpaw\workspaces\default\ModuForge" ls-files internal/agent/
+(no output)
+[0m
+[0m→ [0mRead internal/agent/audit_log.go
+[0m→ [0mRead internal/agent/cache.go
+[0m→ [0mRead internal/agent/context.go
+[0m→ [0mRead internal/agent/dependency_graph.go
+[0m→ [0mRead internal/agent/detect.go
+[0m→ [0mRead internal/agent/fix_tool_calls.go
+[0m→ [0mRead internal/agent/llm.go
+[0m→ [0mRead internal/agent/permission_checker.go
+[0m→ [0mRead internal/agent/runner.go
+[0m→ [0mRead internal/agent/runner.go[90m [offset=1523, limit=2000][0m
+[0m→ [0mRead internal/agent/session_persistence.go
+[0m→ [0mRead internal/agent/skill.go
+[0m→ [0mRead internal/agent/strings.go
+[0m→ [0mRead internal/agent/tools.go
+[0m→ [0mRead internal/agent/registry
+[0m→ [0mRead internal/agent/registry/registry.go
+[0m→ [0mRead internal/agent/skills
+[0m
+[0m$ [0mcd "C:\Users\22875\.qwenpaw\workspaces\default\ModuForge\backend"; go version; go vet ./internal/agent/... 2>&1 | Select-Object -First 50
+go version go1.25.12 windows/amd64
+go : # github.com/moduforge/backend/internal/agent
+����λ�� ��:1 �ַ�: 80
++ ... uForge\backend"; go version; go vet ./internal/agent/... 2>&1 | Selec ...
++                                  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (# github.com/mo.../internal/agent:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+# [github.com/moduforge/backend/internal/agent]
+vet.exe: internal\agent\detect.go:197:15: undefined: service.AppendMessage
+[0m
+[0m$ [0mcd "C:\Users\22875\.qwenpaw\workspaces\default\ModuForge\backend"; go build ./... 2>&1 | Select-Object -First 60
+go : # github.com/moduforge/backend/internal/agent
+����λ�� ��:1 �ַ�: 68
++ ... aw\workspaces\default\ModuForge\backend"; go build ./... 2>&1 | Selec ...
++                                               ~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (# github.com/mo.../internal/agent:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+internal\agent\detect.go:197:15: undefined: service.AppendMessage
+[0m
+[0m✱ [0mGrep "func AppendMessage"[90m in internal/service · 0 matches[0m
+[0m✱ [0mGrep "func.*Message"[90m in internal/service · 21 matches[0m
+[0m
+[0m$ [0mcd "C:\Users\22875\.qwenpaw\workspaces\default\ModuForge\backend"; Get-ChildItem internal\service -Name
+activity.go
+adb.go
+ai.go
+aistream.go
+ai_capability.go
+ai_history.go
+analytics.go
+auth.go
+auth_test.go
+autoupdate.go
+backup.go
+badges.go
+benchmark.go
+build.go
+buildlog.go
+buildlog_test.go
+build_schedule.go
+build_test.go
+collaboration.go
+email.go
+gitmgr.go
+jwt.go
+market.go
+market_sqlite.go
+market_test.go
+memory_v2.go
+notification.go
+plugin.go
+project.go
+project_test.go
+repo.go
+security_scanner.go
+signer.go
+template.go
+template_test.go
+translate.go
+validator.go
+validator_test.go
+websocket.go
+zipper.go
+[0m
+[0m✱ [0mGrep "AppendMessage"[90m in . · 1 match[0m
+[0m✱ [0mGrep "service\."[90m in internal/agent · 56 matches[0m
+[0m
+[0m$ [0mcd "C:\Users\22875\.qwenpaw\workspaces\default\ModuForge\backend"; rg -n "LLMHTTPClient\(|IsDestructiveTool|GetSensitivePatterns|GetPermissionLevel|NeedsConfirmation|projectPerms|SaveAll\(|UpdateToolHistory|SetPreference|GetPreference|GetCheckpoint|RemoveCheckpoint|toolCacheEntry|callLLM\(|NewRunConfig|ListSkills\(|GetFallbackModel|\.Close\(\)|PermDelete|GetNextSubtask" --glob "*.go" -g '!*_test.go'
+rg : �޷�����rg����ʶ��Ϊ cmdlet���������ű��ļ�������г�������ơ��������Ƶ�ƴд���������·������ȷ��·����ȷ��Ȼ������
+һ�Ρ�
+����λ�� ��:1 �ַ�: 68
++ ... sers\22875\.qwenpaw\workspaces\default\ModuForge\backend"; rg -n "LLM ...
++                                                                ~~
+    + CategoryInfo          : ObjectNotFound: (rg:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+[0m
+Now let me search the whole codebase for usages of potentially dead code.
+[0m$ [0mcd "C:\Users\22875\.qwenpaw\workspaces\default\ModuForge\backend"; rg -n "NewReflectionLog|ReflectionLog|reflectLog|GetSummary\(\)|QualityVerifier|TaskDecomposer|DecomposeTask|CallBudget|FileLock|TryLock|Cleanup\(\)|smartPruneConversation|fixConcatenatedEnglish|sanitizeReasoning|GetSessionState|CleanupSessions|GetToolStats|GetAuditHistory|GetPermissionDenials" --glob "*.go" -g '!*_test.go'
+rg : �޷�����rg����ʶ��Ϊ cmdlet���������ű��ļ�������г�������ơ��������Ƶ�ƴд���������·������ȷ��·����ȷ��Ȼ������
+һ�Ρ�
+����λ�� ��:1 �ַ�: 68
++ ... sers\22875\.qwenpaw\workspaces\default\ModuForge\backend"; rg -n "New ...
++                                                                ~~
+    + CategoryInfo          : ObjectNotFound: (rg:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+[0m
+[0m✱ [0mGrep "LLMHTTPClient\(|IsDestructiveTool|GetSensitivePatterns|GetPermissionLevel|NeedsConfirmation|projectPerms|SaveAll\(|UpdateToolHistory|SetPreference|GetPreference|GetCheckpoint|RemoveCheckpoint|toolCacheEntry|callLLM\(|NewRunConfig|ListSkills\(|GetFallbackModel|PermDelete|GetNextSubtask"[90m in . · 42 matches[0m
+[0m✱ [0mGrep "NewReflectionLog|ReflectionLog|GetSummary\(\)|QualityVerifier|TaskDecomposer|DecomposeTask|CallBudget|FileLock|TryLock|smartPruneConversation|fixConcatenatedEnglish|sanitizeReasoning|GetSessionState|CleanupSessions|GetToolStats|GetAuditHistory|GetPermissionDenials|\.Close\(\)|RecordNoWrite|ResetNoWrite|GetRecent|GetCheckpoint"[90m in . · 100 matches[0m
+[0m✱ [0mGrep "CleanupSessions|\.Cleanup\(|GetRecent|\.Save\(sessionID\)|sessionPersist|auditLog\.|SetMemoryStore|SetMemoryV2Store|summaryMaxLen|GetParallelGroup|writeContentCacheTTL|toolNameSet|IsOpen\(|RecordSuccess|RecordFailure|Record429|ConfigureForModel|WaitForSlot|maxHistoryChars"[90m in . · 66 matches[0m
+[0m✱ [0mGrep "ToolsEnabled|SessionState|GetCachedWriteContent|cacheWriteContent|invalidate\(|InvalidateBuild|getSessionCache|cleanSessionCaches|compactConversation|compactHistoryViaLLM|incrementalCompactHistory|heuristicCompactConversation|heuristicCompactHistory|fixToolCallsInHistory|estimateConversationSize|buildProjectContext|buildSystemPromptForMode|buildFreeModelPrompt"[90m in internal/agent · 69 matches[0m
+[0m
+[0m$ [0mcd "C:\Users\22875\.qwenpaw\workspaces\default\ModuForge\backend"; go build ./internal/agent/ 2>&1
+(no output)
+[0m
+[0m✱ [0mGrep "cleanSessionCaches|CleanupSessions|GetRecent\(|\.TryLock\(|FileLock|summaryMaxLen|currentModel"[90m in . · 30 matches[0m
+[0m
+[0m$ [0mcd "C:\Users\22875\.qwenpaw\workspaces\default\ModuForge\backend"; go build ./... 2>&1; Write-Output "EXIT=$LASTEXITCODE"
+go : # github.com/moduforge/backend/internal/handler
+����λ�� ��:1 �ַ�: 68
++ ... aw\workspaces\default\ModuForge\backend"; go build ./... 2>&1; Write- ...
++                                               ~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (# github.com/mo...nternal/handler:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+internal\handler\health.go:401:19: undefined: syscall.Statfs_t
+internal\handler\health.go:402:20: undefined: syscall.Statfs
+EXIT=1
+[0m
+[0m$ [0mcd "C:\Users\22875\.qwenpaw\workspaces\default\ModuForge\backend"; go vet ./internal/agent/ 2>&1; Write-Output "EXIT=$LASTEXITCODE"
+EXIT=0
+[0m
+[0m$ [0mcd "C:\Users\22875\.qwenpaw\workspaces\default\ModuForge\backend"; go vet ./internal/agent/... 2>&1; Write-Output "EXIT=$LASTEXITCODE"
+EXIT=0
+[0m
+[0m$ [0mcd "C:\Users\22875\.qwenpaw\workspaces\default\ModuForge\backend"; go build -a ./internal/agent/ 2>&1; Write-Output "EXIT=$LASTEXITCODE"
+EXIT=0
+[0m
+[0m→ [0mRead internal/agent/detect.go[90m [offset=185, limit=20][0m
+[0m
+[0m$ [0mcd "C:\Users\22875\.qwenpaw\workspaces\default\ModuForge\backend"; go list -f '{{.Name}} {{.GoFiles}}' ./internal/agent/ 2>&1
+agent [audit_log.go cache.go context.go dependency_graph.go detect.go fix_tool_calls.go llm.go permission_checker.go runner.go session_persistence.go skill.go strings.go tools.go]
+[0m
+The files appear to have changed during analysis. Let me check git status and re-verify.
+[0m$ [0mcd "C:\Users\22875\.qwenpaw\workspaces\default\ModuForge"; git status --short; git diff --stat
+M backend/cmd/moduforge/moduforge
+ M backend/internal/agent/context.go
+ M backend/internal/agent/detect.go
+ M backend/internal/agent/detect_test.go
+ M backend/internal/agent/runner.go
+ M backend/internal/agent/skills/agent_preset.go
+ D backend/internal/agent/skills/code_pipeline.go
+ M backend/internal/agent/skills/edit_file.go
+ D backend/internal/agent/skills/generate_code.go
+ M backend/internal/agent/skills/lint_code.go
+A  backend/internal/agent/skills/memory_manager.go
+ M backend/internal/agent/skills/skills_test.go
+ M backend/internal/agent/skills/think.go
+ M backend/internal/agent/skills/validate.go
+ M backend/internal/agent/skills/write_file.go
+ M backend/internal/agent/strings.go
+ M backend/internal/agent/strings_test.go
+ M backend/internal/agent/tools.go
+?? opencode.json
+?? opencode_analysis.txt
+ backend/cmd/moduforge/moduforge                | Bin 21255130 -> 20830723 bytes
+ backend/internal/agent/context.go              |  34 +-
+ backend/internal/agent/detect.go               | 281 ++++-----
+ backend/internal/agent/detect_test.go          |   9 -
+ backend/internal/agent/runner.go               |  16 +-
+ backend/internal/agent/skills/agent_preset.go  | 607 ++----------------
+ backend/internal/agent/skills/code_pipeline.go | 817 -------------------------
+ backend/internal/agent/skills/edit_file.go     |   3 -
+ backend/internal/agent/skills/generate_code.go | 201 ------
+ backend/internal/agent/skills/lint_code.go     | 506 ++++-----------
+ backend/internal/agent/skills/skills_test.go   |  19 +-
+ backend/internal/agent/skills/think.go         | 164 +----
+ backend/internal/agent/skills/validate.go      | 265 ++------
+ backend/internal/agent/skills/write_file.go    |   2 +-
+ backend/internal/agent/strings.go              |   2 +-
+ backend/internal/agent/strings_test.go         |   2 +-
+ backend/internal/agent/tools.go                |  17 +-
+ 17 files changed, 391 insertions(+), 2554 deletions(-)
+[0m
+The working tree is actively being modified (uncommitted refactor in progress). Let me get the current state of the key files.
+[0m$ [0mcd "C:\Users\22875\.qwenpaw\workspaces\default\ModuForge"; git diff backend/internal/agent/detect.go | Select-Object -First 120
+diff --git a/backend/internal/agent/detect.go b/backend/internal/agent/detect.go
+index 21a77f5..9cac0b8 100644
+--- a/backend/internal/agent/detect.go
++++ b/backend/internal/agent/detect.go
+@@ -2,236 +2,195 @@ package agent
+ 
+ import (
+ 	"context"
+-	"encoding/json"
+ 	"fmt"
+ 	"log"
+ 	"strings"
+-	"time"
+ 
+ 	"github.com/moduforge/backend/internal/service"
+ )
+ 
++// claimsFileModification checks if the text claims to have modified files.
++func claimsFileModification(text string) bool {
++	lower := strings.ToLower(text)
++
++	// Strong signal: explicitly claims to have written/saved/modified files
++	strongClaims := []string{
++		"已修�?, "已写�?, "已保�?, "已更�?, "已创�?,
++		"have modified", "have written", "have saved", "have created",
++		"i modified", "i wrote", "i saved", "i created", "i updated",
++		"修改了文�?, "写入了文�?, "保存了文�?,
++	}
++	hasStrongClaim := false
++	for _, s := range strongClaims {
++		if strings.Contains(lower, s) {
++			hasStrongClaim = true
++			break
++		}
++	}
++
++	// Weak signal: mentions files that need changes (only triggers with strong claim)
++	hasFile := strings.Contains(lower, ".java") || strings.Contains(lower, ".sh") ||
++		strings.Contains(lower, ".prop") || strings.Contains(lower, ".xml") ||
++		strings.Contains(lower, ".json") || strings.Contains(lower, ".kt") ||
++		strings.Contains(lower, ".cpp") || strings.Contains(lower, ".go") ||
++		strings.Contains(lower, ".h") || strings.Contains(lower, ".rs") ||
++		strings.Contains(lower, ".html") || strings.Contains(lower, ".css") ||
++		strings.Contains(lower, ".js") || strings.Contains(lower, ".ts") ||
++		strings.Contains(lower, ".sql") || strings.Contains(lower, ".c") ||
++		strings.Contains(lower, "makefile") || strings.Contains(lower, ".py")
++
++	return hasStrongClaim && hasFile
++}
++
++// detectLoop detects repetitive tool call patterns and returns an intervention message.
+ func detectLoop(toolCallHistory map[string]int, uniqueOps map[string]bool, totalCalls int) string {
+-	// Per-skill threshold: allow parallel batch calls (e.g. 4 read_file in one iteration)
+-	// Only trigger when truly repetitive (same operation repeated many times)
++	// Total call budget �?hard limit
++	if totalCalls >= 12 {
++		return fmt.Sprintf("Made %d tool calls total. You must stop using tools and provide your final answer now. Summarize what you accomplished.", totalCalls)
++	}
++
++	// Per-skill threshold check
+ 	for skill, count := range toolCallHistory {
++		if count < 3 {
++			continue // No need to check skills called fewer than 3 times
++		}
++
++		// Count unique targets for this skill
+ 		uniqueCount := 0
+ 		for op := range uniqueOps {
+ 			if strings.HasPrefix(op, skill+":") {
+ 				uniqueCount++
+ 			}
+ 		}
+-		// If the skill was called many times but on different targets, it's not a loop
++
++		// read_file: special case �?allow batch reads of different files
+ 		if skill == "read_file" {
++			// Same file read 3+ times = loop
++			if uniqueCount <= 1 && count >= 3 {
++				return "Reading the same file repeatedly. This is a loop. STOP reading. Use write_file/edit_file to make changes, or provide your final answer."
++			}
++			// Many reads but few unique targets = loop
+ 			if count >= 6 && uniqueCount <= 3 {
+ 				return fmt.Sprintf("You have called read_file %d times on only %d unique targets. This is a repetitive loop. STOP reading files. Provide your final answer now, or use write_file/edit_file to create/modify files.", count, uniqueCount)
+ 			}
+-		} else if skill == "create_dir" {
+-			// Special case: create_dir loops are a common trap �?the LLM thinks it's building structure but nothing happens
+-			if count >= 3 {
+-				return fmt.Sprintf("You have called create_dir %d times in a loop. This is NOT working �?create_dir is not the right approach. STOP calling create_dir. Instead, use write_file to create each file directly (parent directories are auto-created). Do NOT call create_dir before write_file.", count)
+-			}
+ 		} else {
+-			// For other skills, trigger at higher threshold
++			// Other skills: 6+ calls = likely loop
+ 			if count >= 6 {
+ 				return fmt.Sprintf("Skill '%s' called %d times. This indicates a loop. STOP calling this skill. Try a different approach or provide your final answer.", skill, count)
+ 			}
+ 		}
+ 	}
+-	// Total call budget
+-	if totalCalls >= 12 {
+-		return fmt.Sprintf("Made %d tool calls total. You must stop using tools and provide your final answer now. Summarize what you accomplished.", totalCalls)
+-	}
+-	// Repeated reads of the same file
+-	readCount := toolCallHistory["read_file"]
+-	if readCount >= 3 {
+-		uniqueReads := 0
+-		for op := range uniqueOps {
+-			if strings.HasPrefix(op, "read_file:") {
+-				uniqueReads++
+-			}
+-		}
+-		if uniqueReads <= 1 && readCount >= 3 {
+-			return "Reading the same file repeatedly. This is a loop. STOP reading. Use write_file/edit_file to make changes, or provide your final answer."
+-		}
+-	}
++
+ 	return ""
+ }
+ 
+ // isGarbageOutput detects garbled/meaningless LLM output.
+-// Adjusted thresholds: code-heavy responses often have special chars and XML tags.
+[0m
+[0m→ [0mRead internal/agent/detect.go
+[0m
+[0m$ [0mcd "C:\Users\22875\.qwenpaw\workspaces\default\ModuForge"; git diff backend/internal/agent/runner.go backend/internal/agent/tools.go backend/internal/agent/strings.go | Select-Object -First 200
+diff --git a/backend/internal/agent/runner.go b/backend/internal/agent/runner.go
+index 21ad8b6..c5939fa 100644
+--- a/backend/internal/agent/runner.go
++++ b/backend/internal/agent/runner.go
+@@ -53,9 +53,9 @@ const (
+ 	// Optimization 37: Per-tool execution timeouts
+ 	// Fast tools (read-only, in-memory) get short timeouts; slow tools (build, compile) get longer ones.
+ 	toolTimeoutFast  = 30 * time.Second  // read_file, list_dir, detect, etc.
+-	toolTimeoutWrite = 60 * time.Second  // write_file, create_dir, etc.
+-	toolTimeoutSlow  = 300 * time.Second // build_module, code_pipeline, etc.
+-	toolTimeoutLLM   = 180 * time.Second // web_search, generate_code (may call external APIs)
++	toolTimeoutWrite = 60 * time.Second  // write_file, delete_file, etc.
++	toolTimeoutSlow  = 300 * time.Second // build_module, regression_check
++	toolTimeoutLLM   = 180 * time.Second // web_search (may call external APIs)
+ )
+ 
+ // toolTimeoutForName returns the appropriate timeout for a given tool.
+@@ -64,11 +64,11 @@ func toolTimeoutForName(name string) time.Duration {
+ 	case "read_file", "list_dir", "detect", "lint_code", "validate", "think",
+ 		"memory_manager", "match_template", "gather_requirements":
+ 		return toolTimeoutFast
+-	case "write_file", "write_file_batch", "create_dir", "delete_file", "delete_dir", "move_file":
++	case "write_file", "write_file_batch", "delete_file", "delete_dir", "move_file":
+ 		return toolTimeoutWrite
+-	case "build_module", "code_pipeline", "regression_check":
++	case "build_module", "regression_check":
+ 		return toolTimeoutSlow
+-	case "web_search", "generate_code":
++	case "web_search":
+ 		return toolTimeoutLLM
+ 	default:
+ 		return toolTimeoutWrite // safe default
+@@ -562,7 +562,7 @@ func (cb *CallBudget) CanCall(toolName string) bool {
+ 		if cb.ReadCalls > cb.MaxRead {
+ 			return false
+ 		}
+-	case "write_file", "write_file_batch", "create_dir", "delete_file":
++	case "write_file", "write_file_batch", "delete_file":
+ 		cb.WriteCalls++
+ 		if cb.WriteCalls > cb.MaxWrite {
+ 			return false
+@@ -577,7 +577,7 @@ func (cb *CallBudget) GetRemaining(toolName string) int {
+ 	switch toolName {
+ 	case "read_file", "list_dir":
+ 		return cb.MaxRead - cb.ReadCalls
+-	case "write_file", "write_file_batch", "create_dir", "delete_file":
++	case "write_file", "write_file_batch", "delete_file":
+ 		return cb.MaxWrite - cb.WriteCalls
+ 	default:
+ 		return cb.MaxTotal - cb.TotalCalls
+diff --git a/backend/internal/agent/strings.go b/backend/internal/agent/strings.go
+index 610ba18..adc0007 100644
+--- a/backend/internal/agent/strings.go
++++ b/backend/internal/agent/strings.go
+@@ -27,7 +27,7 @@ var toolNameSet = map[string]bool{
+ 	"check_compat": true, "profile_code": true, "gen_docs": true,
+ 	"web_search": true, "think": true, "gather_requirements": true,
+ 	"match_template": true, "test_module": true, "regression_check": true,
+-	"create_dir": true, "generate_code": true, "code_pipeline": true,
++
+ 	"build_module": true, "memory_manager": true, "self_evolve": true,
+ 	"pattern_learn": true, "agent_preset": true,
+ }
+diff --git a/backend/internal/agent/tools.go b/backend/internal/agent/tools.go
+index f936da3..bb36044 100644
+--- a/backend/internal/agent/tools.go
++++ b/backend/internal/agent/tools.go
+@@ -107,19 +107,6 @@ func (r *AgentRunner) buildToolDefinitionsForMode(mode AgentMode, modelName stri
+ 				"type":        map[string]interface{}{"type": "string", "description": "Module type (e.g. magisk_module, android_app, library)"},
+ 			}
+ 			def.Function.Parameters["required"] = []string{"description", "type"}
+-		case "generate_code", "code_pipeline":
+-			def.Function.Parameters["properties"] = map[string]interface{}{
+-				"description":  map[string]interface{}{"type": "string", "description": "What to generate or build"},
+-				"files_spec":   map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "object"}, "description": "File specifications to generate"},
+-				"pipeline":     map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "string"}, "description": "Pipeline stages (detect/lint/test only)"},
+-				"project_id":   map[string]interface{}{"type": "string", "description": "Project ID for file context"},
+-			}
+-			def.Function.Parameters["required"] = []string{"description"}
+-		case "create_dir":
+-			def.Function.Parameters["properties"] = map[string]interface{}{
+-				"path": map[string]interface{}{"type": "string", "description": "Directory path to create"},
+-			}
+-			def.Function.Parameters["required"] = []string{"path"}
+ 		case "detect":
+ 			def.Function.Parameters["properties"] = map[string]interface{}{
+ 				"path": map[string]interface{}{"type": "string", "description": "File path to analyze"},
+@@ -227,7 +214,6 @@ func validateRequiredParams(skillName string, input map[string]interface{}) stri
+ 		"write_file":        {"path", "content"},
+ 		"write_file_batch":  {"files"},
+ 		"read_file":         {"path"},
+-		"create_dir":        {"path"},
+ 		"delete_file":       {"path"},
+ 		"delete_dir":        {"path"},
+ 		"move_file":         {"source", "destination"},
+@@ -237,8 +223,7 @@ func validateRequiredParams(skillName string, input map[string]interface{}) stri
+ 		"think":             {"thought"},
+ 		"gather_requirements": {"description"},
+ 		"match_template":    {"description", "type"},
+-		"generate_code":     {"description"},
+-		"code_pipeline":     {"description"},
++
+ 	}
+ 	required, ok := requiredMap[skillName]
+ 	if !ok {
+[0m
+[0m$ [0mcd "C:\Users\22875\.qwenpaw\workspaces\default\ModuForge"; git diff backend/internal/agent/context.go | Select-Object -First 120
+diff --git a/backend/internal/agent/context.go b/backend/internal/agent/context.go
+index afdb55f..f303079 100644
+--- a/backend/internal/agent/context.go
++++ b/backend/internal/agent/context.go
+@@ -758,41 +758,13 @@ Example: "I updated ipc.rs to fix libc::open type mismatch. Build passes."
+ - bash(command) �?run shell commands (build, test, git)
+ - build_module(project_id) �?compile + package ZIP
+ 
+-## TOOL BEST PRACTICES
+-### write_file
+-- ALWAYS read_file first to understand current content
+-- Write COMPLETE file content, not snippets
+-- For large files (>100 lines), consider edit_file for changes <30%
+-- After write, verify with read_file to confirm
+-
+-### edit_file
+-- Use for changes <30% of file content
+-- old_text must match EXACTLY (including whitespace)
+-- Test with small changes first
+-- If edit fails, fall back to write_file
+-
+-### grep_search
+-- Use before read_file to locate relevant code
+-- Supports regex patterns
+-- Use is_regex=true for complex patterns
+-- Check include_pattern to filter file types
+-
+-### bash
+-- Use for build, test, git operations
+-- Check exit code for success/failure
+-- Use cd && command for directory-specific ops
+-- Timeout is 30s for read-only, 60s for write operations
+-
+-### build_module
+-- ALWAYS call after write_file
+-- Reads error messages carefully
+-- Fix issues before retrying (max 3 retries)
+-
+-## FILE RULES
++## TOOL RULES
+ - edit_file for changes <30% of file (MOST common)
+ - write_file for new files or complete rewrites ONLY
++- ALWAYS read_file BEFORE edit_file/write_file
+ - grep_search BEFORE read_file (locate code first)
+ - After writing, ALWAYS call build_module
++- build_module fails? Read error �?fix �?rebuild (max 3 retries)
+ 
+ ## WORKFLOW
+ 1. grep_search �?find relevant code
+[0m
+[0m✱ [0mGrep "summaryMaxLen|maxResultLenForTier|defaultMaxResultLen|smartSummarizeResult|summarizeResult|toolTimeoutForName|PrewarmConnection|getCachedWriteContent|depGraph\.|dependency"[90m in . · 66 matches[0m
+[0m→ [0mRead internal/agent/llm.go[90m [offset=622, limit=140][0m
+Let me verify current line numbers in the modified tools.go and check the parallel-execution audit gap.
+[0m→ [0mRead internal/agent/tools.go[90m [offset=295, limit=65][0m
+Analysis complete. Note: the working tree is mid-refactor (uncommitted changes, `create_dir`/`generate_code`/`code_pipeline` being removed), so a few line numbers may shift. Findings are based on the current state, which compiles (`go build -a ./internal/agent/` passes).
+
+## 1) Unused code / dead symbols (no callers anywhere in repo)
+
+| Symbol | Location |
+|---|---|
+| `toolCacheEntry` type | cache.go:25 |
+| `PermDelete` const | permission_checker.go:15 |
+| `projectPerms` field + init | permission_checker.go:32, 49 (never read/written) |
+| `GetPermissionLevel` | permission_checker.go:93 |
+| `NeedsConfirmation` | permission_checker.go:105 |
+| `IsDestructiveTool` | permission_checker.go:167 |
+| `GetSensitivePatterns` | permission_checker.go:176 |
+| `SaveAll` | session_persistence.go:101 |
+| `GetCheckpoint` | session_persistence.go:153 |
+| `RemoveCheckpoint` | session_persistence.go:174 |
+| `UpdateToolHistory` | session_persistence.go:195 |
+| `SetPreference` / `GetPreference` | session_persistence.go:210, 225 |
+| `callLLM` (whole non-streaming variant) | llm.go:936 |
+| `GetFallbackModel` | runner.go:843 |
+| `ToolRetryFallback.currentModel` field | runner.go:765 (set at :1346, never read) |
+| `FileLock.TryLock` / `FileLock.Cleanup` | runner.go:506, 513 |
+| `ReflectionLog.GetRecent` | runner.go:627 |
+| `cleanSessionCaches` | runner.go:1125 (TTL cleanup is the only mechanism used) |
+| `CleanupSessions` | runner.go:2642 |
+| `summaryMaxLen` const | runner.go:51 |
+| `AuditLog.Close` | audit_log.go:165 (no-op anyway) |
+
+No dead imports — the package compiles cleanly.
+
+## 2) Complex functions needing simplification
+
+- **`Run`** — runner.go:1214-2615 (~1400 lines). The entire agent loop, dedup, parallel/sequential scheduling, recovery, checkpoints, and write-merging live in one function. Top candidate for decomposition.
+- **`prefilterConversation`** — context.go:883-1056 (~170 lines, 4 passes, nested loops, tool_calls consistency fixes).
+- **`heuristicCompactConversation`** — context.go:527-674 (scoring + selection + summary rebuild).
+- **`smartPruneConversation`** — context.go:1071-1175.
+- **`repairToolCalls`** — llm.go:764-870 (ad-hoc ~100-line string-repair chain).
+- **`buildToolDefinitionsForMode`** — tools.go:22-183 (large repetitive switch; could be a param-schema table).
+- **`QualityVerifier.VerifyFile`** — runner.go:347-440 (5 heuristics + ad-hoc scoring).
+- **`cacheKey`** — cache.go:38-70 hand-rolls a bubble sort instead of `sort.Strings`.
+
+## 3) Error handling gaps
+
+- **Double-close panic** — llm.go:733 and :740: if `scanner.Err() != nil` but partial data exists, `keepAliveDone` is closed twice → runtime panic.
+- **audit_log.go:72-74** — `json.Marshal` error and both `f.Write` errors ignored; entry silently lost.
+- **audit_log.go:41, 159** — `os.MkdirAll` / `os.Rename` errors ignored (rotation can silently fail).
+- **session_persistence.go:42, 290** — `os.MkdirAll` / `os.Remove` errors ignored.
+- **runner.go:1653, 2316** — `json.Unmarshal` of tool-call args error ignored (malformed args become nil input).
+- **tools.go:312** — `json.Marshal` error ignored.
+- **tools.go:326-351** — `tx.Exec` results and `tx.Commit()` error ignored; fallback `r.db.Exec` errors also ignored.
+- **context.go:800-816** — `rows.Err()` never checked after the `rows.Next()` loop.
+- **detect.go:197-202** — `forceAnswer` swallows the LLM error and returns `nil`, so callers can't detect failure.
+- **Parallel path gap** — runner.go:1874-1977: parallel (read-only) tools skip the permission check (:2013), call-budget check (:1983), **audit logging (:2241)**, and reflection logging that the sequential path applies.
+- **llm.go:970-988** — `callLLM` never checks `resp.StatusCode` (dead code, but latent).
+
+## 4) Code duplication
+
+- **SSE streaming parse** (identical chunk struct + scanner loop + keepalive) repeated 3×: context.go:269-294, context.go:465-490, llm.go:647-740.
+- **`/chat/completions` suffix normalization** 4×: llm.go:453, llm.go:942, context.go:238, context.go:435.
+- **"Successfully wrote" file-path extraction** 4×: context.go:146-151, :326-333, :610-617, :1096-1102.
+- **Tool-result append + `convStore.Append` + SSE block** ~8× in runner.go: blocked read :1683-1711, blocked write :1715-1743, missing param :1762-1786, budget :1983-2010, permission :2013-2039, write flush :2363-2432. A `appendToolResult(tc, content)` helper would cut ~150 lines.
+- **Loop/stagnation detection** in 4 independent mechanisms: `detectLoop` (detect.go:46), `StagnationDetector.RecordToolCall` (runner.go:697), `toolConsecutiveIdentical` (runner.go:2518-2538), read-only loop (runner.go:2542-2564).
+- **Error classification** in 5 overlapping systems: `isRetryableError` (strings.go:245), `isLLMRetryableError` (llm.go:82), `ClassifyError` (runner.go:879), `ToolRetryFallback.GetFallback` (runner.go:779), `GetRecoveryStrategy` (runner.go:953).
+- **`len(content) > N { content[:N] + "..." }` truncation idiom** repeated 8+ times.
+
+Highest-priority fixes: the double-close panic (llm.go:733), the parallel-path audit-logging gap (runner.go:1874-1977), and extracting the duplicated SSE parser into one helper.
+
+C:\Users\22875\.qwenpaw\workspaces\default\ModuForge\backend>
+
+C:\Users\22875\.qwenpaw\workspaces\default\ModuForge\backend>'y' is not recognized as an internal or external command,
+operable program or batch file.
+
+C:\Users\22875\.qwenpaw\workspaces\default\ModuForge\backend>More? 
+
+C:\Users\22875\.qwenpaw\workspaces\default\ModuForge\backend>
+
+C:\Users\22875\.qwenpaw\workspaces\default\ModuForge\backend>'Y' is not recognized as an internal or external command,
+operable program or batch file.
+
+C:\Users\22875\.qwenpaw\workspaces\default\ModuForge\backend>
+
+C:\Users\22875\.qwenpaw\workspaces\default\ModuForge\backend>
+
+C:\Users\22875\.qwenpaw\workspaces\default\ModuForge\backend>C:\Users\22875\.qwenpaw\workspaces\default\ModuForge\backend>C:\Users\22875\.qwenpaw\workspaces\default\ModuForge\backend>C:\Users\22875\.qwenpaw\workspaces\default\ModuForge\backend>
+C:\Users\22875\.qwenpaw\workspaces\default\ModuForge\backend>
+C:\Users\22875\.qwenpaw\workspaces\default\ModuForge\backend>C:\Users\22875\.qwenpaw\workspaces\default\ModuForge\backend>C:\Users\22875\.qwenpaw\workspaces\default\ModuForge\backend>C:\Users\22875\.qwenpaw\workspaces\default\ModuForge\backend>C:\Users\22875\.qwenpaw\workspaces\default\ModuForge\backend>C:\Users\22875\.qwenpaw\workspaces\default\ModuForge\backend>C:\Users\22875\.qwenpaw\workspaces\default\ModuForge\backend>C:\Users\22875\.qwenpaw\workspaces\default\ModuForge\backend>

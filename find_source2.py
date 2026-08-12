@@ -1,32 +1,40 @@
-#!/usr/bin/env python3
-import paramiko
+"""Find source code and check build routes"""
+import paramiko, sys
 
 ssh = paramiko.SSHClient()
 ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 ssh.connect('192.168.2.9', username='admin', password='csq0216', timeout=10)
 
-def run(cmd):
-    stdin, stdout, stderr = ssh.exec_command(cmd)
-    out = stdout.read().decode().strip()
-    err = stderr.read().decode().strip()
-    if err:
-        print(f"STDERR: {err[:200]}")
-    return out
+# Find source code
+print('=== Find source ===')
+stdin, stdout, stderr = ssh.exec_command("""
+find /vol1 -name "routes.go" -path "*moduforge*" 2>/dev/null | head -5
+echo "---"
+find /vol1 -name "build*.go" -path "*moduforge*" 2>/dev/null | head -10
+echo "---"
+find /vol1 -name "Build*.svelte" 2>/dev/null | head -5
+""")
+sys.stdout.buffer.write(stdout.read())
+print()
 
-# Find zipper.go
-print("=== Finding zipper.go ===")
-print(run("find / -name 'zipper.go' 2>/dev/null | head -10"))
+# Check what endpoints exist for builds
+print('\n=== Build endpoints test ===')
+stdin, stdout, stderr = ssh.exec_command("""
+TOKEN=$(curl -s -X POST http://localhost:8086/api/v1/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"csq","password":"csq0216"}' | python3 -c "import sys,json; print(json.load(sys.stdin)['token'])")
 
-# Check overlay2 for source
-print("\n=== Overlay2 Source ===")
-print(run("ls -la /vol1/docker/overlay2/715zaietsobb3cj3kgqe9q2y9/diff/backend/internal/service/ 2>/dev/null || echo 'Not found'"))
-
-# Check if we have the modified version
-print("\n=== Check if webroot logic exists ===")
-print(run("grep -l 'webroot' /vol1/docker/overlay2/*/diff/backend/internal/service/zipper.go 2>/dev/null || echo 'No webroot found in any zipper.go'"))
-
-# Check the actual running binary
-print("\n=== Check running server ===")
-print(run("docker exec moduforge ls -la /server /app/server 2>/dev/null"))
+# Test various build endpoints
+for ep in \
+  "api/v1/projects/155f1629-6e33-4407-b348-f28698f6f5cd/builds" \
+  "api/v1/projects/155f1629-6e33-4407-b348-f28698f6f5cd/builds/logs" \
+  "api/v1/projects/155f1629-6e33-4407-b348-f28698f6f5cd/build/stream" \
+  "api/v1/projects/155f1629-6e33-4407-b348-f28698f6f5cd/build/logs"; do
+  code=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:8086/$ep" -H "Authorization: Bearer $TOKEN" -m 3)
+  echo "$ep -> $code"
+done
+""")
+sys.stdout.buffer.write(stdout.read())
+print()
 
 ssh.close()

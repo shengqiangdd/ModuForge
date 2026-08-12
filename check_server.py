@@ -1,29 +1,31 @@
 #!/usr/bin/env python3
-"""Check server status and deployment state."""
+"""Check server paths"""
+import sys, io
+if sys.platform == "win32":
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
 import paramiko
 
-def check_server():
-    ssh = paramiko.SSHClient()
-    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    ssh.connect('192.168.2.9', username='admin', password='csq0216', timeout=10)
-    
-    print("=== Host /app/dist/ ===")
-    stdin, stdout, stderr = ssh.exec_command('ls -la /app/dist/ 2>/dev/null || echo "dist not found"')
-    print(stdout.read().decode())
-    
-    print("=== Container /app/dist/ ===")
-    stdin, stdout, stderr = ssh.exec_command('docker exec moduforge ls -la /app/dist/ 2>/dev/null || echo "container dist not found"')
-    print(stdout.read().decode())
-    
-    print("=== Container health ===")
-    stdin, stdout, stderr = ssh.exec_command('curl -s http://localhost:8086/health')
-    print(stdout.read().decode())
-    
-    print("=== Dockerfile COPY ===")
-    stdin, stdout, stderr = ssh.exec_command('docker exec moduforge cat /app/Dockerfile 2>/dev/null || echo "no Dockerfile in container"')
-    print(stdout.read().decode()[:2000])
-    
-    ssh.close()
+client = paramiko.SSHClient()
+client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+client.connect("192.168.2.9", username="admin", password="csq0216", timeout=15)
 
-if __name__ == '__main__':
-    check_server()
+# Find ModuForge repo
+cmds = [
+    "ls -la /vol1/ 2>/dev/null || echo 'no /vol1'",
+    "find /home -name 'docker-compose.yml' -path '*ModuForge*' 2>/dev/null | head -5",
+    "find /opt -name 'docker-compose.yml' -path '*ModuForge*' 2>/dev/null | head -5",
+    "find /root -name 'docker-compose.yml' -path '*ModuForge*' 2>/dev/null | head -5",
+    "docker inspect moduforge --format '{{json .Mounts}}' 2>/dev/null | python3 -m json.tool 2>/dev/null || docker inspect moduforge --format '{{range .Mounts}}{{.Source}} -> {{.Destination}}{{println}}{{end}}' 2>/dev/null",
+    "docker inspect moduforge --format '{{json .Config.Labels}}' 2>/dev/null | head -200",
+]
+
+for cmd in cmds:
+    print(f"\n>>> {cmd}")
+    _, stdout, _ = client.exec_command(cmd, timeout=10)
+    out = stdout.read().decode('utf-8', errors='replace').strip()
+    if out:
+        for line in out.split('\n')[:20]:
+            print(f"  {line}")
+
+client.close()

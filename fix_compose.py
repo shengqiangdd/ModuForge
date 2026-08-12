@@ -1,68 +1,100 @@
-#!/usr/bin/env python3
-"""Fix DATABASE_PATH in docker-compose.yml and restart."""
-
+"""Write correct docker-compose.yml and restart"""
 import paramiko
-
-HOST = "192.168.2.9"
-USER = "admin"
-PASSWORD = "csq0216"
-CONTAINER = "moduforge"
 
 ssh = paramiko.SSHClient()
 ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-ssh.connect(HOST, username=USER, password=PASSWORD, timeout=10)
+ssh.connect('192.168.2.9', username='admin', password='csq0216', timeout=10)
 
-def run(cmd, desc=""):
-    print(f"=== {desc} ===")
-    stdin, stdout, stderr = ssh.exec_command(cmd)
-    out = stdout.read().decode()
-    err = stderr.read().decode()
-    if out: print(out)
-    if err: print(f"STDERR: {err}")
-    print()
+# Write correct docker-compose.yml
+compose = """services:
+  moduforge:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    image: moduforge:latest
+    container_name: moduforge
+    restart: unless-stopped
+    ports:
+      - "8086:8080"
+    environment:
+      - PORT=:8080
+      - DATABASE_PATH=/data/moduforge.db
+      - BUILD_DIR=/data/builds
+      - MODULES_DIR=/data/modules
+      - PROJECTS_DIR=/data/projects
+      - GIN_MODE=release
+      - JWT_SECRET=${JWT_SECRET:-}
+      - MODUFORGE_DEV=0
+      - TZ=Asia/Shanghai
+    volumes:
+      - /vol1/docker/moduforge-data:/data
+      - moduforge_uploads:/app/uploads
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
-# 1. Fix the docker-compose.yml
-print("1. Fixing docker-compose.yml...")
+volumes:
+  moduforge_uploads:
+    driver: local
+"""
+
 sftp = ssh.open_sftp()
-with sftp.open("/tmp/moduforge_deploy/docker-compose.yml", "r") as f:
-    content = f.read().decode()
-print("Before:")
-print(content)
-
-# Replace DB_PATH with DATABASE_PATH
-content = content.replace("DB_PATH=/data/moduforge.db", "DATABASE_PATH=/data/moduforge.db")
-
-with sftp.open("/tmp/moduforge_deploy/docker-compose.yml", "w") as f:
-    f.write(content.encode())
-
+with sftp.open('/vol1/1000/docker/qwenpaw/data/working/workspaces/default/ModuForge/docker-compose.yml', 'w') as f:
+    f.write(compose)
 sftp.close()
-print("After:")
-print(content)
+print('docker-compose.yml written')
 
-# 2. Also fix the entrypoint to pass DATABASE_PATH
-print("\n2. Checking entrypoint...")
-sftp = ssh.open_sftp()
-with sftp.open("/tmp/moduforge_deploy/docker-entrypoint.sh", "r") as f:
-    entry_content = f.read().decode()
-print(entry_content)
-sftp.close()
+# Start
+print('\n=== Start ===')
+stdin, stdout, stderr = ssh.exec_command('cd /vol1/1000/docker/qwenpaw/data/working/workspaces/default/ModuForge && sudo docker compose up -d 2>&1')
+print(stdout.read().decode())
+err = stderr.read().decode(errors='replace')
+if err: print(err)
 
-# 3. Recreate the container with docker-compose
-print("\n3. Recreating container with docker-compose...")
-run("cd /tmp/moduforge_deploy && docker compose down", "Compose down")
-run("cd /tmp/moduforge_deploy && docker compose up -d", "Compose up")
-
-# 4. Wait and check status
+# Wait
 import time
-time.sleep(5)
+print('\n=== Wait ===')
+for i in range(15):
+    time.sleep(2)
+    stdin, stdout, stderr = ssh.exec_command('curl -s http://localhost:8086/health 2>&1')
+    health = stdout.read().decode().strip()
+    if '"ok"' in health:
+        print(f'  {i*2}s: healthy!')
+        break
+    print(f'  {i*2}s: {health[:50]}')
+else:
+    stdin, stdout, stderr = ssh.exec_command('docker logs moduforge --tail 10 2>&1')
+    print(stdout.read().decode(errors='replace'))
 
-print("\n4. Checking status...")
-run(f"docker ps -f name={CONTAINER} --format 'table {{{{.Status}}}}\t{{{{.Ports}}}}'", "Container status")
-run(f"docker logs --tail 5 {CONTAINER}", "Container logs")
-
-# 5. Health check
-print("\n5. Health check...")
-run("curl -s http://192.168.2.9:8086/health", "Health check")
+# Test
+print('\n=== Test ===')
+stdin, stdout, stderr = ssh.exec_command("""
+TOKEN=$(curl -s -X POST http://localhost:8086/api/v1/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"csq","password":"csq0216"}' | python3 -c "import sys,json; print(json.load(sys.stdin)['token'])")
+echo "Projects:"
+curl -s http://localhost:8086/api/v1/projects -H "Authorization: Bearer $TOKEN" | python3 -c "
+import sys, json
+for p in json.load(sys.stdin): print(f'  {p[\"name\"]}')
+"
+echo ""
+echo "Clear failed:"
+curl -s -X DELETE "http://localhost:8086/api/v1/projects/155f1629-6e33-4407-b348-f28698f6f5cd/builds/failed" -H "Authorization: Bearer $TOKEN"
+""")
+print(stdout.read().decode(errors='replace'))
 
 ssh.close()
-print("\nDone!")

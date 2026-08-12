@@ -415,21 +415,78 @@ module.prop, customize.sh, META-INF/(update-binary + updater-script含#MAGISK)
 	if !strings.HasSuffix(endpoint, "/chat/completions") {
 		chatURL = endpoint + "/chat/completions"
 	}
-	req, err := http.NewRequestWithContext(ctx, "POST", chatURL, bytes.NewReader(bodyBytes))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	if apiKey != "" {
-		req.Header.Set("Authorization", "Bearer "+apiKey)
+
+	// Retry loop for transient errors (429, 5xx)
+	var resp *http.Response
+	for attempt := 0; attempt <= 5; attempt++ {
+		if attempt > 0 {
+			// Exponential backoff: 3s, 6s, 12s, 24s, 48s
+			backoff := time.Duration(3<<uint(attempt-1)) * time.Second
+			log.Printf("[AI] retry %d/5 after %v", attempt, backoff)
+			s.sendSSE(w, map[string]interface{}{
+				"type":    "phase",
+				"phase":   "retry",
+				"message": fmt.Sprintf("请求频率超限，%v 后重试 (%d/5)...", backoff, attempt),
+			})
+			select {
+			case <-time.After(backoff):
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		}
+
+		req, err := http.NewRequestWithContext(ctx, "POST", chatURL, bytes.NewReader(bodyBytes))
+		if err != nil {
+			return err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		if apiKey != "" {
+			req.Header.Set("Authorization", "Bearer "+apiKey)
+		}
+
+		resp, err = httpClient.Do(req)
+		if err != nil {
+			log.Printf("[AI] request error (attempt %d): %v", attempt+1, err)
+			continue // retry on network error
+		}
+
+		if resp.StatusCode == 429 || resp.StatusCode >= 500 {
+			// Extract Retry-After header
+			retryAfter := resp.Header.Get("Retry-After")
+			resp.Body.Close()
+
+			if resp.StatusCode == 429 && retryAfter != "" {
+				// Parse Retry-After and use it instead of exponential backoff
+				if d, err := time.ParseDuration(retryAfter + "s"); err == nil && d > 0 && d <= 120*time.Second {
+					log.Printf("[AI] 429 with Retry-After: %v", d)
+					s.sendSSE(w, map[string]interface{}{
+						"type":    "phase",
+						"phase":   "retry",
+						"message": fmt.Sprintf("服务端要求等待 %v，正在重试...", d),
+					})
+					select {
+					case <-time.After(d):
+					case <-ctx.Done():
+						return ctx.Err()
+					}
+					// Retry immediately after waiting
+					attempt--
+					continue
+				}
+			}
+
+			log.Printf("[AI] HTTP %d (attempt %d)", resp.StatusCode, attempt+1)
+			continue // retry
+		}
+
+		break // success
 	}
 
-	resp, err := httpClient.Do(req)
-	if err != nil {
+	if resp == nil {
 		s.sendSSE(w, map[string]interface{}{
 			"type":  "phase",
 			"phase": "error",
-			"message": fmt.Sprintf("AI service error: %s", err.Error()),
+			"message": "AI service unavailable after retries",
 		})
 		return nil
 	}
