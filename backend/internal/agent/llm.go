@@ -204,8 +204,8 @@ func (r *rateLimitTracker) ConfigureForModel(modelName string) {
 	lower := strings.ToLower(modelName)
 	// Free models: conservative limits to avoid 429s
 	if strings.Contains(lower, "free") || strings.Contains(lower, "mini") || strings.Contains(lower, "lite") {
-		r.maxPerMinute = 10             // 10 requests per minute
-		r.minInterval = 6 * time.Second // at least 6s between requests
+		r.maxPerMinute = 6              // 6 requests per minute (reduced from 10)
+		r.minInterval = 12 * time.Second // at least 12s between requests (increased from 6s)
 		log.Printf("[RateLimit] configured for free model: %d req/min, %v interval", r.maxPerMinute, r.minInterval)
 	} else {
 		// Paid models: no client-side limits
