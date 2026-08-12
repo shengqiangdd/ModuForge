@@ -2252,7 +2252,6 @@ You are running WITHOUT a project context. This means:
 		}
 
 	// Execute sequential tasks (write/side-effect tools)
-	anyWriteCalled := false
 	editFileConsecutiveFailures := 0 // confidence check: track consecutive edit_file failures
 	for _, st := range plan.sequentialTasks {
 			// P1-3: Check call budget
@@ -2468,6 +2467,7 @@ You are running WITHOUT a project context. This means:
 
 			// Track edit_file failures for confidence check
 			if st.skillName == "edit_file" {
+				anyWriteCalled = true // edit_file is a write operation
 				isEditError := err != nil || strings.HasPrefix(result, "Error:") || strings.HasPrefix(result, "❌")
 				if isEditError {
 					editFileConsecutiveFailures++
@@ -2476,7 +2476,7 @@ You are running WITHOUT a project context. This means:
 				}
 			}
 
-			if st.skillName == "write_file" {
+			if st.skillName == "write_file" || st.skillName == "write_file_batch" {
 				writeFileCalled = true
 				anyWriteCalled = true
 				stagnationDetector.ResetNoWrite()
