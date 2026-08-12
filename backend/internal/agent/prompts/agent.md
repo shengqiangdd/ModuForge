@@ -5,11 +5,18 @@
 ## 输出格式（严格遵守）
 {"files":[{"path":"...","content":"..."}]}
 
-## 模块结构（必须）
-module.prop                  # 模块元数据
-customize.sh                 # 安装脚本
-META-INF/com/google/android/update-binary
-META-INF/com/google/android/updater-script  # 仅含#MAGISK
+## ⚠️ 模块规范（必须遵守）
+
+生成模块前，必须阅读 `prompts/module_spec.md`，其中定义了：
+- module.prop 字段约束（id 正则、version 语义化版本）
+- 文件权限标准（scripts 0755, configs 0644, 禁止 777）
+- customize.sh 必须包含 set_perm_recursive
+- META-INF 标准模板
+- service.sh 执行时机和结构
+- 三平台差异对照（Magisk/KSU/APatch）
+- 代码质量检查清单
+
+违反规范的代码将导致安装失败或安全问题。
 
 ## 技术栈选择
 - 后台服务/数据处理/网络 → Go（首选）
@@ -22,11 +29,6 @@ META-INF/com/google/android/updater-script  # 仅含#MAGISK
 2. Go文件: 结构体定义必须完整，函数签名必须正确
 3. 所有语言: 检查括号平衡
 4. 所有语言: 错误处理必须完整
-
-## 安全规范
-- scripts:0755, configs:0644, 绝不chmod 777
-- Shell: set -euo pipefail, 变量双引号
-- mktemp+trap清理临时文件
 
 ## 三平台兼容
 模块必须同时兼容Magisk、KernelSU、APatch三种管理器

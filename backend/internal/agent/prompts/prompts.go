@@ -97,11 +97,27 @@ func Load(mode string) (*Prompt, error) {
 		p.Errors = errorsContent
 	}
 
+	// Load module spec for module-generation modes
+	// Injected into generate/agent/repair modes so LLM always has the spec in context
+	moduleSpec := ""
+	specModes := map[string]bool{"generate": true, "agent": true, "repair": true}
+	if specModes[strings.ToLower(mode)] {
+		specContent, err := loadFileWithOverride("module_spec.md")
+		if err == nil && specContent != "" {
+			moduleSpec = specContent
+		}
+	}
+
 	// Assemble full prompt
 	var sb strings.Builder
 	sb.WriteString(p.Base)
 	sb.WriteString("\n\n")
 	sb.WriteString(p.Mode)
+
+	if moduleSpec != "" {
+		sb.WriteString("\n\n")
+		sb.WriteString(moduleSpec)
+	}
 
 	if p.Tools != "" {
 		sb.WriteString("\n\n")
