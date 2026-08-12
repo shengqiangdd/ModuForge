@@ -68,6 +68,13 @@ func (s *BashSkill) Execute(ctx context.Context, input map[string]interface{}) (
 
 	projectPath := ResolveProjectPath(s.db, s.projectPath, projectID)
 
+	// Auto-create project directory if it doesn't exist
+	if projectPath != "" {
+		if err := os.MkdirAll(projectPath, 0755); err != nil {
+			log.Printf("[BashSkill] mkdir failed for project dir %s: %v", projectPath, err)
+		}
+	}
+
 	// Ensure project files exist on disk (sync from DB if needed)
 	if projectID != "" {
 		if err := s.syncProjectToDisk(projectID, projectPath); err != nil {

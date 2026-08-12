@@ -186,7 +186,9 @@ func (h *AgentHandler) Run(c fiber.Ctx) error {
 					).Scan(&llmProvider, &llmModelID, &llmEndpoint); err == nil && llmProvider != "" {
 						// Check if the configured provider is a preset
 						if preset := llm.FindProvider(llmProvider); preset != nil {
-							runCfg.ProviderID = llmProvider
+							// P0-Fix: Don't overwrite runCfg.ProviderID with the llm_config preset.
+							// Keep the original req.ProviderID so callLLMSummary (compact/plan)
+							// resolves the correct custom provider, not the free preset.
 							runCfg.LLMEndpoint = preset.Endpoint
 							if req.Model != "" {
 								runCfg.LLMModel = req.Model
@@ -202,8 +204,8 @@ func (h *AgentHandler) Run(c fiber.Ctx) error {
 							h.cfg.LLMProvider = saved
 							h.cfg.Unlock()
 							resolved = true
-							log.Printf("[Agent] fallback: loaded from llm_config provider=%s endpoint=%s model=%s key_len=%d",
-								llmProvider, runCfg.LLMEndpoint, runCfg.LLMModel, len(runCfg.LLMApiKey))
+							log.Printf("[Agent] fallback: loaded from llm_config provider=%s endpoint=%s model=%s key_len=%d (kept original providerID=%s)",
+								llmProvider, runCfg.LLMEndpoint, runCfg.LLMModel, len(runCfg.LLMApiKey), runCfg.ProviderID)
 						} else {
 							// Configured provider is custom — look it up
 							var cpEndpoint, cpKey, cpModel string

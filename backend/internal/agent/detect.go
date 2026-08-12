@@ -87,9 +87,29 @@ func detectLoop(toolCallHistory map[string]int, uniqueOps map[string]bool, total
 				return fmt.Sprintf("You have called read_file %d times. Even with %d unique files, this is excessive reading. STOP reading. You MUST now use edit_file or write_file to make changes, then call build_module.", count, uniqueCount)
 			}
 		} else {
-			// Other skills: 3+ calls = likely loop (reduced from 4)
-			if count >= 3 {
-				return fmt.Sprintf("Skill '%s' called %d times. This indicates a loop. STOP calling this skill. Try a different approach or provide your final answer.", skill, count)
+			// Productive skills: higher thresholds (write_file/edit_file are expected to be called many times)
+			switch skill {
+			case "write_file", "edit_file":
+				// Write/edit: allow 15+ calls for large modules, only flag if no unique targets
+				if count >= 15 && uniqueCount <= 1 {
+					return fmt.Sprintf("Skill '%s' called %d times on only 1 unique file. This is a loop. STOP and try a different approach or provide your final answer.", skill, count)
+				}
+				// Absolute cap for write/edit
+				if count >= 25 {
+					return fmt.Sprintf("Skill '%s' called %d times. This is excessive. STOP and provide your final answer summarizing what was accomplished.", skill, count)
+				}
+			case "bash":
+				// Bash: 3+ failures on same command = loop
+				if count >= 3 {
+					return fmt.Sprintf("Skill 'bash' called %d times with failures. This indicates a loop. STOP using bash. Try a completely different approach (use write_file/edit_file directly), or provide your final answer.", count)
+				}
+			case "read_file":
+				// Already handled above
+			default:
+				// Other skills: 5+ calls = likely loop
+				if count >= 5 {
+					return fmt.Sprintf("Skill '%s' called %d times. This indicates a loop. STOP calling this skill. Try a different approach or provide your final answer.", skill, count)
+				}
 			}
 		}
 	}
@@ -111,7 +131,8 @@ func isGarbageOutput(text string) bool {
 		return true
 	}
 
-	// Excessive special characters (garbled encoding)
+	// Excessive special characters (garbled encoding) — only for medium-length text
+	// Long responses with valid Chinese content should not be flagged
 	specialCount := 0
 	xmlTagCount := 0
 	for _, r := range text {
@@ -122,24 +143,29 @@ func isGarbageOutput(text string) bool {
 			specialCount++
 		}
 	}
-	if len(text) > 200 && float64(specialCount)/float64(len(text)) > 0.40 {
+	// Only flag if text is not too long (valid Chinese responses can be very long)
+	if len(text) > 200 && len(text) < 5000 && float64(specialCount)/float64(len(text)) > 0.40 {
 		return true
 	}
-	if xmlTagCount > 60 {
+	// For very long responses, only flag extreme cases
+	if len(text) >= 5000 && float64(specialCount)/float64(len(text)) > 0.70 {
+		return true
+	}
+	if xmlTagCount > 60 { // Threshold for excessive XML-like tags
 		return true
 	}
 
-	// Check for repetitive patterns (same line repeated)
+	// Check for repetitive patterns (same line repeated) — only for very repetitive text
 	lines := strings.Split(text, "\n")
-	if len(lines) > 10 {
+	if len(lines) > 20 { // Raised threshold from 10 to 20
 		uniqueLines := make(map[string]bool)
 		for _, line := range lines {
 			trimmed := strings.TrimSpace(line)
-			if len(trimmed) > 20 {
+			if len(trimmed) > 30 { // Raised threshold from 20 to 30
 				uniqueLines[trimmed] = true
 			}
 		}
-		if len(uniqueLines) < len(lines)/4 {
+		if len(uniqueLines) < len(lines)/5 { // Changed from /4 to /5
 			return true // Too many repeated lines
 		}
 	}
@@ -200,9 +226,17 @@ func (r *AgentRunner) forceAnswer(ctx context.Context, conversation []map[string
 
 	diagnostic := buildDiagnosticSummary(conversation)
 
+	// Add explicit instruction to NOT use tools in the system message
 	conversation = append(conversation, map[string]interface{}{
 		"role":    "user",
-		"content": reason + diagnostic + "\n\nIMPORTANT: Use write_file directly to create/modify files — it auto-creates parent directories.\n\nProvide your final answer now using clean Markdown formatting (## headings, - bullet lists, **bold**, `code`). Do NOT use any tools. Do NOT output raw tool syntax or XML tags.",
+		"content": "STOP. Do NOT use any tools. Do NOT call write_file, edit_file, bash, or any other function. " +
+			"Instead, provide a clean final answer using Markdown formatting:\n" +
+			"- Use ## for headings\n" +
+			"- Use - for bullet lists\n" +
+			"- Use **bold** for emphasis\n" +
+			"- Use `code` for inline code\n" +
+			"Explain what was accomplished, what files were created/modified, and any remaining work. " +
+			"DO NOT output tool calls, JSON, or XML." + diagnostic,
 	})
 
 	llmResp, err := r.callLLMWithTools(ctx, conversation, nil, w, cfg.UserID, reqProviderID, reqModel, cfg)

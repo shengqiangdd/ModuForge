@@ -1184,7 +1184,7 @@ func (r *AgentRunner) resolveLLMConfig(userID, reqProviderID, reqModel string, c
 				}
 			}
 		}
-		log.Printf("[Agent] resolveLLMConfig: using RunConfig endpoint=%s model=%s apiKey_len=%d", endpoint, model, len(apiKey))
+		log.Printf("[Agent] resolveLLMConfig: using RunConfig endpoint=%s model=%s apiKey_len=%d providerID=%s", endpoint, model, len(apiKey), reqProviderID)
 		return endpoint, apiKey, model
 	}
 
@@ -1257,6 +1257,32 @@ func (r *AgentRunner) resolveLLMConfig(userID, reqProviderID, reqModel string, c
 			}
 			if cfgKey != "" {
 				apiKey = cfgKey
+			}
+		}
+
+		// P0-Fix: If llm_config loaded a preset provider with no API key,
+		// also check custom_providers for this user. This ensures callLLMSummary
+		// (compact/plan) uses the correct custom provider instead of falling back
+		// to the free preset (which triggers FreeUsageLimitError 429).
+		if apiKey == "" && userID != "" {
+			var cpEp, cpKey, cpModel string
+			cpErr := r.db.QueryRow(
+				"SELECT endpoint, api_key, COALESCE(model_id,'') FROM custom_providers WHERE user_id=? ORDER BY updated_at DESC LIMIT 1",
+				userID,
+			).Scan(&cpEp, &cpKey, &cpModel)
+			if cpErr == nil && cpEp != "" {
+				endpoint = cpEp
+				if cpKey != "" {
+					if decoded, dErr := base64.StdEncoding.DecodeString(cpKey); dErr == nil {
+						apiKey = string(decoded)
+					} else {
+						apiKey = cpKey
+					}
+				}
+				if cpModel != "" {
+					model = cpModel
+				}
+				log.Printf("[Agent] resolveLLMConfig: fallback loaded custom provider for user=%s endpoint=%s model=%s", userID, endpoint, model)
 			}
 		}
 	}

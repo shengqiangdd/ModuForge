@@ -1109,7 +1109,16 @@ func (sd *StagnationDetector) RecordToolCall(name string, args map[string]interf
 
 	// O(1): Check if same tool+args repeated maxIdenticalRepeats times
 	count := sd.signatureCounts[sig]
-	if count >= sd.maxIdenticalRepeats {
+	// Productive tools (write_file, edit_file) have higher thresholds
+	// because creating a module with 5+ files naturally calls write_file many times
+	effectiveThreshold := sd.maxIdenticalRepeats
+	switch name {
+	case "write_file", "edit_file":
+		effectiveThreshold = 30 // Allow writing many files
+	case "bash":
+		effectiveThreshold = 5 // Bash with same args is likely a loop
+	}
+	if count >= effectiveThreshold {
 		return true, fmt.Sprintf("工具 '%s' 已重复调用 %d 次（相同参数），建议换一种方式或直接给出答案", name, count)
 	}
 
