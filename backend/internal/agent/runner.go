@@ -1638,6 +1638,11 @@ func (r *AgentRunner) Run(ctx context.Context, task string, userID string, messa
 	cfg.resolvedEndpoint = resolvedEndpoint
 	cfg.resolvedAPIKey = resolvedAPIKey
 	cfg.resolvedModel = resolvedModel
+	// Sync ProviderID so callLLMSummary (context_compact.go) and other
+	// downstream functions use the correct provider when loading API keys.
+	if reqProviderID != "" {
+		cfg.ProviderID = reqProviderID
+	}
 	cfg.modelTier = resolveModelTier(resolvedModel)
 	modelTier := cfg.modelTier
 	compactionThreshold := compactionThresholdForTier(modelTier)
