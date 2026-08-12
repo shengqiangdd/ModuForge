@@ -14,6 +14,7 @@ services:
       - BUILD_DIR=/data/builds
       - MODULES_DIR=/data/modules
       - PROJECTS_DIR=/data/projects
+      - STORAGE_PATH=/data/storage
       - GIN_MODE=release
       # JWT_SECRET: 留空则自动生成随机密钥（重启后失效，生产环境请显式设置）
       - JWT_SECRET=${JWT_SECRET:-}

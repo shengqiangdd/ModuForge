@@ -47,7 +47,7 @@ func Load() *Config {
 		Port:           getEnv("PORT", ":8080"),
 		JWTSecret:      getEnv("JWT_SECRET", ""),
 		DatabasePath:   getEnv("DATABASE_PATH", "data/moduforge.db"),
-		StoragePath:    getEnv("STORAGE_PATH", "data/storage"),
+		StoragePath:    getEnv("STORAGE_PATH", "/data/storage"),
 		LLMApiKey:      getEnv("LLM_API_KEY", ""),
 		LLMEndpoint:    getEnv("LLM_ENDPOINT", "https://api.openai.com/v1"),
 		LLMModel:       getEnv("LLM_MODEL", "gpt-4o-mini"),
