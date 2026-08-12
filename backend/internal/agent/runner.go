@@ -1643,6 +1643,37 @@ func (r *AgentRunner) Run(ctx context.Context, task string, userID string, messa
 	if reqProviderID != "" {
 		cfg.ProviderID = reqProviderID
 	}
+	// If resolvedAPIKey is still empty (handler fallback set endpoint but no key),
+	// force-load from custom_providers table to avoid 401 errors.
+	if resolvedAPIKey == "" && reqProviderID != "" && r.db != nil {
+		var cpKey, cpEp string
+		cpErr := r.db.QueryRow(
+			"SELECT api_key, endpoint FROM custom_providers WHERE name=? AND user_id=?",
+			reqProviderID, userID,
+		).Scan(&cpKey, &cpEp)
+		if cpErr != nil {
+			cpErr = r.db.QueryRow(
+				"SELECT api_key, endpoint FROM custom_providers WHERE id=? AND user_id=?",
+				reqProviderID, userID,
+			).Scan(&cpKey, &cpEp)
+		}
+		if cpErr == nil && cpKey != "" {
+			if b, dErr := base64.StdEncoding.DecodeString(cpKey); dErr == nil {
+				cfg.resolvedAPIKey = string(b)
+			} else {
+				cfg.resolvedAPIKey = cpKey
+			}
+			if cpEp != "" {
+				cfg.resolvedEndpoint = cpEp
+			}
+			cfg.resolvedModel = reqModel
+			if cpEp == "" {
+				cpEp = cfg.resolvedEndpoint
+			}
+			log.Printf("[Agent] Run: force-loaded custom provider=%s endpoint=%s model=%s apiKey_len=%d",
+				reqProviderID, cfg.resolvedEndpoint, cfg.resolvedModel, len(cfg.resolvedAPIKey))
+		}
+	}
 	cfg.modelTier = resolveModelTier(resolvedModel)
 	modelTier := cfg.modelTier
 	compactionThreshold := compactionThresholdForTier(modelTier)
