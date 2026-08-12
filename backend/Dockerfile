@@ -58,6 +58,9 @@ RUN mkdir -p /opt/android-ndk && cd /tmp \
 # --- Copy backend binary ---
 COPY --from=backend-builder --chown=moduforge:moduforge /server /app/server
 
+# --- Copy backend docs (OpenAPI spec etc.) ---
+COPY --from=backend-builder --chown=moduforge:moduforge /app/docs /app/docs
+
 # --- Copy frontend dist ---
 COPY --from=frontend-builder --chown=moduforge:moduforge /app/dist /app/dist
 
