@@ -750,7 +750,11 @@ func (qv *QualityVerifier) VerifyFile(filePath string, content string) QualityRe
 	}
 
 	// Language-specific issue reporting
-	ext := strings.ToLower(filePath[strings.LastIndex(filePath, "."):])
+	extIdx := strings.LastIndex(filePath, ".")
+	if extIdx < 0 {
+		extIdx = 0 // no extension found, treat as empty
+	}
+	ext := strings.ToLower(filePath[extIdx:])
 	switch {
 	case ext == ".go":
 		if !hasPackage && len(lines) > 0 {
