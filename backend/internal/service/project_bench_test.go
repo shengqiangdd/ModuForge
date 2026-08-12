@@ -34,7 +34,7 @@ func BenchmarkProjectService(b *testing.B) {
 			"bench-project", path, "package main\n\nfunc main() {}\n")
 	}
 
-	svc := NewProjectService(db)
+	svc := NewProjectService(db, "")
 
 	b.Run("ListFiles", func(b *testing.B) {
 		ctx := context.Background()
@@ -87,7 +87,7 @@ func BenchmarkProjectServiceParallel(b *testing.B) {
 			"bench-project", path, "package main\n\nfunc main() {}\n")
 	}
 
-	svc := NewProjectService(db)
+	svc := NewProjectService(db, "")
 
 	b.Run("Parallel-ListFiles", func(b *testing.B) {
 		b.RunParallel(func(pb *testing.PB) {

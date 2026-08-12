@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -13,11 +14,17 @@ import (
 )
 
 type ProjectService struct {
-	db *sql.DB
+	db          *sql.DB
+	storagePath string // e.g. "data/storage" — base path for project files on disk
 }
 
-func NewProjectService(db *sql.DB) *ProjectService {
-	return &ProjectService{db: db}
+func NewProjectService(db *sql.DB, storagePath string) *ProjectService {
+	return &ProjectService{db: db, storagePath: storagePath}
+}
+
+// diskPath returns the on-disk directory for a project's files.
+func (s *ProjectService) diskPath(projectID string) string {
+	return filepath.Join(s.storagePath, "projects", projectID)
 }
 
 func (s *ProjectService) List(ctx context.Context, userID string) ([]domain.Project, error) {
@@ -381,6 +388,7 @@ func (s *ProjectService) SaveFile(ctx context.Context, projectID, path, content,
 	if err := s.checkProjectOwnership(ctx, projectID, userID); err != nil {
 		return nil, err
 	}
+	// 1. Write to database
 	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO project_files (project_id, path, content)
 		 VALUES (?, ?, ?)
@@ -389,5 +397,34 @@ func (s *ProjectService) SaveFile(ctx context.Context, projectID, path, content,
 	if err != nil {
 		return nil, err
 	}
+	// 2. Write to disk (best-effort — DB is authoritative)
+	if s.storagePath != "" {
+		fullPath := filepath.Join(s.diskPath(projectID), path)
+		if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err == nil {
+			os.WriteFile(fullPath, []byte(content), 0644)
+		}
+	}
 	return s.GetFile(ctx, projectID, path, userID)
+}
+
+// DeleteFile removes a file from both the database and disk.
+func (s *ProjectService) DeleteFile(ctx context.Context, projectID, path, userID string) error {
+	if err := s.checkProjectOwnership(ctx, projectID, userID); err != nil {
+		return err
+	}
+	result, err := s.db.ExecContext(ctx,
+		`DELETE FROM project_files WHERE project_id=? AND path=?`, projectID, path)
+	if err != nil {
+		return err
+	}
+	affected, _ := result.RowsAffected()
+	if affected == 0 {
+		return fmt.Errorf("file not found")
+	}
+	// Remove from disk (best-effort)
+	if s.storagePath != "" {
+		fullPath := filepath.Join(s.diskPath(projectID), path)
+		os.Remove(fullPath)
+	}
+	return nil
 }

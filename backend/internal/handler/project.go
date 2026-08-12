@@ -335,21 +335,17 @@ func (h *ProjectHandler) DeleteFile(c fiber.Ctx) error {
 	if uid == "" {
 		return Unauthorized(c, "未授权")
 	}
-	// Check project ownership
-	var ownerID string
-	if err := h.db.QueryRow("SELECT user_id FROM projects WHERE id = ? AND deleted_at IS NULL", projectID).Scan(&ownerID); err != nil {
-		return NotFound(c, "项目不存在")
-	}
-	if ownerID != "" && ownerID != uid {
-		return Forbidden(c, "无权访问此项目")
-	}
-	result, err := h.db.Exec(`DELETE FROM project_files WHERE project_id=? AND path=?`, projectID, path)
-	if err != nil {
+	if err := h.svc.DeleteFile(c.Context(), projectID, path, uid); err != nil {
+		if err.Error() == "file not found" {
+			return NotFound(c, "文件不存在")
+		}
+		if strings.Contains(err.Error(), "permission denied") {
+			return Forbidden(c, "无权访问此项目")
+		}
+		if strings.Contains(err.Error(), "项目不存在") {
+			return NotFound(c, "项目不存在")
+		}
 		return InternalError(c, err.Error())
-	}
-	affected, _ := result.RowsAffected()
-	if affected == 0 {
-		return NotFound(c, "文件不存在")
 	}
 	return c.JSON(fiber.Map{"ok": true, "deleted": path})
 }

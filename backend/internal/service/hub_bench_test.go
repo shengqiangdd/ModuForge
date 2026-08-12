@@ -75,7 +75,7 @@ func BenchmarkProjectServiceConcurrentOwnership(b *testing.B) {
 			"bench-project", path, "package main\n\nfunc main() {}\n")
 	}
 
-	svc := NewProjectService(db)
+	svc := NewProjectService(db, "")
 	ctx := context.Background()
 
 	b.Run("Parallel-ListFiles", func(b *testing.B) {

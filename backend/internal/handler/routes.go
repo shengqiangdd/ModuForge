@@ -50,7 +50,7 @@ func RegisterRoutes(api fiber.Router, db *database.DB, cfg *config.Config) {
 
 	// Services
 	authSvc := service.NewAuthService(db.Conn, cfg)
-	projectSvc := service.NewProjectService(db.Conn)
+	projectSvc := service.NewProjectService(db.Conn, cfg.StoragePath)
 	buildSvc := service.NewBuildService(db.Conn, cfg)
 	aiSvc := service.NewAIServiceWithDB(cfg, db.Conn)
 	repoSvc := service.NewRepoService()
