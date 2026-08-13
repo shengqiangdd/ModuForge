@@ -16,11 +16,7 @@ import (
 	"github.com/moduforge/backend/internal/service"
 )
 
-func init() {
-	registry.RegisterFactory("device_test", func(d *registry.Deps) registry.Skill {
-		return NewDeviceTestSkill(d.DB, d.StoragePath)
-	})
-}
+// Register in register.go via registry.RegisterFactory("device_test", ...)
 
 // ──────────────────────────────────────────────────────────
 // Types

@@ -57,6 +57,11 @@ func init() {
 	})
 	registry.RegisterFactory("test_module", func(d *registry.Deps) registry.Skill { return NewTestModuleSkill() })
 
+	// Device testing (ADB integration)
+	registry.RegisterFactory("device_test", func(d *registry.Deps) registry.Skill {
+		return NewDeviceTestSkill(d.DB, d.StoragePath)
+	})
+
 	// Project management
 	registry.RegisterFactory("agent_preset", func(d *registry.Deps) registry.Skill { return NewAgentPresetSkill(d.DB) })
 	registry.RegisterFactory("self_evolve", func(d *registry.Deps) registry.Skill { return NewSelfEvolvingSkill(d.DB) })
