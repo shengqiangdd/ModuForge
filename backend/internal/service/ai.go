@@ -688,7 +688,7 @@ module.prop, customize.sh, META-INF/(update-binary + updater-script含#MAGISK)
 				compileResult, err := b.CompileGoFilesArch(ctx, tmpDir, "arm64", nil, logFn)
 				if err == nil && len(compileResult.Recompiled) > 0 {
 					// 编译成功，读取二进制文件
-					binDir := filepath.Join(tmpDir, "bin")
+					binDir := filepath.Join(tmpDir, "system", "bin")
 					entries, _ := os.ReadDir(binDir)
 					for _, entry := range entries {
 						if entry.IsDir() {

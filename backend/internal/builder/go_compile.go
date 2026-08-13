@@ -469,9 +469,9 @@ func (b *Builder) CompileGoFilesArchWithProgress(ctx context.Context, projectDir
 	}
 
 	// 确定二进制输出目录
-	binDir := filepath.Join(projectDir, "bin")
+	binDir := filepath.Join(projectDir, "system", "bin")
 	if err := os.MkdirAll(binDir, 0755); err != nil {
-		return nil, fmt.Errorf("create bin: %w", err)
+		return nil, fmt.Errorf("create system/bin: %w", err)
 	}
 
 	// 为每个编译目录确保 go.mod 存在
@@ -509,7 +509,7 @@ func (b *Builder) CompileGoFilesArchWithProgress(ctx context.Context, projectDir
 						if err := os.WriteFile(binPath, input, 0755); err == nil {
 							logCompileSkip(logFn, name, "binary cache hit")
 							result.CacheHits++
-							result.Recompiled = append(result.Recompiled, "bin/"+name)
+							result.Recompiled = append(result.Recompiled, "system/bin/"+name)
 							needsCompile = false
 						}
 					}
@@ -527,7 +527,7 @@ func (b *Builder) CompileGoFilesArchWithProgress(ctx context.Context, projectDir
 							if err := os.WriteFile(binPath, input, 0755); err == nil {
 								logCompileSkip(logFn, name, "binary cache hit (dir unchanged)")
 								result.CacheHits++
-								result.Recompiled = append(result.Recompiled, "bin/"+name)
+								result.Recompiled = append(result.Recompiled, "system/bin/"+name)
 								needsCompile = false
 							}
 						}
@@ -562,7 +562,7 @@ func (b *Builder) CompileGoFilesArchWithProgress(ctx context.Context, projectDir
 		binPath := filepath.Join(binDir, name)
 
 		emitProgress("compile", i+1, len(packagesToCompile), name)
-		logFn(fmt.Sprintf("  🔨 Compiling %s → bin/%s (android/%s) [%d/%d]...\n", name, name, goarch, i+1, len(packagesToCompile)))
+		logFn(fmt.Sprintf("  🔨 Compiling %s → system/bin/%s (android/%s) [%d/%d]...\n", name, name, goarch, i+1, len(packagesToCompile)))
 
 		// Phase 1: Download dependencies with longer timeout
 		dlCtx, dlCancel := context.WithTimeout(ctx, 180*time.Second)
@@ -615,7 +615,7 @@ func (b *Builder) CompileGoFilesArchWithProgress(ctx context.Context, projectDir
 		}
 
 		logFn(fmt.Sprintf("  ✅ %s (%d KB)\n", name, fileSizeKB(binPath)))
-		result.Recompiled = append(result.Recompiled, "bin/"+name)
+		result.Recompiled = append(result.Recompiled, "system/bin/"+name)
 		result.CacheMisses++
 
 		// Store in binary cache

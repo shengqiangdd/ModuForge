@@ -264,9 +264,9 @@ func (b *Builder) CompileCFilesArch(ctx context.Context, projectDir string, arch
 
 	logFn(fmt.Sprintf("  📎 Using NDK clang: %s (API %s)\n", filepath.Base(clangBin), clangAPILevel))
 
-	binDir := filepath.Join(projectDir, "bin")
+	binDir := filepath.Join(projectDir, "system", "bin")
 	if err := os.MkdirAll(binDir, 0755); err != nil {
-		return nil, fmt.Errorf("create bin: %w", err)
+		return nil, fmt.Errorf("create system/bin: %w", err)
 	}
 
 	// Output binary is always "androsmart" — consistent name for Magisk/KernelSU modules
@@ -293,7 +293,7 @@ func (b *Builder) CompileCFilesArch(ctx context.Context, projectDir string, arch
 		}
 	}
 
-	logFn(fmt.Sprintf("  🔨 Compiling C/C++ → bin/%s (%s, API %s)...\n", binaryName, targetTriple, clangAPILevel))
+	logFn(fmt.Sprintf("  🔨 Compiling C/C++ → system/bin/%s (%s, API %s)...\n", binaryName, targetTriple, clangAPILevel))
 
 	// ─── Strategy 1: CMake build (preferred when CMakeLists.txt exists) ───
 	cmakeLists := filepath.Join(projectDir, "CMakeLists.txt")
@@ -301,8 +301,8 @@ func (b *Builder) CompileCFilesArch(ctx context.Context, projectDir string, arch
 		if ok := b.tryCmakeBuild(ctx, projectDir, binPath, targetTriple, clangBin, clangAPILevel, logFn); ok {
 			if info, err := os.Stat(binPath); err == nil && info.Size() > 0 {
 				sizeKB := fileSizeKB(binPath)
-				logFn(fmt.Sprintf("  ✅ bin/%s (%d KB) — cmake static build\n", binaryName, sizeKB))
-				result.Recompiled = append(result.Recompiled, "bin/"+binaryName)
+				logFn(fmt.Sprintf("  ✅ system/bin/%s (%d KB) — cmake static build\n", binaryName, sizeKB))
+				result.Recompiled = append(result.Recompiled, "system/bin/"+binaryName)
 				result.CacheMisses++
 				return result, nil
 			}
@@ -379,13 +379,13 @@ func (b *Builder) CompileCFilesArch(ctx context.Context, projectDir string, arch
 	}
 
 	sizeKB := fileSizeKB(binPath)
-	logFn(fmt.Sprintf("  ✅ bin/%s (%d KB) — statically linked executable\n", binaryName, sizeKB))
+	logFn(fmt.Sprintf("  ✅ system/bin/%s (%d KB) — statically linked executable\n", binaryName, sizeKB))
 
 	if sizeKB > 500 {
 		logFn(fmt.Sprintf("  ⚠️  Binary size %d KB exceeds 500 KB target\n", sizeKB))
 	}
 
-	result.Recompiled = append(result.Recompiled, "bin/"+binaryName)
+	result.Recompiled = append(result.Recompiled, "system/bin/"+binaryName)
 	result.CacheMisses++
 
 	return result, nil

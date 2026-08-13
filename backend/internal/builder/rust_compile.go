@@ -118,7 +118,7 @@ func CompileRustProjectArch(ctx context.Context, projectDir, cargoDir, arch stri
 		pkgName = filepath.Base(cargoDir)
 	}
 
-	binDir := filepath.Join(projectDir, "bin")
+	binDir := filepath.Join(projectDir, "system", "bin")
 	os.MkdirAll(binDir, 0755)
 	binPath := filepath.Join(binDir, pkgName)
 
@@ -130,7 +130,7 @@ func CompileRustProjectArch(ctx context.Context, projectDir, cargoDir, arch stri
 				if err := os.WriteFile(binPath, input, 0755); err == nil {
 					logCompileSkip(logFn, pkgName, "binary cache hit")
 					result.CacheHits++
-					result.Recompiled = append(result.Recompiled, "bin/"+pkgName)
+					result.Recompiled = append(result.Recompiled, "system/bin/"+pkgName)
 					return result, nil
 				}
 			}
@@ -151,7 +151,7 @@ func CompileRustProjectArch(ctx context.Context, projectDir, cargoDir, arch stri
 					if err := os.WriteFile(binPath, input, 0755); err == nil {
 						logCompileSkip(logFn, pkgName, "binary cache hit (dir unchanged)")
 						result.CacheHits++
-						result.Recompiled = append(result.Recompiled, "bin/"+pkgName)
+						result.Recompiled = append(result.Recompiled, "system/bin/"+pkgName)
 						return result, nil
 					}
 				}
@@ -159,7 +159,7 @@ func CompileRustProjectArch(ctx context.Context, projectDir, cargoDir, arch stri
 		}
 	}
 
-	logFn(fmt.Sprintf("  🔨 Compiling %s → bin/%s (%s)...\n", filepath.Base(cargoDir), pkgName, rustTarget))
+	logFn(fmt.Sprintf("  🔨 Compiling %s → system/bin/%s (%s)...\n", filepath.Base(cargoDir), pkgName, rustTarget))
 	logFn(fmt.Sprintf("  🔨 %s: cargo building...\n", pkgName))
 
 	// Set up Android NDK linker for cross-compilation
@@ -274,7 +274,7 @@ linker = "cc"
 	}
 	logFn(fmt.Sprintf("  ✅ %s (%d KB)\n", pkgName, sizeKB))
 
-	result.Recompiled = append(result.Recompiled, "bin/"+pkgName)
+	result.Recompiled = append(result.Recompiled, "system/bin/"+pkgName)
 	result.CacheMisses++
 
 	// Store in binary cache
