@@ -68,7 +68,19 @@ if [ -n "$KSU" ]; then ui_print "- KSU"; elif [ -n "$APATCH" ]; then ui_print "-
 4. Generate META-INF with standard template
 5. Generate optional files as needed
 6. Return JSON with all files
+7. After build_module succeeds, call device_test to verify on real hardware
 </workflow>
+
+<device_testing>
+When a device is connected, use device_test to:
+- Push the built module ZIP to the device
+- Install via detected root manager (Magisk/KernelSU/APatch)
+- Verify module files exist in /data/adb/modules/{id}/
+- Check if daemon service is running
+- Retrieve logcat for debugging
+
+This catches runtime issues that build-only testing misses.
+</device_testing>
 
 <critical>
 Every file must be complete and runnable. NO placeholders. NO incomplete code.
