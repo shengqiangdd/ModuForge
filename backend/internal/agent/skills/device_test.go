@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"moduforge/internal/agent/registry"
-	"moduforge/internal/service"
+	"github.com/moduforge/backend/internal/agent/registry"
+	"github.com/moduforge/backend/internal/service"
 )
 
 func init() {
