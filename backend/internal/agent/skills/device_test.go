@@ -8,15 +8,13 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/moduforge/backend/internal/agent/registry"
-	"github.com/moduforge/backend/internal/service"
 )
-
-// Register in register.go via registry.RegisterFactory("device_test", ...)
 
 // ──────────────────────────────────────────────────────────
 // Types
@@ -31,7 +29,7 @@ func NewDeviceTestSkill(db *sql.DB, storagePath string) *DeviceTestSkill {
 	return &DeviceTestSkill{db: db, storagePath: storagePath}
 }
 
-func (s *DeviceTestSkill) Name() string        { return "device_test" }
+func (s *DeviceTestSkill) Name() string { return "device_test" }
 func (s *DeviceTestSkill) Description() string {
 	return "Push a built module to an Android device via ADB, install it through the detected root manager (Magisk/KernelSU/APatch), and verify installation and service status. Use after build_module succeeds to test on real hardware."
 }
@@ -39,6 +37,25 @@ func (s *DeviceTestSkill) Description() string {
 // Metadata declares this skill has side effects (installs on device).
 func (s *DeviceTestSkill) Metadata() registry.SkillMeta {
 	return registry.SkillMeta{ReadOnly: false, Essential: false, Core: false, NeedsDB: true}
+}
+
+// ──────────────────────────────────────────────────────────
+// ADB Helpers (direct exec, no service dependency)
+// ──────────────────────────────────────────────────────────
+
+func adbRun(ctx context.Context, args ...string) (string, error) {
+	cmd := exec.CommandContext(ctx, "adb", args...)
+	out, err := cmd.CombinedOutput()
+	return strings.TrimSpace(string(out)), err
+}
+
+func adbRunSerial(ctx context.Context, serial string, args ...string) (string, error) {
+	fullArgs := append([]string{"-s", serial}, args...)
+	return adbRun(ctx, fullArgs...)
+}
+
+func adbShell(ctx context.Context, serial, shellCmd string) (string, error) {
+	return adbRunSerial(ctx, serial, "shell", shellCmd)
 }
 
 // ──────────────────────────────────────────────────────────
@@ -65,37 +82,38 @@ func (s *DeviceTestSkill) Execute(ctx context.Context, input map[string]interfac
 
 	log.Printf("[device_test] project=%s device=%s action=%s", projectID, deviceSerial, action)
 
-	// ── Create ADB service ──
-	adb := service.NewADBService(s.db)
-
 	// ── Auto-detect device if not specified ──
 	if deviceSerial == "" {
-		devices, err := adb.ListDevices(ctx)
+		out, err := adbRun(ctx, "devices")
 		if err != nil {
-			return "", fmt.Errorf("failed to list ADB devices: %w", err)
+			return "", fmt.Errorf("adb not available: %w", err)
 		}
-		connected := []service.ADBDevice{}
-		for _, d := range devices {
-			if d.State == "device" {
-				connected = append(connected, d)
+		lines := strings.Split(out, "\n")
+		for _, line := range lines[1:] { // skip header
+			line = strings.TrimSpace(line)
+			if line == "" {
+				continue
+			}
+			parts := strings.Fields(line)
+			if len(parts) >= 2 && parts[1] == "device" {
+				deviceSerial = parts[0]
+				break
 			}
 		}
-		if len(connected) == 0 {
+		if deviceSerial == "" {
 			return "", fmt.Errorf("no authorized ADB device connected. Connect a device first via the ADB panel or specify device_serial")
 		}
-		deviceSerial = connected[0].Serial
-		log.Printf("[device_test] auto-detected device: %s (%s)", deviceSerial, connected[0].Model)
+		log.Printf("[device_test] auto-detected device: %s", deviceSerial)
 	}
 
-	// ── Check device is authorized ──
-	deviceInfo, err := adb.GetDeviceInfo(ctx, deviceSerial)
-	if err != nil {
-		return "", fmt.Errorf("cannot get device info for %s: %w (is the device authorized?)", deviceSerial, err)
+	// ── Check device is connected ──
+	out, err := adbShell(ctx, deviceSerial, "echo connected")
+	if err != nil || strings.TrimSpace(out) != "connected" {
+		return "", fmt.Errorf("device %s is not reachable: %w", deviceSerial, err)
 	}
-	_ = deviceInfo
 
 	// ── Find output.zip ──
-	projectDir := filepath.Join(s.storagePath, projectID)
+	projectDir := filepath.Join(s.storagePath, "projects", projectID)
 	outputZIP := filepath.Join(projectDir, "output.zip")
 
 	if _, err := os.Stat(outputZIP); os.IsNotExist(err) {
@@ -129,12 +147,8 @@ func (s *DeviceTestSkill) Execute(ctx context.Context, input map[string]interfac
 	if action == "full" || action == "install" {
 		result.WriteString("## Phase 1: Push & Install\n\n")
 
-		// Detect root manager first
-		managers, _ := adb.GetAvailableRootManagers(ctx, deviceSerial)
-		mgr := ""
-		if len(managers) > 0 {
-			mgr = managers[0]["name"]
-		}
+		// Detect root manager
+		mgr := detectRootManager(ctx, deviceSerial)
 		if mgr == "" {
 			result.WriteString("⚠️ **No root manager detected** (tried Magisk/KernelSU/APatch)\n")
 			result.WriteString("Cannot install module without root. Options:\n")
@@ -144,26 +158,34 @@ func (s *DeviceTestSkill) Execute(ctx context.Context, input map[string]interfac
 				return result.String(), nil
 			}
 		} else {
-			mgrVer := managers[0]["version"]
-			result.WriteString(fmt.Sprintf("Root manager: **%s** %s ✓\n\n", mgr, mgrVer))
+			result.WriteString(fmt.Sprintf("Root manager: **%s** ✓\n\n", mgr))
 		}
 
-		// Push and install
-		pushResult, err := adb.PushBuildModule(ctx, deviceSerial, outputZIP, moduleName, mgr != "")
+		// Push ZIP to device
+		remotePath := "/data/local/tmp/module_push.zip"
+		_, err := adbRunSerial(ctx, deviceSerial, "push", outputZIP, remotePath)
 		if err != nil {
-			result.WriteString(fmt.Sprintf("❌ Push/install failed: %v\n", err))
+			result.WriteString(fmt.Sprintf("❌ Push failed: %v\n", err))
 			return result.String(), nil
 		}
+		result.WriteString(fmt.Sprintf("✅ Pushed %s to device\n", filepath.Base(outputZIP)))
 
-		if rootMgr, ok := pushResult["root_manager"]; ok {
-			result.WriteString(fmt.Sprintf("✅ Installed via **%s**\n", rootMgr))
-		}
-		if installOut, ok := pushResult["install_output"]; ok {
-			out := fmt.Sprintf("%v", installOut)
-			if out != "" {
-				result.WriteString(fmt.Sprintf("```\n%s\n```\n", out))
+		// Install if root manager found
+		if mgr != "" {
+			installCmd := getInstallCommand(mgr, remotePath)
+			installOut, err := adbShell(ctx, deviceSerial, installCmd)
+			if err != nil {
+				result.WriteString(fmt.Sprintf("❌ Install failed: %v\n", err))
+			} else {
+				if installOut != "" {
+					result.WriteString(fmt.Sprintf("```\n%s\n```\n", installOut))
+				}
+				result.WriteString(fmt.Sprintf("✅ Installed via **%s**\n", mgr))
 			}
 		}
+
+		// Cleanup
+		adbShell(ctx, deviceSerial, "rm -f "+remotePath)
 		result.WriteString("\n")
 	}
 
@@ -179,7 +201,7 @@ func (s *DeviceTestSkill) Execute(ctx context.Context, input map[string]interfac
 
 		installedPath := ""
 		for _, p := range modulePaths {
-			out, err := adb.RunShell(ctx, deviceSerial, fmt.Sprintf("ls -la %s/module.prop 2>/dev/null", p))
+			out, err := adbShell(ctx, deviceSerial, fmt.Sprintf("ls -la %s/module.prop 2>/dev/null", p))
 			if err == nil && strings.Contains(out, "module.prop") {
 				installedPath = p
 				break
@@ -196,7 +218,7 @@ func (s *DeviceTestSkill) Execute(ctx context.Context, input map[string]interfac
 			result.WriteString(fmt.Sprintf("✅ Module installed at `%s`\n\n", installedPath))
 
 			// List module files
-			fileList, err := adb.RunShell(ctx, deviceSerial, fmt.Sprintf("find %s -type f | head -30", installedPath))
+			fileList, err := adbShell(ctx, deviceSerial, fmt.Sprintf("find %s -type f | head -30", installedPath))
 			if err == nil && fileList != "" {
 				result.WriteString("**Module files:**\n")
 				for _, line := range strings.Split(strings.TrimSpace(fileList), "\n") {
@@ -209,7 +231,7 @@ func (s *DeviceTestSkill) Execute(ctx context.Context, input map[string]interfac
 			}
 
 			// Check service.sh exists
-			serviceCheck, _ := adb.RunShell(ctx, deviceSerial, fmt.Sprintf("cat %s/service.sh 2>/dev/null | head -5", installedPath))
+			serviceCheck, _ := adbShell(ctx, deviceSerial, fmt.Sprintf("cat %s/service.sh 2>/dev/null | head -5", installedPath))
 			if serviceCheck != "" {
 				result.WriteString("**service.sh** (first 5 lines):\n")
 				result.WriteString(fmt.Sprintf("```\n%s\n```\n\n", serviceCheck))
@@ -230,7 +252,7 @@ func (s *DeviceTestSkill) Execute(ctx context.Context, input map[string]interfac
 
 		daemonFound := false
 		for _, binDir := range binaryPaths {
-			bins, err := adb.RunShell(ctx, deviceSerial, fmt.Sprintf("ls %s 2>/dev/null", binDir))
+			bins, err := adbShell(ctx, deviceSerial, fmt.Sprintf("ls %s 2>/dev/null", binDir))
 			if err == nil && strings.TrimSpace(bins) != "" {
 				result.WriteString(fmt.Sprintf("**Binaries in `%s`:**\n", binDir))
 				for _, bin := range strings.Split(strings.TrimSpace(bins), "\n") {
@@ -241,7 +263,7 @@ func (s *DeviceTestSkill) Execute(ctx context.Context, input map[string]interfac
 					fullPath := binDir + bin
 
 					// Check if running
-					psOut, _ := adb.RunShell(ctx, deviceSerial, fmt.Sprintf("pgrep -f %s 2>/dev/null || echo not_running", bin))
+					psOut, _ := adbShell(ctx, deviceSerial, fmt.Sprintf("pgrep -f %s 2>/dev/null || echo not_running", fullPath))
 					psOut = strings.TrimSpace(psOut)
 					if psOut == "not_running" || psOut == "" {
 						result.WriteString(fmt.Sprintf("  • `%s` — ⚠️ not running\n", bin))
@@ -260,10 +282,10 @@ func (s *DeviceTestSkill) Execute(ctx context.Context, input map[string]interfac
 
 			// Try to manually start service.sh
 			serviceScript := "/data/adb/modules/" + moduleName + "/service.sh"
-			startCheck, _ := adb.RunShell(ctx, deviceSerial, fmt.Sprintf("test -f %s && echo exists || echo missing", serviceScript))
+			startCheck, _ := adbShell(ctx, deviceSerial, fmt.Sprintf("test -f %s && echo exists || echo missing", serviceScript))
 			if strings.TrimSpace(startCheck) == "exists" {
 				result.WriteString("**Attempting to start service.sh manually...**\n")
-				startOut, err := adb.RunShell(ctx, deviceSerial, fmt.Sprintf("su -c 'sh %s &'", serviceScript))
+				startOut, err := adbShell(ctx, deviceSerial, fmt.Sprintf("su -c 'sh %s &'", serviceScript))
 				if err != nil {
 					result.WriteString(fmt.Sprintf("Start failed: %v\n", err))
 				} else {
@@ -273,13 +295,14 @@ func (s *DeviceTestSkill) Execute(ctx context.Context, input map[string]interfac
 					time.Sleep(2 * time.Second)
 					// Re-check
 					for _, binDir := range binaryPaths {
-						bins, _ := adb.RunShell(ctx, deviceSerial, fmt.Sprintf("ls %s 2>/dev/null", binDir))
+						bins, _ := adbShell(ctx, deviceSerial, fmt.Sprintf("ls %s 2>/dev/null", binDir))
 						for _, bin := range strings.Split(strings.TrimSpace(bins), "\n") {
 							bin = strings.TrimSpace(bin)
 							if bin == "" {
 								continue
 							}
-							psOut, _ := adb.RunShell(ctx, deviceSerial, fmt.Sprintf("pgrep -f %s 2>/dev/null || echo not_running", bin))
+							fullPath := binDir + bin
+							psOut, _ := adbShell(ctx, deviceSerial, fmt.Sprintf("pgrep -f %s 2>/dev/null || echo not_running", fullPath))
 							psOut = strings.TrimSpace(psOut)
 							if psOut != "not_running" && psOut != "" {
 								result.WriteString(fmt.Sprintf("✅ `%s` is now running (PID: %s)\n", bin, psOut))
@@ -297,7 +320,7 @@ func (s *DeviceTestSkill) Execute(ctx context.Context, input map[string]interfac
 		result.WriteString("## Phase 4: Device Logs\n\n")
 
 		// Get logcat filtered for the module
-		logcat, err := adb.GetLogcat(ctx, deviceSerial, moduleName, "", logLines)
+		logcat, err := adbShell(ctx, deviceSerial, fmt.Sprintf("logcat -d -t %d -s %s:* *:S", logLines, moduleName))
 		if err != nil {
 			result.WriteString(fmt.Sprintf("Failed to get logcat: %v\n", err))
 		} else if logcat != "" {
@@ -318,7 +341,7 @@ func (s *DeviceTestSkill) Execute(ctx context.Context, input map[string]interfac
 	// ── Phase 5: Reboot (if requested) ──
 	if action == "reboot" {
 		result.WriteString("## Rebooting Device\n\n")
-		err := adb.RebootDevice(ctx, deviceSerial, "")
+		_, err := adbRunSerial(ctx, deviceSerial, "reboot")
 		if err != nil {
 			result.WriteString(fmt.Sprintf("❌ Reboot failed: %v\n", err))
 		} else {
@@ -336,6 +359,41 @@ func (s *DeviceTestSkill) Execute(ctx context.Context, input map[string]interfac
 // ──────────────────────────────────────────────────────────
 // Helpers
 // ──────────────────────────────────────────────────────────
+
+func detectRootManager(ctx context.Context, serial string) string {
+	// APatch
+	out, _ := adbShell(ctx, serial, "su -c 'apd --version' 2>/dev/null")
+	if out != "" && !strings.Contains(out, "not found") && !strings.Contains(out, "No such") {
+		return "APatch"
+	}
+
+	// KernelSU
+	out, _ = adbShell(ctx, serial, "su -c 'ksud --version' 2>/dev/null")
+	if out != "" && !strings.Contains(out, "not found") && !strings.Contains(out, "No such") {
+		return "KernelSU"
+	}
+
+	// Magisk
+	out, _ = adbShell(ctx, serial, "su -c 'magisk -v' 2>/dev/null")
+	if out != "" && !strings.Contains(out, "not found") && !strings.Contains(out, "No such") {
+		return "Magisk"
+	}
+
+	return ""
+}
+
+func getInstallCommand(mgr, zipPath string) string {
+	switch mgr {
+	case "APatch":
+		return fmt.Sprintf("su -c 'apd module install %s'", zipPath)
+	case "KernelSU":
+		return fmt.Sprintf("su -c 'ksud module install %s'", zipPath)
+	case "Magisk":
+		return fmt.Sprintf("su -c 'magisk --install-module %s'", zipPath)
+	default:
+		return ""
+	}
+}
 
 func readModulePropField(path, field string) string {
 	data, err := os.ReadFile(path)
