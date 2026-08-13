@@ -99,6 +99,18 @@ var ModuleExcludePatterns = []string{
 	// Empty / leftover component directories
 	"native_component/",
 	"rust_component/",
+	// ModuForge platform assets (leaked into project storage)
+	"assets/",
+	"fonts/",
+	// PWA files (ModuForge platform, not module)
+	"sw.js",
+	"manifest.json",
+	"icon-*.png",
+	"icon-*.svg",
+	"icon.svg",
+	// ModuForge build binary (should not be in module)
+	"moduforge-build-*",
+	"moduforge-build",
 }
 
 // ZipModuleForBuild zips a module directory for build output,
@@ -146,12 +158,23 @@ func WrapWebroot(zipPath string) error {
 	var webuiEntries []zipEntry
 	var otherEntries []zipEntry
 
+	// Track files already in webroot/ to avoid duplicates
+	webrootFiles := make(map[string]bool)
+
 	func() error {
 		reader, err := zip.OpenReader(zipPath)
 		if err != nil {
 			return fmt.Errorf("open zip: %w", err)
 		}
 		defer reader.Close()
+
+		// First pass: collect files already in webroot/
+		for _, f := range reader.File {
+			nameNorm := filepath.ToSlash(f.Name)
+			if strings.HasPrefix(nameNorm, "webroot/") {
+				webrootFiles[strings.TrimPrefix(nameNorm, "webroot/")] = true
+			}
+		}
 
 		for _, f := range reader.File {
 			nameNorm := filepath.ToSlash(f.Name)
@@ -182,6 +205,11 @@ func WrapWebroot(zipPath string) error {
 			ext := strings.ToLower(filepath.Ext(base))
 
 			if (dir == "." || dir == "") && webuiExts[ext] {
+				// Skip if this file already exists in webroot/ to avoid overwriting
+				if webrootFiles[base] {
+					otherEntries = append(otherEntries, entry)
+					continue
+				}
 				webuiEntries = append(webuiEntries, entry)
 			} else {
 				otherEntries = append(otherEntries, entry)

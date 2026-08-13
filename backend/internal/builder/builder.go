@@ -178,6 +178,7 @@ func (b *Builder) BuildWithResultAndProgress(ctx context.Context, projectDir, ta
 
 	// Package
 	emitProgress("package", "starting")
+	logFn("  📦 Packaging module...\n")
 	var artifactPath string
 	var err error
 	if b.dockerAvailable(ctx) {

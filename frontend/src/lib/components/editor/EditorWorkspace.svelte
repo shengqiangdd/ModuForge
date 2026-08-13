@@ -29,6 +29,50 @@
 
   let sidebarOpen = $state(true);
 
+  // Tree view
+  interface TreeNode {
+    name: string;
+    path: string;
+    type: 'file' | 'directory';
+    size?: number;
+    children?: TreeNode[];
+  }
+
+  let viewMode = $state<'flat' | 'tree'>('flat');
+  let treeData = $state<TreeNode | null>(null);
+
+  function buildTree(fileList: { path: string; size?: number }[]): TreeNode {
+    const root: TreeNode = { name: '', path: '', type: 'directory', children: [] };
+    for (const file of fileList) {
+      const parts = file.path.split('/');
+      let current = root;
+      for (let i = 0; i < parts.length; i++) {
+        const part = parts[i];
+        const isFile = i === parts.length - 1;
+        const path = parts.slice(0, i + 1).join('/');
+        if (isFile) {
+          current.children?.push({ name: part, path, type: 'file', size: file.size });
+        } else {
+          let dir = current.children?.find(c => c.name === part && c.type === 'directory');
+          if (!dir) {
+            dir = { name: part, path, type: 'directory', children: [] };
+            current.children?.push(dir);
+          }
+          current = dir;
+        }
+      }
+    }
+    return root;
+  }
+
+  $effect(() => {
+    if (viewMode === 'tree' && files.length > 0) {
+      treeData = buildTree(files);
+    } else {
+      treeData = null;
+    }
+  });
+
   // File search
   let showFileSearch = $state(false);
   let fileSearchQuery = $state('');
@@ -482,6 +526,7 @@
     <FileTree
       {files} {selectedFile} {project} {sidebarOpen} {dragOver} {uploadProgress}
       {showFileSearch} {fileSearchQuery} {fileSearchInput} {filteredFiles}
+      {viewMode} {treeData}
       onSelect={selectFile}
       onDelete={async (path: string) => {
         if (!confirm(`确定删除 ${path}？`)) return;
@@ -501,6 +546,8 @@
       onDrop={handleDrop}
       onDragOver={(e) => { e.preventDefault(); dragOver = true; }}
       onDragLeave={() => dragOver = false}
+      onRefreshTree={() => { loadFiles(); }}
+      onViewModeChange={(mode) => viewMode = mode}
     />
 
     <!-- Main Editor Area + Panels (wrapped in flex column) -->
