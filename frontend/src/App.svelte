@@ -696,7 +696,7 @@
                     <h3 class="font-semibold mb-1 group-hover:text-[var(--color-primary)] transition-colors" style="color: var(--color-text)">{project.name}</h3>
                     <p class="text-xs leading-relaxed" style="color: var(--color-text-muted); max-height: 10rem; overflow-y: auto; scrollbar-width: thin; white-space: pre-wrap">{project.description || 'No description'}</p>
                     <div class="flex items-center gap-2 mt-3">
-                      <span class="badge" style="background: var(--color-primary-light); color: var(--color-primary)">Universal</span>
+                      <span class="badge" style="background: var(--color-primary-light); color: var(--color-primary)">{project.module_type ? project.module_type.charAt(0).toUpperCase() + project.module_type.slice(1) : 'Universal'}</span>
                       <span class="text-[11px]" style="color: var(--color-text-muted)">{new Date(project.updated_at).toLocaleDateString()}</span>
                     </div>
                   </div>

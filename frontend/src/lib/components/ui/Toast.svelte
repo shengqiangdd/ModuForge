@@ -14,6 +14,14 @@
     return () => { if (unsub) unsub(); unsub = null; };
   });
 
+  /** Handle close via DOM data attribute to avoid Svelte 5 closure issues */
+  function handleContainerClick(e: MouseEvent) {
+    const btn = (e.target as HTMLElement).closest('.toast-close');
+    if (!btn) return;
+    const id = btn.getAttribute('data-toast-id');
+    if (id) dismiss(id);
+  }
+
   const icons: Record<string, string> = {
     success: 'check_circle',
     error: 'error',
@@ -23,12 +31,13 @@
 </script>
 
 {#if toasts.length > 0}
-  <div class="toast-container fixed bottom-6 right-6 z-[9999] flex flex-col gap-3 max-w-sm pointer-events-none">
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div class="toast-container fixed bottom-6 right-6 z-[9999] flex flex-col gap-3 max-w-sm pointer-events-none" onclick={handleContainerClick}>
     {#each toasts as t (t.id)}
       <div class="toast-item flex items-start gap-3 px-4 py-3.5 rounded-xl border shadow-lg pointer-events-auto backdrop-blur-xl {t.type}">
         <span class="material-symbols-outlined text-[20px] flex-shrink-0 mt-0.5">{icons[t.type]}</span>
         <p class="text-sm flex-1 leading-relaxed">{t.message}</p>
-        <button class="toast-close p-0.5 rounded-lg transition-colors" onclick={() => dismiss(t.id)} aria-label="关闭">
+        <button class="toast-close p-0.5 rounded-lg transition-colors" data-toast-id={t.id} aria-label="关闭">
           <span class="material-symbols-outlined text-[16px]">close</span>
         </button>
       </div>
