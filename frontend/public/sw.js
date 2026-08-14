@@ -1,4 +1,4 @@
-const CACHE_NAME = 'moduforge-v2';
+const CACHE_NAME = 'moduforge-v3';
 
 const STATIC_CACHE_URLS = [
   '/',
@@ -12,6 +12,7 @@ self.addEventListener('install', (event) => {
       return cache.addAll(STATIC_CACHE_URLS);
     })
   );
+  self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
@@ -20,12 +21,15 @@ self.addEventListener('activate', (event) => {
       return Promise.all(
         keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k))
       );
-    })
+    }).then(() => self.clients.claim())
   );
 });
 
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
+
+  // Only handle same-origin requests
+  if (url.origin !== self.location.origin) return;
 
   if (event.request.mode === 'navigate') {
     event.respondWith(
@@ -39,8 +43,11 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  if (url.pathname.match(/\.(js|css|png|svg|ico|json)$/)) {
-    event.respondWith(cacheFirst(event.request));
+  // Hashed assets (js/css with content hash) are immutable — safe to cache.
+  // But always try network first so new deploys propagate immediately;
+  // fall back to cache only when offline.
+  if (url.pathname.match(/\.(js|css|png|svg|ico|json|woff2?)$/)) {
+    event.respondWith(networkFirst(event.request));
     return;
   }
 
@@ -59,18 +66,5 @@ async function networkFirst(request) {
   } catch {
     const cached = await caches.match(request);
     return cached || new Response('Offline', { status: 503 });
-  }
-}
-
-async function cacheFirst(request) {
-  const cached = await caches.match(request);
-  if (cached) return cached;
-  try {
-    const response = await fetch(request);
-    const cache = await caches.open(CACHE_NAME);
-    cache.put(request, response.clone());
-    return response;
-  } catch {
-    return new Response('Offline', { status: 503 });
   }
 }
