@@ -309,6 +309,14 @@ func serveFrontend(app *fiber.App, fsys fs.FS) {
 				if ct, ok := ctMap[ext]; ok {
 					c.Set("Content-Type", ct)
 				}
+				// sw.js must always be revalidated so Service Worker updates propagate;
+				// index.html too, so the SPA entry always points at the newest bundle.
+				if relPath == "sw.js" || relPath == "index.html" {
+					c.Set("Cache-Control", "no-cache, no-store, must-revalidate")
+				} else if ext == ".js" || ext == ".css" {
+					// Hashed assets are immutable — safe to cache long-term
+					c.Set("Cache-Control", "public, max-age=31536000, immutable")
+				}
 				data, _ := fs.ReadFile(fsys, relPath)
 				return c.Send(data)
 			}

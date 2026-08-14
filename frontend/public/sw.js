@@ -1,4 +1,4 @@
-const CACHE_NAME = 'moduforge-v3';
+const CACHE_NAME = 'moduforge-v4';
 
 const STATIC_CACHE_URLS = [
   '/',

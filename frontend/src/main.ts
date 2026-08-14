@@ -5,7 +5,9 @@ import './app.css';
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js');
+    // ?v= busts the SW registration URL so a stale in-browser SW is always
+    // replaced by the newest sw.js (which clears old caches on activate).
+    navigator.serviceWorker.register('/sw.js?v=15');
   });
 }
 

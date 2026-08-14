@@ -21,6 +21,25 @@
     cacheStatus?: { total_size: number; file_count: number; hit_rate: number; total_builds: number; cache_hits: number } | null;
   } = $props();
 
+  // Auto-scroll the build log to bottom while it grows.
+  // Only stick when the user is already near the bottom (within 48px),
+  // so manually scrolling up to inspect earlier lines is not hijacked.
+  let logContainer: HTMLDivElement | undefined = $state();
+  let stickToBottom = $state(true);
+
+  function onLogScroll() {
+    if (!logContainer) return;
+    stickToBottom = logContainer.scrollHeight - logContainer.scrollTop - logContainer.clientHeight < 48;
+  }
+
+  $effect(() => {
+    // Reading logLines here makes the effect re-run on every log update
+    const n = logLines.length;
+    if (logContainer && stickToBottom) {
+      logContainer.scrollTop = logContainer.scrollHeight;
+    }
+  });
+
   const statusConfig: Record<string, { color: string; bg: string; icon: string }> = {
     pending: { color: 'text-[var(--color-warning)]', bg: 'bg-[var(--color-warning-light)]', icon: 'schedule' },
     running: { color: 'text-[var(--color-info)]', bg: 'bg-[var(--color-info-light)]', icon: 'sync' },
@@ -119,7 +138,7 @@
         </div>
       </div>
     </div>
-    <div class="p-2 text-[11px] font-mono overflow-x-auto overflow-y-auto max-h-80 min-w-0 log-container" style="background: #0a0a0a; color: #4ade80; white-space: pre-wrap; word-break: break-all">{#each logLines as line, i}<div class="log-line">{String(i + 1).padStart(3, ' ')} <span class:text-red-400={line.startsWith('[ERROR]')} class:text-amber-400={line.startsWith('[WARN]')} class:text-green-300={line.startsWith('[SUCCESS]')} class:text-green-400={!line.startsWith('[') || line.startsWith('[INFO]')}>{line}</span></div>{/each}</div>
+    <div class="p-2 text-[11px] font-mono overflow-x-auto overflow-y-auto max-h-80 min-w-0 log-container" style="background: #0a0a0a; color: #4ade80; white-space: pre-wrap; word-break: break-all" bind:this={logContainer} onscroll={onLogScroll}>{#each logLines as line, i}<div class="log-line">{String(i + 1).padStart(3, ' ')} <span class:text-red-400={line.startsWith('[ERROR]')} class:text-amber-400={line.startsWith('[WARN]')} class:text-green-300={line.startsWith('[SUCCESS]')} class:text-green-400={!line.startsWith('[') || line.startsWith('[INFO]')}>{line}</span></div>{/each}</div>
   </div>
 {:else if building}
   <div class="rounded-2xl border p-8 text-center" style="border-color: var(--color-border); background: var(--color-bg-elevated)">

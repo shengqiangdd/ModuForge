@@ -312,7 +312,8 @@
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` },
       });
-      if (res.ok) {
+      // 404 = record already gone (e.g. removed by another tab / auto-cleanup) — treat as success
+      if (res.ok || res.status === 404) {
         buildHistory = buildHistory.filter(b => b.id !== buildId);
         toast('已删除', 'info', 3000);
       } else {
@@ -418,7 +419,9 @@
     </div>
     <div class="mb-6">
       <div class="flex items-center gap-3 mb-1">
-        <h1 class="text-xl font-bold text-[var(--color-text)]">构建模块</h1>
+        <h1 class="text-xl font-bold text-[var(--color-text)]">构建模块
+          <span class="ml-2 px-1.5 py-0.5 rounded-md text-[10px] font-mono align-middle" style="background: var(--color-primary-light); color: var(--color-primary)" title="前端版本标识（用于确认浏览器已加载最新界面，v15 对应 2026-08-15 部署）">UI v15</span>
+        </h1>
         {#if project}
           <span class="px-2 py-0.5 rounded-md text-[10px] font-medium" style="background: var(--color-primary-light); color: var(--color-primary)">{project.name}</span>
         {/if}

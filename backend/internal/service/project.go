@@ -2,8 +2,11 @@ package service
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -320,7 +323,7 @@ func (s *ProjectService) ListFiles(ctx context.Context, projectID, userID string
 		return nil, err
 	}
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, project_id, path, content, created_at, updated_at
+		`SELECT id, project_id, path, created_at, updated_at, sha256, file_size, mtime
 		 FROM project_files WHERE project_id=? ORDER BY path`, projectID)
 	if err != nil {
 		return nil, err
@@ -344,11 +347,18 @@ func (s *ProjectService) GetFile(ctx context.Context, projectID, path, userID st
 	}
 	var f domain.ProjectFile
 	err := s.db.QueryRowContext(ctx,
-		`SELECT id, project_id, path, content, created_at, updated_at
+		`SELECT id, project_id, path, created_at, updated_at, sha256, file_size, mtime
 		 FROM project_files WHERE project_id=? AND path=?`, projectID, path,
-	).Scan(&f.ID, &f.ProjectID, &f.Path, &f.Content, &f.CreatedAt, &f.UpdatedAt)
+	).Scan(&f.ID, &f.ProjectID, &f.Path, &f.CreatedAt, &f.UpdatedAt, &f.SHA256, &f.FileSize, &f.MTime)
 	if err != nil {
 		return nil, fmt.Errorf("file not found")
+	}
+	// Read content from disk (S3-synced)
+	if s.storagePath != "" {
+		fullPath := filepath.Join(s.diskPath(projectID), path)
+		if data, err := os.ReadFile(fullPath); err == nil {
+			f.Content = string(data)
+		}
 	}
 	return &f, nil
 }
@@ -438,23 +448,43 @@ func (s *ProjectService) SaveFile(ctx context.Context, projectID, path, content,
 	if err := s.checkProjectOwnership(ctx, projectID, userID); err != nil {
 		return nil, err
 	}
-	// 1. Write to database
+
+	// 1. Write to disk (authoritative storage after S3 migration)
+	fullPath := filepath.Join(s.diskPath(projectID), path)
+	if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
+		return nil, fmt.Errorf("mkdir: %w", err)
+	}
+	if err := os.WriteFile(fullPath, []byte(content), 0644); err != nil {
+		return nil, fmt.Errorf("write file: %w", err)
+	}
+
+	// 2. Calculate checksum & size
+	h := sha256.New()
+	io.WriteString(h, content)
+	sha256hex := hex.EncodeToString(h.Sum(nil))
+	fileSize := int64(len(content))
+	now := time.Now().UTC().Format(time.RFC3339)
+
+	// 3. Update database metadata (no content column — content lives on disk/S3)
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO project_files (project_id, path, content)
-		 VALUES (?, ?, ?)
-		 ON CONFLICT(project_id, path) DO UPDATE SET content=?, updated_at=datetime('now')`,
-		projectID, path, content, content)
+		`INSERT INTO project_files (project_id, path, sha256, file_size, mtime, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+		 ON CONFLICT(project_id, path) DO UPDATE SET
+		   sha256=?, file_size=?, mtime=?, updated_at=datetime('now')`,
+		projectID, path, sha256hex, fileSize, now,
+		sha256hex, fileSize, now)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("db update: %w", err)
 	}
-	// 2. Write to disk (best-effort — DB is authoritative)
-	if s.storagePath != "" {
-		fullPath := filepath.Join(s.diskPath(projectID), path)
-		if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err == nil {
-			os.WriteFile(fullPath, []byte(content), 0644)
-		}
-	}
-	return s.GetFile(ctx, projectID, path, userID)
+
+	return &domain.ProjectFile{
+		ID:        0, // caller can re-GET to fill the real ID
+		ProjectID: projectID,
+		Path:      path,
+		Content:   content,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}, nil
 }
 
 // DeleteFile removes a file from both the database and disk.
