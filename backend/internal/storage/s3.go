@@ -38,9 +38,20 @@ func NewS3Adapter(cfg S3Config) (*S3Adapter, error) {
 	if cfg.Region == "" {
 		cfg.Region = "us-east-1"
 	}
+	if cfg.Endpoint == "" {
+		return nil, fmt.Errorf("s3 endpoint is required")
+	}
+
+	var creds *credentials.Credentials
+	if cfg.AccessKey == "" || cfg.SecretKey == "" {
+		// Anonymous credentials for SeaweedFS without auth
+		creds = credentials.New(&anonymousProvider{})
+	} else {
+		creds = credentials.NewStaticV4(cfg.AccessKey, cfg.SecretKey, "")
+	}
 
 	client, err := minio.New(cfg.Endpoint, &minio.Options{
-		Creds:  credentials.NewStaticV4(cfg.AccessKey, cfg.SecretKey, ""),
+		Creds:  creds,
 		Secure: cfg.Secure,
 		Region: cfg.Region,
 	})
@@ -234,4 +245,17 @@ func detectContentType(path string) string {
 		return "image/svg+xml"
 	}
 	return "application/octet-stream"
+}// anonymousProvider implements credentials.Provider for anonymous S3 access.
+type anonymousProvider struct{}
+
+func (a *anonymousProvider) RetrieveWithCredContext(cc *credentials.CredContext) (credentials.Value, error) {
+	return credentials.Value{}, nil
+}
+
+func (a *anonymousProvider) Retrieve() (credentials.Value, error) {
+	return credentials.Value{}, nil
+}
+
+func (a *anonymousProvider) IsExpired() bool {
+	return false
 }
