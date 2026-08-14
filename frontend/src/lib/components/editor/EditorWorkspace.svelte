@@ -38,7 +38,7 @@
     children?: TreeNode[];
   }
 
-  let viewMode = $state<'flat' | 'tree'>('flat');
+  let viewMode = $state<'flat' | 'tree'>('tree');
   let treeData = $state<TreeNode | null>(null);
 
   function buildTree(fileList: { path: string; size?: number }[]): TreeNode {
@@ -62,7 +62,33 @@
         }
       }
     }
+    sortTreeNodes(root);
     return root;
+  }
+
+  // Folder-first sorting: directories before files, each alphabetically.
+  function sortTreeNodes(node: TreeNode) {
+    if (!node.children || node.children.length === 0) return;
+    node.children.sort((a, b) => {
+      if (a.type !== b.type) return a.type === 'directory' ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    });
+    for (const child of node.children) {
+      if (child.type === 'directory') sortTreeNodes(child);
+    }
+  }
+
+  // Flat view folder-first sort: files inside folders first (grouped by
+  // directory), root-level files last, each alphabetical.
+  function folderFirstCompare(a: { path: string }, b: { path: string }): number {
+    const aIdx = a.path.lastIndexOf('/');
+    const bIdx = b.path.lastIndexOf('/');
+    const aDir = aIdx === -1 ? '' : a.path.slice(0, aIdx);
+    const bDir = bIdx === -1 ? '' : b.path.slice(0, bIdx);
+    if (aDir && !bDir) return -1;
+    if (!aDir && bDir) return 1;
+    if (aDir !== bDir) return aDir.localeCompare(bDir);
+    return a.path.localeCompare(b.path);
   }
 
   $effect(() => {
@@ -283,7 +309,7 @@
           client.get<{ id?: number; path: string }[]>(`/projects/${projectId}/files`),
         ]);
         project = p;
-        files = (fileData || []).map(f => ({ ...f, path: f.path }));
+        files = (fileData || []).map(f => ({ ...f, path: f.path })).sort(folderFirstCompare);
       } catch (e: any) {
         toast(e.message || '加载项目失败', 'error');
       } finally {
@@ -323,7 +349,10 @@
     if (!openTabs.includes(path)) openTabs = [...openTabs, path];
     activeTab = path;
     const existing = files.find(f => f.path === path);
-    if (existing?.content !== undefined) {
+    // ListFiles returns metadata only (content omitted/empty since S3 is the
+    // content store). Only reuse cached content when it is non-empty; otherwise
+    // always fetch the actual content from GetFile (which reads S3 first).
+    if (existing?.content) {
       editorContent = existing.content;
       return;
     }
@@ -407,7 +436,7 @@
     if (!projectId) return;
     try {
       const fileData = await client.get<{ id?: number; path: string }[]>(`/projects/${projectId}/files`);
-      files = (fileData || []).map(f => ({ ...f, path: f.path }));
+      files = (fileData || []).map(f => ({ ...f, path: f.path })).sort(folderFirstCompare);
     } catch {}
   }
 
