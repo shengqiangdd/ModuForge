@@ -52,6 +52,7 @@ type Deps struct {
 	HTTPClient    *http.Client // shared LLM HTTP client with connection pooling
 	MemoryStore   interface{}  // *service.MemoryStore — avoid import cycle
 	FileHashCache FileHashCacheI // file hash cache for UNCHANGED detection
+	Storage       interface{}  // storage.StorageAdapter — avoid import cycle; cast at usage
 }
 
 // FileHashCacheI is the interface for file hash caching (avoids circular dependency).

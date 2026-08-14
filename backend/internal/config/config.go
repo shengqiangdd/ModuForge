@@ -12,6 +12,10 @@ type Config struct {
 	JWTSecret    string // JWT 签名密钥
 	DatabasePath string // SQLite 数据库路径
 	StoragePath  string // 文件存储路径
+	S3Endpoint   string // S3-compatible storage endpoint (e.g. "seaweedfs:8333")
+	S3AccessKey  string // S3 access key
+	S3SecretKey  string // S3 secret key
+	S3Bucket     string // S3 bucket name
 	// Legacy single-provider config (backward compatible)
 	LLMApiKey   string // LLM API Key
 	LLMEndpoint string // LLM API 端点
@@ -48,6 +52,10 @@ func Load() *Config {
 		JWTSecret:      getEnv("JWT_SECRET", ""),
 		DatabasePath:   getEnv("DATABASE_PATH", "data/moduforge.db"),
 		StoragePath:    getEnv("STORAGE_PATH", "/data/storage"),
+		S3Endpoint:     getEnv("S3_ENDPOINT", ""),
+		S3AccessKey:    getEnv("S3_ACCESS_KEY", "minioadmin"),
+		S3SecretKey:    getEnv("S3_SECRET_KEY", "minioadmin"),
+		S3Bucket:       getEnv("S3_BUCKET", "moduforge"),
 		LLMApiKey:      getEnv("LLM_API_KEY", ""),
 		LLMEndpoint:    getEnv("LLM_ENDPOINT", "https://api.openai.com/v1"),
 		LLMModel:       getEnv("LLM_MODEL", "gpt-4o-mini"),

@@ -9,7 +9,9 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
 	"github.com/moduforge/backend/internal/agent/registry"
+	"github.com/moduforge/backend/internal/storage"
 )
 
 // FileHashCacheI is the interface for file hash caching (matches registry.FileHashCacheI).
@@ -23,6 +25,7 @@ type ReadFileSkill struct {
 	db          *sql.DB
 	projectPath string
 	fileHash    FileHashCacheI
+	storage     storage.StorageAdapter // optional S3 storage backend
 }
 
 func NewReadFileSkill(db *sql.DB) *ReadFileSkill {
@@ -31,6 +34,13 @@ func NewReadFileSkill(db *sql.DB) *ReadFileSkill {
 
 func NewReadFileSkillWithDB(projectPath string, db *sql.DB) *ReadFileSkill {
 	return &ReadFileSkill{db: db, projectPath: projectPath}
+}
+
+// WithStorage sets the S3 storage adapter. When set, files are read from S3
+// instead of disk/DB.
+func (s *ReadFileSkill) WithStorage(st storage.StorageAdapter) *ReadFileSkill {
+	s.storage = st
+	return s
 }
 
 // SetFileHashCache sets the file hash cache for UNCHANGED detection.
@@ -49,268 +59,221 @@ func (s *ReadFileSkill) Description() string {
 func (s *ReadFileSkill) Execute(ctx context.Context, input map[string]interface{}) (string, error) {
 	path, _ := input["path"].(string)
 	projectID, _ := input["project_id"].(string)
+	startLine, _ := input["start_line"].(float64)
+	endLine, _ := input["end_line"].(float64)
 
 	if path == "" {
 		return "", fmt.Errorf("path is required")
 	}
-	if projectID == "" {
-		return "", fmt.Errorf("project_id is required")
-	}
 
-	// Phase 1: Try reading from disk first
-	fromDB := false
-	var content string
-	if s.projectPath != "" {
-		basePath := ResolveProjectPath(s.db, s.projectPath, projectID)
-		fullPath := filepath.Join(basePath, path)
-		if !isPathWithin(basePath, fullPath) {
-			return "", fmt.Errorf("path traversal denied: %s escapes project root", path)
-		}
-		if data, err := os.ReadFile(fullPath); err == nil {
-			content = string(data)
-		}
-	}
-
-	// Phase 2: Fallback to DB if disk read failed
-	if content == "" && s.db != nil {
-		err := s.db.QueryRowContext(ctx,
-			`SELECT content FROM project_files WHERE project_id=? AND path=?`, projectID, path,
-		).Scan(&content)
-		if err == sql.ErrNoRows {
-			return fmt.Sprintf("文件未找到: %s (磁盘和数据库中均不存在)", path), nil
-		}
+	// S3 storage path: read from S3 directly
+	if s.storage != nil {
+		content, err := s.storage.Read(ctx, s.storagePath(projectID, path))
 		if err != nil {
-			return "", fmt.Errorf("读取文件失败: %w", err)
+			return "", fmt.Errorf("s3 read failed: %w", err)
 		}
-		fromDB = true
+		return s.formatContent(path, string(content), startLine, endLine), nil
 	}
 
-	if content == "" {
-		return fmt.Sprintf("文件未找到: %s", path), nil
+	// Legacy path: try disk first, then DB
+	basePath := ResolveProjectPath(s.db, s.projectPath, projectID)
+	fullPath := filepath.Join(basePath, path)
+	fromDB := false
+
+	// Try to read from disk
+	content, err := os.ReadFile(fullPath)
+	if err != nil {
+		// Fallback: read from database
+		if s.db != nil && projectID != "" {
+			var dbContent string
+			err := s.db.QueryRow(
+				`SELECT content FROM project_files WHERE project_id=? AND path=?`, projectID, path,
+			).Scan(&dbContent)
+			if err != nil {
+				return "", fmt.Errorf("file not found on disk or in database: %s", path)
+			}
+			content = []byte(dbContent)
+			fromDB = true
+		} else {
+			return "", fmt.Errorf("file not found: %s (disk: %v)", path, err)
+		}
 	}
 
-	// File hash cache: only UPDATE the hash for write_file change detection.
-	// Do NOT return "UNCHANGED" here — the LLM needs to see file content to make edits.
-	if s.fileHash != nil {
-		hash := fmt.Sprintf("%x", sha256.Sum256([]byte(content)))
+	// Check file hash cache for UNCHANGED detection
+	if s.fileHash != nil && !fromDB {
+		h := sha256.Sum256(content)
+		hash := fmt.Sprintf("%x", h)
 		s.fileHash.Set(path, hash)
 	}
 
-	_ = fromDB // used below in header
+	return s.formatContent(path, string(content), startLine, endLine), nil
+}
 
-	// 支持行范围读取
+func (s *ReadFileSkill) formatContent(path, content string, startLine, endLine float64) string {
 	lines := strings.Split(content, "\n")
 	totalLines := len(lines)
 
-	startLine := 1
-	endLine := totalLines
-	hasExplicitRange := false
-
-	if v, ok := input["start_line"].(float64); ok && int(v) > 0 {
-		startLine = int(v)
-		hasExplicitRange = true
-	}
-	if v, ok := input["end_line"].(float64); ok && int(v) > 0 {
-		endLine = int(v)
-		hasExplicitRange = true
+	// If no range specified, return full content
+	if startLine == 0 && endLine == 0 {
+		// For large files with no range, use smart reading
+		if totalLines > 500 {
+			return s.readLargeFileSmart(path, lines, totalLines, false)
+		}
+		return content
 	}
 
-	// 边界修正
-	if startLine < 1 {
-		startLine = 1
+	// Validate range
+	start := int(startLine)
+	end := int(endLine)
+	if start < 1 {
+		start = 1
 	}
-	if endLine > totalLines {
-		endLine = totalLines
+	if end > totalLines || end == 0 {
+		end = totalLines
 	}
-	if startLine > endLine {
-		return fmt.Sprintf("File: %s\n\n(start_line %d > end_line %d, total %d lines)", path, startLine, endLine, totalLines), nil
+	if start > end {
+		start = end
 	}
-
-	// For large files without explicit range, return intelligent summary
-	if totalLines > 500 && !hasExplicitRange {
-		return s.readLargeFileSmart(path, lines, totalLines, fromDB), nil
-	}
-
-	// 提取指定范围的行
-	selected := lines[startLine-1 : endLine]
-	var sb strings.Builder
-	for i, line := range selected {
-		sb.WriteString(fmt.Sprintf("%4d | %s\n", startLine+i, line))
+	if start > totalLines {
+		start = totalLines
 	}
 
-	result := sb.String()
-	truncated := false
-	if len(result) > 16000 {
-		result = result[:16000] + "\n... [truncated — use start_line/end_line for specific sections]"
-		truncated = true
+	// Include line numbers
+	var result strings.Builder
+	result.WriteString(fmt.Sprintf("File: %s (%d/%d lines)\n", path, end-start+1, totalLines))
+	for i := start - 1; i < end; i++ {
+		result.WriteString(fmt.Sprintf("%d:> %s\n", i+1, lines[i]))
 	}
-
-	header := fmt.Sprintf("File: %s (lines %d-%d of %d)", path, startLine, endLine, totalLines)
-	if fromDB {
-		header = "[from DB cache] " + header
-	}
-	if truncated {
-		header += " [content truncated]"
-	}
-
-	return fmt.Sprintf("%s\n\n%s", header, result), nil
+	return result.String()
 }
 
-// readLargeFileSmart intelligently extracts key sections from large files.
 func (s *ReadFileSkill) readLargeFileSmart(path string, lines []string, totalLines int, fromDB bool) string {
-	var sb strings.Builder
-	lang := detectLanguage(path)
-
-	if fromDB {
-		sb.WriteString("[from DB cache] ")
+	var result strings.Builder
+	result.WriteString(fmt.Sprintf("File: %s (%d lines total)\n", path, totalLines))
+	result.WriteString("--- First 10 lines ---\n")
+	for i := 0; i < 10 && i < totalLines; i++ {
+		result.WriteString(fmt.Sprintf("%d:> %s\n", i+1, lines[i]))
 	}
-	sb.WriteString(fmt.Sprintf("File: %s (%d lines) — intelligent summary\n\n", path, totalLines))
-
-	// Always include first 20 lines (header, imports, package declaration)
-	headerEnd := 20
-	if headerEnd > totalLines {
-		headerEnd = totalLines
-	}
-	sb.WriteString(fmt.Sprintf("=== HEADER (lines 1-%d) ===\n", headerEnd))
-	for i := 0; i < headerEnd; i++ {
-		sb.WriteString(fmt.Sprintf("%4d | %s\n", i+1, lines[i]))
-	}
-	sb.WriteString("\n")
 
 	// Find and include key definitions (functions, structs, main logic)
-	type section struct {
-		start int
-		end   int
-		label string
-	}
-	var sections []section
+	result.WriteString("--- Key definitions ---\n")
+	found := 0
+	seen := make(map[string]bool)
 
-	defPatterns := getDefinitionPatterns(lang)
-	inBlock := false
-	blockStart := 0
-	braceDepth := 0
+	// Detect language from file extension
+	lang := detectLanguage(path)
+	patterns := getDefinitionPatterns(lang)
 
 	for i, line := range lines {
-		if i < headerEnd {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "//") || strings.HasPrefix(trimmed, "#") {
 			continue
 		}
-		trimmed := strings.TrimSpace(line)
-
-		// Detect function/struct/class definitions
-		if !inBlock {
-			for _, pat := range defPatterns {
-				if pat.MatchString(trimmed) {
-					blockStart = i
-					inBlock = true
-					braceDepth = 0
-					break
-				}
-			}
-		}
-
-		if inBlock {
-			braceDepth += strings.Count(line, "{") - strings.Count(line, "}")
-			if braceDepth <= 0 && (strings.Contains(line, "}") || i > blockStart) {
-				end := i + 1
-				// Cap section length at 50 lines
-				if end-blockStart > 50 {
-					end = blockStart + 50
-				}
-				// Only add sections > 3 lines
-				if end-blockStart > 3 {
-					label := strings.TrimSpace(lines[blockStart])
-					if len(label) > 60 {
-						label = label[:60] + "..."
+		// Check against patterns
+		for _, pat := range patterns {
+			if pat.MatchString(trimmed) {
+				key := strings.TrimSpace(trimmed)
+				if !seen[key] {
+					seen[key] = true
+					result.WriteString(fmt.Sprintf("  %d:> %s\n", i+1, trimmed))
+					found++
+					if found >= 30 {
+						goto done
 					}
-					sections = append(sections, section{start: blockStart + 1, end: end, label: label})
 				}
-				inBlock = false
-				// Max 8 sections
-				if len(sections) >= 8 {
-					break
-				}
+				break
+			}
+		}
+	}
+done:
+
+	// If no key definitions found, use heuristics
+	if found == 0 {
+		result.WriteString("  (no definitions found — showing middle section)\n")
+		mid := totalLines / 2
+		for i := mid - 5; i < mid+5 && i < totalLines; i++ {
+			if i >= 0 {
+				result.WriteString(fmt.Sprintf("%d:> %s\n", i+1, lines[i]))
 			}
 		}
 	}
 
-	if len(sections) > 0 {
-		sb.WriteString(fmt.Sprintf("=== KEY DEFINITIONS (%d found) ===\n", len(sections)))
-		for _, sec := range sections {
-			sb.WriteString(fmt.Sprintf("--- %s (lines %d-%d) ---\n", sec.label, sec.start, sec.end))
-			for i := sec.start - 1; i < sec.end && i < totalLines; i++ {
-				sb.WriteString(fmt.Sprintf("%4d | %s\n", i+1, lines[i]))
-			}
-			sb.WriteString("\n")
+	result.WriteString(fmt.Sprintf("--- Last 10 lines ---\n"))
+	for i := totalLines - 10; i < totalLines; i++ {
+		if i >= 0 {
+			result.WriteString(fmt.Sprintf("%d:> %s\n", i+1, lines[i]))
 		}
 	}
 
-	// Include last 10 lines (usually closing braces, may contain important constants)
-	if totalLines > 30 {
-		footerStart := totalLines - 10
-		if footerStart < headerEnd {
-			footerStart = headerEnd
-		}
-		sb.WriteString(fmt.Sprintf("=== FOOTER (lines %d-%d) ===\n", footerStart+1, totalLines))
-		for i := footerStart; i < totalLines; i++ {
-			sb.WriteString(fmt.Sprintf("%4d | %s\n", i+1, lines[i]))
-		}
-	}
-
-	result := sb.String()
-	if len(result) > 16000 {
-		result = result[:16000] + "\n... [summary truncated — use start_line/end_line for specific sections]"
-	}
-
-	return result
+	result.WriteString(fmt.Sprintf("(Use start_line/end_line to read specific ranges)\n"))
+	return result.String()
 }
 
-// definitionPatternsCache caches compiled regex patterns per language (P1 optimization).
-var definitionPatternsCache = map[string][]*regexp.Regexp{
-	"go": {
-		regexp.MustCompile(`^func\s`),
-		regexp.MustCompile(`^type\s+\w+\s+struct`),
-		regexp.MustCompile(`^type\s+\w+\s+interface`),
-		regexp.MustCompile(`^func\s*\(\s*\w+\s+\*?\w+\)\s+\w+`),
-	},
-	"rust": {
-		regexp.MustCompile(`^pub\s+fn\s`),
-		regexp.MustCompile(`^fn\s`),
-		regexp.MustCompile(`^pub\s+struct\s`),
-		regexp.MustCompile(`^pub\s+impl\s`),
-		regexp.MustCompile(`^impl\s`),
-		regexp.MustCompile(`^pub\s+enum\s`),
-	},
-	"shell": {
-		regexp.MustCompile(`^\w+\s*\(\s*\)\s*\{`),
-		regexp.MustCompile(`^function\s+\w+`),
-	},
-	"python": {
-		regexp.MustCompile(`^def\s+\w+`),
-		regexp.MustCompile(`^class\s+\w+`),
-	},
-	"cpp": {
-		regexp.MustCompile(`^(?:static\s+)?(?:void|int|char|bool|float|double|long|unsigned|auto)\s+\w+\s*\(`),
-		regexp.MustCompile(`^(?:pub\s+)?(?:struct|class|enum)\s+\w+`),
-	},
-	"c": {
-		regexp.MustCompile(`^(?:static\s+)?(?:void|int|char|bool|float|double|long|unsigned|auto)\s+\w+\s*\(`),
-		regexp.MustCompile(`^(?:pub\s+)?(?:struct|class|enum)\s+\w+`),
-	},
-	"javascript": {
-		regexp.MustCompile(`^function\s+\w+`),
-		regexp.MustCompile(`^(?:export\s+)?class\s+\w+`),
-		regexp.MustCompile(`^(?:export\s+)?(?:const|let|var)\s+\w+\s*=\s*(?:async\s+)?\(`),
-	},
-	"typescript": {
-		regexp.MustCompile(`^function\s+\w+`),
-		regexp.MustCompile(`^(?:export\s+)?class\s+\w+`),
-		regexp.MustCompile(`^(?:export\s+)?(?:const|let|var)\s+\w+\s*=\s*(?:async\s+)?\(`),
-	},
-}
+// detectLanguage returns the language name for a file path.
+// (defined in pathutil.go)
 
-// getDefinitionPatterns returns cached regex patterns for detecting key definitions per language.
+// getDefinitionPatterns returns regex patterns for finding definitions in a language.
 func getDefinitionPatterns(lang string) []*regexp.Regexp {
-	return definitionPatternsCache[lang]
+	switch lang {
+	case "go":
+		return []*regexp.Regexp{
+			regexp.MustCompile(`^func\s`),
+			regexp.MustCompile(`^type\s+\w+\s`),
+			regexp.MustCompile(`^func\s*\(\s*\w+\s+\*?\w+\)\s+\w+`),
+			regexp.MustCompile(`^type\s+\w+\s+struct`),
+			regexp.MustCompile(`^type\s+\w+\s+interface`),
+			regexp.MustCompile(`^const\s+`),
+			regexp.MustCompile(`^var\s+`),
+		}
+	case "rust":
+		return []*regexp.Regexp{
+			regexp.MustCompile(`^fn\s+\w+`),
+			regexp.MustCompile(`^pub\s+fn\s+\w+`),
+			regexp.MustCompile(`^struct\s+\w+`),
+			regexp.MustCompile(`^enum\s+\w+`),
+			regexp.MustCompile(`^trait\s+\w+`),
+			regexp.MustCompile(`^impl\s+\w+`),
+			regexp.MustCompile(`^pub\s+struct\s+\w+`),
+			regexp.MustCompile(`^pub\s+enum\s+\w+`),
+			regexp.MustCompile(`^pub\s+trait\s+\w+`),
+			regexp.MustCompile(`^pub\s+impl\s+\w+`),
+		}
+	case "python":
+		return []*regexp.Regexp{
+			regexp.MustCompile(`^def\s+\w+`),
+			regexp.MustCompile(`^class\s+\w+`),
+			regexp.MustCompile(`^async\s+def\s+\w+`),
+		}
+	case "javascript":
+		return []*regexp.Regexp{
+			regexp.MustCompile(`^function\s+\w+`),
+			regexp.MustCompile(`^const\s+\w+\s*=\s*(`),
+			regexp.MustCompile(`^class\s+\w+`),
+			regexp.MustCompile(`^export\s+`),
+			regexp.MustCompile(`^export\s+default\s+`),
+		}
+	case "java":
+		return []*regexp.Regexp{
+			regexp.MustCompile(`^public\s+(class|interface|enum)\s+\w+`),
+			regexp.MustCompile(`^private\s+\w+\s+\w+\s*\(`),
+			regexp.MustCompile(`^protected\s+\w+\s+\w+\s*\(`),
+		}
+	case "cpp", "c":
+		return []*regexp.Regexp{
+			regexp.MustCompile(`^\w+\s+\w+\s*\(`),
+			regexp.MustCompile(`^class\s+\w+`),
+			regexp.MustCompile(`^struct\s+\w+`),
+			regexp.MustCompile(`^void\s+\w+\s*\(`),
+			regexp.MustCompile(`^int\s+\w+\s*\(`),
+		}
+	default:
+		return nil
+	}
+}
+
+// storagePath constructs the S3 path for a project file.
+func (s *ReadFileSkill) storagePath(projectID, path string) string {
+	return "projects/" + projectID + "/" + path
 }
 
 func (s *ReadFileSkill) Metadata() registry.SkillMeta {

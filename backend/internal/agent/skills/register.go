@@ -2,7 +2,18 @@ package skills
 
 import (
 	"github.com/moduforge/backend/internal/agent/registry"
+	"github.com/moduforge/backend/internal/storage"
 )
+
+// getStorage attempts to extract a StorageAdapter from Deps.
+func getStorage(d *registry.Deps) storage.StorageAdapter {
+	if d.Storage != nil {
+		if s, ok := d.Storage.(storage.StorageAdapter); ok {
+			return s
+		}
+	}
+	return nil
+}
 
 func init() {
 	// Core file operations (OpenCode-inspired)
@@ -13,20 +24,35 @@ func init() {
 		return NewGlobSearchSkillWithDB(d.StoragePath+"/projects", d.DB)
 	})
 	registry.RegisterFactory("edit_file", func(d *registry.Deps) registry.Skill {
-		return NewEditFileSkillWithDB(d.StoragePath+"/projects", d.DB)
+		skill := NewEditFileSkillWithDB(d.StoragePath+"/projects", d.DB)
+		if st := getStorage(d); st != nil {
+			skill.WithStorage(st)
+		}
+		return skill
 	})
 	registry.RegisterFactory("read_file", func(d *registry.Deps) registry.Skill {
 		skill := NewReadFileSkillWithDB(d.StoragePath+"/projects", d.DB)
 		if d.FileHashCache != nil {
 			skill.SetFileHashCache(d.FileHashCache)
 		}
+		if st := getStorage(d); st != nil {
+			skill.WithStorage(st)
+		}
 		return skill
 	})
 	registry.RegisterFactory("write_file", func(d *registry.Deps) registry.Skill {
-		return NewWriteFileSkillWithDB(d.StoragePath+"/projects", d.DB)
+		skill := NewWriteFileSkillWithDB(d.StoragePath+"/projects", d.DB)
+		if st := getStorage(d); st != nil {
+			skill.WithStorage(st)
+		}
+		return skill
 	})
 	registry.RegisterFactory("write_file_batch", func(d *registry.Deps) registry.Skill {
-		return NewWriteFileBatchSkill(d.StoragePath+"/projects", d.DB)
+		skill := NewWriteFileBatchSkill(d.StoragePath+"/projects", d.DB)
+		if st := getStorage(d); st != nil {
+			skill.WithStorage(st)
+		}
+		return skill
 	})
 	// P1-3: Batch edit for atomic multi-file editing
 	registry.RegisterFactory("batch_edit_file", func(d *registry.Deps) registry.Skill {

@@ -8,16 +8,27 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
 	"github.com/moduforge/backend/internal/agent/registry"
+	"github.com/moduforge/backend/internal/storage"
 )
 
 type WriteFileSkill struct {
 	projectPath string
 	db          *sql.DB
+	storage     storage.StorageAdapter // optional S3 storage backend
 }
 
 func NewWriteFileSkillWithDB(projectPath string, db *sql.DB) *WriteFileSkill {
 	return &WriteFileSkill{projectPath: projectPath, db: db}
+}
+
+// WithStorage sets the S3 storage adapter. When set, files are stored in S3
+// and DB only holds metadata (sha256, size, mtime). The old dual-write
+// (disk + DB content) is bypassed.
+func (s *WriteFileSkill) WithStorage(st storage.StorageAdapter) *WriteFileSkill {
+	s.storage = st
+	return s
 }
 
 func (s *WriteFileSkill) Name() string {
@@ -58,6 +69,24 @@ func (s *WriteFileSkill) syncToDB(projectID, path, content string) {
 		if err != nil {
 			fmt.Printf("[WriteFileSkill] syncToDB failed: %v\n", err)
 		}
+	}
+}
+
+// syncMetadataToDB records file metadata (sha256, size, mtime) in the DB.
+// Used when the S3 storage adapter is active (content is in S3, not DB).
+func (s *WriteFileSkill) syncMetadataToDB(projectID, path, sha256, mtime string, size int64) {
+	if s.db == nil || projectID == "" {
+		return
+	}
+	now := time.Now().Format("2006-01-02 15:04:05")
+	_, err := s.db.Exec(
+		`INSERT INTO project_files (project_id, path, content, sha256, file_size, mtime, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		 ON CONFLICT(project_id, path) DO UPDATE SET sha256=excluded.sha256, file_size=excluded.file_size, mtime=excluded.mtime, updated_at=excluded.updated_at`,
+		projectID, path, "", sha256, size, mtime, now, now,
+	)
+	if err != nil {
+		fmt.Printf("[WriteFileSkill] syncMetadataToDB failed: %v\n", err)
 	}
 }
 
@@ -103,8 +132,24 @@ func (s *WriteFileSkill) Execute(ctx context.Context, input map[string]interface
 		}
 	}
 
+	// S3 storage path: primary write to S3, then record metadata in DB
+	if s.storage != nil {
+		contentBytes := []byte(content)
+		if err := s.storage.Write(ctx, s.storagePath(projectID, path), contentBytes); err != nil {
+			return "", fmt.Errorf("s3 write failed: %w", err)
+		}
+		sha256 := storage.ComputeSHA256(contentBytes)
+		now := time.Now().Format(time.RFC3339)
+		s.syncMetadataToDB(projectID, path, sha256, now, int64(len(contentBytes)))
+		statusMsg := fmt.Sprintf("File written successfully: %s (%d bytes) [s3]", path, len(content))
+		if projectID != "" {
+			statusMsg = fmt.Sprintf("[project_id:%s] %s", projectID, statusMsg)
+		}
+		return statusMsg, nil
+	}
+
+	// Legacy path: write to DB + disk (dual-write)
 	// Primary write path: database (project_files table)
-	// This works even in read-only containers
 	if s.db != nil && projectID != "" {
 		s.syncToDB(projectID, path, content)
 	}
@@ -131,7 +176,6 @@ func (s *WriteFileSkill) Execute(ctx context.Context, input map[string]interface
 	} else {
 		statusMsg += " [db only] NOTE: 磁盘不可写，文件存储在数据库中。如果需要编译，请使用 build_module，它会自动从 DB 导出文件到磁盘。"
 	}
-	// Include project_id in result so runner can detect auto-creation
 	if projectID != "" {
 		statusMsg = fmt.Sprintf("[project_id:%s] %s", projectID, statusMsg)
 	}
@@ -186,7 +230,33 @@ func (s *WriteFileSkill) ExecuteBatch(ctx context.Context, input map[string]inte
 		projectID = newID
 	}
 
-	// Batch write in transaction
+	// S3 batch path
+	if s.storage != nil {
+		var paths []string
+		now := time.Now().Format(time.RFC3339)
+		for _, f := range filesRaw {
+			fileMap, ok := f.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			path, _ := fileMap["path"].(string)
+			content, _ := fileMap["content"].(string)
+			if path == "" || content == "" {
+				continue
+			}
+			contentBytes := []byte(content)
+			if err := s.storage.Write(ctx, s.storagePath(projectID, path), contentBytes); err != nil {
+				continue
+			}
+			sha256 := storage.ComputeSHA256(contentBytes)
+			s.syncMetadataToDB(projectID, path, sha256, now, int64(len(contentBytes)))
+			paths = append(paths, path)
+		}
+		result := fmt.Sprintf("[project_id:%s] Batch wrote %d files to S3: %s", projectID, len(paths), strings.Join(paths, ", "))
+		return result, nil
+	}
+
+	// Legacy batch path: write to DB
 	if s.db != nil && projectID != "" {
 		tx, err := s.db.BeginTx(ctx, nil)
 		if err != nil {
@@ -232,6 +302,11 @@ func (s *WriteFileSkill) ExecuteBatch(ctx context.Context, input map[string]inte
 	return "", fmt.Errorf("database not available for batch write")
 }
 
+// storagePath constructs the S3 path for a project file.
+func (s *WriteFileSkill) storagePath(projectID, path string) string {
+	return "projects/" + projectID + "/" + path
+}
+
 // WriteFileBatchSkill wraps WriteFileSkill.ExecuteBatch as a standalone Skill.
 type WriteFileBatchSkill struct {
 	inner *WriteFileSkill
@@ -241,6 +316,12 @@ func NewWriteFileBatchSkill(projectPath string, db *sql.DB) *WriteFileBatchSkill
 	return &WriteFileBatchSkill{
 		inner: NewWriteFileSkillWithDB(projectPath, db),
 	}
+}
+
+// WithStorage sets the S3 storage adapter for the batch skill.
+func (s *WriteFileBatchSkill) WithStorage(st storage.StorageAdapter) *WriteFileBatchSkill {
+	s.inner.WithStorage(st)
+	return s
 }
 
 func (s *WriteFileBatchSkill) Name() string {

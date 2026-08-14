@@ -19,6 +19,7 @@ import (
 	"github.com/moduforge/backend/internal/database"
 	"github.com/moduforge/backend/internal/llm"
 	"github.com/moduforge/backend/internal/service"
+	"github.com/moduforge/backend/internal/storage"
 )
 
 type AgentHandler struct {
@@ -43,6 +44,24 @@ func NewAgentHandler(cfg *config.Config, db *database.DB) *AgentHandler {
 		HTTPClient:    agent.LLMHTTPClient(),
 		MemoryStore:   memStore,
 		FileHashCache: fileHashCache,
+	}
+
+	// Initialize S3-compatible storage if endpoint is configured
+	if cfg.S3Endpoint != "" {
+		s3adapter, err := storage.NewS3Adapter(storage.S3Config{
+			Endpoint:  cfg.S3Endpoint,
+			AccessKey: cfg.S3AccessKey,
+			SecretKey: cfg.S3SecretKey,
+			Bucket:    cfg.S3Bucket,
+			Prefix:    "projects",
+			Secure:    false,
+		})
+		if err != nil {
+			slog.Warn("S3 storage init failed, falling back to legacy storage", "error", err)
+		} else {
+			deps.Storage = s3adapter
+			slog.Info("S3 storage enabled", "endpoint", cfg.S3Endpoint, "bucket", cfg.S3Bucket)
+		}
 	}
 	registry := agent.NewSkillRegistry(deps)
 

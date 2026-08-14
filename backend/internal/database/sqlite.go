@@ -842,8 +842,52 @@ func (db *DB) migrate() error {
 	// Migrate adb_saved_devices: rebuild with UNIQUE(user_id, address) instead of UNIQUE(address)
 	db.migrateADBSavedDevices()
 
+	// S3 storage migration: add metadata columns to project_files
+	db.migrateProjectFilesS3()
+
 	log.Println("[DB] SQLite migrations complete")
 	return nil
+}
+
+func (db *DB) migrateProjectFilesS3() {
+	// Check if columns exist using PRAGMA
+	rows, err := db.Conn.Query("PRAGMA table_info(project_files)")
+	if err != nil {
+		log.Printf("migrateProjectFilesS3: PRAGMA failed: %v", err)
+		return
+	}
+	defer rows.Close()
+
+	hasSHA256 := false
+	hasSize := false
+	hasMTime := false
+
+	for rows.Next() {
+		var cid int
+		var name, ctype string
+		var notnull, pk int
+		var dflt *string
+		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err == nil {
+			switch name {
+			case "sha256":
+				hasSHA256 = true
+			case "file_size":
+				hasSize = true
+			case "mtime":
+				hasMTime = true
+			}
+		}
+	}
+
+	if !hasSHA256 {
+		db.Conn.Exec("ALTER TABLE project_files ADD COLUMN sha256 TEXT DEFAULT ''")
+	}
+	if !hasSize {
+		db.Conn.Exec("ALTER TABLE project_files ADD COLUMN file_size INTEGER DEFAULT 0")
+	}
+	if !hasMTime {
+		db.Conn.Exec("ALTER TABLE project_files ADD COLUMN mtime TEXT DEFAULT ''")
+	}
 }
 
 func (db *DB) Close() error {
