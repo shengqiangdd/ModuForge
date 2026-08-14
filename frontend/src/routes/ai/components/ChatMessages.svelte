@@ -9,6 +9,10 @@
     expandedReasoning = new Set<number>(),
     messageUsages = new Map<number, TokenUsage>(),
     messageTimes = new Map<number, number>(),
+    // Agent inline steps
+    allAgentSteps = [] as any[],
+    agentExpandedSteps = new Set<number>(),
+    onToggleAgentStep = (idx: number) => {},
     onToggleReasoning = (idx: number) => {},
     onEdit = (idx: number) => {},
     onDelete = (idx: number) => {},
@@ -18,6 +22,12 @@
     onOpenPreview = (files: { path: string; content: string }[]) => {},
     onInsertToInput = (text: string) => {},
   } = $props();
+
+  // Helper: get steps for a specific message round
+  function getStepsForRound(round: number | undefined): any[] {
+    if (round === undefined) return [];
+    return allAgentSteps.filter((s: any) => s.round === round);
+  }
 
   // Virtual scroll state
   let scrollTop = $state(0);
@@ -72,7 +82,9 @@
   {:else}
     {#if virtualSpacerTop > 0}<div style="height:{virtualSpacerTop}px"></div>{/if}
     {#each virtualMessages as msg, i (virtualStart + i + '-' + msg.role)}
+      {@const msgSteps = getStepsForRound(msg.round)}
       <ChatMessage {msg} index={virtualStart + i} {mode} {streaming} {expandedReasoning} {messageUsages} {messageTimes}
+        agentSteps={msgSteps} {agentExpandedSteps} onToggleAgentStep={(idx) => onToggleAgentStep(idx)}
         onToggleReasoning={(idx) => onToggleReasoning(idx)}
         onEdit={(idx) => onEdit(idx)}
         onDelete={(idx) => onDelete(idx)}

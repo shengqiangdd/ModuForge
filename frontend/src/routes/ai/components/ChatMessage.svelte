@@ -1,5 +1,6 @@
 <script lang="ts">
   import CodeBlock from './CodeBlock.svelte';
+  import AgentStepsInline from './AgentStepsInline.svelte';
 
   type TokenUsage = {
     prompt_tokens: number;
@@ -36,6 +37,10 @@
     memoParseErrorDetail = (content: string): ErrDetail | null => null,
     memoCheckWebUI = (files: { path: string; content: string }[]): boolean => false,
     cleanRecommendedContent = (content: string) => content,
+    // Agent inline steps
+    agentSteps = [] as any[],
+    agentExpandedSteps = new Set<number>(),
+    onToggleAgentStep = (idx: number) => {},
     onRetry,
     onInsertToInput,
     onCopy,
@@ -72,6 +77,9 @@
     memoParseErrorDetail?: (content: string) => ErrDetail | null;
     memoCheckWebUI?: (files: { path: string; content: string }[]) => boolean;
     cleanRecommendedContent?: (content: string) => string;
+    agentSteps?: any[];
+    agentExpandedSteps?: Set<number>;
+    onToggleAgentStep?: (idx: number) => void;
     onRetry?: () => void;
     onInsertToInput?: (text: string) => void;
     onCopy?: (text: string) => void;
@@ -241,6 +249,9 @@
         </div>
       {/if}
       <div class="ai-markdown" role="article">{@html memoRenderMarkdown(msg.content)}</div>
+    {/if}
+    {#if msg.role === 'assistant' && agentSteps.length > 0}
+      <AgentStepsInline steps={agentSteps} expandedSteps={agentExpandedSteps} onToggleStep={(idx) => onToggleAgentStep(idx)} />
     {/if}
     {#if msg.role === 'assistant' && (usage || respTime)}
       <div class="flex items-center gap-3 mt-2 pt-2 border-t border-[var(--color-border)] text-[10px] text-[var(--color-text-muted)]">

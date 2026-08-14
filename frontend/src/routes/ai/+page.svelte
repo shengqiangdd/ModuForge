@@ -4,7 +4,6 @@ import { toast } from '$lib/stores/toast.svelte';
 
 import ChatSidebar from './components/ChatSidebar.svelte';
 import ChatInput from './components/ChatInput.svelte';
-import AgentSteps from './components/AgentSteps.svelte';
 import ModelSelector from './components/ModelSelector.svelte';
 import CompactToolbar from './components/CompactToolbar.svelte';
 import ChatMessages from './components/ChatMessages.svelte';
@@ -878,17 +877,13 @@ import { filterStepsByRound } from './lib/rounds';
 
     <ProgressIndicator show={streaming && currentStepIndex >= 0 && (mode === 'generate' || mode === 'auto-build')} {streaming} {currentStepIndex} {progressStepDetails} {stepElapsed} {progressCollapsed} onToggleCollapse={() => progressCollapsed = !progressCollapsed} />
     <AutoBuildProjectCard projectId={autoBuildProjectId} projectName={autoBuildProjectName} fileCount={autoBuildFiles.length} collapsed={projectCardCollapsed} onToggleCollapse={() => projectCardCollapsed = !projectCardCollapsed} />
-    <AgentSteps steps={agentSteps} collapsed={agentStepsCollapsed} {expandedSteps} {maxRoundIndex} {selectedRound} {agentMode}
-      onToggleCollapse={() => agentStepsCollapsed = !agentStepsCollapsed}
-      onPrevRound={prevRound} onNextRound={nextRound}
-      onSetAgentMode={(m) => agentMode = m}
-      onToggleStep={(idx) => { const next = new Set(expandedSteps); if (next.has(idx)) next.delete(idx); else next.add(idx); expandedSteps = next; }}
-    />
 
     <TodoList {subtasks} collapsed={todoCollapsed} onToggleCollapse={() => todoCollapsed = !todoCollapsed} />
 
     <ChatMessages bind:this={chatMessages}
       bind:messages {mode} {streaming} {expandedReasoning} {messageUsages} {messageTimes}
+      allAgentSteps={allAgentSteps} agentExpandedSteps={expandedSteps}
+      onToggleAgentStep={(idx: number) => { const next = new Set(expandedSteps); if (next.has(idx)) next.delete(idx); else next.add(idx); expandedSteps = next; }}
       onToggleReasoning={(idx: number) => { const next = new Set(expandedReasoning); if (next.has(idx)) next.delete(idx); else next.add(idx); expandedReasoning = next; }}
       onEdit={editMessage} onDelete={confirmDeleteMessage} onReply={replyToMessage}
       onCopy={(text: string) => safeCopyText(text).then(ok => { if (ok) toast('已复制', 'success'); })}
