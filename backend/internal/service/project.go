@@ -57,16 +57,62 @@ func (s *ProjectService) List(ctx context.Context, userID string) ([]domain.Proj
 func (s *ProjectService) Create(ctx context.Context, userID string, req *domain.CreateProjectInput) (*domain.Project, error) {
 	var p domain.Project
 	p.ID = uuid.New().String()
+
+	// Auto-infer module_type from description if not explicitly set
+	moduleType := req.ModuleType
+	if moduleType == "" || moduleType == "universal" {
+		moduleType = inferModuleType(req.Name, req.Description)
+	}
+
 	err := s.db.QueryRowContext(ctx,
 		`INSERT INTO projects (id, user_id, name, module_type, description)
 		 VALUES (?, ?, ?, ?, ?)
 		 RETURNING id, user_id, name, module_type, description, created_at, updated_at`,
-		p.ID, userID, req.Name, "universal", req.Description,
+		p.ID, userID, req.Name, moduleType, req.Description,
 	).Scan(&p.ID, &p.UserID, &p.Name, &p.ModuleType, &p.Description, &p.CreatedAt, &p.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("create project: %w", err)
 	}
 	return &p, nil
+}
+
+// inferModuleType analyzes the project name and description to determine the best module type.
+// It uses keyword matching to classify the project's primary purpose.
+func inferModuleType(name, description string) domain.ModuleType {
+	text := strings.ToLower(name + " " + description)
+
+	// Priority order: more specific matches first
+	typePatterns := []struct {
+		keywords []string
+		mtype    domain.ModuleType
+	}{
+		{[]string{"performance", "optimization", "优化", "调优", "性能", "tune", "调度", "scheduler", "governor", "cpufreq", "gpu"},
+			domain.ModulePerformance},
+		{[]string{"security", "security", "安全", "protection", "保护", "selinux", "防篡改", "detect", "检测", "入侵", "ids"},
+			domain.ModuleMagisk},
+		{[]string{"monitor", "监控", "monitoring", "log", "日志", "observability", "可观测", "metrics", "指标"},
+			domain.ModuleUniversal},
+		{[]string{"network", "网络", "proxy", "代理", "vpn", "流量", "firewall", "防火墙"},
+			domain.ModuleUniversal},
+		{[]string{"tool", "工具", "utility", "辅助", "script", "脚本", "manager", "管理"},
+			domain.ModuleUniversal},
+		{[]string{"game", "游戏", "gaming", "gpu", "graphics", "渲染", "render"},
+			domain.ModulePerformance},
+		{[]string{"battery", "电池", "power", "能耗", "energy", "省电", "power_save"},
+			domain.ModulePerformance},
+		{[]string{"c++", "rust", "go", "native", "daemon", "守护进程", "engine", "引擎"},
+			domain.ModulePerformance},
+	}
+
+	for _, p := range typePatterns {
+		for _, kw := range p.keywords {
+			if strings.Contains(text, kw) {
+				return p.mtype
+			}
+		}
+	}
+
+	return domain.ModuleUniversal
 }
 
 func (s *ProjectService) Get(ctx context.Context, id string) (*domain.Project, error) {

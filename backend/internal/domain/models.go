@@ -10,6 +10,7 @@ const (
 	ModuleAPatch    ModuleType = "apatch"
 	ModuleHybrid    ModuleType = "hybrid"
 	ModuleUniversal ModuleType = "universal"
+	ModulePerformance ModuleType = "performance"
 )
 
 type User struct {

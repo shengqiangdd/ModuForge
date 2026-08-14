@@ -84,7 +84,7 @@ func migrate(db *sql.DB) error {
 			id          TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
 			user_id     TEXT NOT NULL REFERENCES users(id),
 			name        TEXT NOT NULL,
-			module_type TEXT NOT NULL DEFAULT 'universal' CHECK(module_type IN ('magisk','ksu','apatch','hybrid','universal')),
+			module_type TEXT NOT NULL DEFAULT 'universal',
 			description TEXT DEFAULT '',
 			created_at  TEXT NOT NULL DEFAULT (datetime('now')),
 			updated_at  TEXT NOT NULL DEFAULT (datetime('now')),
@@ -290,6 +290,34 @@ func migrate(db *sql.DB) error {
 	// Add password_changed_at column to users if not exists
 	if tableExists(db, "users") && !columnExists(db, "users", "password_changed_at") {
 		_, _ = db.Exec(`ALTER TABLE users ADD COLUMN password_changed_at TEXT`)
+	}
+
+	// Phase 4: remove CHECK constraint from projects.module_type to allow dynamic types
+	if tableExists(db, "projects") {
+		// Verify by trying to insert a test value — if CHECK fails, recreate table
+		if _, err := db.Exec(`UPDATE projects SET module_type='performance' WHERE id='__migration_test__'`); err != nil {
+			// CHECK constraint still active — recreate table to remove it
+			_, _ = db.Exec(`PRAGMA foreign_keys=OFF`)
+			_, _ = db.Exec(`CREATE TABLE IF NOT EXISTS projects_new (
+				id          TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+				user_id     TEXT NOT NULL REFERENCES users(id),
+				name        TEXT NOT NULL,
+				module_type TEXT NOT NULL DEFAULT 'universal',
+				description TEXT DEFAULT '',
+				created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+				updated_at  TEXT NOT NULL DEFAULT (datetime('now')),
+				deleted_at  TEXT
+			)`)
+			_, _ = db.Exec(`INSERT INTO projects_new (id,user_id,name,module_type,description,created_at,updated_at,deleted_at) SELECT id,user_id,name,module_type,description,created_at,updated_at,deleted_at FROM projects`)
+			_, _ = db.Exec(`DROP TABLE IF EXISTS projects_old`)
+			_, _ = db.Exec(`ALTER TABLE projects RENAME TO projects_old`)
+			_, _ = db.Exec(`ALTER TABLE projects_new RENAME TO projects`)
+			_, _ = db.Exec(`DROP TABLE IF EXISTS projects_old`)
+			_, _ = db.Exec(`PRAGMA foreign_keys=ON`)
+			log.Printf("migration: recreated projects table to remove CHECK constraint")
+		}
+		// Clean up the test row if it was inserted
+		_, _ = db.Exec(`DELETE FROM projects WHERE id='__migration_test__'`)
 	}
 
 	return nil
