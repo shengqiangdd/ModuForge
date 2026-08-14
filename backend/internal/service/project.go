@@ -124,6 +124,7 @@ func (s *ProjectService) UpdateByUser(ctx context.Context, id string, userID str
 
 		name := p.Name
 		desc := p.Description
+		moduleType := p.ModuleType
 
 		if req.Name != nil {
 			name = *req.Name
@@ -131,14 +132,17 @@ func (s *ProjectService) UpdateByUser(ctx context.Context, id string, userID str
 		if req.Description != nil {
 			desc = *req.Description
 		}
+		if req.ModuleType != nil {
+			moduleType = *req.ModuleType
+		}
 
 		_, err = s.db.ExecContext(ctx,
-			`UPDATE projects SET name=?, module_type='universal', description=?, 
+			`UPDATE projects SET name=?, module_type=?, description=?, 
 			 git_url=COALESCE(?,git_url), git_branch=COALESCE(?,git_branch), 
 			 build_cron=COALESCE(?,build_cron), auto_build=COALESCE(?,auto_build),
 			 updated_at=datetime('now')
 			 WHERE id=? AND deleted_at IS NULL`,
-			name, desc, req.GitURL, req.GitBranch, req.BuildCron, req.AutoBuild, id,
+			name, moduleType, desc, req.GitURL, req.GitBranch, req.BuildCron, req.AutoBuild, id,
 		)
 		if err != nil {
 			return nil, err

@@ -1,31 +1,30 @@
-#!/usr/bin/env python3
-"""Check server paths"""
-import sys, io
-if sys.platform == "win32":
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
-    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
-import paramiko
+import paramiko, json
 
-client = paramiko.SSHClient()
-client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-client.connect("192.168.2.9", username="admin", password="csq0216", timeout=15)
+ssh = paramiko.SSHClient()
+ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+ssh.connect('192.168.2.9', username='admin', password='csq0216', timeout=10)
 
-# Find ModuForge repo
-cmds = [
-    "ls -la /vol1/ 2>/dev/null || echo 'no /vol1'",
-    "find /home -name 'docker-compose.yml' -path '*ModuForge*' 2>/dev/null | head -5",
-    "find /opt -name 'docker-compose.yml' -path '*ModuForge*' 2>/dev/null | head -5",
-    "find /root -name 'docker-compose.yml' -path '*ModuForge*' 2>/dev/null | head -5",
-    "docker inspect moduforge --format '{{json .Mounts}}' 2>/dev/null | python3 -m json.tool 2>/dev/null || docker inspect moduforge --format '{{range .Mounts}}{{.Source}} -> {{.Destination}}{{println}}{{end}}' 2>/dev/null",
-    "docker inspect moduforge --format '{{json .Config.Labels}}' 2>/dev/null | head -200",
-]
+# Get auth token
+stdin, stdout, stderr = ssh.exec_command(
+    "curl -s http://localhost:8086/api/v1/auth/login -H 'Content-Type: application/json' -d '{\"username\":\"admin\",\"password\":\"admin123\"}'",
+    timeout=10
+)
+resp = json.loads(stdout.read().decode())
+token = resp.get('token', '')
 
-for cmd in cmds:
-    print(f"\n>>> {cmd}")
-    _, stdout, _ = client.exec_command(cmd, timeout=10)
-    out = stdout.read().decode('utf-8', errors='replace').strip()
-    if out:
-        for line in out.split('\n')[:20]:
-            print(f"  {line}")
+# Check error for one delete
+cmd = f"curl -s http://localhost:8086/api/v1/projects/1785249992652501794-1864/files/assets/codemirror-DYH2DdWT.js -X DELETE -H 'Authorization: Bearer {token}'"
+stdin, stdout, stderr = ssh.exec_command(cmd, timeout=10)
+print("DELETE response:", stdout.read().decode())
 
-client.close()
+# Check what files API returns
+cmd = f"curl -s http://localhost:8086/api/v1/projects/1785249992652501794-1864/files -H 'Authorization: Bearer {token}'"
+stdin, stdout, stderr = ssh.exec_command(cmd, timeout=10)
+print("FILES response:", stdout.read().decode()[:2000])
+
+# Try GET on one file
+cmd = f"curl -s http://localhost:8086/api/v1/projects/1785249992652501794-1864/files/assets/codemirror-DYH2DdWT.js -H 'Authorization: Bearer {token}'"
+stdin, stdout, stderr = ssh.exec_command(cmd, timeout=10)
+print("GET file:", stdout.read().decode()[:500])
+
+ssh.close()
