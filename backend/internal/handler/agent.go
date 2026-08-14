@@ -48,19 +48,28 @@ func NewAgentHandler(cfg *config.Config, db *database.DB) *AgentHandler {
 
 	// Initialize S3-compatible storage if endpoint is configured
 	if cfg.S3Endpoint != "" {
-		s3adapter, err := storage.NewS3Adapter(storage.S3Config{
-			Endpoint:  cfg.S3Endpoint,
-			AccessKey: cfg.S3AccessKey,
-			SecretKey: cfg.S3SecretKey,
-			Bucket:    cfg.S3Bucket,
-			Prefix:    "projects",
-			Secure:    false,
-		})
-		if err != nil {
-			slog.Warn("S3 storage init failed, falling back to legacy storage", "error", err)
-		} else {
-			deps.Storage = s3adapter
-			slog.Info("S3 storage enabled", "endpoint", cfg.S3Endpoint, "bucket", cfg.S3Bucket)
+		// Retry up to 30s for SeaweedFS to start
+		var s3adapter *storage.S3Adapter
+		var s3err error
+		for i := 0; i < 30; i++ {
+			s3adapter, s3err = storage.NewS3Adapter(storage.S3Config{
+				Endpoint:  cfg.S3Endpoint,
+				AccessKey: cfg.S3AccessKey,
+				SecretKey: cfg.S3SecretKey,
+				Bucket:    cfg.S3Bucket,
+				Prefix:    "projects",
+				Secure:    false,
+			})
+			if s3err == nil {
+				deps.Storage = s3adapter
+				slog.Info("S3 storage enabled", "endpoint", cfg.S3Endpoint, "bucket", cfg.S3Bucket)
+				break
+			}
+			slog.Warn("S3 storage init failed, retrying...", "attempt", i+1, "error", s3err)
+			time.Sleep(1 * time.Second)
+		}
+		if s3err != nil {
+			slog.Warn("S3 storage init failed after 30 retries, falling back to legacy storage", "error", s3err)
 		}
 	}
 	registry := agent.NewSkillRegistry(deps)
