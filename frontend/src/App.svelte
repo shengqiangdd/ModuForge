@@ -30,6 +30,7 @@
     'tests': () => import('./routes/projects/[id]/tests/+page.svelte'),
     'settings': () => import('./routes/settings/+page.svelte'),
     'ai': () => import('./routes/ai/+page.svelte'),
+    'mcp': () => import('./routes/mcp/+page.svelte'),
     'devices': () => import('./routes/devices/+page.svelte'),
     'glossary': () => import('./routes/glossary/+page.svelte'),
     'crash': () => import('./routes/crash/+page.svelte'),
@@ -53,7 +54,7 @@
     routeLoading = false;
   }
 
-  type Route = 'auth' | 'projects' | 'editor' | 'builds' | 'tests' | 'settings' | 'market' | 'market-publish' | 'dashboard' | 'ai' | 'devices' | 'crash' | 'glossary';
+  type Route = 'auth' | 'projects' | 'editor' | 'builds' | 'tests' | 'settings' | 'market' | 'market-publish' | 'dashboard' | 'ai' | 'mcp' | 'devices' | 'crash' | 'glossary';
 
   let current = $state<Route>('auth');
   let projectId = $state('');
@@ -112,7 +113,7 @@
     loadRoute(route);
     const paths: Record<string, string> = {
       'market': '/market', 'market-publish': '/market/publish', 'dashboard': '/dashboard',
-      'projects': '/projects', 'settings': '/settings', 'ai': '/ai',
+      'projects': '/projects', 'settings': '/settings', 'ai': '/ai', 'mcp': '/mcp',
       'devices': '/devices', 'glossary': '/glossary',
     };
     if (paths[route]) history.pushState(null, '', paths[route]);
@@ -332,7 +333,7 @@
       const path = window.location.pathname;
       const routeMap: Record<string, Route> = {
         '/market/publish': 'market-publish', '/market': 'market', '/dashboard': 'dashboard',
-        '/settings': 'settings', '/ai': 'ai', '/devices': 'devices',
+        '/settings': 'settings', '/ai': 'ai', '/mcp': 'mcp', '/devices': 'devices',
         '/glossary': 'glossary', '/crash': 'crash',
       };
       if (routeMap[path]) { current = routeMap[path]; loadRoute(routeMap[path]); }
@@ -413,6 +414,7 @@
       { id: 'tests', icon: 'bug_report', label: '测试' },
     ] : []),
     { id: 'ai', icon: 'psychology', label: 'AI 助手' },
+    { id: 'mcp', icon: 'hub', label: 'MCP' },
     { id: 'glossary', icon: 'menu_book', label: '术语表' },
     { id: 'devices', icon: 'devices', label: $t('nav.devices') },
     { id: 'market', icon: 'storefront', label: $t('nav.market') },

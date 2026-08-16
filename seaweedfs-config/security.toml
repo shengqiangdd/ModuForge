@@ -1,0 +1,3 @@
+[jwt]
+signing.key = "my-secret-signing-key-for-sts-2026"
+

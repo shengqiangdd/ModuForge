@@ -1,0 +1,24 @@
+{
+  "signingKey": "my-secret-signing-key-for-sts-2026",
+  "identities": [
+    {
+      "name": "admin",
+      "credentials": [
+        {
+          "accessKey": "minioadmin",
+          "secretKey": "minioadmin"
+        }
+      ],
+      "actions": [
+        "Read",
+        "Write",
+        "List",
+        "Tagging",
+        "Admin"
+      ],
+      "buckets": [
+        "moduforge"
+      ]
+    }
+  ]
+}

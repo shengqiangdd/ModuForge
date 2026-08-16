@@ -22,6 +22,7 @@
     showProjectContext = false,
     showHistorySidebar = false,
     showCapability = false,
+    showMcpTools = false,
     onProviderChange,
     onModelSelect,
     onEditMaxTokens,
@@ -33,6 +34,7 @@
     onToggleProjectContext,
     onToggleHistory,
     onLoadCapability,
+    onToggleMcpTools,
     onOpenPromptSettings,
     onOpenMDPrompts,
     onNavigate,
@@ -54,6 +56,7 @@
     showProjectContext?: boolean;
     showHistorySidebar?: boolean;
     showCapability?: boolean;
+    showMcpTools?: boolean;
     onProviderChange?: (v: string) => void;
     onModelSelect?: (id: string) => void;
     onEditMaxTokens?: (id: string, val: string) => void;
@@ -65,6 +68,7 @@
     onToggleProjectContext?: () => void;
     onToggleHistory?: () => void;
     onLoadCapability?: () => void;
+    onToggleMcpTools?: () => void;
     onOpenPromptSettings?: () => void;
     onOpenMDPrompts?: () => void;
     onNavigate?: (route: string, id?: string) => void;
@@ -80,12 +84,13 @@
   onEditMaxTokensStart={(id, val) => onEditMaxTokensStart?.(id, val)}
 />
 
-<CompactToolbar {mode} {streaming} {showComparison} {showProjectContext} {showHistorySidebar} {showCapability}
+<CompactToolbar {mode} {streaming} {showComparison} {showProjectContext} {showHistorySidebar} {showCapability} {showMcpTools}
   onModeChange={(m) => onModeChange?.(m)}
   onToggleComparison={() => onToggleComparison?.()}
   onToggleProjectContext={() => onToggleProjectContext?.()}
   onToggleHistory={() => onToggleHistory?.()}
   onLoadCapability={() => onLoadCapability?.()}
+  onToggleMcpTools={() => onToggleMcpTools?.()}
   onOpenPromptSettings={() => onOpenPromptSettings?.()}
   onOpenMDPrompts={() => onOpenMDPrompts?.()}
   {onNavigate}

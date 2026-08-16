@@ -9,11 +9,13 @@ let {
   showProjectContext = false,
   showHistorySidebar = false,
   showCapability = false,
+  showMcpTools = false,
   onModeChange,
   onToggleComparison,
   onToggleProjectContext,
   onToggleHistory,
   onLoadCapability,
+  onToggleMcpTools,
   onOpenPromptSettings,
   onOpenMDPrompts,
   onNavigate,
@@ -24,11 +26,13 @@ let {
   showProjectContext: boolean;
   showHistorySidebar: boolean;
   showCapability: boolean;
+  showMcpTools: boolean;
   onModeChange: (m: Mode) => void;
   onToggleComparison: () => void;
   onToggleProjectContext: () => void;
   onToggleHistory: () => void;
   onLoadCapability: () => void;
+  onToggleMcpTools: () => void;
   onOpenPromptSettings: () => void;
   onOpenMDPrompts: () => void;
   onNavigate?: (route: string) => void;
@@ -61,6 +65,9 @@ let {
     </button>
     <button class="flex-shrink-0 flex items-center justify-center p-1.5 rounded-lg transition-all disabled:opacity-50 min-h-[32px] {showHistorySidebar ? 'bg-primary-500/10 text-primary-500' : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-surface)]'}" onclick={onToggleHistory} title="历史记录">
       <span class="material-symbols-outlined text-[16px]">history</span>
+    </button>
+    <button class="flex-shrink-0 flex items-center justify-center p-1.5 rounded-lg transition-all disabled:opacity-50 min-h-[32px] {showMcpTools ? 'bg-primary-500/10 text-primary-500' : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-surface)]'}" onclick={onToggleMcpTools} title="MCP 工具">
+      <span class="material-symbols-outlined text-[16px]">hub</span>
     </button>
     <button class="flex-shrink-0 flex items-center justify-center p-1.5 rounded-lg text-[var(--color-text-secondary)] hover:bg-[var(--color-surface)] transition-all min-h-[32px]" onclick={onLoadCapability} title="AI 能力评分">
       <span class="material-symbols-outlined text-[16px]">speed</span>

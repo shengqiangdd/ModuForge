@@ -542,9 +542,13 @@ func (h *AgentHandler) ListMCPStatus(c fiber.Ctx) error {
 	var servers []map[string]interface{}
 	for _, cli := range h.mcpMgr.Clients() {
 		tools := cli.Tools()
-		names := make([]string, 0, len(tools))
+		toolInfos := make([]map[string]interface{}, 0, len(tools))
 		for _, t := range tools {
-			names = append(names, t.Name)
+			toolInfos = append(toolInfos, map[string]interface{}{
+				"name":        t.Name,
+				"description": t.Description,
+				"inputSchema": t.InputSchema,
+			})
 		}
 		servers = append(servers, map[string]interface{}{
 			"name":        cli.Name,
@@ -552,13 +556,43 @@ func (h *AgentHandler) ListMCPStatus(c fiber.Ctx) error {
 			"server_name": cli.ServerName(),
 			"ready":       cli.IsReady(),
 			"tool_count":  len(tools),
-			"tools":       names,
+			"tools":       toolInfos,
 		})
 	}
 	if servers == nil {
 		servers = []map[string]interface{}{}
 	}
 	return c.JSON(fiber.Map{"servers": servers})
+}
+
+// TestMCPTool calls a tool on an MCP server with the given arguments.
+// Request: {"server":"github","tool":"get_issue","arguments":{...}}
+func (h *AgentHandler) TestMCPTool(c fiber.Ctx) error {
+	var req struct {
+		Server    string                 `json:"server"`
+		Tool      string                 `json:"tool"`
+		Arguments map[string]interface{} `json:"arguments"`
+	}
+	if err := json.Unmarshal(c.Body(), &req); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid request body"})
+	}
+	if h.mcpMgr == nil {
+		return c.Status(404).JSON(fiber.Map{"error": "MCP not configured"})
+	}
+	cli, ok := h.mcpMgr.Get(req.Server)
+	if !ok {
+		return c.Status(404).JSON(fiber.Map{"error": "MCP server not found: " + req.Server})
+	}
+	if !cli.IsReady() {
+		return c.Status(503).JSON(fiber.Map{"error": "MCP server not ready: " + req.Server})
+	}
+	ctx, cancel := context.WithTimeout(c.Context(), 60*time.Second)
+	defer cancel()
+	result, err := cli.CallTool(ctx, req.Tool, req.Arguments)
+	if err != nil {
+		return c.Status(502).JSON(fiber.Map{"error": "tool call failed: " + err.Error()})
+	}
+	return c.JSON(fiber.Map{"server": req.Server, "tool": req.Tool, "result": result})
 }
 
 // ===== Custom Skills =====

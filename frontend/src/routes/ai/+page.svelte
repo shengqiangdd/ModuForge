@@ -27,6 +27,7 @@ import AICapabilityModal from './components/modals/AICapabilityModal.svelte';
 import DiffPanelModal from './components/modals/DiffPanelModal.svelte';
 import OnboardingGuide from './components/OnboardingGuide.svelte';
 import ShortcutPanel from './components/ShortcutPanel.svelte';
+import McpToolPanel from './components/McpToolPanel.svelte';
 import TodoList from './components/TodoList.svelte';
 import type { Subtask } from './components/TodoList.svelte';
 import {
@@ -117,6 +118,7 @@ import { filterStepsByRound } from './lib/rounds';
 
   // AI Capability dashboard
   let showCapability = $state(false);
+  let showMcpTools = $state(false);
   let capability = $state<any>(null);
   let capabilityLoading = $state(false);
 
@@ -832,7 +834,7 @@ import { filterStepsByRound } from './lib/rounds';
   if (e.ctrlKey && e.key === 'k') { e.preventDefault(); messages = []; currentStepIndex = -1; progressStepDetails = []; autoBuildPhases = []; agentSteps = []; allAgentSteps = []; selectedRound = -1; maxRoundIndex = 0; expandedReasoning = new Set(); activeSessionId = ''; sessionId = generateUUID(); mode = 'generate'; autoBuildProjectId = ''; autoBuildProjectName = ''; autoBuildFiles = []; subtasks = []; }
   if (e.ctrlKey && e.key === 'e') { e.preventDefault(); if (messages.length > 0) exportConversation('markdown'); }
   if (e.key === '?') { e.preventDefault(); showShortcutPanel = !showShortcutPanel; }
-  if (e.key === 'Escape') { showHistorySidebar = false; showPromptSettings = false; showMDPrompts = false; showProviderConfig = false; showPreviewModal = false; showImportDialog = false; showComparison = false; showPromptTemplates = false; showDiffPanel = false; showCapability = false; showShortcutPanel = false; }
+  if (e.key === 'Escape') { showHistorySidebar = false; showPromptSettings = false; showMDPrompts = false; showProviderConfig = false; showPreviewModal = false; showImportDialog = false; showComparison = false; showPromptTemplates = false; showDiffPanel = false; showCapability = false; showMcpTools = false; showShortcutPanel = false; }
   if (!e.ctrlKey && !e.metaKey && !e.altKey && ['1','2','3','4','5','6'].includes(e.key)) {
     const idx = parseInt(e.key) - 1;
     if (idx >= 0 && idx < modes.length && !streaming && mode !== modes[idx].value) { messages = []; currentStepIndex = -1; progressStepDetails = []; autoBuildPhases = []; agentSteps = []; expandedReasoning = new Set(); activeSessionId = ''; sessionId = generateUUID(); mode = modes[idx].value; subtasks = []; }
@@ -858,7 +860,7 @@ import { filterStepsByRound } from './lib/rounds';
       {showModelDropdown} {editingModelMaxTokens} {editMaxTokensValue}
       {availableModels} {freeModels} {paidModels} {selectedModel}
       {mode} {streaming} {showComparison} {showProjectContext}
-      {showHistorySidebar} {showCapability}
+      {showHistorySidebar} {showCapability} {showMcpTools}
       onProviderChange={(v) => { selectedProviderID = v; onProviderChange(); }}
       onModelSelect={(id) => { selectedModelID = id; showModelDropdown = false; onModelSelect(id); }}
       onEditMaxTokens={(id, val) => { editingModelMaxTokens = id; editMaxTokensValue = val; }}
@@ -870,6 +872,7 @@ import { filterStepsByRound } from './lib/rounds';
       onToggleProjectContext={() => showProjectContext = !showProjectContext}
       onToggleHistory={() => { if (!showHistorySidebar) { loadConversations(); loadSessions(); loadGenHistory(); } showHistorySidebar = !showHistorySidebar; }}
       onLoadCapability={() => { loadCapability(); showCapability = !showCapability; }}
+      onToggleMcpTools={() => showMcpTools = !showMcpTools}
       onOpenPromptSettings={openPromptSettings}
       onOpenMDPrompts={() => showMDPrompts = true}
       {onNavigate}
@@ -922,6 +925,10 @@ import { filterStepsByRound } from './lib/rounds';
   <BuildProgressBar show={buildProgressActive} progress={buildProgress} />
   <OnboardingGuide show={showOnboarding} onClose={() => showOnboarding = false} onComplete={() => { onboardingDone = true; localStorage.setItem('ai_onboarding_done', '1'); }} />
   <ShortcutPanel show={showShortcutPanel} onClose={() => showShortcutPanel = false} />
+  <McpToolPanel show={showMcpTools} onClose={() => showMcpTools = false}
+    onInsertTool={(text: string) => { input = text; showMcpTools = false; }}
+    {onNavigate}
+  />
 </div>
 
 <style>
