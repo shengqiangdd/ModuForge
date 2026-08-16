@@ -6,14 +6,21 @@ import (
 	"strings"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/moduforge/backend/internal/service"
 )
 
 type FormatHandler struct {
 	db *sql.DB
+	fr *service.FileContentRepo // S3-first content access (optional)
 }
 
 func NewFormatHandler(db *sql.DB) *FormatHandler {
 	return &FormatHandler{db: db}
+}
+
+// SetFileContentRepo injects the S3-first file content repository.
+func (h *FormatHandler) SetFileContentRepo(fr *service.FileContentRepo) {
+	h.fr = fr
 }
 
 func (h *FormatHandler) formatContent(path, content string) (string, string, bool) {
@@ -81,11 +88,10 @@ func (h *FormatHandler) FormatProject(c fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "project id required"})
 	}
 
-	rows, err := h.db.Query(`SELECT path, content FROM project_files WHERE project_id=?`, projectID)
+	fileMap, err := h.fr.ReadAllContent(c.Context(), projectID)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "failed to load project files"})
 	}
-	defer rows.Close()
 
 	type FormatResult struct {
 		File   string `json:"file"`
@@ -95,12 +101,7 @@ func (h *FormatHandler) FormatProject(c fiber.Ctx) error {
 	var results []FormatResult
 	success, failed, skipped := 0, 0, 0
 
-	for rows.Next() {
-		var path, content string
-		if err := rows.Scan(&path, &content); err != nil {
-			continue
-		}
-
+	for path, content := range fileMap {
 		ext := getExt(path)
 		// Skip unsupported extensions
 		if ext != ".json" && ext != ".go" && ext != ".rs" && ext != ".py" &&
@@ -118,7 +119,7 @@ func (h *FormatHandler) FormatProject(c fiber.Ctx) error {
 		}
 
 		if formatted != content {
-			if _, err := h.db.Exec(`UPDATE project_files SET content=? WHERE project_id=? AND path=?`, formatted, projectID, path); err != nil {
+			if err := h.fr.Write(c.Context(), projectID, path, formatted); err != nil {
 				failed++
 				results = append(results, FormatResult{File: path, Status: "failed", Error: err.Error()})
 				continue
@@ -142,11 +143,10 @@ func (h *FormatHandler) PreviewFormat(c fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "project id required"})
 	}
 
-	rows, err := h.db.Query(`SELECT path, content FROM project_files WHERE project_id=?`, projectID)
+	fileMap, err := h.fr.ReadAllContent(c.Context(), projectID)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "failed to load project files"})
 	}
-	defer rows.Close()
 
 	type PreviewResult struct {
 		File        string `json:"file"`
@@ -155,12 +155,7 @@ func (h *FormatHandler) PreviewFormat(c fiber.Ctx) error {
 	}
 	var results []PreviewResult
 
-	for rows.Next() {
-		var path, content string
-		if err := rows.Scan(&path, &content); err != nil {
-			continue
-		}
-
+	for path, content := range fileMap {
 		ext := getExt(path)
 		if ext != ".json" && ext != ".go" && ext != ".rs" && ext != ".py" &&
 			ext != ".js" && ext != ".ts" && ext != ".jsx" && ext != ".tsx" && ext != ".css" {

@@ -1,22 +1,82 @@
 package handler
 
 import (
+	"context"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/moduforge/backend/internal/domain"
+	"github.com/moduforge/backend/internal/storage"
 )
 
 type ModuleVersionHandler struct {
 	db *sql.DB
+	s3 *storage.S3Adapter // optional S3-compatible storage for project files
 }
 
 func NewModuleVersionHandler(db *sql.DB) *ModuleVersionHandler {
 	return &ModuleVersionHandler{db: db}
+}
+
+// SetS3 injects the optional S3 adapter used to read/write project file content.
+func (h *ModuleVersionHandler) SetS3(adapter *storage.S3Adapter) {
+	h.s3 = adapter
+}
+
+// s3ObjectKey returns the S3 object key for a project file.
+func (h *ModuleVersionHandler) s3ObjectKey(projectID, path string) string {
+	return projectID + "/" + strings.TrimPrefix(path, "/")
+}
+
+// readContent returns file content: S3 first (authoritative), DB content fallback.
+func (h *ModuleVersionHandler) readContent(ctx context.Context, projectID, path string) (string, error) {
+	if h.s3 != nil {
+		data, err := h.s3.Read(ctx, h.s3ObjectKey(projectID, path))
+		if err == nil {
+			return string(data), nil
+		}
+		slog.Warn("s3 read failed, falling back to db content", "project", projectID, "path", path, "error", err)
+	}
+	var content string
+	err := h.db.QueryRowContext(ctx,
+		`SELECT COALESCE(content,'') FROM project_files WHERE project_id=? AND path=?`, projectID, path,
+	).Scan(&content)
+	if err != nil {
+		return "", err
+	}
+	return content, nil
+}
+
+// saveContent persists file content: S3 (authoritative) + DB metadata.
+func (h *ModuleVersionHandler) saveContent(ctx context.Context, projectID, path, content string) error {
+	now := time.Now().UTC().Format(time.RFC3339)
+	sha := storage.ComputeSHA256([]byte(content))
+	size := int64(len(content))
+
+	if h.s3 != nil {
+		if err := h.s3.Write(ctx, h.s3ObjectKey(projectID, path), []byte(content)); err != nil {
+			return fmt.Errorf("s3 write failed: %w", err)
+		}
+		_, err := h.db.ExecContext(ctx,
+			`INSERT INTO project_files (project_id, path, content, created_at, updated_at, sha256, file_size, mtime)
+			 VALUES (?, ?, NULL, ?, ?, ?, ?, ?)
+			 ON CONFLICT(project_id, path) DO UPDATE SET content=NULL, updated_at=datetime('now'), sha256=?, file_size=?, mtime=?`,
+			projectID, path, now, now, sha, size, now, sha, size, now)
+		return err
+	}
+
+	_, err := h.db.ExecContext(ctx,
+		`INSERT INTO project_files (project_id, path, content, created_at, updated_at, sha256, file_size, mtime)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		 ON CONFLICT(project_id, path) DO UPDATE SET content=?, updated_at=datetime('now'), sha256=?, file_size=?, mtime=?`,
+		projectID, path, content, now, now, sha, size, now, content, sha, size, now)
+	return err
 }
 
 // POST /projects/:id/versions — Create a new version snapshot from current project files
@@ -46,7 +106,7 @@ func (h *ModuleVersionHandler) CreateVersion(c fiber.Ctx) error {
 	}
 
 	// Snapshot all current files
-	rows, err := h.db.Query("SELECT path, content FROM project_files WHERE project_id=?", projectID)
+	rows, err := h.db.Query("SELECT path FROM project_files WHERE project_id=?", projectID)
 	if err != nil {
 		return InternalError(c, "读取项目文件失败")
 	}
@@ -60,12 +120,17 @@ func (h *ModuleVersionHandler) CreateVersion(c fiber.Ctx) error {
 	fileCount := 0
 	totalSize := 0
 	for rows.Next() {
-		var fs FileSnapshot
-		if err := rows.Scan(&fs.Path, &fs.Content); err == nil {
-			snapshots = append(snapshots, fs)
-			fileCount++
-			totalSize += len(fs.Content)
+		var path string
+		if err := rows.Scan(&path); err != nil {
+			continue
 		}
+		content, cErr := h.readContent(c.Context(), projectID, path)
+		if cErr != nil {
+			continue
+		}
+		snapshots = append(snapshots, FileSnapshot{Path: path, Content: content})
+		fileCount++
+		totalSize += len(content)
 	}
 
 	snapshotJSON, _ := json.Marshal(snapshots)
@@ -158,35 +223,56 @@ func (h *ModuleVersionHandler) RollbackVersion(c fiber.Ctx) error {
 	if err != nil {
 		return InternalError(c, "事务启动失败")
 	}
-	defer tx.Rollback()
 
-	// Clear current files
-	if _, err := tx.Exec("DELETE FROM project_files WHERE project_id=?", projectID); err != nil {
-		return InternalError(c, "清理旧文件失败")
-	}
-
-	// Restore files from snapshot
-	stmt, err := tx.Prepare(
-		`INSERT INTO project_files (project_id, path, content, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?)`,
-	)
+	// Clear current files metadata
+	oldRows, err := tx.Query("SELECT path FROM project_files WHERE project_id=?", projectID)
 	if err != nil {
-		return InternalError(c, "准备语句失败")
+		tx.Rollback()
+		return InternalError(c, "读取旧文件失败")
 	}
-	defer stmt.Close()
-
-	now := time.Now().UTC().Format(time.RFC3339)
-	for _, fs := range snapshots {
-		if _, err := stmt.Exec(projectID, fs.Path, fs.Content, now, now); err != nil {
-			return InternalError(c, "恢复文件失败: "+fs.Path)
+	var oldPaths []string
+	for oldRows.Next() {
+		var p string
+		if oldRows.Scan(&p) == nil {
+			oldPaths = append(oldPaths, p)
 		}
 	}
+	oldRows.Close()
 
+	if _, err := tx.Exec("DELETE FROM project_files WHERE project_id=?", projectID); err != nil {
+		tx.Rollback()
+		return InternalError(c, "清理旧文件失败")
+	}
 	if err := tx.Commit(); err != nil {
 		return InternalError(c, "提交事务失败")
 	}
 
-	return c.JSON(fiber.Map{"message": "回滚成功", "version": version, "files_restored": len(snapshots)})
+	// Restore files from snapshot: S3 (authoritative) + DB metadata.
+	// Each file is written atomically (S3 object + DB metadata row).
+	restored := 0
+	for _, fs := range snapshots {
+		if err := h.saveContent(c.Context(), projectID, fs.Path, fs.Content); err != nil {
+			return InternalError(c, "恢复文件失败: "+fs.Path)
+		}
+		restored++
+	}
+	// Remove S3 objects that are no longer part of the snapshot
+	for _, p := range oldPaths {
+		found := false
+		for _, fs := range snapshots {
+			if fs.Path == p {
+				found = true
+				break
+			}
+		}
+		if !found && h.s3 != nil {
+			if err := h.s3.Delete(c.Context(), h.s3ObjectKey(projectID, p)); err != nil {
+				slog.Warn("s3 delete stale file during rollback", "project", projectID, "path", p, "error", err)
+			}
+		}
+	}
+
+	return c.JSON(fiber.Map{"message": "回滚成功", "version": version, "files_restored": restored})
 }
 
 // GET /projects/:id/versions/:version/diff — Compare two versions

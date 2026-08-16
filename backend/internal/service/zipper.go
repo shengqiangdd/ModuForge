@@ -21,11 +21,17 @@ type ModuleFile struct {
 type ZipperService struct {
 	outputDir string
 	db        *sql.DB
+	fr        *FileContentRepo // S3-first content access (optional)
 }
 
 func NewZipperService(outputDir string, db *sql.DB) *ZipperService {
 	os.MkdirAll(outputDir, 0755)
 	return &ZipperService{outputDir: outputDir, db: db}
+}
+
+// SetFileContentRepo injects the S3-first file content repository.
+func (s *ZipperService) SetFileContentRepo(fr *FileContentRepo) {
+	s.fr = fr
 }
 
 var excludedPatterns = []string{
@@ -332,29 +338,50 @@ exit 0
 }
 
 func (s *ZipperService) ExportModuleZip(projectID string) (string, error) {
-	rows, err := s.db.Query(
-		"SELECT path, content FROM project_files WHERE project_id = ? ORDER BY path",
-		projectID,
-	)
-	if err != nil {
-		return "", fmt.Errorf("read project files: %w", err)
-	}
-	defer rows.Close()
-
 	var files []ModuleFile
 	hasModuleProp := false
-	for rows.Next() {
-		var path, content string
-		if err := rows.Scan(&path, &content); err != nil {
-			continue
+
+	if s.fr != nil {
+		fileList, err := s.fr.ReadAll(context.Background(), projectID)
+		if err != nil {
+			return "", fmt.Errorf("read project files: %w", err)
 		}
-		if path == "module.prop" {
-			hasModuleProp = true
-			if !strings.Contains(content, "id=") || !strings.Contains(content, "name=") || !strings.Contains(content, "version=") {
-				return "", fmt.Errorf("module.prop must contain id, name, and version fields")
+		for _, f := range fileList {
+			content, err := s.fr.ReadOne(context.Background(), projectID, f.Path)
+			if err != nil {
+				continue
 			}
+			if f.Path == "module.prop" {
+				hasModuleProp = true
+				if !strings.Contains(content, "id=") || !strings.Contains(content, "name=") || !strings.Contains(content, "version=") {
+					return "", fmt.Errorf("module.prop must contain id, name, and version fields")
+				}
+			}
+			files = append(files, ModuleFile{Path: f.Path, Content: content})
 		}
-		files = append(files, ModuleFile{Path: path, Content: content})
+	} else {
+		rows, err := s.db.Query(
+			"SELECT path, content FROM project_files WHERE project_id = ? ORDER BY path",
+			projectID,
+		)
+		if err != nil {
+			return "", fmt.Errorf("read project files: %w", err)
+		}
+		defer rows.Close()
+
+		for rows.Next() {
+			var path, content string
+			if err := rows.Scan(&path, &content); err != nil {
+				continue
+			}
+			if path == "module.prop" {
+				hasModuleProp = true
+				if !strings.Contains(content, "id=") || !strings.Contains(content, "name=") || !strings.Contains(content, "version=") {
+					return "", fmt.Errorf("module.prop must contain id, name, and version fields")
+				}
+			}
+			files = append(files, ModuleFile{Path: path, Content: content})
+		}
 	}
 
 	if !hasModuleProp {

@@ -11,15 +11,23 @@ import (
 	"regexp"
 	"strings"
 	"github.com/moduforge/backend/internal/agent/registry"
+	"github.com/moduforge/backend/internal/storage"
 )
 
 type GrepSearchSkill struct {
 	projectPath string
 	db          *sql.DB
+	storage     storage.StorageAdapter // optional S3 storage backend
 }
 
 func NewGrepSearchSkillWithDB(projectPath string, db *sql.DB) *GrepSearchSkill {
 	return &GrepSearchSkill{projectPath: projectPath, db: db}
+}
+
+// WithStorage sets the S3 storage adapter. When set, files are loaded from S3.
+func (s *GrepSearchSkill) WithStorage(st storage.StorageAdapter) *GrepSearchSkill {
+	s.storage = st
+	return s
 }
 
 func (s *GrepSearchSkill) Name() string {
@@ -205,15 +213,19 @@ func (s *GrepSearchSkill) syncProjectToDisk(projectID, projectDir string) error 
 	if err == nil && len(entries) > 0 {
 		return nil
 	}
-	rows, err := s.db.Query(`SELECT path, content FROM project_files WHERE project_id=?`, projectID)
+	rows, err := s.db.Query(`SELECT path FROM project_files WHERE project_id=?`, projectID)
 	if err != nil {
 		return err
 	}
 	defer rows.Close()
 	synced := 0
 	for rows.Next() {
-		var path, content string
-		if err := rows.Scan(&path, &content); err != nil {
+		var path string
+		if err := rows.Scan(&path); err != nil {
+			continue
+		}
+		content, err := readFileContent(context.Background(), s.storage, s.db, projectID, path)
+		if err != nil {
 			continue
 		}
 		fullPath := filepath.Join(projectDir, path)
@@ -226,7 +238,7 @@ func (s *GrepSearchSkill) syncProjectToDisk(projectID, projectDir string) error 
 		synced++
 	}
 	if synced > 0 {
-		log.Printf("[GrepSearchSkill] synced %d files from DB for project %s", synced, projectID)
+		log.Printf("[GrepSearchSkill] synced %d files from %s for project %s", synced, storageLabel(s.storage), projectID)
 	}
 	return nil
 }

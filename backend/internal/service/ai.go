@@ -23,6 +23,7 @@ import (
 	"github.com/moduforge/backend/internal/config"
 	"github.com/moduforge/backend/internal/domain"
 	"github.com/moduforge/backend/internal/llm"
+	"github.com/moduforge/backend/internal/storage"
 )
 
 var httpClient = &http.Client{
@@ -39,6 +40,7 @@ type AIService struct {
 	cfg       *config.Config
 	db        *sql.DB
 	convStore *ConversationStore
+	s3        *storage.S3Adapter // optional S3-compatible storage for project files
 }
 
 func NewAIService(cfg *config.Config) *AIService {
@@ -47,6 +49,42 @@ func NewAIService(cfg *config.Config) *AIService {
 
 func NewAIServiceWithDB(cfg *config.Config, db *sql.DB) *AIService {
 	return &AIService{cfg: cfg, db: db, convStore: NewConversationStore()}
+}
+
+// SetS3 injects the optional S3 adapter used to persist generated project files.
+func (s *AIService) SetS3(adapter *storage.S3Adapter) {
+	s.s3 = adapter
+}
+
+// saveProjectFile persists a generated file: S3 (authoritative) + DB metadata.
+// When S3 is not configured, falls back to the legacy DB content column.
+func (s *AIService) saveProjectFile(ctx context.Context, projectID, path, content string) error {
+	if s.db == nil {
+		return nil
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	sha := storage.ComputeSHA256([]byte(content))
+	size := int64(len(content))
+
+	if s.s3 != nil {
+		key := projectID + "/" + strings.TrimPrefix(path, "/")
+		if err := s.s3.Write(ctx, key, []byte(content)); err != nil {
+			return fmt.Errorf("s3 write failed: %w", err)
+		}
+		_, err := s.db.ExecContext(ctx,
+			`INSERT INTO project_files (project_id, path, content, created_at, updated_at, sha256, file_size, mtime)
+			 VALUES (?, ?, NULL, datetime('now'), datetime('now'), ?, ?, ?)
+			 ON CONFLICT(project_id, path) DO UPDATE SET content=NULL, updated_at=datetime('now'), sha256=?, file_size=?, mtime=?`,
+			projectID, path, sha, size, now, sha, size, now)
+		return err
+	}
+
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO project_files (project_id, path, content, created_at, updated_at, sha256, file_size, mtime)
+		 VALUES (?, ?, ?, datetime('now'), datetime('now'), ?, ?, ?)
+		 ON CONFLICT(project_id, path) DO UPDATE SET content=?, updated_at=datetime('now'), sha256=?, file_size=?, mtime=?`,
+		projectID, path, content, sha, size, now, content, sha, size, now)
+	return err
 }
 
 func generateID() string {
@@ -631,13 +669,9 @@ module.prop, customize.sh, META-INF/(update-binary + updater-script含#MAGISK)
 		).Scan(&newProjectID)
 		if err == nil {
 			projectID = newProjectID
-			// 保存所有生成的文件到数据库
+			// 保存所有生成的文件（S3 truth source + DB metadata）
 			for _, f := range result.Files {
-				s.db.ExecContext(ctx,
-					`INSERT INTO project_files (project_id, path, content)
-					 VALUES (?, ?, ?)
-					 ON CONFLICT(project_id, path) DO UPDATE SET content=?, updated_at=datetime('now')`,
-					projectID, f.Path, f.Content, f.Content)
+				_ = s.saveProjectFile(ctx, projectID, f.Path, f.Content)
 			}
 		}
 	}
@@ -697,13 +731,9 @@ module.prop, customize.sh, META-INF/(update-binary + updater-script含#MAGISK)
 						binPath := filepath.Join(binDir, entry.Name())
 						binContent, err := os.ReadFile(binPath)
 						if err == nil {
-							// 保存二进制到数据库
+							// 保存二进制：S3（authoritative）+ DB metadata
 							dbPath := "system/bin/" + entry.Name()
-							s.db.ExecContext(ctx,
-								`INSERT INTO project_files (project_id, path, content)
-								 VALUES (?, ?, ?)
-								 ON CONFLICT(project_id, path) DO UPDATE SET content=?, updated_at=datetime('now')`,
-								projectID, dbPath, base64.StdEncoding.EncodeToString(binContent), base64.StdEncoding.EncodeToString(binContent))
+							_ = s.saveProjectFile(ctx, projectID, dbPath, base64.StdEncoding.EncodeToString(binContent))
 							compiled = true
 						}
 					}
@@ -752,11 +782,7 @@ module.prop, customize.sh, META-INF/(update-binary + updater-script含#MAGISK)
 							binContent, err := os.ReadFile(binPath)
 							if err == nil {
 								dbPath := "system/bin/" + entry.Name()
-								s.db.ExecContext(ctx,
-									`INSERT INTO project_files (project_id, path, content)
-									 VALUES (?, ?, ?)
-									 ON CONFLICT(project_id, path) DO UPDATE SET content=?, updated_at=datetime('now')`,
-									projectID, dbPath, base64.StdEncoding.EncodeToString(binContent), base64.StdEncoding.EncodeToString(binContent))
+								_ = s.saveProjectFile(ctx, projectID, dbPath, base64.StdEncoding.EncodeToString(binContent))
 								compiled = true
 							}
 						}
@@ -822,11 +848,7 @@ module.prop, customize.sh, META-INF/(update-binary + updater-script含#MAGISK)
 						binContent, err := os.ReadFile(outputPath)
 						if err == nil {
 							dbPath := "system/bin/output"
-							s.db.ExecContext(ctx,
-								`INSERT INTO project_files (project_id, path, content)
-								 VALUES (?, ?, ?)
-								 ON CONFLICT(project_id, path) DO UPDATE SET content=?, updated_at=datetime('now')`,
-								projectID, dbPath, base64.StdEncoding.EncodeToString(binContent), base64.StdEncoding.EncodeToString(binContent))
+							_ = s.saveProjectFile(ctx, projectID, dbPath, base64.StdEncoding.EncodeToString(binContent))
 							compiled = true
 							logFn(fmt.Sprintf("  ✅ 编译成功: %s", cc))
 						}

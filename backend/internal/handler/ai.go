@@ -2,6 +2,7 @@ package handler
 
 import (
 	"bufio"
+	"context"
 	"crypto/rand"
 	"database/sql"
 	"encoding/json"
@@ -35,6 +36,7 @@ type AIHandler struct {
 	db          *database.DB
 	memoryStore *service.MemoryStore
 	memV2       *service.MemoryV2Store
+	fr          *service.FileContentRepo // S3-first content access (optional)
 }
 
 func NewAIHandler(svc *service.AIService, cfg *config.Config, db *database.DB) *AIHandler {
@@ -43,6 +45,11 @@ func NewAIHandler(svc *service.AIService, cfg *config.Config, db *database.DB) *
 
 func (h *AIHandler) SetMemoryStore(ms *service.MemoryStore) {
 	h.memoryStore = ms
+}
+
+// SetFileContentRepo injects the S3-first file content repository.
+func (h *AIHandler) SetFileContentRepo(fr *service.FileContentRepo) {
+	h.fr = fr
 }
 
 // autoLoadProjectContext loads all files from a project and returns them as context
@@ -59,28 +66,50 @@ func (h *AIHandler) autoLoadProjectContext(projectID, uid string) string {
 		return ""
 	}
 
-	rows, err := db.Query(`SELECT path, content FROM project_files WHERE project_id=? ORDER BY path`, projectID)
-	if err != nil {
-		return ""
-	}
-	defer rows.Close()
-
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("Project: %s\n", name))
 	fileCount := 0
-	for rows.Next() {
-		var path, content string
-		if err := rows.Scan(&path, &content); err != nil {
-			continue
+	if h.fr != nil {
+		files, err := h.fr.ReadAll(context.Background(), projectID)
+		if err != nil {
+			return ""
 		}
-		// Skip empty or oversized files
-		if content == "" || len(content) > 10240 {
-			continue
+		for _, f := range files {
+			content, err := h.fr.ReadOne(context.Background(), projectID, f.Path)
+			if err != nil {
+				continue
+			}
+			// Skip empty or oversized files
+			if content == "" || len(content) > 10240 {
+				continue
+			}
+			sb.WriteString(fmt.Sprintf("\n--- %s ---\n%s\n", f.Path, content))
+			fileCount++
+			if fileCount >= 50 {
+				break
+			}
 		}
-		sb.WriteString(fmt.Sprintf("\n--- %s ---\n%s\n", path, content))
-		fileCount++
-		if fileCount >= 50 {
-			break
+	} else {
+		rows, err := db.Query(`SELECT path, content FROM project_files WHERE project_id=? ORDER BY path`, projectID)
+		if err != nil {
+			return ""
+		}
+		defer rows.Close()
+
+		for rows.Next() {
+			var path, content string
+			if err := rows.Scan(&path, &content); err != nil {
+				continue
+			}
+			// Skip empty or oversized files
+			if content == "" || len(content) > 10240 {
+				continue
+			}
+			sb.WriteString(fmt.Sprintf("\n--- %s ---\n%s\n", path, content))
+			fileCount++
+			if fileCount >= 50 {
+				break
+			}
 		}
 	}
 	if fileCount == 0 {

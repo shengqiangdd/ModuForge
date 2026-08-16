@@ -31,7 +31,7 @@ func (h *MirrorHandler) Mirror(c fiber.Ctx) error {
 		fps = 10
 	}
 
-	devices, err := h.adb.ListDevices(c.Context())
+	devices, err := h.adb.ListDevices(c.Context(), "")
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}

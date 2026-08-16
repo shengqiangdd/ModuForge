@@ -32,10 +32,29 @@ func safeID(id string) string {
 type BuildService struct {
 	db  *sql.DB
 	cfg *config.Config
+	fr  *FileContentRepo // S3-first content access (optional)
 }
 
 func NewBuildService(db *sql.DB, cfg *config.Config) *BuildService {
 	return &BuildService{db: db, cfg: cfg}
+}
+
+// SetFileContentRepo injects the S3-first file content repository.
+func (s *BuildService) SetFileContentRepo(fr *FileContentRepo) {
+	s.fr = fr
+}
+
+// readProjectFile returns a single file's content via FileContentRepo (S3 first),
+// falling back to the raw DB content column when no repo is configured.
+func (s *BuildService) readProjectFile(ctx context.Context, projectID, path string) (string, error) {
+	if s.fr != nil {
+		return s.fr.ReadOne(ctx, projectID, path)
+	}
+	var content string
+	err := s.db.QueryRowContext(ctx,
+		`SELECT COALESCE(content,'') FROM project_files WHERE project_id=? AND path=?`, projectID, path,
+	).Scan(&content)
+	return content, err
 }
 
 // GetStoragePath returns the storage path for cache management.
@@ -54,6 +73,22 @@ func (s *BuildService) getCacheKey(projectID, filesHash string) string {
 }
 
 func (s *BuildService) computeFilesHash(ctx context.Context, projectID string) (string, error) {
+	h := sha256.New()
+	if s.fr != nil {
+		files, err := s.fr.ReadAll(ctx, projectID)
+		if err != nil {
+			return "", err
+		}
+		for _, f := range files {
+			content, err := s.fr.ReadOne(ctx, projectID, f.Path)
+			if err != nil {
+				continue
+			}
+			h.Write([]byte(f.Path))
+			h.Write([]byte(content))
+		}
+		return fmt.Sprintf("%x", h.Sum(nil)), nil
+	}
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT path, content FROM project_files WHERE project_id=? ORDER BY path`, projectID)
 	if err != nil {
@@ -61,7 +96,6 @@ func (s *BuildService) computeFilesHash(ctx context.Context, projectID string) (
 	}
 	defer rows.Close()
 
-	h := sha256.New()
 	for rows.Next() {
 		var path, content string
 		if err := rows.Scan(&path, &content); err != nil {
@@ -382,7 +416,7 @@ func (s *BuildService) runBuild(taskID, projectID, filesHash, arch string) {
 
 	target := "universal"
 
-	// Collect project files to a temp directory (single read from DB)
+	// Collect project files to a temp directory (S3 first, DB fallback)
 	projectDir, err := os.MkdirTemp("", "moduforge-build-*")
 	if err != nil {
 		s.failBuild(ctx, taskID, fmt.Sprintf("Error creating temp dir: %v\n", err))
@@ -390,34 +424,61 @@ func (s *BuildService) runBuild(taskID, projectID, filesHash, arch string) {
 	}
 	defer os.RemoveAll(projectDir)
 
-	rows, err := s.db.QueryContext(ctx,
-		`SELECT path, content FROM project_files WHERE project_id=?`, projectID)
-	if err != nil {
-		s.failBuild(ctx, taskID, fmt.Sprintf("Error reading files: %v\n", err))
-		return
-	}
-	defer rows.Close()
-
 	var fileCount int
 	scanFiles := make(map[string]string)
-	for rows.Next() {
-		var path, content string
-		if err := rows.Scan(&path, &content); err != nil {
-			continue
+
+	if s.fr != nil {
+		// S3-first: export all project files from the object store.
+		files, err := s.fr.ReadAll(ctx, projectID)
+		if err != nil {
+			s.failBuild(ctx, taskID, fmt.Sprintf("Error reading files: %v\n", err))
+			return
 		}
-		fullPath := filepath.Join(projectDir, filepath.Clean(path))
-		// Prevent path traversal: ensure fullPath is within projectDir
-		if !strings.HasPrefix(fullPath, projectDir+string(os.PathSeparator)) && fullPath != projectDir {
-			continue
+		for _, f := range files {
+			content, err := s.fr.ReadOne(ctx, projectID, f.Path)
+			if err != nil {
+				continue
+			}
+			fullPath := filepath.Join(projectDir, filepath.Clean(f.Path))
+			if !strings.HasPrefix(fullPath, projectDir+string(os.PathSeparator)) && fullPath != projectDir {
+				continue
+			}
+			if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
+				continue
+			}
+			if err := os.WriteFile(fullPath, []byte(content), 0644); err != nil {
+				continue
+			}
+			scanFiles[f.Path] = content
+			fileCount++
 		}
-		if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
-			continue
+	} else {
+		rows, err := s.db.QueryContext(ctx,
+			`SELECT path, content FROM project_files WHERE project_id=?`, projectID)
+		if err != nil {
+			s.failBuild(ctx, taskID, fmt.Sprintf("Error reading files: %v\n", err))
+			return
 		}
-		if err := os.WriteFile(fullPath, []byte(content), 0644); err != nil {
-			continue
+		for rows.Next() {
+			var path, content string
+			if err := rows.Scan(&path, &content); err != nil {
+				continue
+			}
+			fullPath := filepath.Join(projectDir, filepath.Clean(path))
+			// Prevent path traversal: ensure fullPath is within projectDir
+			if !strings.HasPrefix(fullPath, projectDir+string(os.PathSeparator)) && fullPath != projectDir {
+				continue
+			}
+			if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
+				continue
+			}
+			if err := os.WriteFile(fullPath, []byte(content), 0644); err != nil {
+				continue
+			}
+			scanFiles[path] = content
+			fileCount++
 		}
-		scanFiles[path] = content
-		fileCount++
+		rows.Close()
 	}
 
 	if fileCount == 0 {
@@ -532,9 +593,7 @@ func (s *BuildService) PublishToRelease(ctx context.Context, projectID, buildID,
 
 	// Get version from module.prop if exists
 	version := "1.0.0"
-	var modulePropContent string
-	err = s.db.QueryRowContext(ctx,
-		`SELECT content FROM project_files WHERE project_id=? AND path='module.prop'`, projectID).Scan(&modulePropContent)
+	modulePropContent, err := s.readProjectFile(ctx, projectID, "module.prop")
 	if err == nil {
 		// Parse version from module.prop
 		for _, line := range strings.Split(modulePropContent, "\n") {

@@ -65,7 +65,7 @@ func (s *RefactorSkill) renameSymbol(oldName, newName string, files []interface{
 		}
 
 		// Read file content
-		content, err := readFileContent(filePath)
+		content, err := readRefactorFile(filePath)
 		if err != nil {
 			return "", fmt.Errorf("failed to read %s: %w", filePath, err)
 		}
@@ -74,7 +74,7 @@ func (s *RefactorSkill) renameSymbol(oldName, newName string, files []interface{
 		newContent := strings.ReplaceAll(content, oldName, newName)
 		if newContent != content {
 			// Write back
-			if err := writeFileContent(filePath, newContent); err != nil {
+			if err := writeRefactorFile(filePath, newContent); err != nil {
 				return "", fmt.Errorf("failed to write %s: %w", filePath, err)
 			}
 			modifiedFiles = append(modifiedFiles, filePath)
@@ -109,14 +109,14 @@ func (s *RefactorSkill) moveSymbol(symbolName, targetFile string, files []interf
 	return fmt.Sprintf("Move Symbol: %s -> %s\n\nTo move this symbol:\n\n1. Remove from current file\n2. Add to target file: %s\n3. Update imports in all files that use %s\n4. Verify with grep_search that no references are broken\n\nUse dependency_graph first to understand impact.", symbolName, targetFile, targetFile, symbolName), nil
 }
 
-// Helper functions
-func readFileContent(path string) (string, error) {
+// Helper functions (renamed to avoid clash with fileutil.go helpers)
+func readRefactorFile(path string) (string, error) {
 	// This would read from the actual file system
 	// For now, return empty string
 	return "", nil
 }
 
-func writeFileContent(path, content string) error {
+func writeRefactorFile(path, content string) error {
 	// This would write to the actual file system
 	// For now, return nil
 	return nil

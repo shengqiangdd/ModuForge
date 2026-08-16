@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"io/fs"
 	"log"
@@ -248,6 +249,22 @@ func main() {
 	} else {
 		slog.Info("pprof disabled (set PPROF_ENABLED=1 to enable on port "+pprofPort+")")
 	}
+
+	// ADB auto-reconnect: the adb server loses all wireless connections whenever
+	// the container is rebuilt / adb server restarts. Reconnect every saved
+	// device at startup and then every 60s so users don't have to manually click
+	// connect again after a deploy (fixed "设备信息空/root管理器空/设备离线").
+	go func() {
+		// Give adb server a moment to come up inside the fresh container.
+		time.Sleep(3 * time.Second)
+		slog.Info("ADB auto-reconnect: initial pass")
+		adbSvc.ReconnectAllSaved(context.Background())
+		ticker := time.NewTicker(60 * time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			adbSvc.ReconnectAllSaved(context.Background())
+		}
+	}()
 
 	// Graceful shutdown
 	go func() {

@@ -146,7 +146,7 @@ func (s *EditFileSkill) syncMetadataToDB(projectID, path, sha256, mtime string, 
 }
 
 func (s *EditFileSkill) storagePath(projectID, path string) string {
-	return "projects/" + projectID + "/" + path
+	return S3ObjectKey(projectID, path)
 }
 
 func (s *EditFileSkill) Metadata() registry.SkillMeta {

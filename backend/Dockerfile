@@ -33,7 +33,9 @@ LABEL org.opencontainers.image.description="Modular software forge platform"
 LABEL org.opencontainers.image.source="https://github.com/moduforge/ModuForge"
 
 # --- Runtime deps + gcompat (NDK glibc compatibility on Alpine) ---
-RUN apk add --no-cache wget ca-certificates tzdata openssl curl bash xz zip unzip cmake make gcompat gcc musl-dev \
+# android-tools provides adb (needed by the ADB module); without it every ADB
+# feature fails with "adb: executable file not found in $PATH".
+RUN apk add --no-cache wget ca-certificates tzdata openssl curl bash xz zip unzip cmake make gcompat gcc musl-dev android-tools \
     && addgroup -S moduforge && adduser -S moduforge -G moduforge -u 1000
 
 # --- Rust toolchain ---

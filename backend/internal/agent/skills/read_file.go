@@ -272,8 +272,10 @@ func getDefinitionPatterns(lang string) []*regexp.Regexp {
 }
 
 // storagePath constructs the S3 path for a project file.
+// NOTE: the S3Adapter prepends its configured prefix ("projects"), so we pass
+// the project-relative key here — DO NOT prefix with "projects/" again.
 func (s *ReadFileSkill) storagePath(projectID, path string) string {
-	return "projects/" + projectID + "/" + path
+	return S3ObjectKey(projectID, path)
 }
 
 func (s *ReadFileSkill) Metadata() registry.SkillMeta {

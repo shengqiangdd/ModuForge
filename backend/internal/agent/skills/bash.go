@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 	"github.com/moduforge/backend/internal/agent/registry"
+	"github.com/moduforge/backend/internal/storage"
 )
 
 // SecurityChecker interface for command validation
@@ -23,10 +24,17 @@ type BashSkill struct {
 	projectPath    string
 	db             *sql.DB
 	securityEngine interface{} // *agent.SecurityEngine (avoid circular import)
+	storage        storage.StorageAdapter // optional S3 storage backend
 }
 
 func NewBashSkillWithDB(projectPath string, db *sql.DB) *BashSkill {
 	return &BashSkill{projectPath: projectPath, db: db}
+}
+
+// WithStorage sets the S3 storage adapter. When set, files are loaded from S3.
+func (s *BashSkill) WithStorage(st storage.StorageAdapter) *BashSkill {
+	s.storage = st
+	return s
 }
 
 // NewBashSkillWithSecurity creates a BashSkill with security engine
@@ -143,9 +151,9 @@ func (s *BashSkill) syncProjectToDisk(projectID, projectDir string) error {
 		return nil // directory already populated
 	}
 
-	// Read all files from database
+	// Read all files from database/S3
 	rows, err := s.db.Query(
-		`SELECT path, content FROM project_files WHERE project_id=?`, projectID,
+		`SELECT path FROM project_files WHERE project_id=?`, projectID,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to query project files: %w", err)
@@ -154,8 +162,13 @@ func (s *BashSkill) syncProjectToDisk(projectID, projectDir string) error {
 
 	synced := 0
 	for rows.Next() {
-		var path, content string
-		if err := rows.Scan(&path, &content); err != nil {
+		var path string
+		if err := rows.Scan(&path); err != nil {
+			continue
+		}
+		content, err := readFileContent(context.Background(), s.storage, s.db, projectID, path)
+		if err != nil {
+			log.Printf("[BashSkill] read failed for %s: %v", path, err)
 			continue
 		}
 		fullPath := filepath.Join(projectDir, path)
@@ -171,7 +184,7 @@ func (s *BashSkill) syncProjectToDisk(projectID, projectDir string) error {
 		synced++
 	}
 	if synced > 0 {
-		log.Printf("[BashSkill] synced %d files from DB to disk for project %s", synced, projectID)
+		log.Printf("[BashSkill] synced %d files from %s to disk for project %s", synced, storageLabel(s.storage), projectID)
 	}
 	return nil
 }

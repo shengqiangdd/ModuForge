@@ -1,9 +1,11 @@
 package handler
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -164,6 +166,9 @@ func (h *ProjectHandler) ListFiles(c fiber.Ctx) error {
 func (h *ProjectHandler) GetFile(c fiber.Ctx) error {
 	projectID := c.Params("id")
 	path := c.Params("*")
+	if decoded, err := url.PathUnescape(path); err == nil {
+		path = decoded
+	}
 	userID := c.Locals("uid")
 	uid := ""
 	if userID != nil {
@@ -184,6 +189,9 @@ func (h *ProjectHandler) GetFile(c fiber.Ctx) error {
 func (h *ProjectHandler) SaveFile(c fiber.Ctx) error {
 	projectID := c.Params("id")
 	path := c.Params("*")
+	if decoded, err := url.PathUnescape(path); err == nil {
+		path = decoded
+	}
 	userID := c.Locals("uid")
 	uid := ""
 	if userID != nil {
@@ -228,41 +236,14 @@ func (h *ProjectHandler) ValidateProject(c fiber.Ctx) error {
 	return c.JSON(validation)
 }
 
-// validateProject collects all files from DB, writes them to a temp dir, runs validation.
+// validateProject collects all files from S3 (or DB fallback), writes them to
+// a temp dir, runs validation.
 func (h *ProjectHandler) validateProject(projectID string) *builder.ValidationResult {
-	ctx := h.db // use raw db for temp dir approach
-	_ = ctx
-
-	// Collect files from DB
-	rows, err := h.db.Query(
-		`SELECT path, content FROM project_files WHERE project_id=?`, projectID)
-	if err != nil {
-		return nil
-	}
-	defer rows.Close()
-
-	// Create temp dir and write all files
-	tmpDir, err := os.MkdirTemp("", "moduforge-validate-*")
+	tmpDir, err := h.svc.ExportToTempDir(context.Background(), projectID)
 	if err != nil {
 		return nil
 	}
 	defer os.RemoveAll(tmpDir)
-
-	fileCount := 0
-	for rows.Next() {
-		var path, content string
-		if err := rows.Scan(&path, &content); err != nil {
-			continue
-		}
-		fullPath := filepath.Join(tmpDir, filepath.Clean(path))
-		os.MkdirAll(filepath.Dir(fullPath), 0755)
-		os.WriteFile(fullPath, []byte(content), 0644)
-		fileCount++
-	}
-
-	if fileCount == 0 {
-		return nil
-	}
 
 	// Run validation
 	return builder.ValidateProjectIntegrity(tmpDir)
@@ -322,6 +303,9 @@ func (h *ProjectHandler) UploadFiles(c fiber.Ctx) error {
 func (h *ProjectHandler) DeleteFile(c fiber.Ctx) error {
 	projectID := c.Params("id")
 	path := c.Params("*")
+	if decoded, err := url.PathUnescape(path); err == nil {
+		path = decoded
+	}
 	if path == "" {
 		return ValidationError(c, "文件路径不能为空")
 	}
@@ -430,11 +414,15 @@ func (h *ProjectHandler) GetFileTree(c fiber.Ctx) error {
 		for i, part := range parts {
 			if i == len(parts)-1 {
 				// This is a file
+				size := file.FileSize
+				if size == 0 {
+					size = int64(len(file.Content))
+				}
 				current.Children = append(current.Children, &FileTreeNode{
 					Name:     part,
 					Path:     path,
 					Type:     "file",
-					Size:     int64(len(file.Content)),
+					Size:     size,
 					Modified: file.UpdatedAt,
 				})
 			} else {

@@ -7,15 +7,23 @@ import (
 	"os"
 	"path/filepath"
 	"github.com/moduforge/backend/internal/agent/registry"
+	"github.com/moduforge/backend/internal/storage"
 )
 
 type DeleteFileSkill struct {
 	projectPath string
 	db          *sql.DB
+	storage     storage.StorageAdapter // optional S3 storage backend
 }
 
 func NewDeleteFileSkill(projectPath string, db *sql.DB) *DeleteFileSkill {
 	return &DeleteFileSkill{projectPath: projectPath, db: db}
+}
+
+// WithStorage sets the S3 storage adapter. When set, files are deleted in S3.
+func (s *DeleteFileSkill) WithStorage(st storage.StorageAdapter) *DeleteFileSkill {
+	s.storage = st
+	return s
 }
 
 func (s *DeleteFileSkill) Name() string {
@@ -44,18 +52,10 @@ func (s *DeleteFileSkill) Execute(ctx context.Context, input map[string]interfac
 		return "", fmt.Errorf("path traversal not allowed: %s", path)
 	}
 
-	// Delete from database
+	// Delete from S3 + database
 	if s.db != nil {
-		result, err := s.db.Exec(
-			`DELETE FROM project_files WHERE project_id=? AND path=?`,
-			projectID, path,
-		)
-		if err != nil {
-			return "", fmt.Errorf("failed to delete from database: %w", err)
-		}
-		affected, _ := result.RowsAffected()
-		if affected == 0 {
-			return "", fmt.Errorf("file not found in project: %s", path)
+		if err := deleteFileContent(ctx, s.storage, s.db, projectID, path); err != nil {
+			return "", fmt.Errorf("failed to delete: %w", err)
 		}
 	}
 

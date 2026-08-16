@@ -2,15 +2,12 @@ package handler
 
 import (
 	"context"
-	"log/slog"
-	"time"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/moduforge/backend/internal/config"
 	"github.com/moduforge/backend/internal/database"
 	"github.com/moduforge/backend/internal/middleware"
 	"github.com/moduforge/backend/internal/service"
-	"github.com/moduforge/backend/internal/storage"
 )
 
 func reg3(api fiber.Router, method, path string, mw1, mw2, mw3 fiber.Handler, handler fiber.Handler) {
@@ -52,38 +49,9 @@ func RegisterRoutes(api fiber.Router, db *database.DB, cfg *config.Config) {
 	adminMW := AdminOnly()
 
 	// Services
-	// Initialize S3-compatible storage (SeaweedFS/MinIO) if endpoint is configured.
-	// S3 is the authoritative file-content source; DB keeps only metadata.
-	var s3adapter *storage.S3Adapter
-	if cfg.S3Endpoint != "" {
-		// Retry up to 30s for SeaweedFS to start
-		var s3err error
-		for i := 0; i < 30; i++ {
-			s3adapter, s3err = storage.NewS3Adapter(storage.S3Config{
-				Endpoint:  cfg.S3Endpoint,
-				AccessKey: cfg.S3AccessKey,
-				SecretKey: cfg.S3SecretKey,
-				Bucket:    cfg.S3Bucket,
-				Prefix:    "projects",
-				Secure:    false,
-			})
-			if s3err == nil {
-				slog.Info("S3 storage enabled", "endpoint", cfg.S3Endpoint, "bucket", cfg.S3Bucket)
-				break
-			}
-			slog.Warn("S3 storage init failed, retrying...", "attempt", i+1, "error", s3err)
-			time.Sleep(1 * time.Second)
-		}
-		if s3err != nil {
-			slog.Warn("S3 storage init failed after 30 retries, falling back to legacy storage", "error", s3err)
-		}
-	}
-	fileRepo := service.NewFileContentRepo(db.Conn, s3adapter)
-
 	authSvc := service.NewAuthService(db.Conn, cfg)
-	projectSvc := service.NewProjectService(db.Conn, cfg.StoragePath, s3adapter)
+	projectSvc := service.NewProjectService(db.Conn, cfg.StoragePath)
 	buildSvc := service.NewBuildService(db.Conn, cfg)
-	buildSvc.SetFileContentRepo(fileRepo)
 	aiSvc := service.NewAIServiceWithDB(cfg, db.Conn)
 	repoSvc := service.NewRepoService()
 	templateSvc := service.NewTemplateService()
@@ -101,7 +69,6 @@ func RegisterRoutes(api fiber.Router, db *database.DB, cfg *config.Config) {
 	buildScheduleSvc.StartScheduler(context.Background())
 	aiH := NewAIHandler(aiSvc, cfg, db)
 	aiH.SetMemoryStore(service.NewMemoryStore(db.Conn))
-	aiH.SetFileContentRepo(fileRepo)
 	repoH := NewRepoHandler(repoSvc)
 	templateH := NewTemplateHandler(templateSvc)
 	translateH := NewTranslateHandler(translateSvc)
@@ -112,21 +79,15 @@ func RegisterRoutes(api fiber.Router, db *database.DB, cfg *config.Config) {
 	moduleVersionH := NewModuleVersionHandler(db.Conn)
 	templateMarketH := NewTemplateMarketHandler(db.Conn)
 	dependencyH := NewDependencyHandler(db.Conn)
-	dependencyH.SetFileContentRepo(fileRepo)
 
 	signingH := NewSigningHandler(db.Conn, cfg.StoragePath+"/keys")
-	signingH.SetFileContentRepo(fileRepo)
 	vulnH := NewVulnerabilityHandler(db.Conn)
-	vulnH.SetFileContentRepo(fileRepo)
 	permAuditH := NewPermissionAuditHandler(db.Conn)
-	permAuditH.SetFileContentRepo(fileRepo)
 
 	securitySvc := service.NewSecurityScanner()
 	securityH := NewSecurityHandler(securitySvc, db.Conn)
-	securityH.SetFileContentRepo(fileRepo)
 
 	zipperSvc := service.NewZipperService(cfg.StoragePath+"/downloads", db.Conn)
-	zipperSvc.SetFileContentRepo(fileRepo)
 	zipperH := NewZipperHandler(zipperSvc)
 
 	adbSvc := service.NewADBService(db.Conn)
@@ -680,7 +641,6 @@ func RegisterRoutes(api fiber.Router, db *database.DB, cfg *config.Config) {
 
 	// Code formatting
 	formatH := NewFormatHandler(db.Conn)
-	formatH.SetFileContentRepo(fileRepo)
 	r("POST", "/projects/:id/format", formatH.FormatProject)
 	r("POST", "/projects/:id/format/preview", formatH.PreviewFormat)
 

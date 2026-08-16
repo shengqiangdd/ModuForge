@@ -18,10 +18,18 @@ func getStorage(d *registry.Deps) storage.StorageAdapter {
 func init() {
 	// Core file operations (OpenCode-inspired)
 	registry.RegisterFactory("grep_search", func(d *registry.Deps) registry.Skill {
-		return NewGrepSearchSkillWithDB(d.StoragePath+"/projects", d.DB)
+		skill := NewGrepSearchSkillWithDB(d.StoragePath+"/projects", d.DB)
+		if st := getStorage(d); st != nil {
+			skill.WithStorage(st)
+		}
+		return skill
 	})
 	registry.RegisterFactory("glob_search", func(d *registry.Deps) registry.Skill {
-		return NewGlobSearchSkillWithDB(d.StoragePath+"/projects", d.DB)
+		skill := NewGlobSearchSkillWithDB(d.StoragePath+"/projects", d.DB)
+		if st := getStorage(d); st != nil {
+			skill.WithStorage(st)
+		}
+		return skill
 	})
 	registry.RegisterFactory("edit_file", func(d *registry.Deps) registry.Skill {
 		skill := NewEditFileSkillWithDB(d.StoragePath+"/projects", d.DB)
@@ -56,27 +64,51 @@ func init() {
 	})
 	// P1-3: Batch edit for atomic multi-file editing
 	registry.RegisterFactory("batch_edit_file", func(d *registry.Deps) registry.Skill {
-		return NewBatchEditFileSkill(d.StoragePath+"/projects", d.DB)
+		skill := NewBatchEditFileSkill(d.StoragePath+"/projects", d.DB)
+		if st := getStorage(d); st != nil {
+			skill.WithStorage(st)
+		}
+		return skill
 	})
 	registry.RegisterFactory("list_dir", func(d *registry.Deps) registry.Skill { return NewListDirSkill(d.DB) })
 	registry.RegisterFactory("delete_file", func(d *registry.Deps) registry.Skill {
-		return NewDeleteFileSkill(d.StoragePath+"/projects", d.DB)
+		skill := NewDeleteFileSkill(d.StoragePath+"/projects", d.DB)
+		if st := getStorage(d); st != nil {
+			skill.WithStorage(st)
+		}
+		return skill
 	})
 	registry.RegisterFactory("delete_dir", func(d *registry.Deps) registry.Skill {
-		return NewDeleteDirSkill(d.StoragePath+"/projects", d.DB)
+		skill := NewDeleteDirSkill(d.StoragePath+"/projects", d.DB)
+		if st := getStorage(d); st != nil {
+			skill.WithStorage(st)
+		}
+		return skill
 	})
 	registry.RegisterFactory("move_file", func(d *registry.Deps) registry.Skill {
-		return NewMoveFileSkill(d.StoragePath+"/projects", d.DB)
+		skill := NewMoveFileSkill(d.StoragePath+"/projects", d.DB)
+		if st := getStorage(d); st != nil {
+			skill.WithStorage(st)
+		}
+		return skill
 	})
 
 	// Shell execution
 	registry.RegisterFactory("bash", func(d *registry.Deps) registry.Skill {
-		return NewBashSkillWithDB(d.StoragePath+"/projects", d.DB)
+		skill := NewBashSkillWithDB(d.StoragePath+"/projects", d.DB)
+		if st := getStorage(d); st != nil {
+			skill.WithStorage(st)
+		}
+		return skill
 	})
 
 	// Build & test
 	registry.RegisterFactory("build_module", func(d *registry.Deps) registry.Skill {
-		return NewBuildModuleSkillWithDB(d.StoragePath+"/projects", d.DB)
+		skill := NewBuildModuleSkillWithDB(d.StoragePath+"/projects", d.DB)
+		if st := getStorage(d); st != nil {
+			skill.WithStorage(st)
+		}
+		return skill
 	})
 	registry.RegisterFactory("syntax_checker", func(d *registry.Deps) registry.Skill {
 		return NewSyntaxCheckerSkill(d.StoragePath+"/projects", d.DB)

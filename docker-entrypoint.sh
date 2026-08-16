@@ -28,4 +28,13 @@ if [ "$(id -u)" = '0' ]; then
   chown -R moduforge:moduforge /data /app/uploads 2>/dev/null || true
 fi
 
+# ── ADB 密钥持久化 ──
+# HOME 已由 compose 指向 /data/adbhome（moduforge_data 卷）。确保 .android
+# 目录存在，adb 首次运行会在其中生成 adbkey/adbkey.pub；容器重建后指纹保留，
+# 设备端已授权记录不失效。
+if [ -n "${HOME}" ]; then
+  mkdir -p "${HOME}/.android" 2>/dev/null || true
+  chown -R moduforge:moduforge "${HOME}" 2>/dev/null || true
+fi
+
 exec /app/server "$@"

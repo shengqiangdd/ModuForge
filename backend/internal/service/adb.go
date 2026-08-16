@@ -175,69 +175,70 @@ var keyMap = map[string]string{
 	"settings":    "176",
 	"app_switch":  "187",
 	// KEYCODE_* format (frontend uses these)
-	"KEYCODE_BACK":        "4",
-	"KEYCODE_HOME":        "3",
-	"KEYCODE_POWER":       "26",
-	"KEYCODE_VOLUME_UP":   "24",
-	"KEYCODE_VOLUME_DOWN": "25",
-	"KEYCODE_ENTER":       "66",
-	"KEYCODE_TAB":         "61",
-	"KEYCODE_DEL":         "67",
-	"KEYCODE_MENU":        "82",
-	"KEYCODE_CAMERA":      "27",
-	"KEYCODE_SEARCH":      "84",
-	"KEYCODE_SETTINGS":    "176",
-	"KEYCODE_APP_SWITCH":  "187",
-	"KEYCODE_DPAD_UP":     "19",
-	"KEYCODE_DPAD_DOWN":   "20",
-	"KEYCODE_DPAD_LEFT":   "21",
-	"KEYCODE_DPAD_RIGHT":  "22",
-	"KEYCODE_DPAD_CENTER": "23",
-	"KEYCODE_PAGE_UP":     "92",
-	"KEYCODE_PAGE_DOWN":   "93",
-	"KEYCODE_MOVE_HOME":   "122",
-	"KEYCODE_MOVE_END":    "123",
-	"KEYCODE_WAKEUP":      "224",
-	"KEYCODE_SLEEP":       "223",
+	"KEYCODE_BACK":            "4",
+	"KEYCODE_HOME":            "3",
+	"KEYCODE_POWER":           "26",
+	"KEYCODE_VOLUME_UP":       "24",
+	"KEYCODE_VOLUME_DOWN":     "25",
+	"KEYCODE_ENTER":           "66",
+	"KEYCODE_TAB":             "61",
+	"KEYCODE_DEL":             "67",
+	"KEYCODE_MENU":            "82",
+	"KEYCODE_CAMERA":          "27",
+	"KEYCODE_SEARCH":          "84",
+	"KEYCODE_SETTINGS":        "176",
+	"KEYCODE_APP_SWITCH":      "187",
+	"KEYCODE_DPAD_UP":         "19",
+	"KEYCODE_DPAD_DOWN":       "20",
+	"KEYCODE_DPAD_LEFT":       "21",
+	"KEYCODE_DPAD_RIGHT":      "22",
+	"KEYCODE_DPAD_CENTER":     "23",
+	"KEYCODE_PAGE_UP":         "92",
+	"KEYCODE_PAGE_DOWN":       "93",
+	"KEYCODE_MOVE_HOME":       "122",
+	"KEYCODE_MOVE_END":        "123",
+	"KEYCODE_WAKEUP":          "224",
+	"KEYCODE_SLEEP":           "223",
 	"KEYCODE_BRIGHTNESS_DOWN": "220",
 	"KEYCODE_BRIGHTNESS_UP":   "221",
 	// Modifier keys
-	"KEYCODE_CTRL_LEFT":  "113",
-	"KEYCODE_CTRL_RIGHT": "114",
-	"KEYCODE_ALT_LEFT":   "57",
-	"KEYCODE_ALT_RIGHT":  "58",
-	"KEYCODE_SHIFT_LEFT": "59",
+	"KEYCODE_CTRL_LEFT":   "113",
+	"KEYCODE_CTRL_RIGHT":  "114",
+	"KEYCODE_ALT_LEFT":    "57",
+	"KEYCODE_ALT_RIGHT":   "58",
+	"KEYCODE_SHIFT_LEFT":  "59",
 	"KEYCODE_SHIFT_RIGHT": "60",
-	"KEYCODE_A":  "29", "KEYCODE_B":  "30", "KEYCODE_C":  "31",
-	"KEYCODE_D":  "32", "KEYCODE_E":  "33", "KEYCODE_F":  "34",
-	"KEYCODE_G":  "35", "KEYCODE_H":  "36", "KEYCODE_I":  "37",
-	"KEYCODE_J":  "38", "KEYCODE_K":  "39", "KEYCODE_L":  "40",
-	"KEYCODE_M":  "41", "KEYCODE_N":  "42", "KEYCODE_O":  "43",
-	"KEYCODE_P":  "44", "KEYCODE_Q":  "45", "KEYCODE_R":  "46",
-	"KEYCODE_S":  "47", "KEYCODE_T":  "48", "KEYCODE_U":  "49",
-	"KEYCODE_V":  "50", "KEYCODE_W":  "51", "KEYCODE_X":  "52",
-	"KEYCODE_Y":  "53", "KEYCODE_Z":  "54",
-	"KEYCODE_0":  "7",  "KEYCODE_1":  "8",  "KEYCODE_2":  "9",
-	"KEYCODE_3":  "10", "KEYCODE_4":  "11", "KEYCODE_5":  "12",
-	"KEYCODE_6":  "13", "KEYCODE_7":  "14", "KEYCODE_8":  "15",
-	"KEYCODE_9":  "16",
-	"KEYCODE_SPACE":      "62",
-	"KEYCODE_COMMA":      "55",
-	"KEYCODE_PERIOD":     "56",
-	"KEYCODE_SLASH":      "76",
-	"KEYCODE_BACKSLASH":  "73",
-	"KEYCODE_MINUS":      "69",
-	"KEYCODE_EQUALS":     "70",
+	"KEYCODE_A":           "29", "KEYCODE_B": "30", "KEYCODE_C": "31",
+	"KEYCODE_D": "32", "KEYCODE_E": "33", "KEYCODE_F": "34",
+	"KEYCODE_G": "35", "KEYCODE_H": "36", "KEYCODE_I": "37",
+	"KEYCODE_J": "38", "KEYCODE_K": "39", "KEYCODE_L": "40",
+	"KEYCODE_M": "41", "KEYCODE_N": "42", "KEYCODE_O": "43",
+	"KEYCODE_P": "44", "KEYCODE_Q": "45", "KEYCODE_R": "46",
+	"KEYCODE_S": "47", "KEYCODE_T": "48", "KEYCODE_U": "49",
+	"KEYCODE_V": "50", "KEYCODE_W": "51", "KEYCODE_X": "52",
+	"KEYCODE_Y": "53", "KEYCODE_Z": "54",
+	"KEYCODE_0": "7", "KEYCODE_1": "8", "KEYCODE_2": "9",
+	"KEYCODE_3": "10", "KEYCODE_4": "11", "KEYCODE_5": "12",
+	"KEYCODE_6": "13", "KEYCODE_7": "14", "KEYCODE_8": "15",
+	"KEYCODE_9":             "16",
+	"KEYCODE_SPACE":         "62",
+	"KEYCODE_COMMA":         "55",
+	"KEYCODE_PERIOD":        "56",
+	"KEYCODE_SLASH":         "76",
+	"KEYCODE_BACKSLASH":     "73",
+	"KEYCODE_MINUS":         "69",
+	"KEYCODE_EQUALS":        "70",
 	"KEYCODE_LEFT_BRACKET":  "71",
 	"KEYCODE_RIGHT_BRACKET": "72",
-	"KEYCODE_SEMICOLON":  "74",
-	"KEYCODE_APOSTROPHE": "75",
-	"KEYCODE_GRAVE":      "68",
+	"KEYCODE_SEMICOLON":     "74",
+	"KEYCODE_APOSTROPHE":    "75",
+	"KEYCODE_GRAVE":         "68",
 }
 
 // ─── Data Types ───
 
 type ADBDevice struct {
+	ID        int    `json:"id,omitempty"` // saved-device id (only for saved devices)
 	Serial    string `json:"serial"`
 	Model     string `json:"model,omitempty"`
 	Brand     string `json:"brand,omitempty"`
@@ -316,10 +317,17 @@ type SavedDevice struct {
 
 type ADBService struct {
 	db *sql.DB
+
+	// Auto-reconnect throttle: last attempt per saved address.
+	// Container/server restarts kill the adb server, which drops every wireless
+	// connection. Without auto-reconnect, saved devices stay "offline" forever
+	// until the user manually clicks connect — see "设备信息空/root管理器空" bug.
+	reconnectMu   sync.Mutex
+	lastReconnect map[string]time.Time
 }
 
 func NewADBService(db *sql.DB) *ADBService {
-	return &ADBService{db: db}
+	return &ADBService{db: db, lastReconnect: map[string]time.Time{}}
 }
 
 func (s *ADBService) SaveDevice(address, name, userID string) error {
@@ -329,6 +337,30 @@ func (s *ADBService) SaveDevice(address, name, userID string) error {
 		address, name, userID, name,
 	)
 	return err
+}
+
+// ReconnectAllSaved reconnects every saved device across all users.
+// Called at server startup (container rebuild kills the adb server, which drops
+// all wireless connections) and periodically by a background goroutine so saved
+// devices stay online without the user having to click connect again.
+// Reconnect calls are throttled by reconnectDevice, so calling this frequently
+// is cheap.
+func (s *ADBService) ReconnectAllSaved(ctx context.Context) {
+	rows, err := s.db.Query(`SELECT DISTINCT address FROM adb_saved_devices`)
+	if err != nil {
+		return
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var addr string
+		if err := rows.Scan(&addr); err != nil {
+			continue
+		}
+		if addr == "" {
+			continue
+		}
+		s.reconnectDevice(ctx, addr)
+	}
 }
 
 func (s *ADBService) GetSavedDevices(userID string) ([]SavedDevice, error) {
@@ -371,7 +403,8 @@ func (s *ADBService) ADBPath() string {
 
 // CreateCommand creates an exec.Cmd for ADB with the given args, suitable for streaming stdout.
 func (s *ADBService) CreateCommand(ctx context.Context, args ...string) *exec.Cmd {
-	return exec.CommandContext(ctx, s.ADBPath(), args...)
+	cmd := exec.CommandContext(ctx, s.ADBPath(), args...)
+	return cmd
 }
 
 func (s *ADBService) run(ctx context.Context, args ...string) (string, error) {
@@ -403,7 +436,7 @@ func (s *ADBService) ExecADBRaw(ctx context.Context, args ...string) ([]byte, []
 	return stdout.Bytes(), stderr.Bytes(), nil
 }
 
-func (s *ADBService)RunWithTimeout(ctx context.Context, timeout time.Duration, args ...string) (string, error) {
+func (s *ADBService) RunWithTimeout(ctx context.Context, timeout time.Duration, args ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	return s.run(ctx, args...)
@@ -440,20 +473,21 @@ func (s *ADBService) GetServerStatus(ctx context.Context) (map[string]interface{
 		}
 	}
 	return map[string]interface{}{
-		"running":       true,
-		"device_count":  deviceCount,
-		"adb_path":      s.ADBPath(),
+		"running":      true,
+		"device_count": deviceCount,
+		"adb_path":     s.ADBPath(),
 	}, nil
 }
 
 // ─── Device Management ───
 
-func (s *ADBService) ListDevices(ctx context.Context) ([]ADBDevice, error) {
+func (s *ADBService) ListDevices(ctx context.Context, userID string) ([]ADBDevice, error) {
 	out, err := s.run(ctx, "devices", "-l")
 	if err != nil {
 		return nil, fmt.Errorf("adb devices failed: %w", err)
 	}
-	var devices []ADBDevice
+	live := map[string]ADBDevice{}
+	var order []string
 	for _, line := range strings.Split(out, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "List of") || strings.HasPrefix(line, "*") {
@@ -481,9 +515,112 @@ func (s *ADBService) ListDevices(ctx context.Context) ([]ADBDevice, error) {
 				dev.Android = strings.TrimSpace(vOut)
 			}
 		}
-		devices = append(devices, dev)
+		live[dev.Serial] = dev
+		order = append(order, dev.Serial)
+	}
+
+	// No authenticated user (e.g. public mirror flow): return the global list.
+	if userID == "" {
+		devices := make([]ADBDevice, 0, len(order))
+		for _, serial := range order {
+			if dev, ok := live[serial]; ok {
+				devices = append(devices, dev)
+			}
+		}
+		return devices, nil
+	}
+
+	// Per-user isolation: only devices this user has connected/saved are shown,
+	// with live online state from adb devices.
+	saved, err := s.GetSavedDevices(userID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Auto-reconnect offline saved devices (throttled, background).
+	// The adb server loses all wireless connections whenever the container is
+	// rebuilt / adb server restarts. Without this, saved devices remain
+	// "offline" until the user manually clicks connect.
+	for _, sv := range saved {
+		if _, ok := live[sv.Address]; !ok {
+			s.reconnectDevice(ctx, sv.Address)
+		}
+	}
+
+	// Give reconnects a moment to register, then re-read live state so a
+	// successful reconnect is reflected in THIS response (next poll would pick
+	// it up anyway, but immediate feedback is nicer).
+	if len(live) < len(saved) {
+		if out2, err2 := s.run(ctx, "devices", "-l"); err2 == nil {
+			for _, line := range strings.Split(out2, "\n") {
+				line = strings.TrimSpace(line)
+				if line == "" || strings.HasPrefix(line, "List of") || strings.HasPrefix(line, "*") {
+					continue
+				}
+				parts := strings.Fields(line)
+				if len(parts) < 2 {
+					continue
+				}
+				dev := ADBDevice{Serial: parts[0], State: parts[1]}
+				for _, p := range parts[2:] {
+					if strings.HasPrefix(p, "model:") {
+						dev.Model = strings.TrimPrefix(p, "model:")
+					} else if strings.HasPrefix(p, "brand:") {
+						dev.Brand = strings.TrimPrefix(p, "brand:")
+					} else if strings.HasPrefix(p, "transport_id:") {
+						dev.Transport = strings.TrimPrefix(p, "transport_id:")
+					}
+				}
+				if dev.State == "device" {
+					if vOut, errV := s.run(ctx, "-s", dev.Serial, "shell", "getprop", "ro.build.version.release"); errV == nil {
+						dev.Android = strings.TrimSpace(vOut)
+					}
+				}
+				if existing, ok := live[dev.Serial]; ok {
+					// Keep already-known model/brand details
+					if dev.Model == "" {
+						dev.Model = existing.Model
+					}
+					if dev.Brand == "" {
+						dev.Brand = existing.Brand
+					}
+				}
+				live[dev.Serial] = dev
+			}
+		}
+	}
+
+	devices := make([]ADBDevice, 0, len(saved))
+	for _, sv := range saved {
+		if dev, ok := live[sv.Address]; ok {
+			dev.ID = sv.ID
+			devices = append(devices, dev)
+		} else {
+			devices = append(devices, ADBDevice{ID: sv.ID, Serial: sv.Address, State: "offline"})
+		}
 	}
 	return devices, nil
+}
+
+// reconnectDevice attempts `adb connect` for a saved device that is currently
+// offline. Throttled to once per address per minute to avoid hammering the adb
+// server on every poll; runs in the background so it never blocks the caller.
+func (s *ADBService) reconnectDevice(ctx context.Context, address string) {
+	s.reconnectMu.Lock()
+	if last, ok := s.lastReconnect[address]; ok && time.Since(last) < time.Minute {
+		s.reconnectMu.Unlock()
+		return
+	}
+	s.lastReconnect[address] = time.Now()
+	s.reconnectMu.Unlock()
+
+	go func(addr string) {
+		// 8s cap: wireless adb connect to a missing/unreachable host would
+		// otherwise block for the full TCP timeout.
+		cctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+		defer cancel()
+		s.run(cctx, "connect", addr)
+	}(address)
 }
 
 func (s *ADBService) ConnectDevice(ctx context.Context, address string) (map[string]interface{}, error) {
@@ -514,12 +651,13 @@ func (s *ADBService) ConnectDevice(ctx context.Context, address string) (map[str
 	if devErr == nil {
 		for _, line := range strings.Split(devOut, "\n") {
 			line = strings.TrimSpace(line)
-			if strings.HasPrefix(line, address) || strings.Contains(line, address) {
-				fields := strings.Fields(line)
-				if len(fields) >= 2 {
-					state = fields[1]
-					serial = fields[0]
-				}
+			fields := strings.Fields(line)
+			// Match the serial exactly (adb may print trailing tabs/spaces).
+			// A prefix match like HasPrefix("192.168.2.2", "192.168.2.20") would
+			// incorrectly pair a short address with a different device.
+			if len(fields) >= 2 && fields[0] == address {
+				state = fields[1]
+				serial = fields[0]
 				break
 			}
 		}
@@ -529,8 +667,16 @@ func (s *ADBService) ConnectDevice(ctx context.Context, address string) (map[str
 	result["serial"] = serial
 	result["state"] = state
 
+	// IMPORTANT: `adb connect` may print "connected to ..." even when the device
+	// is actually unauthorized or offline. The authoritative source of truth is
+	// the device state from `adb devices` — only state == "device" means the
+	// device is really connected and usable.
 	switch {
-	case strings.Contains(lower, "unauthorized"):
+	case state == "device":
+		result["status"] = "connected"
+		result["message"] = "连接成功 ✅"
+		result["suggestions"] = []string{}
+	case state == "unauthorized" || strings.Contains(lower, "unauthorized"):
 		result["status"] = "unauthorized"
 		result["message"] = "设备未授权。请在手机上开启：设置 → 开发者选项 → USB调试 → 允许调试"
 		result["suggestions"] = []string{
@@ -540,10 +686,23 @@ func (s *ADBService) ConnectDevice(ctx context.Context, address string) (map[str
 			"尝试重启ADB服务: adb kill-server && adb start-server",
 			"检查本机ADB密钥 (~/.android/adbkey) 是否被设备授权",
 		}
+	case state == "offline":
+		result["status"] = "offline"
+		result["message"] = "设备离线。请检查手机网络连接，或重启USB调试"
+		result["suggestions"] = []string{
+			"尝试重新连接设备",
+			"检查设备的网络连接",
+			"重启ADB服务: adb kill-server && adb start-server",
+		}
 	case strings.Contains(lower, "connected") || strings.Contains(lower, "already connected"):
-		result["status"] = "connected"
-		result["message"] = "连接成功 ✅"
-		result["suggestions"] = []string{}
+		// adb claims connected, but the device list says otherwise — not usable
+		result["status"] = "error"
+		result["message"] = fmt.Sprintf("ADB 报告已连接，但设备实际状态为 %s，未真正连上", state)
+		result["suggestions"] = []string{
+			"设备可能未授权：请在手机上允许 USB 调试",
+			"尝试重启ADB服务: adb kill-server && adb start-server",
+			"Android 11+ 可使用配对：设置 → 开发者选项 → 无线调试",
+		}
 	case strings.Contains(lower, "failed") || strings.Contains(lower, "refused"):
 		result["status"] = "error"
 		result["message"] = out
@@ -554,31 +713,12 @@ func (s *ADBService) ConnectDevice(ctx context.Context, address string) (map[str
 			"尝试: adb kill-server && adb start-server",
 		}
 	default:
-		if state == "device" {
-			result["status"] = "connected"
-			result["message"] = "设备已连接并授权 ✅"
-			result["suggestions"] = []string{}
-		} else if state == "offline" {
-			result["status"] = "offline"
-			result["message"] = "设备离线。请检查手机网络连接，或重启USB调试"
-			result["suggestions"] = []string{
-				"尝试重新连接设备",
-				"检查设备的网络连接",
-				"重启ADB服务: adb kill-server && adb start-server",
-			}
-		} else if state == "unauthorized" {
-			result["status"] = "unauthorized"
-			result["message"] = "设备未授权。请在手机上开启：设置 → 开发者选项 → USB调试 → 允许调试"
-			result["suggestions"] = []string{
-				"检查设备是否已开启USB调试",
-				"如果通过TCP/IP连接，设备之前必须通过USB授权过",
-				"Android 11+：前往 设置 → 开发者选项 → 无线调试，使用配对码连接",
-				"尝试重启ADB服务: adb kill-server && adb start-server",
-			}
-		} else {
-			result["status"] = state
-			result["message"] = fmt.Sprintf("设备状态: %s", state)
-			result["suggestions"] = []string{}
+		result["status"] = "error"
+		result["message"] = fmt.Sprintf("连接失败: %s (设备状态: %s)", out, state)
+		result["suggestions"] = []string{
+			"请确认设备在同一网络",
+			"检查IP地址和端口是否正确",
+			"尝试: adb kill-server && adb start-server",
 		}
 	}
 
@@ -650,7 +790,7 @@ func (s *ADBService) DiagnoseDevice(ctx context.Context, address string) (map[st
 
 	// 2. Check ADB server status
 	serverOut, _ := s.run(ctx, "devices")
-	serverRunning := !strings.Contains(serverOut, "adb server" ) && serverOut != ""
+	serverRunning := !strings.Contains(serverOut, "adb server") && serverOut != ""
 	result["server_running"] = serverRunning
 	if !serverRunning {
 		result["server_status"] = "not running"
@@ -1037,9 +1177,32 @@ type cacheEntry struct {
 }
 
 var (
-	fileCache   = make(map[string]cacheEntry)
-	fileCacheMu sync.RWMutex
+	fileCache            = make(map[string]cacheEntry)
+	fileCacheMu          sync.RWMutex
+	fileCacheCleanupOnce sync.Once
 )
+
+// startFileCacheCleanup launches a background ticker that removes expired
+// fileCache entries. Without this, the map grows forever (one key per
+// device:path visited), leaking memory over long-running sessions.
+func startFileCacheCleanup() {
+	fileCacheCleanupOnce.Do(func() {
+		go func() {
+			ticker := time.NewTicker(60 * time.Second)
+			defer ticker.Stop()
+			for range ticker.C {
+				fileCacheMu.Lock()
+				now := time.Now()
+				for k, e := range fileCache {
+					if now.After(e.expiresAt) {
+						delete(fileCache, k)
+					}
+				}
+				fileCacheMu.Unlock()
+			}
+		}()
+	})
+}
 
 func (s *ADBService) ListFiles(ctx context.Context, serial, remotePath string) ([]FileInfo, error) {
 	if remotePath == "" {
@@ -1101,6 +1264,7 @@ func (s *ADBService) ListFiles(ctx context.Context, serial, remotePath string) (
 	fileCacheMu.Lock()
 	fileCache[cacheKey] = cacheEntry{files: files, expiresAt: time.Now().Add(30 * time.Second)}
 	fileCacheMu.Unlock()
+	startFileCacheCleanup()
 
 	return files, nil
 }
@@ -1414,7 +1578,7 @@ func (s *ADBService) InstallModule(ctx context.Context, serial, zipPath string) 
 	}
 
 	// Detect root manager and use the correct install command
-	mgr, installCmd := s.detectRootManagerAndInstallCmd(serial)
+	mgr, installCmd := s.detectRootManagerAndInstallCmd(ctx, serial)
 	if installCmd == "" {
 		return "", fmt.Errorf("no supported root manager found (tried APatch/KernelSU/Magisk)")
 	}
@@ -1472,7 +1636,7 @@ func (s *ADBService) InstallModuleFromURL(ctx context.Context, serial, moduleURL
 	}
 
 	// 3. Install via detected root manager
-	mgr, installCmd := s.detectRootManagerAndInstallCmd(serial)
+	mgr, installCmd := s.detectRootManagerAndInstallCmd(ctx, serial)
 	if installCmd == "" {
 		os.Remove(tmpFile)
 		return nil, fmt.Errorf("no supported root manager found (tried APatch/KernelSU/Magisk)")
@@ -1528,7 +1692,7 @@ func (s *ADBService) BackupModule(ctx context.Context, serial, moduleName, local
 			}
 		}
 	}
-_pullOut, pullErr := s.run(ctx, "-s", serial, "pull", archivePath, localPath)
+	_pullOut, pullErr := s.run(ctx, "-s", serial, "pull", archivePath, localPath)
 	s.RunShell(ctx, serial, "rm -f "+archivePath)
 	if pullErr != nil {
 		return "", fmt.Errorf("拉取失败: %v", pullErr)
@@ -1618,15 +1782,66 @@ func (s *ADBService) CheckModuleUpdate(ctx context.Context, serial, moduleName s
 		URL       string `json:"url"`
 	}
 	if json.Unmarshal([]byte(updateOut), &updateInfo) == nil && updateInfo.Version != "" {
-		return map[string]interface{}{
+		result := map[string]interface{}{
 			"has_update":      updateInfo.Version != currentVersion,
 			"current_version": currentVersion,
 			"latest_version":  updateInfo.Version,
 			"changelog":       updateInfo.Changelog,
 			"download_url":    updateInfo.URL,
-		}, nil
+		}
+		// If the module advertises a remote update URL, fetch it to see whether
+		// a newer version is available than the one recorded locally.
+		if updateInfo.URL != "" {
+			if remote, rerr := s.fetchRemoteModuleUpdate(ctx, updateInfo.URL); rerr == nil {
+				if remote.Version != "" {
+					result["latest_version"] = remote.Version
+					result["has_update"] = remote.Version != currentVersion
+				}
+				if remote.Changelog != "" {
+					result["changelog"] = remote.Changelog
+				}
+				if remote.URL != "" {
+					result["download_url"] = remote.URL
+				}
+			} else {
+				result["check_error"] = rerr.Error()
+			}
+		}
+		return result, nil
 	}
 	return map[string]interface{}{"has_update": false, "current_version": currentVersion}, nil
+}
+
+type remoteModuleUpdate struct {
+	Version   string `json:"version"`
+	Changelog string `json:"changelog"`
+	URL       string `json:"url"`
+}
+
+// fetchRemoteModuleUpdate fetches a module's update.json from a remote URL,
+// with a 10s timeout and a 1 MiB body cap. Failures are returned to the caller
+// (surfaced as check_error) rather than failing the whole update check.
+func (s *ADBService) fetchRemoteModuleUpdate(ctx context.Context, url string) (*remoteModuleUpdate, error) {
+	reqCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", "ModuForge/1.0")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("update fetch failed: HTTP %d", resp.StatusCode)
+	}
+	var u remoteModuleUpdate
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&u); err != nil {
+		return nil, err
+	}
+	return &u, nil
 }
 
 func (s *ADBService) getModuleBasePath(ctx context.Context, serial string) string {
@@ -1637,10 +1852,14 @@ func (s *ADBService) getModuleBasePath(ctx context.Context, serial string) strin
 // the appropriate install command prefix. The returned cmd already includes the
 // trailing space, so callers just append the zip path.
 // Priority: APatch > KernelSU > Magisk (each has a unique binary).
-func (s *ADBService) detectRootManagerAndInstallCmd(serial string) (string, string) {
+func (s *ADBService) detectRootManagerAndInstallCmd(ctx context.Context, serial string) (string, string) {
+	// Bound the probe with a timeout so a hung device cannot block installs forever.
+	probeCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+
 	run := func(args ...string) string {
 		cmdArgs := append([]string{"-s", serial, "shell"}, args...)
-		out, err := s.run(context.Background(), cmdArgs...)
+		out, err := s.run(probeCtx, cmdArgs...)
 		if err != nil {
 			return ""
 		}
@@ -1668,96 +1887,80 @@ func (s *ADBService) detectRootManagerAndInstallCmd(serial string) (string, stri
 	return "", ""
 }
 
-// ─── Root Manager (2.1-2.3) ───
-
 func (s *ADBService) GetAvailableRootManagers(ctx context.Context, serial string) ([]map[string]string, error) {
 	var managers []map[string]string
 
-	// Helper: run command via ADB shell
+	// Helper: run command via ADB shell (with the caller's context for timeouts)
 	run := func(args ...string) string {
 		cmdArgs := append([]string{"-s", serial, "shell"}, args...)
-		out, err := s.run(context.Background(), cmdArgs...)
+		out, err := s.run(ctx, cmdArgs...)
 		if err != nil {
 			return ""
 		}
 		return strings.TrimSpace(out)
 	}
 
-	// ── APatch detection (apd binary is unique to APatch) ──
-	// Try full path first (most reliable), then short name
-	apVer := run("su", "-c", "/data/adb/ap/bin/apd --version")
-	if apVer == "" {
-		apVer = run("su", "-c", "apd --version")
-	}
-	if apVer == "" {
-		apVer = run("su", "-c", "apd -v")
-	}
-	if apVer != "" && !strings.Contains(apVer, "not found") && !strings.Contains(apVer, "No such") {
-		managers = append(managers, map[string]string{
-			"name":    "APatch",
-			"version": apVer,
-			"path":    "/data/adb/ap/bin/apd",
-		})
-	} else {
-		// Directory fallback only if no other manager found yet
-		if len(managers) == 0 {
-			if out := run("su", "-c", "ls /data/adb/ap/"); out != "" && !strings.Contains(out, "No such") {
-				managers = append(managers, map[string]string{
-					"name":    "APatch",
-					"version": "",
-					"path":    "/data/adb/ap/bin/apd",
-				})
+	// Detect which managers exist with a single directory listing, then probe
+	// versions only for the ones present (previously this was up to 9 su calls).
+	dirOut := run("su", "-c", "ls -1 /data/adb/ 2>/dev/null")
+	hasDir := func(name string) bool {
+		for _, l := range strings.Split(dirOut, "\n") {
+			if strings.TrimSpace(l) == name {
+				return true
 			}
 		}
+		return false
 	}
 
-	// ── KernelSU detection (ksud binary is unique to KernelSU) ──
-	ksuVer := run("su", "-c", "ksud --version")
-	if ksuVer == "" {
-		ksuVer = run("su", "-c", "ksud -v")
+	if hasDir("ap") {
+		ver := run("su", "-c", "/data/adb/ap/bin/apd --version 2>/dev/null || /data/adb/ap/bin/apd -v 2>/dev/null || apd --version 2>/dev/null")
+		if ver != "" && (strings.Contains(ver, "not found") || strings.Contains(ver, "No such")) {
+			ver = ""
+		}
+		managers = append(managers, map[string]string{
+			"name":    "APatch",
+			"version": ver,
+			"path":    "/data/adb/ap/bin/apd",
+		})
 	}
-	if ksuVer != "" && !strings.Contains(ksuVer, "not found") && !strings.Contains(ksuVer, "No such") {
+
+	if hasDir("ksu") {
+		ver := run("su", "-c", "/data/adb/ksu/bin/ksud --version 2>/dev/null || ksud --version 2>/dev/null")
+		if ver != "" && (strings.Contains(ver, "not found") || strings.Contains(ver, "No such")) {
+			ver = ""
+		}
 		managers = append(managers, map[string]string{
 			"name":    "KernelSU",
-			"version": ksuVer,
+			"version": ver,
 			"path":    "/data/adb/ksu/bin/ksud",
 		})
-	} else {
-		// Check directory fallback
-		if out := run("su", "-c", "ls /data/adb/ksu/"); out != "" && !strings.Contains(out, "No such") {
-			managers = append(managers, map[string]string{
-				"name":    "KernelSU",
-				"version": "",
-				"path":    "/data/adb/ksu/bin/ksud",
-			})
-		}
 	}
 
-	// ── Magisk detection (magisk binary is unique to Magisk) ──
-	// Only check if NOT already detected as APatch or KernelSU
-	hasApOrKsu := len(managers) > 0
-	magVer := ""
-	if !hasApOrKsu {
-		// No APatch or KernelSU detected, check Magisk
-		magVer = run("su", "-c", "magisk -v")
-		if magVer == "" {
-			magVer = run("su", "-c", "magisk --version")
+	if hasDir("magisk") {
+		ver := run("su", "-c", "magisk -v 2>/dev/null || magisk --version 2>/dev/null")
+		if ver != "" && (strings.Contains(ver, "not found") || strings.Contains(ver, "No such")) {
+			ver = ""
 		}
-	}
-	if magVer != "" && !strings.Contains(magVer, "not found") && !strings.Contains(magVer, "No such") {
 		managers = append(managers, map[string]string{
 			"name":    "Magisk",
-			"version": magVer,
+			"version": ver,
 			"path":    "/data/adb/magisk",
 		})
-	} else if !hasApOrKsu {
-		// Check directory fallback only if no other manager found
-		if out := run("su", "-c", "ls /data/adb/magisk/"); out != "" && !strings.Contains(out, "No such") {
-			managers = append(managers, map[string]string{
-				"name":    "Magisk",
-				"version": "",
-				"path":    "/data/adb/magisk",
-			})
+	}
+
+	// Fallback: if no directories matched, probe each binary directly
+	if len(managers) == 0 {
+		apVer := run("su", "-c", "apd --version 2>/dev/null")
+		if apVer != "" && !strings.Contains(apVer, "not found") && !strings.Contains(apVer, "No such") {
+			managers = append(managers, map[string]string{"name": "APatch", "version": apVer, "path": "/data/adb/ap/bin/apd"})
+		}
+		ksuVer := run("su", "-c", "ksud --version 2>/dev/null")
+		if ksuVer != "" && !strings.Contains(ksuVer, "not found") && !strings.Contains(ksuVer, "No such") {
+			managers = append(managers, map[string]string{"name": "KernelSU", "version": ksuVer, "path": "/data/adb/ksu/bin/ksud"})
+		}
+		magVer := run("su", "-c", "magisk -v 2>/dev/null")
+		if magVer != "" && !strings.Contains(magVer, "not found") && !strings.Contains(magVer, "No such") {
+			managers = append(managers, map[string]string{"name": "Magisk", "version": magVer, "path": "/data/adb/magisk"})
 		}
 	}
 
@@ -1782,18 +1985,21 @@ func (s *ADBService) ManageRootPermission(ctx context.Context, serial, packageNa
 
 func (s *ADBService) ListRootPermissions(ctx context.Context, serial string) ([]map[string]string, error) {
 	var permissions []map[string]string
-	out, err := s.RunShell(ctx, serial, "su -c 'dumpsys package 2>/dev/null | grep -A5 \"android.permission.ROOT\" | grep \"granted=true\"'")
+	// Parse dumpsys output by package block: track the current package, then
+	// emit it when its android.permission.ROOT line carries granted=true.
+	// The old grep -A5 approach could associate granted=true with the wrong
+	// package because dumpsys groups permissions per package.
+	out, err := s.RunShell(ctx, serial,
+		`su -c 'dumpsys package 2>/dev/null' | awk '/^  Package \[/ {pkg=$2; gsub(/\[|\]/, "", pkg)} /android.permission.ROOT/ && /granted=true/ {print pkg}'`)
 	if err != nil || out == "" {
 		return permissions, nil
 	}
+	seen := make(map[string]bool)
 	for _, line := range strings.Split(out, "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-		parts := strings.Fields(line)
-		if len(parts) > 0 {
-			permissions = append(permissions, map[string]string{"package": parts[0], "status": "granted"})
+		pkg := strings.TrimSpace(line)
+		if pkg != "" && !seen[pkg] {
+			seen[pkg] = true
+			permissions = append(permissions, map[string]string{"package": pkg, "status": "granted"})
 		}
 	}
 	return permissions, nil
@@ -1872,127 +2078,81 @@ func parsePropValue(content, key string) string {
 }
 
 func (s *ADBService) ListInstalledModules(ctx context.Context, serial string) ([]InstalledModule, error) {
-	// Universal module path — all root managers (Magisk/KernelSU/APatch) use this
-	modulePaths := []string{
-		"/data/adb/modules",
+	// Universal module path — all root managers (Magisk/KernelSU/APatch) use this.
+	// One shell script collects every module in a single `adb shell` call
+	// (previously this was ~5 calls per module, which was very slow with many
+	// modules installed). Records use the ASCII record separator (0x1E), fields
+	// use the unit separator (0x1F) — both are unlikely to appear in module.prop.
+	basePath := "/data/adb/modules"
+	log.Printf("[ADB] ListInstalledModules: serial=%s, path=%s", serial, basePath)
+
+	script := `sep=$(printf '\037'); rec=$(printf '\036');
+for d in ` + basePath + `/*/; do
+  [ -d "$d" ] || continue
+  n=$(basename "$d")
+  [ "$n" = "lost+found" ] && continue
+  v=$(grep -m1 '^version=' "$d/module.prop" 2>/dev/null | cut -d= -f2-)
+  a=$(grep -m1 '^author=' "$d/module.prop" 2>/dev/null | cut -d= -f2-)
+  ds=$(grep -m1 '^description=' "$d/module.prop" 2>/dev/null | cut -d= -f2-)
+  en=1; [ -f "$d/disable" ] && en=0
+  sz=$(du -sk "$d" 2>/dev/null | awk '{print $1}')
+  dt=$(stat -c %y "$d" 2>/dev/null | cut -d. -f1)
+  up=0; [ -f "$d/update.json" ] && up=1
+  echo "MOD${rec}$n${sep}$v${sep}$a${sep}$ds${sep}$en${sep}$sz${sep}$dt${sep}$up"
+done`
+
+	out, err := s.RunShell(ctx, serial, script)
+	if err != nil || !strings.Contains(out, "MOD") {
+		// Fallback: some devices need root to read /data/adb/modules
+		log.Printf("[ADB] Normal shell failed, trying su fallback (err=%v)", err)
+		escapedScript := strings.ReplaceAll(script, "'", "'\\''")
+		out, err = s.RunShell(ctx, serial, "su -c '"+escapedScript+"' 2>/dev/null")
 	}
-	log.Printf("[ADB] ListInstalledModules: serial=%s, checking %d paths", serial, len(modulePaths))
-	seen := make(map[string]bool)
-	var modules []InstalledModule
-
-	for _, basePath := range modulePaths {
-		source := ""
-		switch {
-		case strings.Contains(basePath, "ksu"):
-			source = "KernelSU"
-		case strings.Contains(basePath, "apatch") || strings.Contains(basePath, "/ap/"):
-			source = "APatch"
-		default:
-			source = "Magisk"
-		}
-		out, err := s.RunShell(ctx, serial, "ls -1 '"+basePath+"/' 2>/dev/null")
-		if err != nil {
-			log.Printf("[ADB] Path %s not found (err=%v), skipping", basePath, err)
-			continue
-		}
-		names := strings.Fields(out)
-		if len(names) == 0 {
-			log.Printf("[ADB] Path %s found but empty, skipping", basePath)
-			continue
-		}
-		log.Printf("[ADB] Path %s found %d entries: %v", basePath, len(names), names)
-		for _, name := range names {
-			name = strings.TrimSpace(name)
-			name = sanitizePath(name)
-			if name == "" || name == "lost+found" || seen[name] {
-				continue
-			}
-			seen[name] = true
-			mod := InstalledModule{Name: name, Source: source}
-
-			propOut, err := s.RunShell(ctx, serial, "cat '"+basePath+"/"+name+"/module.prop' 2>/dev/null")
-			if err == nil {
-				log.Printf("[ADB] module.prop found for %s/%s", basePath, name)
-				for _, line := range strings.Split(propOut, "\n") {
-					line = strings.TrimSpace(line)
-					if strings.HasPrefix(line, "version=") {
-						mod.Version = strings.TrimPrefix(line, "version=")
-					} else if strings.HasPrefix(line, "author=") {
-						mod.Author = strings.TrimPrefix(line, "author=")
-					} else if strings.HasPrefix(line, "description=") {
-						mod.Description = strings.TrimPrefix(line, "description=")
-					}
-				}
-			} else {
-				log.Printf("[ADB] No module.prop for %s/%s (err=%v), using defaults", basePath, name, err)
-			}
-			disableOut, _ := s.RunShell(ctx, serial, "test -f '"+basePath+"/"+name+"/disable' && echo disabled || echo enabled")
-			mod.Enabled = !strings.Contains(disableOut, "disabled")
-			mod.Size = s.getModuleSize(ctx, serial, basePath+"/"+name)
-
-			// Modification time
-			dateOut, _ := s.RunShell(ctx, serial, "stat -c %y '"+basePath+"/"+name+"' 2>/dev/null | cut -d'.' -f1")
-			if dateOut == "" {
-				dateOut, _ = s.RunShell(ctx, serial, "ls -ld '"+basePath+"/"+name+"' 2>/dev/null | awk '{print $6, $7, $8}'")
-			}
-			mod.UpdateDate = strings.TrimSpace(dateOut)
-
-			// Check for update.json
-			updateCheck, _ := s.RunShell(ctx, serial, "test -f '"+basePath+"/"+name+"/update.json' && echo yes || echo no")
-			mod.HasUpdate = strings.Contains(updateCheck, "yes")
-
-			modules = append(modules, mod)
-		}
-	}
-
-	// Fallback: try with su if no modules found via normal shell
-	if len(modules) == 0 {
-		log.Printf("[ADB] No modules found via normal shell, trying su fallback")
-		for _, basePath := range modulePaths {
-			escapedPath := strings.ReplaceAll(basePath, "'", "'\\''")
-			out, err := s.RunShell(ctx, serial, "su -c 'ls -1 "+escapedPath+"/' 2>/dev/null")
-			if err != nil || strings.TrimSpace(out) == "" {
-				continue
-			}
-			source := "Magisk"
-			switch {
-			case strings.Contains(basePath, "ksu"):
-				source = "KernelSU"
-			case strings.Contains(basePath, "apatch") || strings.Contains(basePath, "/ap/"):
-				source = "APatch"
-			}
-			for _, name := range strings.Split(strings.TrimSpace(out), "\n") {
-				name = strings.TrimSpace(name)
-				name = sanitizePath(name)
-				if name == "" || name == "lost+found" || seen[name] {
-					continue
-				}
-				seen[name] = true
-				mod := InstalledModule{Name: name, Source: source}
-				escapedName := strings.ReplaceAll(name, "'", "'\\''")
-				propOut, _ := s.RunShell(ctx, serial, "su -c 'cat "+escapedPath+"/"+escapedName+"/module.prop' 2>/dev/null")
-				for _, line := range strings.Split(propOut, "\n") {
-					line = strings.TrimSpace(line)
-					if strings.HasPrefix(line, "version=") {
-						mod.Version = strings.TrimPrefix(line, "version=")
-					} else if strings.HasPrefix(line, "author=") {
-						mod.Author = strings.TrimPrefix(line, "author=")
-					} else if strings.HasPrefix(line, "description=") {
-						mod.Description = strings.TrimPrefix(line, "description=")
-					}
-				}
-				disableOut, _ := s.RunShell(ctx, serial, "su -c 'test -f "+escapedPath+"/"+escapedName+"/disable' 2>/dev/null && echo disabled || echo enabled")
-				mod.Enabled = !strings.Contains(disableOut, "disabled")
-				mod.Size = s.getModuleSize(ctx, serial, basePath+"/"+name)
-				modules = append(modules, mod)
-			}
-		}
-	}
-
-	if len(modules) == 0 {
+	if err != nil || strings.TrimSpace(out) == "" {
 		log.Printf("[ADB] No modules found on device %s", serial)
 		return nil, nil
 	}
+
+	const recSep = "\x1e"
+	const fieldSep = "\x1f"
+	var modules []InstalledModule
+	seen := make(map[string]bool)
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "MOD"+recSep) {
+			continue
+		}
+		f := strings.Split(strings.TrimPrefix(line, "MOD"+recSep), fieldSep)
+		if len(f) < 8 {
+			continue
+		}
+		name := sanitizePath(f[0])
+		if name == "" || name == "lost+found" || seen[name] {
+			continue
+		}
+		seen[name] = true
+
+		mod := InstalledModule{
+			Name:        name,
+			Version:     strings.TrimSpace(f[1]),
+			Author:      strings.TrimSpace(f[2]),
+			Description: strings.TrimSpace(f[3]),
+			Source:      "Magisk",
+			Enabled:     strings.TrimSpace(f[4]) != "0",
+			UpdateDate:  strings.TrimSpace(f[6]),
+			HasUpdate:   strings.TrimSpace(f[7]) == "1",
+		}
+		// du -sk reports KB
+		if sz, err := strconv.ParseInt(strings.TrimSpace(f[5]), 10, 64); err == nil && sz > 0 {
+			if sz >= 1024 {
+				mod.Size = fmt.Sprintf("%.1fM", float64(sz)/1024)
+			} else {
+				mod.Size = fmt.Sprintf("%dK", sz)
+			}
+		}
+		modules = append(modules, mod)
+	}
+
 	log.Printf("[ADB] Found %d modules on device %s", len(modules), serial)
 	return modules, nil
 }
@@ -2197,8 +2357,8 @@ func (s *ADBService) CaptureScreenJPEG(ctx context.Context, serial string, quali
 		sy := int(float64(ny) * scaleY)
 		for nx := 0; nx < newW; nx++ {
 			sx := int(float64(nx) * scaleX)
-			srcIdx := (sy*width+sx)*3
-			dstIdx := (ny*newW+nx)*3
+			srcIdx := (sy*width + sx) * 3
+			dstIdx := (ny*newW + nx) * 3
 			resized[dstIdx] = pixelData[srcIdx]
 			resized[dstIdx+1] = pixelData[srcIdx+1]
 			resized[dstIdx+2] = pixelData[srcIdx+2]
@@ -2437,15 +2597,17 @@ func (s *ADBService) StreamScreen(ctx context.Context, serial string, fps int, w
 			return nil
 		default:
 		}
-		cmd := exec.CommandContext(ctx, s.ADBPath(), "-s", serial, "exec-out", "screencap", "-p")
-		imgData, err := cmd.Output()
+		// Use raw PPM + server-side JPEG instead of screencap -p: the device
+		// compresses PNG in software (~100-200ms/frame), while raw PPM is
+		// ~5-10× faster to produce. We resize + JPEG-encode on the server.
+		_, _, jpegData, err := s.CaptureScreenJPEG(ctx, serial, 60, 3)
 		if err != nil {
 			time.Sleep(interval)
 			continue
 		}
-		header := fmt.Sprintf("--%s\r\nContent-Type: image/png\r\nContent-Length: %d\r\n\r\n", boundary, len(imgData))
+		header := fmt.Sprintf("--%s\r\nContent-Type: image/jpeg\r\nContent-Length: %d\r\n\r\n", boundary, len(jpegData))
 		writer.Write([]byte(header))
-		writer.Write(imgData)
+		writer.Write(jpegData)
 		writer.Write([]byte("\r\n"))
 		if f, ok := writer.(flusher); ok {
 			f.Flush()
@@ -2579,15 +2741,15 @@ func (s *ADBService) PushModuleFolder(ctx context.Context, serial, localDir, mod
 	zipInfo, _ := os.Stat(tmpZip)
 	result["zip_size"] = zipInfo.Size()
 
-	// 2. Push zip to device
-	remotePath := "/data/local/tmp/module_push.zip"
+	// 2. Push zip to device (unique path so concurrent installs can't clash)
+	remotePath := fmt.Sprintf("/data/local/tmp/module_push_%d.zip", time.Now().UnixMilli())
 	if _, err := s.PushFile(ctx, serial, tmpZip, remotePath); err != nil {
 		return nil, fmt.Errorf("push zip to device failed: %w", err)
 	}
 
 	// 3. If install=true, detect root manager and install
 	if install {
-		mgr, installCmd := s.detectRootManagerAndInstallCmd(serial)
+		mgr, installCmd := s.detectRootManagerAndInstallCmd(ctx, serial)
 		if installCmd == "" {
 			return nil, fmt.Errorf("no supported root manager found (tried APatch/KernelSU/Magisk)")
 		}
@@ -2620,15 +2782,15 @@ func (s *ADBService) PushBuildModule(ctx context.Context, serial, zipPath, modul
 	}
 	result["zip_size"] = zipInfo.Size()
 
-	// 1. Push zip to device
-	remotePath := "/data/local/tmp/module_push.zip"
+	// 1. Push zip to device (unique path so concurrent installs can't clash)
+	remotePath := fmt.Sprintf("/data/local/tmp/module_push_%d.zip", time.Now().UnixMilli())
 	if _, err := s.PushFile(ctx, serial, zipPath, remotePath); err != nil {
 		return nil, fmt.Errorf("push zip to device failed: %w", err)
 	}
 
 	// 2. If install=true, detect root manager and install
 	if install {
-		mgr, installCmd := s.detectRootManagerAndInstallCmd(serial)
+		mgr, installCmd := s.detectRootManagerAndInstallCmd(ctx, serial)
 		if installCmd == "" {
 			return nil, fmt.Errorf("no supported root manager found (tried APatch/KernelSU/Magisk)")
 		}

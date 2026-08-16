@@ -7,14 +7,21 @@ import (
 	"strings"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/moduforge/backend/internal/service"
 )
 
 type PermissionAuditHandler struct {
 	db *sql.DB
+	fr *service.FileContentRepo // S3-first content access (optional)
 }
 
 func NewPermissionAuditHandler(db *sql.DB) *PermissionAuditHandler {
 	return &PermissionAuditHandler{db: db}
+}
+
+// SetFileContentRepo injects the S3-first file content repository.
+func (h *PermissionAuditHandler) SetFileContentRepo(fr *service.FileContentRepo) {
+	h.fr = fr
 }
 
 // Android permission classification
@@ -129,20 +136,10 @@ func (h *PermissionAuditHandler) AuditModulePermissions(c fiber.Ctx) error {
 		return BadRequest(c, "项目 ID 不能为空")
 	}
 
-	// Read project files
-	rows, err := h.db.Query("SELECT path, content FROM project_files WHERE project_id=?", projectID)
+	// Read project files (S3 first)
+	files, err := h.fr.ReadAllContent(c.Context(), projectID)
 	if err != nil {
 		return InternalError(c, "读取项目文件失败")
-	}
-	defer rows.Close()
-
-	files := make(map[string]string)
-	for rows.Next() {
-		var path, content string
-		if err := rows.Scan(&path, &content); err != nil {
-			continue
-		}
-		files[path] = content
 	}
 
 	// Extract permissions from code and manifest

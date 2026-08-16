@@ -186,8 +186,8 @@ func RegisterScreenStreamWS(app *fiber.App, adbSvc *service.ADBService, jwtSecre
 			go handleInputCommand(ctx, adbSvc, serial, cmd)
 		}
 	}, websocket.Config{
-		HandshakeTimeout: 10 * time.Second,
-		AllowEmptyOrigin: true,
+		HandshakeTimeout:  10 * time.Second,
+		AllowEmptyOrigin:  true,
 		EnableCompression: true,
 	})
 

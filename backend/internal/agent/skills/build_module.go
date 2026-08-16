@@ -13,11 +13,23 @@ import (
 	"time"
 	"github.com/moduforge/backend/internal/builder"
 	"github.com/moduforge/backend/internal/agent/registry"
+	"github.com/moduforge/backend/internal/storage"
 )
 
 type BuildModuleSkill struct {
 	projectPath string
 	db          *sql.DB
+	storage     storage.StorageAdapter // optional S3 storage backend
+}
+
+func NewBuildModuleSkillWithDB(projectPath string, db *sql.DB) *BuildModuleSkill {
+	return &BuildModuleSkill{projectPath: projectPath, db: db}
+}
+
+// WithStorage sets the S3 storage adapter. When set, files are loaded from S3.
+func (s *BuildModuleSkill) WithStorage(st storage.StorageAdapter) *BuildModuleSkill {
+	s.storage = st
+	return s
 }
 
 // compileTimeout is the maximum time allowed for a single compilation command.
@@ -200,10 +212,6 @@ func classifyCppError(msg string) string {
 	return "unknown"
 }
 
-func NewBuildModuleSkillWithDB(projectPath string, db *sql.DB) *BuildModuleSkill {
-	return &BuildModuleSkill{projectPath: projectPath, db: db}
-}
-
 // resolvePath 根据 project_id 解析实际文件路径（与 write_file 保持一致）
 func (s *BuildModuleSkill) Name() string {
 	return "build_module"
@@ -284,20 +292,24 @@ func (s *BuildModuleSkill) Execute(ctx context.Context, input map[string]interfa
 	}
 	log.WriteString("[BUILD_PROGRESS] phase=validate status=done\n")
 
-	// ========== Phase 1.5: Sync source files from DB to disk ==========
-	log.WriteString("\n── Syncing source files from DB to disk... ──\n")
+	// ========== Phase 1.5: Sync source files from DB/S3 to disk ==========
+	log.WriteString("\n── Syncing source files to disk... ──\n")
 	if s.db != nil && projectID != "" {
-		rows, err := s.db.Query(`SELECT path, content FROM project_files WHERE project_id=?`, projectID)
+		rows, err := s.db.Query(`SELECT path FROM project_files WHERE project_id=?`, projectID)
 		if err == nil {
 			defer rows.Close()
 			synced := 0
 			for rows.Next() {
-				var path, content string
-				if err := rows.Scan(&path, &content); err != nil {
+				var path string
+				if err := rows.Scan(&path); err != nil {
+					continue
+				}
+				content, err := readFileContent(context.Background(), s.storage, s.db, projectID, path)
+				if err != nil {
 					continue
 				}
 				fullPath := filepath.Join(projectPath, path)
-				// DB is source of truth - always overwrite disk with DB content
+				// DB/S3 is source of truth - always overwrite disk with content
 				dir := filepath.Dir(fullPath)
 				if err := os.MkdirAll(dir, 0755); err != nil {
 					continue
@@ -308,9 +320,9 @@ func (s *BuildModuleSkill) Execute(ctx context.Context, input map[string]interfa
 				synced++
 			}
 			if synced > 0 {
-				log.WriteString(fmt.Sprintf("  ✅ Synced %d files from database to disk\n", synced))
+				log.WriteString(fmt.Sprintf("  ✅ Synced %d files from %s to disk\n", synced, storageLabel(s.storage)))
 			} else {
-				log.WriteString("  ✅ All DB files already present on disk\n")
+				log.WriteString("  ✅ All files already present on disk\n")
 			}
 		}
 	}

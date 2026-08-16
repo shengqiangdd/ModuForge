@@ -7,14 +7,21 @@ import (
 	"strings"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/moduforge/backend/internal/service"
 )
 
 type DependencyHandler struct {
 	db *sql.DB
+	fr *service.FileContentRepo // S3-first content access (optional)
 }
 
 func NewDependencyHandler(db *sql.DB) *DependencyHandler {
 	return &DependencyHandler{db: db}
+}
+
+// SetFileContentRepo injects the S3-first file content repository.
+func (h *DependencyHandler) SetFileContentRepo(fr *service.FileContentRepo) {
+	h.fr = fr
 }
 
 type DependencyAnalysis struct {
@@ -48,23 +55,19 @@ type DependencyTreeNode struct {
 func (h *DependencyHandler) AnalyzeDependencies(c fiber.Ctx) error {
 	projectID := c.Params("id")
 
-	// Get all project files
-	rows, err := h.db.Query("SELECT path, content FROM project_files WHERE project_id=?", projectID)
+	// Get all project files (S3 first)
+	fileMap, err := h.fr.ReadAllContent(c.Context(), projectID)
 	if err != nil {
 		return InternalError(c, "读取项目文件失败")
 	}
-	defer rows.Close()
 
 	type FileData struct {
 		Path    string
 		Content string
 	}
 	var files []FileData
-	for rows.Next() {
-		var f FileData
-		if err := rows.Scan(&f.Path, &f.Content); err == nil {
-			files = append(files, f)
-		}
+	for path, content := range fileMap {
+		files = append(files, FileData{Path: path, Content: content})
 	}
 
 	analysis := &DependencyAnalysis{
@@ -202,14 +205,9 @@ func (h *DependencyHandler) GetDependencyTree(c fiber.Ctx) error {
 		Status:  "resolved",
 	}
 
-	// Build tree from analysis
-	analysisRows, err := h.db.Query(
-		`SELECT pf.path, pf.content FROM project_files pf WHERE pf.project_id=?`,
-		projectID,
-	)
+	// Build tree from analysis (S3 first)
+	fileMap, err := h.fr.ReadAllContent(c.Context(), projectID)
 	if err == nil {
-		defer analysisRows.Close()
-
 		knownModules := make(map[string]map[string]string)
 		modRows, err2 := h.db.Query("SELECT id, title, version FROM market_modules")
 		if err2 == nil {
@@ -227,29 +225,26 @@ func (h *DependencyHandler) GetDependencyTree(c fiber.Ctx) error {
 		moduleRefPattern := regexp.MustCompile(`(?:require|import|source|load)\s+(?:module[_-]?)?['"]?([a-zA-Z0-9_-]+)['"]?`)
 		seen := make(map[string]bool)
 
-		for analysisRows.Next() {
-			var path, content string
-			if err := analysisRows.Scan(&path, &content); err == nil {
-				if strings.HasSuffix(path, ".sh") || strings.HasSuffix(path, ".bash") || strings.Contains(path, "install") {
-					matches := moduleRefPattern.FindAllStringSubmatch(content, -1)
-					for _, match := range matches {
-						if len(match) > 1 && !seen[match[1]] {
-							seen[match[1]] = true
-							name := strings.ToLower(match[1])
-							child := &DependencyTreeNode{
-								Name:    name,
-								Level:   1,
-								Status:  "missing",
-							}
-							if mod, ok := knownModules[name]; ok {
-								child.ID = mod["id"]
-								child.Version = mod["version"]
-								child.Status = "resolved"
-							} else {
-								child.ID = name
-							}
-							tree.Children = append(tree.Children, child)
+		for path, content := range fileMap {
+			if strings.HasSuffix(path, ".sh") || strings.HasSuffix(path, ".bash") || strings.Contains(path, "install") {
+				matches := moduleRefPattern.FindAllStringSubmatch(content, -1)
+				for _, match := range matches {
+					if len(match) > 1 && !seen[match[1]] {
+						seen[match[1]] = true
+						name := strings.ToLower(match[1])
+						child := &DependencyTreeNode{
+							Name:    name,
+							Level:   1,
+							Status:  "missing",
 						}
+						if mod, ok := knownModules[name]; ok {
+							child.ID = mod["id"]
+							child.Version = mod["version"]
+							child.Status = "resolved"
+						} else {
+							child.ID = name
+						}
+						tree.Children = append(tree.Children, child)
 					}
 				}
 			}
@@ -271,12 +266,11 @@ func (h *DependencyHandler) ResolveDependencies(c fiber.Ctx) error {
 		req.AutoInstall = false
 	}
 
-	// Run analysis first
-	analysisRows, err := h.db.Query("SELECT path, content FROM project_files WHERE project_id=?", projectID)
+	// Run analysis first (S3 first)
+	fileMap, err := h.fr.ReadAllContent(c.Context(), projectID)
 	if err != nil {
 		return InternalError(c, "读取项目文件失败")
 	}
-	defer analysisRows.Close()
 
 	knownModules := make(map[string]map[string]string)
 	modRows, err := h.db.Query("SELECT id, title, version FROM market_modules")
@@ -307,33 +301,30 @@ func (h *DependencyHandler) ResolveDependencies(c fiber.Ctx) error {
 	moduleRefPattern := regexp.MustCompile(`(?:require|import|source|load)\s+(?:module[_-]?)?['"]?([a-zA-Z0-9_-]+)['"]?`)
 	seen := make(map[string]bool)
 
-	for analysisRows.Next() {
-		var path, content string
-		if err := analysisRows.Scan(&path, &content); err == nil {
-			if strings.HasSuffix(path, ".sh") || strings.HasSuffix(path, ".bash") || strings.Contains(path, "install") {
-				matches := moduleRefPattern.FindAllStringSubmatch(content, -1)
-				for _, match := range matches {
-					if len(match) > 1 && !seen[match[1]] {
-						seen[match[1]] = true
-						name := strings.ToLower(match[1])
-						item := DependencyItem{
-							Name:          name,
-							Source:        "file_reference",
-							ReferencePath: path,
-							Required:      true,
-						}
-						if mod, ok := knownModules[name]; ok {
-							item.ID = mod["id"]
-							item.Version = mod["version"]
-							result.Resolved = append(result.Resolved, item)
-							result.Actions = append(result.Actions,
-								fmt.Sprintf("依赖 '%s' 已在市场中找到 (版本 %s)", name, mod["version"]))
-						} else {
-							item.ID = name
-							result.Unresolved = append(result.Unresolved, item)
-							result.Actions = append(result.Actions,
-								fmt.Sprintf("警告: 依赖 '%s' 未在市场中找到", name))
-						}
+	for path, content := range fileMap {
+		if strings.HasSuffix(path, ".sh") || strings.HasSuffix(path, ".bash") || strings.Contains(path, "install") {
+			matches := moduleRefPattern.FindAllStringSubmatch(content, -1)
+			for _, match := range matches {
+				if len(match) > 1 && !seen[match[1]] {
+					seen[match[1]] = true
+					name := strings.ToLower(match[1])
+					item := DependencyItem{
+						Name:          name,
+						Source:        "file_reference",
+						ReferencePath: path,
+						Required:      true,
+					}
+					if mod, ok := knownModules[name]; ok {
+						item.ID = mod["id"]
+						item.Version = mod["version"]
+						result.Resolved = append(result.Resolved, item)
+						result.Actions = append(result.Actions,
+							fmt.Sprintf("依赖 '%s' 已在市场中找到 (版本 %s)", name, mod["version"]))
+					} else {
+						item.ID = name
+						result.Unresolved = append(result.Unresolved, item)
+						result.Actions = append(result.Actions,
+							fmt.Sprintf("警告: 依赖 '%s' 未在市场中找到", name))
 					}
 				}
 			}

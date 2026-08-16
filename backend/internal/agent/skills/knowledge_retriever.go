@@ -10,16 +10,22 @@ import (
 	"strings"
 
 	"github.com/moduforge/backend/internal/agent/registry"
+	"github.com/moduforge/backend/internal/storage"
 )
 
 // KnowledgeRetrieverSkill searches for relevant code patterns and documentation
 type KnowledgeRetrieverSkill struct {
-	db *sql.DB
+	db      *sql.DB
+	storage storage.StorageAdapter // optional S3 storage backend
 }
 
 func init() {
 	registry.RegisterFactory("knowledge_retriever", func(deps *registry.Deps) registry.Skill {
-		return &KnowledgeRetrieverSkill{db: deps.DB}
+		skill := &KnowledgeRetrieverSkill{db: deps.DB}
+		if st := getStorage(deps); st != nil {
+			skill.storage = st
+		}
+		return skill
 	})
 }
 
@@ -104,44 +110,51 @@ func (s *KnowledgeRetrieverSkill) searchCode(query, projectID, language string, 
 	// Search in project files if projectID is provided
 	if projectID != "" && s.db != nil {
 		rows, err := s.db.Query(`
-			SELECT path, content FROM project_files 
-			WHERE project_id = ? AND content LIKE ?
+			SELECT path FROM project_files 
+			WHERE project_id = ?
 			ORDER BY path
-			LIMIT ?
-		`, projectID, "%"+query+"%", limit)
+		`, projectID)
 		if err != nil {
 			return nil, err
 		}
 		defer rows.Close()
 
 		for rows.Next() {
-			var path, content string
-			if err := rows.Scan(&path, &content); err == nil {
-				// Find the matching line
-				lines := strings.Split(content, "\n")
-				for i, line := range lines {
-					if strings.Contains(strings.ToLower(line), strings.ToLower(query)) {
-						// Get context (surrounding lines)
-						start := i - 2
-						if start < 0 {
-							start = 0
-						}
-						end := i + 3
-						if end > len(lines) {
-							end = len(lines)
-						}
-						context := strings.Join(lines[start:end], "\n")
-
-						results = append(results, KnowledgeResult{
-							Source:    path,
-							Type:      "code",
-							Content:   line,
-							Relevance: 0.8,
-							Context:   context,
-						})
-						break
+			var path string
+			if err := rows.Scan(&path); err != nil {
+				continue
+			}
+			content, err := readFileContent(context.Background(), s.storage, s.db, projectID, path)
+			if err != nil {
+				continue
+			}
+			// Find the matching line
+			lines := strings.Split(content, "\n")
+			for i, line := range lines {
+				if strings.Contains(strings.ToLower(line), strings.ToLower(query)) {
+					// Get context (surrounding lines)
+					start := i - 2
+					if start < 0 {
+						start = 0
 					}
+					end := i + 3
+					if end > len(lines) {
+						end = len(lines)
+					}
+					context := strings.Join(lines[start:end], "\n")
+
+					results = append(results, KnowledgeResult{
+						Source:    path,
+						Type:      "code",
+						Content:   line,
+						Relevance: 0.8,
+						Context:   context,
+					})
+					break
 				}
+			}
+			if len(results) >= limit {
+				break
 			}
 		}
 	}

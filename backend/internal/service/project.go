@@ -2,11 +2,9 @@ package service
 
 import (
 	"context"
-	"crypto/sha256"
 	"database/sql"
-	"encoding/hex"
 	"fmt"
-	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,15 +12,21 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/moduforge/backend/internal/domain"
+	"github.com/moduforge/backend/internal/storage"
 )
 
 type ProjectService struct {
 	db          *sql.DB
 	storagePath string // e.g. "data/storage" — base path for project files on disk
+	s3          *storage.S3Adapter // optional S3-compatible storage (SeaweedFS/MinIO)
 }
 
-func NewProjectService(db *sql.DB, storagePath string) *ProjectService {
-	return &ProjectService{db: db, storagePath: storagePath}
+func NewProjectService(db *sql.DB, storagePath string, s3Adapters ...*storage.S3Adapter) *ProjectService {
+	ps := &ProjectService{db: db, storagePath: storagePath}
+	if len(s3Adapters) > 0 && s3Adapters[0] != nil {
+		ps.s3 = s3Adapters[0]
+	}
+	return ps
 }
 
 // diskPath returns the on-disk directory for a project's files.
@@ -323,7 +327,7 @@ func (s *ProjectService) ListFiles(ctx context.Context, projectID, userID string
 		return nil, err
 	}
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, project_id, path, created_at, updated_at, sha256, file_size, mtime
+		`SELECT id, project_id, path, created_at, updated_at, COALESCE(sha256,''), COALESCE(file_size,0), COALESCE(mtime,'')
 		 FROM project_files WHERE project_id=? ORDER BY path`, projectID)
 	if err != nil {
 		return nil, err
@@ -333,12 +337,31 @@ func (s *ProjectService) ListFiles(ctx context.Context, projectID, userID string
 	var files []domain.ProjectFile
 	for rows.Next() {
 		var f domain.ProjectFile
-		if err := rows.Scan(&f.ID, &f.ProjectID, &f.Path, &f.Content, &f.CreatedAt, &f.UpdatedAt); err != nil {
+		if err := rows.Scan(&f.ID, &f.ProjectID, &f.Path, &f.CreatedAt, &f.UpdatedAt, &f.SHA256, &f.FileSize, &f.MTime); err != nil {
 			return nil, err
 		}
 		files = append(files, f)
 	}
 	return files, nil
+}
+
+// readContent returns file content: S3 first (authoritative), falls back to DB content column.
+func (s *ProjectService) readContent(ctx context.Context, projectID, path string) (string, error) {
+	if s.s3 != nil {
+		data, err := s.s3.Read(ctx, s.s3ObjectKey(projectID, path))
+		if err == nil {
+			return string(data), nil
+		}
+		slog.Warn("s3 read failed, falling back to db content", "project", projectID, "path", path, "error", err)
+	}
+	var content string
+	err := s.db.QueryRowContext(ctx,
+		`SELECT COALESCE(content,'') FROM project_files WHERE project_id=? AND path=?`, projectID, path,
+	).Scan(&content)
+	if err != nil {
+		return "", fmt.Errorf("file not found")
+	}
+	return content, nil
 }
 
 func (s *ProjectService) GetFile(ctx context.Context, projectID, path, userID string) (*domain.ProjectFile, error) {
@@ -347,19 +370,17 @@ func (s *ProjectService) GetFile(ctx context.Context, projectID, path, userID st
 	}
 	var f domain.ProjectFile
 	err := s.db.QueryRowContext(ctx,
-		`SELECT id, project_id, path, created_at, updated_at, sha256, file_size, mtime
+		`SELECT id, project_id, path, created_at, updated_at, COALESCE(sha256,''), COALESCE(file_size,0), COALESCE(mtime,'')
 		 FROM project_files WHERE project_id=? AND path=?`, projectID, path,
 	).Scan(&f.ID, &f.ProjectID, &f.Path, &f.CreatedAt, &f.UpdatedAt, &f.SHA256, &f.FileSize, &f.MTime)
 	if err != nil {
 		return nil, fmt.Errorf("file not found")
 	}
-	// Read content from disk (S3-synced)
-	if s.storagePath != "" {
-		fullPath := filepath.Join(s.diskPath(projectID), path)
-		if data, err := os.ReadFile(fullPath); err == nil {
-			f.Content = string(data)
-		}
+	content, err := s.readContent(ctx, projectID, path)
+	if err != nil {
+		return nil, err
 	}
+	f.Content = content
 	return &f, nil
 }
 
@@ -409,9 +430,13 @@ func (s *ProjectService) SearchAll(ctx context.Context, userID, query string) ([
 					Context:     f.Path,
 				})
 			}
-			// Search file content
-			if f.Content != "" {
-				lower := strings.ToLower(f.Content)
+			// Search file content (from S3, authoritative; DB content fallback)
+			content, cErr := s.readContent(ctx, p.ID, f.Path)
+			if cErr != nil {
+				continue
+			}
+			if content != "" {
+				lower := strings.ToLower(content)
 				idx := strings.Index(lower, strings.ToLower(query))
 				if idx >= 0 {
 					start := idx - 25
@@ -419,10 +444,10 @@ func (s *ProjectService) SearchAll(ctx context.Context, userID, query string) ([
 						start = 0
 					}
 					end := idx + len(query) + 25
-					if end > len(f.Content) {
-						end = len(f.Content)
+					if end > len(content) {
+						end = len(content)
 					}
-					context := f.Content[start:end]
+					context := content[start:end]
 					results = append(results, SearchResult{
 						ProjectID:   p.ID,
 						ProjectName: p.Name,
@@ -444,12 +469,30 @@ func (s *ProjectService) SearchAll(ctx context.Context, userID, query string) ([
 	return results, nil
 }
 
+// s3ObjectKey returns the S3 object key (relative to the adapter prefix)
+// for a project file. Layout: <projectID>/<path> under the "projects" prefix.
+func (s *ProjectService) s3ObjectKey(projectID, path string) string {
+	return projectID + "/" + strings.TrimPrefix(path, "/")
+}
+
 func (s *ProjectService) SaveFile(ctx context.Context, projectID, path, content, userID string) (*domain.ProjectFile, error) {
 	if err := s.checkProjectOwnership(ctx, projectID, userID); err != nil {
 		return nil, err
 	}
 
-	// 1. Write to disk (authoritative storage after S3 migration)
+	now := time.Now().UTC().Format(time.RFC3339)
+	sha := storage.ComputeSHA256([]byte(content))
+	size := int64(len(content))
+
+	// 1. Write to S3 first when configured (authoritative object store).
+	if s.s3 != nil {
+		if err := s.s3.Write(ctx, s.s3ObjectKey(projectID, path), []byte(content)); err != nil {
+			return nil, fmt.Errorf("s3 write failed: %w", err)
+		}
+	}
+
+	// 2. Write to disk (S3-synced mirror; also authoritative for local builds
+	//    and serves as fallback when S3 is not configured).
 	fullPath := filepath.Join(s.diskPath(projectID), path)
 	if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
 		return nil, fmt.Errorf("mkdir: %w", err)
@@ -458,21 +501,12 @@ func (s *ProjectService) SaveFile(ctx context.Context, projectID, path, content,
 		return nil, fmt.Errorf("write file: %w", err)
 	}
 
-	// 2. Calculate checksum & size
-	h := sha256.New()
-	io.WriteString(h, content)
-	sha256hex := hex.EncodeToString(h.Sum(nil))
-	fileSize := int64(len(content))
-	now := time.Now().UTC().Format(time.RFC3339)
-
-	// 3. Update database metadata (no content column — content lives on disk/S3)
+	// 3. Update database metadata (content column only used when S3 is off).
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO project_files (project_id, path, sha256, file_size, mtime, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))
-		 ON CONFLICT(project_id, path) DO UPDATE SET
-		   sha256=?, file_size=?, mtime=?, updated_at=datetime('now')`,
-		projectID, path, sha256hex, fileSize, now,
-		sha256hex, fileSize, now)
+		`INSERT INTO project_files (project_id, path, content, created_at, updated_at, sha256, file_size, mtime)
+		 VALUES (?, ?, ?, datetime('now'), datetime('now'), ?, ?, ?)
+		 ON CONFLICT(project_id, path) DO UPDATE SET content=?, updated_at=datetime('now'), sha256=?, file_size=?, mtime=?`,
+		projectID, path, s.dbContent(content), sha, size, now, s.dbContent(content), sha, size, now)
 	if err != nil {
 		return nil, fmt.Errorf("db update: %w", err)
 	}
@@ -487,10 +521,29 @@ func (s *ProjectService) SaveFile(ctx context.Context, projectID, path, content,
 	}, nil
 }
 
-// DeleteFile removes a file from both the database and disk.
+// dbContent returns the content value stored in the DB content column.
+// When S3 is configured the DB only stores metadata (content NULL) to avoid
+// duplicating large payloads; otherwise it falls back to the legacy column.
+func (s *ProjectService) dbContent(content string) any {
+	if s.s3 != nil {
+		return nil
+	}
+	return content
+}
+}
+
+// DeleteFile removes a file from the database, disk, and S3.
 func (s *ProjectService) DeleteFile(ctx context.Context, projectID, path, userID string) error {
 	if err := s.checkProjectOwnership(ctx, projectID, userID); err != nil {
 		return err
+	}
+	// Remove from S3 first (truth source). If S3 delete fails, abort so the DB
+	// index does not point at a dangling object.
+	if s.s3 != nil {
+		if err := s.s3.Delete(ctx, s.s3ObjectKey(projectID, path)); err != nil {
+			slog.Warn("s3 delete failed for project file", "project", projectID, "path", path, "error", err)
+			return fmt.Errorf("s3 delete failed: %w", err)
+		}
 	}
 	result, err := s.db.ExecContext(ctx,
 		`DELETE FROM project_files WHERE project_id=? AND path=?`, projectID, path)
@@ -507,4 +560,35 @@ func (s *ProjectService) DeleteFile(ctx context.Context, projectID, path, userID
 		os.Remove(fullPath)
 	}
 	return nil
+}
+
+// ExportToTempDir writes all project files from S3 (authoritative) to a temp
+// directory and returns its path. The caller is responsible for cleanup.
+// If S3 is unavailable, falls back to DB content.
+func (s *ProjectService) ExportToTempDir(ctx context.Context, projectID string) (string, error) {
+	files, err := s.ListFiles(ctx, projectID, "")
+	if err != nil {
+		return "", err
+	}
+	tmpDir, err := os.MkdirTemp("", "moduforge-export-*")
+	if err != nil {
+		return "", err
+	}
+	for _, f := range files {
+		content, err := s.readContent(ctx, projectID, f.Path)
+		if err != nil {
+			os.RemoveAll(tmpDir)
+			return "", err
+		}
+		fullPath := filepath.Join(tmpDir, filepath.Clean(f.Path))
+		if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
+			os.RemoveAll(tmpDir)
+			return "", err
+		}
+		if err := os.WriteFile(fullPath, []byte(content), 0644); err != nil {
+			os.RemoveAll(tmpDir)
+			return "", err
+		}
+	}
+	return tmpDir, nil
 }

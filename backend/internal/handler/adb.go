@@ -22,6 +22,31 @@ func validatePath(p string) error {
 	return nil
 }
 
+// validateLocalPath ensures a server-side local path is inside an allowed
+// directory (temp dir for uploads, or STORAGE_PATH for build artifacts).
+// Without this, any authenticated user could point PushFile at arbitrary
+// server files (DB, secrets, other users' projects) and leak them to a device.
+func validateLocalPath(p string) error {
+	if p == "" {
+		return fmt.Errorf("local path is required")
+	}
+	clean := filepath.Clean(p)
+
+	allowed := []string{filepath.Clean(os.TempDir())}
+	storagePath := os.Getenv("STORAGE_PATH")
+	if storagePath == "" {
+		storagePath = "/data/storage"
+	}
+	allowed = append(allowed, filepath.Clean(storagePath))
+
+	for _, root := range allowed {
+		if clean == root || strings.HasPrefix(clean, root+string(os.PathSeparator)) {
+			return nil
+		}
+	}
+	return fmt.Errorf("local path %s is outside allowed directories (temp or storage)", p)
+}
+
 type ADBHandler struct {
 	svc *service.ADBService
 }
@@ -93,13 +118,13 @@ type RebootRequest struct {
 }
 
 type InstallRequest struct {
-	Serial string `json:"serial"`
+	Serial  string `json:"serial"`
 	ZipPath string `json:"zip_path"`
 }
 
 type InstallURLRequest struct {
-	Serial  string `json:"serial"`
-	URL     string `json:"url"`
+	Serial string `json:"serial"`
+	URL    string `json:"url"`
 }
 
 type FileReadRequest struct {
@@ -150,9 +175,9 @@ type InstallAppRequest struct {
 }
 
 type UninstallAppRequest struct {
-	Serial    string `json:"serial"`
-	Package   string `json:"package"`
-	KeepData  bool   `json:"keep_data"`
+	Serial   string `json:"serial"`
+	Package  string `json:"package"`
+	KeepData bool   `json:"keep_data"`
 }
 
 type AppActionRequest struct {
@@ -275,7 +300,8 @@ func (h *ADBHandler) GetServerStatus(c fiber.Ctx) error {
 // ─── Device Management ───
 
 func (h *ADBHandler) ListDevices(c fiber.Ctx) error {
-	devices, err := h.svc.ListDevices(c.Context())
+	uid, _ := c.Locals("user_id").(string)
+	devices, err := h.svc.ListDevices(c.Context(), uid)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
@@ -431,6 +457,11 @@ func (h *ADBHandler) PushFile(c fiber.Ctx) error {
 	}
 	if req.Serial == "" || req.LocalPath == "" {
 		return c.Status(400).JSON(fiber.Map{"error": "serial and local_path required"})
+	}
+	// Security: localPath must live in an allowed directory, otherwise any
+	// authenticated user could push arbitrary server files to a device.
+	if err := validateLocalPath(req.LocalPath); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
 	}
 	if req.RemotePath != "" {
 		if err := validatePath(req.RemotePath); err != nil {

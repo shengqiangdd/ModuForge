@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
@@ -16,16 +17,23 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/moduforge/backend/internal/service"
 )
 
 type SigningHandler struct {
-	db      *sql.DB
-	keyDir  string
+	db     *sql.DB
+	keyDir string
+	fr     *service.FileContentRepo // S3-first content access (optional)
 }
 
 func NewSigningHandler(db *sql.DB, keyDir string) *SigningHandler {
 	os.MkdirAll(keyDir, 0700)
 	return &SigningHandler{db: db, keyDir: keyDir}
+}
+
+// SetFileContentRepo injects the S3-first file content repository.
+func (h *SigningHandler) SetFileContentRepo(fr *service.FileContentRepo) {
+	h.fr = fr
 }
 
 func (h *SigningHandler) privateKeyPath() string {
@@ -107,6 +115,22 @@ func (h *SigningHandler) loadPublicKey() (*rsa.PublicKey, error) {
 
 // computeModuleHash computes SHA-256 hash of all project files
 func (h *SigningHandler) computeModuleHash(projectID string) (string, error) {
+	h256 := sha256.New()
+	if h.fr != nil {
+		files, err := h.fr.ReadAll(context.Background(), projectID)
+		if err != nil {
+			return "", err
+		}
+		for _, f := range files {
+			content, err := h.fr.ReadOne(context.Background(), projectID, f.Path)
+			if err != nil {
+				continue
+			}
+			h256.Write([]byte(f.Path))
+			h256.Write([]byte(content))
+		}
+		return hex.EncodeToString(h256.Sum(nil)), nil
+	}
 	rows, err := h.db.Query(
 		`SELECT path, content FROM project_files WHERE project_id=? ORDER BY path`, projectID)
 	if err != nil {
@@ -114,7 +138,6 @@ func (h *SigningHandler) computeModuleHash(projectID string) (string, error) {
 	}
 	defer rows.Close()
 
-	h256 := sha256.New()
 	for rows.Next() {
 		var path, content string
 		if err := rows.Scan(&path, &content); err != nil {

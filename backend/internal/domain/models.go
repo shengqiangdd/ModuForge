@@ -43,6 +43,9 @@ type ProjectFile struct {
 	Content   string `json:"content"`
 	CreatedAt string `json:"created_at"`
 	UpdatedAt string `json:"updated_at"`
+	SHA256    string `json:"sha256,omitempty"`
+	FileSize  int64  `json:"file_size,omitempty"`
+	MTime     string `json:"mtime,omitempty"`
 }
 
 type BuildStatus string

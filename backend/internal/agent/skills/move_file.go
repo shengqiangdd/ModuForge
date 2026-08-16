@@ -6,17 +6,24 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"time"
 	"github.com/moduforge/backend/internal/agent/registry"
+	"github.com/moduforge/backend/internal/storage"
 )
 
 type MoveFileSkill struct {
 	projectPath string
 	db          *sql.DB
+	storage     storage.StorageAdapter // optional S3 storage backend
 }
 
 func NewMoveFileSkill(projectPath string, db *sql.DB) *MoveFileSkill {
 	return &MoveFileSkill{projectPath: projectPath, db: db}
+}
+
+// WithStorage sets the S3 storage adapter. When set, files are moved in S3.
+func (s *MoveFileSkill) WithStorage(st storage.StorageAdapter) *MoveFileSkill {
+	s.storage = st
+	return s
 }
 
 func (s *MoveFileSkill) Name() string {
@@ -53,38 +60,20 @@ func (s *MoveFileSkill) Execute(ctx context.Context, input map[string]interface{
 		return "", fmt.Errorf("path traversal not allowed for destination: %s", to)
 	}
 
-	// DB transaction: read source, write to destination, delete source
-	if s.db != nil {
-		// Read content from source
-		var content string
-		err := s.db.QueryRow(
-			`SELECT content FROM project_files WHERE project_id=? AND path=?`,
-			projectID, from,
-		).Scan(&content)
-		if err != nil {
-			return "", fmt.Errorf("source file not found: %s", from)
-		}
+	// Read content from source (S3 first, DB fallback)
+	content, err := readFileContent(ctx, s.storage, s.db, projectID, from)
+	if err != nil {
+		return "", fmt.Errorf("source file not found: %s", from)
+	}
 
-		// Insert at destination
-		now := time.Now().Format("2006-01-02 15:04:05")
-		_, err = s.db.Exec(
-			`INSERT INTO project_files (project_id, path, content, created_at, updated_at)
-			 VALUES (?, ?, ?, ?, ?)
-			 ON CONFLICT(project_id, path) DO UPDATE SET content=excluded.content, updated_at=excluded.updated_at`,
-			projectID, to, content, now, now,
-		)
-		if err != nil {
-			return "", fmt.Errorf("failed to write to destination: %w", err)
-		}
+	// Write to destination (S3 write + DB metadata/fallback)
+	if err := writeFileContent(ctx, s.storage, s.db, projectID, to, content); err != nil {
+		return "", fmt.Errorf("failed to write to destination: %w", err)
+	}
 
-		// Delete source
-		_, err = s.db.Exec(
-			`DELETE FROM project_files WHERE project_id=? AND path=?`,
-			projectID, from,
-		)
-		if err != nil {
-			return "", fmt.Errorf("failed to delete source file: %w", err)
-		}
+	// Delete source
+	if err := deleteFileContent(ctx, s.storage, s.db, projectID, from); err != nil {
+		return "", fmt.Errorf("failed to delete source file: %w", err)
 	}
 
 	// Disk operation (best-effort)

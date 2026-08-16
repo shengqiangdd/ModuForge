@@ -7,15 +7,23 @@ import (
 	"os"
 	"path/filepath"
 	"github.com/moduforge/backend/internal/agent/registry"
+	"github.com/moduforge/backend/internal/storage"
 )
 
 type DeleteDirSkill struct {
 	projectPath string
 	db          *sql.DB
+	storage     storage.StorageAdapter // optional S3 storage backend
 }
 
 func NewDeleteDirSkill(projectPath string, db *sql.DB) *DeleteDirSkill {
 	return &DeleteDirSkill{projectPath: projectPath, db: db}
+}
+
+// WithStorage sets the S3 storage adapter. When set, files are deleted in S3.
+func (s *DeleteDirSkill) WithStorage(st storage.StorageAdapter) *DeleteDirSkill {
+	s.storage = st
+	return s
 }
 
 func (s *DeleteDirSkill) Name() string {
@@ -52,7 +60,7 @@ func (s *DeleteDirSkill) Execute(ctx context.Context, input map[string]interface
 		return "", fmt.Errorf("path traversal not allowed: %s", path)
 	}
 
-	// Delete from database
+	// Delete from S3 + database
 	if s.db != nil {
 		// Build the LIKE pattern for matching files under this directory
 		likePattern := path + "/%"
@@ -60,20 +68,36 @@ func (s *DeleteDirSkill) Execute(ctx context.Context, input map[string]interface
 			likePattern = "%"
 		}
 
-		// Delete all files under the directory
-		result, err := s.db.Exec(
-			`DELETE FROM project_files WHERE project_id=? AND (path LIKE ? OR path=?)`,
+		// List files under the directory
+		rows, err := s.db.Query(
+			`SELECT path FROM project_files WHERE project_id=? AND (path LIKE ? OR path=?)`,
 			projectID, likePattern, path,
 		)
 		if err != nil {
-			return "", fmt.Errorf("failed to delete from database: %w", err)
+			return "", fmt.Errorf("failed to list files: %w", err)
 		}
-		affected, _ := result.RowsAffected()
+		var paths []string
+		for rows.Next() {
+			var p string
+			if rows.Scan(&p) == nil {
+				paths = append(paths, p)
+			}
+		}
+		rows.Close()
+
+		// Delete each file from S3 + DB
+		deleted := 0
+		for _, p := range paths {
+			if err := deleteFileContent(ctx, s.storage, s.db, projectID, p); err != nil {
+				continue
+			}
+			deleted++
+		}
 
 		// Delete from disk (best-effort)
 		os.RemoveAll(fullPath) // ignore error
 
-		return fmt.Sprintf("Directory deleted: %s (%d files removed)", path, affected), nil
+		return fmt.Sprintf("Directory deleted: %s (%d files removed)", path, deleted), nil
 	}
 
 	// No DB: just delete from disk

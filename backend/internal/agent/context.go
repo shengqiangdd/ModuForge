@@ -147,7 +147,7 @@ func (r *AgentRunner) buildProjectContext(cfg RunConfig) string {
 	} else if r.db != nil {
 		// Fallback: list files from DB if repo-map not available
 		rows, err := r.db.Query(
-			`SELECT path, length(content) as size FROM project_files WHERE project_id=? ORDER BY path`,
+			`SELECT path, COALESCE(file_size, length(content), 0) as size FROM project_files WHERE project_id=? ORDER BY path`,
 			cfg.ProjectID,
 		)
 		if err == nil {

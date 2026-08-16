@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 	"github.com/moduforge/backend/internal/agent/registry"
+	"github.com/moduforge/backend/internal/storage"
 )
 
 // BatchEditFileSkill provides atomic multi-file editing.
@@ -16,10 +17,17 @@ import (
 type BatchEditFileSkill struct {
 	projectPath string
 	db          *sql.DB
+	storage     storage.StorageAdapter // optional S3 storage backend
 }
 
 func NewBatchEditFileSkill(projectPath string, db *sql.DB) *BatchEditFileSkill {
 	return &BatchEditFileSkill{projectPath: projectPath, db: db}
+}
+
+// WithStorage sets the S3 storage adapter. When set, files are edited in S3.
+func (s *BatchEditFileSkill) WithStorage(st storage.StorageAdapter) *BatchEditFileSkill {
+	s.storage = st
+	return s
 }
 
 func (s *BatchEditFileSkill) Name() string {
@@ -81,18 +89,17 @@ func (s *BatchEditFileSkill) Execute(ctx context.Context, input map[string]inter
 			return "", fmt.Errorf("edit %d: old_text and new_text are identical", i)
 		}
 
-		// Read file and validate old_text exists
+		// Read file and validate old_text exists (S3 first, DB fallback)
 		projectPath := ResolveProjectPath(s.db, s.projectPath, projectID)
 		fullPath := filepath.Join(projectPath, path)
 		if !isPathWithin(projectPath, fullPath) {
 			return "", fmt.Errorf("edit %d: path traversal not allowed", i)
 		}
 
-		data, err := os.ReadFile(fullPath)
+		content, err := readFileContent(ctx, s.storage, s.db, projectID, path)
 		if err != nil {
 			return "", fmt.Errorf("edit %d: failed to read %s: %w", i, path, err)
 		}
-		content := string(data)
 
 		if !strings.Contains(content, oldText) {
 			return "", fmt.Errorf("edit %d: old_text not found in %s", i, path)
@@ -101,91 +108,39 @@ func (s *BatchEditFileSkill) Execute(ctx context.Context, input map[string]inter
 		ops = append(ops, editOp{path: path, oldText: oldText, newText: newText})
 	}
 
-	// All validations passed — apply edits in a database transaction
-	if s.db != nil && projectID != "" {
-		tx, err := s.db.BeginTx(ctx, nil)
-		if err != nil {
-			return "", fmt.Errorf("failed to begin transaction: %w", err)
-		}
-		defer tx.Rollback()
-
-		now := time.Now().Format("2006-01-02 15:04:05")
-		stmt, err := tx.PrepareContext(ctx,
-			`INSERT INTO project_files (project_id, path, content, created_at, updated_at)
-			 VALUES (?, ?, ?, ?, ?)
-			 ON CONFLICT(project_id, path) DO UPDATE SET content=excluded.content, updated_at=excluded.updated_at`)
-		if err != nil {
-			return "", fmt.Errorf("failed to prepare statement: %w", err)
-		}
-		defer stmt.Close()
-
-		var editedPaths []string
-		for _, op := range ops {
-			// Read file content
-			projectPath := ResolveProjectPath(s.db, s.projectPath, projectID)
-			fullPath := filepath.Join(projectPath, op.path)
-
-			data, err := os.ReadFile(fullPath)
-			if err != nil {
-				return "", fmt.Errorf("failed to read %s: %w", op.path, err)
-			}
-			content := string(data)
-
-			// Apply edit
-			newContent := strings.ReplaceAll(content, op.oldText, op.newText)
-
-			// Safety check
-			if len(newContent) < len(content)/10 && len(content) > 100 {
-				return "", fmt.Errorf("edit to %s results in too short content (%d vs %d bytes)", op.path, len(newContent), len(content))
-			}
-
-			// Write to disk
-			if err := os.WriteFile(fullPath, []byte(newContent), 0644); err != nil {
-				return "", fmt.Errorf("failed to write %s: %w", op.path, err)
-			}
-
-			// Sync to DB
-			if _, err := stmt.ExecContext(ctx, projectID, op.path, newContent, now, now); err != nil {
-				return "", fmt.Errorf("failed to sync %s to DB: %w", op.path, err)
-			}
-
-			editedPaths = append(editedPaths, op.path)
-		}
-
-		if err := tx.Commit(); err != nil {
-			return "", fmt.Errorf("failed to commit batch edit: %w", err)
-		}
-
-		result := fmt.Sprintf("[project_id:%s] Batch edited %d files: %s", projectID, len(editedPaths), strings.Join(editedPaths, ", "))
-		return result, nil
-	}
-
-	// No DB — apply edits directly to disk
+	// All validations passed — apply edits
 	var editedPaths []string
 	for _, op := range ops {
-		projectPath := ResolveProjectPath(s.db, s.projectPath, projectID)
-		fullPath := filepath.Join(projectPath, op.path)
-
-		data, err := os.ReadFile(fullPath)
+		// Read file content (S3 first)
+		content, err := readFileContent(ctx, s.storage, s.db, projectID, op.path)
 		if err != nil {
 			return "", fmt.Errorf("failed to read %s: %w", op.path, err)
 		}
-		content := string(data)
 
+		// Apply edit
 		newContent := strings.ReplaceAll(content, op.oldText, op.newText)
 
+		// Safety check
 		if len(newContent) < len(content)/10 && len(content) > 100 {
-			return "", fmt.Errorf("edit to %s results in too short content", op.path)
+			return "", fmt.Errorf("edit to %s results in too short content (%d vs %d bytes)", op.path, len(newContent), len(content))
 		}
 
-		if err := os.WriteFile(fullPath, []byte(newContent), 0644); err != nil {
+		// Write to S3 + DB (authoritative store)
+		if err := writeFileContent(ctx, s.storage, s.db, projectID, op.path, newContent); err != nil {
 			return "", fmt.Errorf("failed to write %s: %w", op.path, err)
 		}
+
+		// Write to disk (best-effort)
+		projectPath := ResolveProjectPath(s.db, s.projectPath, projectID)
+		fullPath := filepath.Join(projectPath, op.path)
+		os.MkdirAll(filepath.Dir(fullPath), 0755)
+		os.WriteFile(fullPath, []byte(newContent), 0644)
 
 		editedPaths = append(editedPaths, op.path)
 	}
 
-	return fmt.Sprintf("Batch edited %d files: %s", len(editedPaths), strings.Join(editedPaths, ", ")), nil
+	result := fmt.Sprintf("[project_id:%s] Batch edited %d files: %s", projectID, len(editedPaths), strings.Join(editedPaths, ", "))
+	return result, nil
 }
 
 func (s *BatchEditFileSkill) Metadata() registry.SkillMeta {

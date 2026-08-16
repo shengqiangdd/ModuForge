@@ -13,10 +13,16 @@ import (
 type SecurityHandler struct {
 	scanner *service.SecurityScanner
 	db      *sql.DB
+	fr      *service.FileContentRepo // S3-first content access (optional)
 }
 
 func NewSecurityHandler(scanner *service.SecurityScanner, db *sql.DB) *SecurityHandler {
 	return &SecurityHandler{scanner: scanner, db: db}
+}
+
+// SetFileContentRepo injects the S3-first file content repository.
+func (h *SecurityHandler) SetFileContentRepo(fr *service.FileContentRepo) {
+	h.fr = fr
 }
 
 type ScanRequest struct {
@@ -42,20 +48,9 @@ func (h *SecurityHandler) ScanProject(c fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "project id required"})
 	}
 
-	rows, err := h.db.Query(
-		`SELECT path, content FROM project_files WHERE project_id=?`, projectID)
+	files, err := h.fr.ReadAllContent(c.Context(), projectID)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "failed to read project files"})
-	}
-	defer rows.Close()
-
-	files := make(map[string]string)
-	for rows.Next() {
-		var path, content string
-		if err := rows.Scan(&path, &content); err != nil {
-			continue
-		}
-		files[path] = content
 	}
 
 	if len(files) == 0 {
@@ -126,11 +121,10 @@ func (h *SecurityHandler) ScanVulnerabilities(c fiber.Ctx) error {
 		pid = 0
 	}
 
-	rows, err := h.db.Query("SELECT path, content FROM project_files WHERE project_id = ?", projectID)
+	allFiles, err := h.fr.ReadAllContent(c.Context(), projectID)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "failed to read files"})
 	}
-	defer rows.Close()
 
 	var results []VulnResult
 	totalDeps := 0
@@ -139,11 +133,7 @@ func (h *SecurityHandler) ScanVulnerabilities(c fiber.Ctx) error {
 	mediumCount := 0
 	lowCount := 0
 
-	for rows.Next() {
-		var path, content string
-		if err := rows.Scan(&path, &content); err != nil {
-			continue
-		}
+	for path, content := range allFiles {
 		if !strings.HasSuffix(path, "package.json") && !strings.HasSuffix(path, "requirements.txt") && !strings.HasSuffix(path, "go.mod") {
 			continue
 		}

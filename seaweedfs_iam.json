@@ -1,0 +1,29 @@
+{
+  "sts": {
+    "signingKey": "3d8d360405b62ee1d3780f77e380ac0c3c98f17dc8980c300a59215763f203ca"
+  },
+  "policy": {
+    "storeType": "memory"
+  },
+  "identities": [
+    {
+      "name": "admin",
+      "credentials": [
+        {"accessKey": "minioadmin", "secretKey": "minioadmin"}
+      ],
+      "actions": ["Admin", "Read", "Write", "List", "Tagging"],
+      "policyNames": ["S3AdminPolicy"]
+    }
+  ],
+  "policies": [
+    {
+      "name": "S3AdminPolicy",
+      "document": {
+        "Version": "2012-10-17",
+        "Statement": [
+          {"Effect": "Allow", "Action": ["s3:*"], "Resource": ["*"]}
+        ]
+      }
+    }
+  ]
+}
