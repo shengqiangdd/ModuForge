@@ -37,4 +37,12 @@ if [ -n "${HOME}" ]; then
   chown -R moduforge:moduforge "${HOME}" 2>/dev/null || true
 fi
 
+# ── 降权运行（最小权限原则）──
+# ModuForge 会在服务端编译用户提交的代码（go build / cargo / NDK clang），
+# 构建脚本可执行任意命令，绝不能以 root 运行用户代码。
+# root 入口已完成卷权限自愈（备份恢复场景），此处切换到 moduforge (uid 1000)。
+if [ "$(id -u)" = '0' ]; then
+  log "Dropping privileges to moduforge (uid 1000)"
+  exec su -s /bin/sh moduforge -c 'exec /app/server "$@"' sh "$@"
+fi
 exec /app/server "$@"
