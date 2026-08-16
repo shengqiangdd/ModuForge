@@ -35,7 +35,7 @@ func TestPersistDailyUsage(t *testing.T) {
 	r.perfMetrics.RecordRetry()
 
 	// First persist writes the delta
-	r.persistDailyUsage()
+	r.persistDailyUsage("test-user")
 
 	var calls, tokens, tools, errs, retries int64
 	today := time.Now().Format("2006-01-02")
@@ -48,7 +48,7 @@ func TestPersistDailyUsage(t *testing.T) {
 	}
 
 	// Second persist without new activity must not double-count
-	r.persistDailyUsage()
+	r.persistDailyUsage("test-user")
 	if err := db.QueryRow(`SELECT llm_call_count, llm_token_usage FROM ai_usage_daily WHERE date=?`, today).Scan(&calls, &tokens); err != nil {
 		t.Fatal(err)
 	}
@@ -58,7 +58,7 @@ func TestPersistDailyUsage(t *testing.T) {
 
 	// New activity accumulates on top
 	r.perfMetrics.RecordTokenUsage(2500)
-	r.persistDailyUsage()
+	r.persistDailyUsage("test-user")
 	if err := db.QueryRow(`SELECT llm_token_usage FROM ai_usage_daily WHERE date=?`, today).Scan(&tokens); err != nil {
 		t.Fatal(err)
 	}

@@ -1156,9 +1156,10 @@ func (h *AgentHandler) GetToolStats(c fiber.Ctx) error {
 // GetAgentMetrics returns aggregated process-lifetime performance metrics
 // plus daily usage history (from ai_usage_daily) for the observability UI.
 func (h *AgentHandler) GetAgentMetrics(c fiber.Ctx) error {
+	uid, _ := c.Locals("uid").(string)
 	return c.JSON(fiber.Map{
 		"metrics": h.runner.GetPerfMetrics(),
-		"daily":   h.runner.GetDailyUsage(30),
+		"daily":   h.runner.GetDailyUsage(30, uid),
 	})
 }
 

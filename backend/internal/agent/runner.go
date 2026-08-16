@@ -1003,7 +1003,7 @@ func (r *AgentRunner) findFallbackProvider(userID, excludeProviderID, currentMod
 func (r *AgentRunner) Run(ctx context.Context, task string, userID string, messages []service.Message, sessionID string, w SSEWriter, reqProviderID, reqModel string, cfg RunConfig) error {
 	ctx, cancel := context.WithTimeout(ctx, totalTimeout)
 	defer cancel()
-	defer r.persistDailyUsage()
+	defer r.persistDailyUsage(userID)
 
 	if cfg.MaxIterations <= 0 {
 		cfg.MaxIterations = defaultMaxIterations
@@ -2248,14 +2248,14 @@ func (r *AgentRunner) GetPerfMetrics() map[string]interface{} {
 	return r.perfMetrics.GetSummary()
 }
 
-// GetDailyUsage returns per-day aggregated AI usage for trend charts.
-// Rows are ordered ascending by date (oldest first).
-func (r *AgentRunner) GetDailyUsage(limit int) []map[string]interface{} {
+// GetDailyUsage returns per-day aggregated AI usage for trend charts,
+// scoped to the given user. Rows are ordered ascending by date (oldest first).
+func (r *AgentRunner) GetDailyUsage(limit int, userID string) []map[string]interface{} {
 	if r.db == nil {
 		return []map[string]interface{}{}
 	}
 	rows, err := r.db.Query(`SELECT date, llm_call_count, llm_token_usage, tool_call_count, error_count, retry_count
-		FROM ai_usage_daily ORDER BY date DESC LIMIT ?`, limit)
+		FROM ai_usage_daily WHERE user_id = ? ORDER BY date DESC LIMIT ?`, userID, limit)
 	if err != nil {
 		return []map[string]interface{}{}
 	}
@@ -2288,7 +2288,7 @@ func (r *AgentRunner) GetDailyUsage(limit int) []map[string]interface{} {
 // one in-flight task.
 var usagePersistMu sync.Mutex
 
-func (r *AgentRunner) persistDailyUsage() {
+func (r *AgentRunner) persistDailyUsage(userID string) {
 	if r.db == nil {
 		return
 	}
@@ -2308,16 +2308,16 @@ func (r *AgentRunner) persistDailyUsage() {
 		return
 	}
 	today := time.Now().Format("2006-01-02")
-	_, err := r.db.Exec(`INSERT INTO ai_usage_daily (date, llm_call_count, llm_token_usage, tool_call_count, error_count, retry_count)
-		VALUES (?, ?, ?, ?, ?, ?)
-		ON CONFLICT(date) DO UPDATE SET
+	_, err := r.db.Exec(`INSERT INTO ai_usage_daily (date, user_id, llm_call_count, llm_token_usage, tool_call_count, error_count, retry_count)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(date, user_id) DO UPDATE SET
 			llm_call_count = llm_call_count + excluded.llm_call_count,
 			llm_token_usage = llm_token_usage + excluded.llm_token_usage,
 			tool_call_count = tool_call_count + excluded.tool_call_count,
 			error_count = error_count + excluded.error_count,
 			retry_count = retry_count + excluded.retry_count,
 			updated_at = CURRENT_TIMESTAMP`,
-		today, calls, tokens, tools, errs, retries)
+		today, userID, calls, tokens, tools, errs, retries)
 	if err != nil {
 		log.Printf("[Usage] persist daily usage: %v", err)
 		return

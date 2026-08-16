@@ -1109,12 +1109,12 @@ func (s *AIService) recordNonAgentUsage(sessionID, userID, model string, usage *
 	}
 	today := time.Now().Format("2006-01-02")
 	if _, err := s.db.Exec(
-		`INSERT INTO ai_usage_daily (date, llm_call_count, llm_token_usage) VALUES (?, 1, ?)
-		 ON CONFLICT(date) DO UPDATE SET
+		`INSERT INTO ai_usage_daily (date, user_id, llm_call_count, llm_token_usage) VALUES (?, ?, 1, ?)
+		 ON CONFLICT(date, user_id) DO UPDATE SET
 		   llm_call_count = llm_call_count + 1,
 		   llm_token_usage = llm_token_usage + excluded.llm_token_usage,
 		   updated_at = CURRENT_TIMESTAMP`,
-		today, total,
+		today, userID, total,
 	); err != nil {
 		slog.Warn("recordNonAgentUsage daily", "error", err)
 	}

@@ -821,17 +821,44 @@ func (db *DB) migrate() error {
 		)`,
 		// Daily AI usage aggregation (survives restarts, powers cost/usage trends)
 		`CREATE TABLE IF NOT EXISTS ai_usage_daily (
-			date TEXT PRIMARY KEY,
+			date TEXT NOT NULL,
+			user_id TEXT NOT NULL DEFAULT '',
 			llm_call_count INTEGER DEFAULT 0,
 			llm_token_usage INTEGER DEFAULT 0,
 			tool_call_count INTEGER DEFAULT 0,
 			error_count INTEGER DEFAULT 0,
 			retry_count INTEGER DEFAULT 0,
-			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			PRIMARY KEY (date, user_id)
 		)`,
 	}
 	for _, m := range addColumnIfMissing {
 		db.Conn.Exec(m) // ignore errors for ALTER TABLE
+	}
+
+	// Migrate legacy ai_usage_daily (no user_id, single global row per date):
+	// rebuild with user_id and carry old rows over as user_id='' (global).
+	db.Conn.Exec(`ALTER TABLE ai_usage_daily RENAME TO ai_usage_daily_legacy`)
+	if _, err := db.Conn.Exec(`SELECT user_id FROM ai_usage_daily`); err != nil {
+		// old schema detected: copy and drop
+		db.Conn.Exec(`CREATE TABLE IF NOT EXISTS ai_usage_daily (
+			date TEXT NOT NULL,
+			user_id TEXT NOT NULL DEFAULT '',
+			llm_call_count INTEGER DEFAULT 0,
+			llm_token_usage INTEGER DEFAULT 0,
+			tool_call_count INTEGER DEFAULT 0,
+			error_count INTEGER DEFAULT 0,
+			retry_count INTEGER DEFAULT 0,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			PRIMARY KEY (date, user_id)
+		)`)
+		db.Conn.Exec(`INSERT OR IGNORE INTO ai_usage_daily (date, user_id, llm_call_count, llm_token_usage, tool_call_count, error_count, retry_count, updated_at)
+			SELECT date, '', llm_call_count, llm_token_usage, tool_call_count, error_count, retry_count, updated_at FROM ai_usage_daily_legacy`)
+		db.Conn.Exec(`DROP TABLE ai_usage_daily_legacy`)
+		log.Println("[DB] migrated ai_usage_daily to user-scoped schema")
+	} else {
+		// new schema already in place; drop temp table
+		db.Conn.Exec(`DROP TABLE IF EXISTS ai_usage_daily_legacy`)
 	}
 
 	// Fix dashboard_widgets.user_id type: INTEGER → TEXT (users.id is UUID string)
