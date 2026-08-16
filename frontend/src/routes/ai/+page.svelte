@@ -508,7 +508,26 @@ import { filterStepsByRound } from './lib/rounds';
   function permissionArgsPreview(): string {
     const req = pendingPermission;
     if (!req || !req.args || Object.keys(req.args).length === 0) return '（无参数）';
-    try { return JSON.stringify(req.args, null, 2); } catch { return String(req.args); }
+    try { return JSON.stringify(redactArgValues(req.args), null, 2); } catch { return String(req.args); }
+  }
+
+  // Extra defense-in-depth: mask any sensitive-looking values in arg preview
+  // (backend already redacts; this catches nested/other shapes).
+  function redactArgValues(v: unknown, depth = 0): unknown {
+    if (depth > 4) return v;
+    if (Array.isArray(v)) return v.map(x => redactArgValues(x, depth + 1));
+    if (v && typeof v === 'object') {
+      const out: Record<string, unknown> = {};
+      for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
+        if (/token|secret|password|passwd|api[_-]?key|authorization|auth|credential|bearer|cookie/i.test(k)) {
+          out[k] = typeof val === 'string' && val.length > 8 ? `${val.slice(0, 4)}***${val.slice(-2)}` : '***';
+        } else {
+          out[k] = redactArgValues(val, depth + 1);
+        }
+      }
+      return out;
+    }
+    return v;
   }
 
   async function loadSessions() {

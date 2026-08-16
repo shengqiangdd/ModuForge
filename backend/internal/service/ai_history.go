@@ -531,6 +531,11 @@ func EnsureConversationMessagesTable(db *sql.DB) error {
 }
 
 func SaveConversationMessage(db *sql.DB, sessionID, userID, role, content string, roundIndex int, extraFields ...map[string]string) error {
+	// Cap persisted content (assistant answers / user tasks) to avoid DB bloat.
+	const maxMsgContent = 256 * 1024
+	if len(content) > maxMsgContent {
+		content = content[:maxMsgContent] + "\n...[truncated by server]"
+	}
 	toolCalls := ""
 	toolCallID := ""
 	tokenUsage := ""
@@ -552,8 +557,13 @@ func SaveConversationMessage(db *sql.DB, sessionID, userID, role, content string
 	return err
 }
 
-// SaveAgentStep saves an agent intermediate step (think/skill_call/skill_result/answer)
+// SaveAgentStep saves an agent intermediate step (think/skill_call/skill_result/answer).
+// Content is truncated to prevent DB bloat from oversized tool outputs.
 func SaveAgentStep(db *sql.DB, sessionID, userID, stepType, content string, roundIndex int) error {
+	const maxStepContent = 64 * 1024 // 64KB cap per intermediate step
+	if len(content) > maxStepContent {
+		content = content[:maxStepContent] + "\n...[truncated by server]"
+	}
 	_, err := db.Exec(
 		`INSERT INTO conversation_messages (session_id, user_id, role, content, step_type, round_index) VALUES (?, ?, 'agent', ?, ?, ?)`,
 		sessionID, userID, content, stepType, roundIndex,
@@ -574,10 +584,14 @@ func GetConversationMessages(db *sql.DB, sessionID, userID string) ([]Conversati
 	defer rows.Close()
 
 	var result []ConversationMessage
+	const maxReadContent = 96 * 1024 // serve-side cap for legacy oversized rows
 	for rows.Next() {
 		var m ConversationMessage
 		if err := rows.Scan(&m.ID, &m.SessionID, &m.UserID, &m.Role, &m.Content, &m.StepType, &m.RoundIndex, &m.CreatedAt, &m.ToolCalls, &m.ToolCallID, &m.TokenUsage); err != nil {
 			continue
+		}
+		if len(m.Content) > maxReadContent {
+			m.Content = m.Content[:maxReadContent] + "\n...[truncated by server]"
 		}
 		result = append(result, m)
 	}

@@ -404,6 +404,50 @@ type ApprovalRequest struct {
 // requestMCPApproval suspends the tool call and asks the user (via SSE) to
 // approve or reject it. Blocks until a confirm API call resolves it, or the
 // timeout elapses (treated as deny).
+// redactSensitiveArgs returns a copy of args with sensitive values masked,
+// so secrets (API keys, tokens, passwords) never appear in permission
+// dialogs or frontend payloads. Non-secret values pass through unchanged.
+func redactSensitiveArgs(args map[string]interface{}) map[string]interface{} {
+	out := make(map[string]interface{}, len(args))
+	for k, v := range args {
+		if isSensitiveArgKey(k) {
+			out[k] = redactArgValue(v)
+			continue
+		}
+		if m, ok := v.(map[string]interface{}); ok {
+			out[k] = redactSensitiveArgs(m)
+			continue
+		}
+		out[k] = v
+	}
+	return out
+}
+
+// isSensitiveArgKey reports whether a parameter key should be masked.
+func isSensitiveArgKey(key string) bool {
+	lk := strings.ToLower(key)
+	for _, frag := range []string{"token", "secret", "password", "passwd", "api_key", "apikey", "authorization", "auth", "credential", "access_key", "secret_key", "private_key", "client_secret", "appsecret", "bearer", "cookie", "session_key"} {
+		if strings.Contains(lk, frag) {
+			return true
+		}
+	}
+	return false
+}
+
+// redactArgValue masks a sensitive value: keeps first 4 + last 2 chars for
+// strings, full mask for non-strings.
+func redactArgValue(v interface{}) interface{} {
+	switch val := v.(type) {
+	case string:
+		if len(val) <= 8 {
+			return "***"
+		}
+		return val[:4] + "***" + val[len(val)-2:]
+	default:
+		return "***"
+	}
+}
+
 func (r *AgentRunner) requestMCPApproval(ctx context.Context, w SSEWriter, name string, input map[string]interface{}) (bool, error) {
 	parts := strings.SplitN(name, "__", 3)
 	server, tool := "", name
@@ -426,7 +470,7 @@ func (r *AgentRunner) requestMCPApproval(ctx context.Context, w SSEWriter, name 
 			"request_id": req.ID,
 			"server":     server,
 			"tool":       tool,
-			"args":       input,
+			"args":       redactSensitiveArgs(input),
 			"timeout_s":  mcpApprovalTimeoutSec,
 		})
 	}

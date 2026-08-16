@@ -299,8 +299,16 @@ func userFriendlyError(err error) string {
 	if strings.Contains(errStr, "invalid_api_key") || strings.Contains(errStr, "401") {
 		return "🔑 API Key 无效，请检查配置"
 	}
+	// Insufficient balance / payment required (e.g. 402 Payment Required)
+	if strings.Contains(errStr, "402") ||
+		strings.Contains(errStr, "insufficient") ||
+		strings.Contains(errStr, "payment") ||
+		strings.Contains(errStr, "balance") ||
+		strings.Contains(errStr, "no_quota") {
+		return "💳 该模型余额或配额不足，请到模型平台充值/领取额度，或切换其他模型"
+	}
 	if strings.Contains(errStr, "quota_exceeded") || strings.Contains(errStr, "429") {
-		return "⏳ 请求频率超限，请稍后再试"
+		return "⏳ 请求频率超限（可能免费模型配额用尽），请稍后再试或切换到付费模型"
 	}
 	if strings.Contains(errStr, "Upstream request failed") {
 		return "🔧 上游 LLM 服务异常，已自动重试失败，请稍后再试或切换模型"
@@ -320,11 +328,41 @@ func userFriendlyError(err error) string {
 	if strings.Contains(errStr, "LLM stream interrupted") {
 		return "🔌 LLM 连接中断，请检查网络或稍后重试"
 	}
-	// Truncate generic errors
-	if len(errStr) > 100 {
+	// Include provider/model hint when present, without leaking raw bodies
+	hint := extractProviderModel(errStr)
+	if hint != "" {
+		errStr = fmt.Sprintf("%s%s", strings.TrimSpace(strings.Split(errStr, ":")[0]), hint)
+	} else if len(errStr) > 100 {
 		errStr = errStr[:100] + "..."
 	}
 	return fmt.Sprintf("❌ LLM 错误: %s", errStr)
+}
+
+// extractProviderModel pulls "provider=xxx model=yyy" from an error string for
+// user-facing hints; returns "" when absent.
+func extractProviderModel(errStr string) string {
+	provider := ""
+	model := ""
+	if i := strings.Index(errStr, "provider="); i >= 0 {
+		rest := errStr[i+len("provider="):]
+		if j := strings.IndexAny(rest, " :"); j > 0 {
+			provider = rest[:j]
+		} else if len(rest) > 0 {
+			provider = rest
+		}
+	}
+	if i := strings.Index(errStr, "model="); i >= 0 {
+		rest := errStr[i+len("model="):]
+		if j := strings.IndexAny(rest, " :"); j > 0 {
+			model = rest[:j]
+		} else if len(rest) > 0 {
+			model = rest
+		}
+	}
+	if provider == "" && model == "" {
+		return ""
+	}
+	return fmt.Sprintf("（%s %s）", provider, model)
 }
 
 // min returns the smaller of two ints.

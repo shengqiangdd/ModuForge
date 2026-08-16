@@ -552,7 +552,7 @@ func (r *AgentRunner) callLLMWithTools(ctx context.Context, messages []map[strin
 		}
 
 		if resp.StatusCode >= 400 {
-			lastErr, retryable = handleLLMHTTPError(resp, modelTier, reqProviderID)
+			lastErr, retryable = handleLLMHTTPError(resp, modelTier, reqProviderID, model)
 			if !retryable {
 				r.perfMetrics.RecordError()
 				return nil, lastErr // permanent error, no retry
@@ -645,10 +645,10 @@ func buildLLMRequestBody(messages []map[string]interface{}, tools []ToolDef, cfg
 // handleLLMHTTPError converts an HTTP error response into an error and a
 // retryable flag. It records 429 rate limits and circuit-breaker failures for
 // free models, and extracts the Retry-After header when present.
-func handleLLMHTTPError(resp *http.Response, modelTier ModelTier, reqProviderID string) (error, bool) {
+func handleLLMHTTPError(resp *http.Response, modelTier ModelTier, reqProviderID, model string) (error, bool) {
 	respBody, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
-	errMsg := fmt.Sprintf("LLM error (HTTP %d): %s", resp.StatusCode, string(respBody))
+	errMsg := fmt.Sprintf("LLM error (HTTP %d) provider=%s model=%s: %s", resp.StatusCode, reqProviderID, model, string(respBody))
 	err := errors.New(errMsg)
 	if !isLLMRetryableError(resp.StatusCode) {
 		return err, false
