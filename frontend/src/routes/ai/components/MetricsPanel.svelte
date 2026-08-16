@@ -10,7 +10,6 @@
   let collapsed = $state(true);
   let metrics: any = $state(null);
   let loading = $state(false);
-  let lastRefreshed = $state<number>(0);
 
   async function refresh() {
     if (loading) return;
@@ -20,7 +19,6 @@
       if (res.ok) {
         const data = await res.json();
         metrics = data.metrics || {};
-        lastRefreshed = Date.now();
       }
     } catch { /* silent */ }
     loading = false;
