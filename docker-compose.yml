@@ -23,7 +23,7 @@ services:
       - S3_SECRET_KEY=minioadmin
       - S3_BUCKET=moduforge
       - GIN_MODE=release
-      # JWT_SECRET: 留空则自动生成随机密钥（重启后失效，生产环境请显式设置）
+      # JWT_SECRET: 必须显式配置（在 .env 设置），留空时登录/认证不可用（GenerateJWT 拒绝空密钥）
       - JWT_SECRET=${JWT_SECRET:-}
       - MODUFORGE_DEV=0
       - TZ=Asia/Shanghai
