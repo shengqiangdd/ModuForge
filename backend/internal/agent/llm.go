@@ -441,6 +441,7 @@ type LLMResponse struct {
 	Content      string        `json:"content"`
 	ToolCalls    []LLMToolCall `json:"tool_calls"`
 	FinishReason string        `json:"finish_reason,omitempty"` // "stop" or "length"
+	TokenUsage   *TokenUsage   `json:"token_usage,omitempty"`
 }
 
 // ToolCallFunction holds the function details of a tool call.
@@ -572,6 +573,14 @@ func (r *AgentRunner) callLLMWithTools(ctx context.Context, messages []map[strin
 				continue
 			}
 		}
+		if result != nil && result.TokenUsage != nil && result.TokenUsage.TotalTokens > 0 {
+			// Record aggregated token usage and notify the frontend (per-message display).
+			r.perfMetrics.RecordTokenUsage(result.TokenUsage.TotalTokens)
+			w.WriteSSE(map[string]interface{}{
+				"type":  "usage",
+				"usage": result.TokenUsage,
+			})
+		}
 		return result, nil
 	}
 
@@ -666,6 +675,16 @@ type streamChunk struct {
 		} `json:"delta"`
 		FinishReason string `json:"finish_reason"`
 	} `json:"choices"`
+	// Usage is present on the final chunk of streaming responses (OpenAI-style).
+	// It is sent in a chunk with empty choices, which the old code skipped.
+	Usage *TokenUsage `json:"usage"`
+}
+
+// TokenUsage holds per-call token accounting from the LLM API.
+type TokenUsage struct {
+	PromptTokens     int `json:"prompt_tokens"`
+	CompletionTokens int `json:"completion_tokens"`
+	TotalTokens      int `json:"total_tokens"`
 }
 
 // forEachSSEChunk iterates over the SSE "data:" payloads in a streaming
@@ -700,6 +719,7 @@ func (r *AgentRunner) parseStreamingResponse(ctx context.Context, resp *http.Res
 	var toolCalls []LLMToolCall
 	toolCallMap := make(map[int]*LLMToolCall, 4) // Optimization 36: pre-allocate for typical 1-3 tool calls
 	var finishReason string
+	var usage *TokenUsage
 
 	keepAliveDone := make(chan struct{})
 	startKeepalive(ctx, w, keepAliveDone, 10*time.Second)
@@ -713,6 +733,10 @@ func (r *AgentRunner) parseStreamingResponse(ctx context.Context, resp *http.Res
 			// Log failed parse at debug level (some LLMs send non-standard chunks)
 			debugLog("stream parse failed (len=%d): %v", len(data), err)
 			return true
+		}
+		// Capture usage from the final chunk (empty choices + usage field).
+		if parsed.Usage != nil && parsed.Usage.TotalTokens > 0 {
+			usage = parsed.Usage
 		}
 		if len(parsed.Choices) == 0 {
 			return true
@@ -767,6 +791,7 @@ func (r *AgentRunner) parseStreamingResponse(ctx context.Context, resp *http.Res
 		Content:      fullContent.String(),
 		ToolCalls:    toolCalls,
 		FinishReason: finishReason,
+		TokenUsage:   usage,
 	}, nil
 }
 

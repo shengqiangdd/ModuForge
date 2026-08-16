@@ -248,6 +248,13 @@ func (pm *PerformanceMetrics) RecordRetry() {
 	pm.RetryCount++
 }
 
+// RecordTokenUsage accumulates LLM token consumption.
+func (pm *PerformanceMetrics) RecordTokenUsage(tokens int) {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+	pm.LLMTokenUsage += int64(tokens)
+}
+
 // GetSummary returns a summary of performance metrics.
 func (pm *PerformanceMetrics) GetSummary() map[string]interface{} {
 	pm.mu.Lock()
@@ -256,6 +263,7 @@ func (pm *PerformanceMetrics) GetSummary() map[string]interface{} {
 	summary := map[string]interface{}{
 		"llm_call_count":      pm.LLMCallCount,
 		"llm_total_duration":  pm.LLMTotalDuration.Milliseconds(),
+		"llm_token_usage":     pm.LLMTokenUsage,
 		"tool_call_count":     pm.ToolCallCount,
 		"tool_total_duration": pm.ToolTotalDuration.Milliseconds(),
 		"iteration_count":     pm.IterationCount,

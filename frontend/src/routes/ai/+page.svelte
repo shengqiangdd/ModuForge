@@ -6,6 +6,7 @@ import { client } from '$lib/api/client';
 import ChatSidebar from './components/ChatSidebar.svelte';
 import ChatInput from './components/ChatInput.svelte';
 import ModelSelector from './components/ModelSelector.svelte';
+import MetricsPanel from './components/MetricsPanel.svelte';
 import CompactToolbar from './components/CompactToolbar.svelte';
 import ChatMessages from './components/ChatMessages.svelte';
 import ChatControls from './components/ChatControls.svelte';
@@ -509,6 +510,10 @@ import { filterStepsByRound } from './lib/rounds';
     const latestSteps = allAgentSteps.filter(s => s.round === result.maxRound);
     agentSteps = latestSteps;
     messages = result.messages;
+    // Restore per-message token usage from persisted conversation history
+    const restored = new Map<number, TokenUsage>();
+    result.messages.forEach((m, i) => { if (m.token_usage) restored.set(i, m.token_usage); });
+    if (restored.size > 0) messageUsages = restored;
     sessionId = sessId;
     showHistorySidebar = false;
     agentStepsCollapsed = true;
@@ -665,7 +670,7 @@ import { filterStepsByRound } from './lib/rounds';
   function handleCopyText(text: string) { safeCopyText(text).then(ok => { if (ok) toast('已复制', 'success'); }); }
   function handleInsertToInput(text: string) { input = text; }
   function handleNewConversation() {
-    messages = []; currentStepIndex = -1; progressStepDetails = []; autoBuildPhases = []; agentSteps = []; allAgentSteps = []; selectedRound = -1; maxRoundIndex = 0; expandedReasoning = new Set(); activeSessionId = ''; sessionId = generateUUID(); mode = 'generate'; showHistorySidebar = false; autoBuildProjectId = ''; autoBuildProjectName = ''; autoBuildFiles = [];
+    messages = []; currentStepIndex = -1; progressStepDetails = []; autoBuildPhases = []; agentSteps = []; allAgentSteps = []; selectedRound = -1; maxRoundIndex = 0; expandedReasoning = new Set(); messageUsages = new Map(); activeSessionId = ''; sessionId = generateUUID(); mode = 'generate'; showHistorySidebar = false; autoBuildProjectId = ''; autoBuildProjectName = ''; autoBuildFiles = [];
   }
   function handleRefreshSidebar() { loadConversations(); loadSessions(); loadGenHistory(); }
   function handleTabChange(tab: 'conversations' | 'generations') { historyTab = tab; }
@@ -840,7 +845,7 @@ import { filterStepsByRound } from './lib/rounds';
   // Don't trigger shortcuts when typing in inputs
   const tag = (e.target as HTMLElement)?.tagName;
   if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement)?.contentEditable === 'true') return;
-  if (e.ctrlKey && e.key === 'k') { e.preventDefault(); messages = []; currentStepIndex = -1; progressStepDetails = []; autoBuildPhases = []; agentSteps = []; allAgentSteps = []; selectedRound = -1; maxRoundIndex = 0; expandedReasoning = new Set(); activeSessionId = ''; sessionId = generateUUID(); mode = 'generate'; autoBuildProjectId = ''; autoBuildProjectName = ''; autoBuildFiles = []; subtasks = []; }
+  if (e.ctrlKey && e.key === 'k') { e.preventDefault(); messages = []; currentStepIndex = -1; progressStepDetails = []; autoBuildPhases = []; agentSteps = []; allAgentSteps = []; selectedRound = -1; maxRoundIndex = 0; expandedReasoning = new Set(); messageUsages = new Map(); activeSessionId = ''; sessionId = generateUUID(); mode = 'generate'; autoBuildProjectId = ''; autoBuildProjectName = ''; autoBuildFiles = []; subtasks = []; }
   if (e.ctrlKey && e.key === 'e') { e.preventDefault(); if (messages.length > 0) exportConversation('markdown'); }
   if (e.key === '?') { e.preventDefault(); showShortcutPanel = !showShortcutPanel; }
   if (e.key === 'Escape') { showHistorySidebar = false; showPromptSettings = false; showMDPrompts = false; showProviderConfig = false; showPreviewModal = false; showImportDialog = false; showComparison = false; showPromptTemplates = false; showDiffPanel = false; showCapability = false; showMcpTools = false; showShortcutPanel = false; }
@@ -886,6 +891,8 @@ import { filterStepsByRound } from './lib/rounds';
       onOpenMDPrompts={() => showMDPrompts = true}
       {onNavigate}
     />
+
+    <MetricsPanel inputPricePerM={selectedModel?.price_input_per_m || 0} outputPricePerM={selectedModel?.price_output_per_m || 0} />
 
     <ProgressIndicator show={streaming && currentStepIndex >= 0 && (mode === 'generate' || mode === 'auto-build')} {streaming} {currentStepIndex} {progressStepDetails} {stepElapsed} {progressCollapsed} onToggleCollapse={() => progressCollapsed = !progressCollapsed} />
     <AutoBuildProjectCard projectId={autoBuildProjectId} projectName={autoBuildProjectName} fileCount={autoBuildFiles.length} collapsed={projectCardCollapsed} onToggleCollapse={() => projectCardCollapsed = !projectCardCollapsed} />

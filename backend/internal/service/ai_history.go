@@ -502,6 +502,7 @@ type ConversationMessage struct {
 	CreatedAt  string   `json:"created_at"`
 	ToolCalls  string   `json:"tool_calls,omitempty"`
 	ToolCallID string   `json:"tool_call_id,omitempty"`
+	TokenUsage string   `json:"token_usage,omitempty"` // JSON: {"prompt_tokens":N,"completion_tokens":N,"total_tokens":N}
 }
 
 func EnsureConversationMessagesTable(db *sql.DB) error {
@@ -521,6 +522,7 @@ func EnsureConversationMessagesTable(db *sql.DB) error {
 	// Migration: add columns if missing
 	db.Exec(`ALTER TABLE conversation_messages ADD COLUMN step_type TEXT DEFAULT ''`)
 	db.Exec(`ALTER TABLE conversation_messages ADD COLUMN round_index INTEGER DEFAULT 0`)
+	db.Exec(`ALTER TABLE conversation_messages ADD COLUMN token_usage TEXT DEFAULT ''`)
 	// Composite index for fast session+user+time queries
 	db.Exec(`CREATE INDEX IF NOT EXISTS idx_conv_msg_session ON conversation_messages(session_id)`)
 	db.Exec(`CREATE INDEX IF NOT EXISTS idx_conv_msg_user ON conversation_messages(user_id)`)
@@ -531,6 +533,7 @@ func EnsureConversationMessagesTable(db *sql.DB) error {
 func SaveConversationMessage(db *sql.DB, sessionID, userID, role, content string, roundIndex int, extraFields ...map[string]string) error {
 	toolCalls := ""
 	toolCallID := ""
+	tokenUsage := ""
 	if len(extraFields) > 0 {
 		if v, ok := extraFields[0]["tool_calls"]; ok {
 			toolCalls = v
@@ -538,10 +541,13 @@ func SaveConversationMessage(db *sql.DB, sessionID, userID, role, content string
 		if v, ok := extraFields[0]["tool_call_id"]; ok {
 			toolCallID = v
 		}
+		if v, ok := extraFields[0]["token_usage"]; ok {
+			tokenUsage = v
+		}
 	}
 	_, err := db.Exec(
-		`INSERT INTO conversation_messages (session_id, user_id, role, content, round_index, tool_calls, tool_call_id) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		sessionID, userID, role, content, roundIndex, toolCalls, toolCallID,
+		`INSERT INTO conversation_messages (session_id, user_id, role, content, round_index, tool_calls, tool_call_id, token_usage) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		sessionID, userID, role, content, roundIndex, toolCalls, toolCallID, tokenUsage,
 	)
 	return err
 }
@@ -557,7 +563,7 @@ func SaveAgentStep(db *sql.DB, sessionID, userID, stepType, content string, roun
 
 func GetConversationMessages(db *sql.DB, sessionID, userID string) ([]ConversationMessage, string, error) {
 	rows, err := db.Query(
-		`SELECT id, session_id, user_id, role, content, COALESCE(step_type, ''), COALESCE(round_index, 0), created_at, COALESCE(tool_calls, ''), COALESCE(tool_call_id, '')
+		`SELECT id, session_id, user_id, role, content, COALESCE(step_type, ''), COALESCE(round_index, 0), created_at, COALESCE(tool_calls, ''), COALESCE(tool_call_id, ''), COALESCE(token_usage, '')
 		 FROM conversation_messages WHERE session_id=? AND user_id=?
 		 ORDER BY created_at ASC`,
 		sessionID, userID,
@@ -570,7 +576,7 @@ func GetConversationMessages(db *sql.DB, sessionID, userID string) ([]Conversati
 	var result []ConversationMessage
 	for rows.Next() {
 		var m ConversationMessage
-		if err := rows.Scan(&m.ID, &m.SessionID, &m.UserID, &m.Role, &m.Content, &m.StepType, &m.RoundIndex, &m.CreatedAt, &m.ToolCalls, &m.ToolCallID); err != nil {
+		if err := rows.Scan(&m.ID, &m.SessionID, &m.UserID, &m.Role, &m.Content, &m.StepType, &m.RoundIndex, &m.CreatedAt, &m.ToolCalls, &m.ToolCallID, &m.TokenUsage); err != nil {
 			continue
 		}
 		result = append(result, m)

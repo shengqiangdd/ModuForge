@@ -70,6 +70,11 @@ func (r *AgentRunner) smartCompressHistory(ctx context.Context, history []servic
 		}
 		if newTotal <= maxHistoryChars {
 			log.Printf("[Agent] sliding window compaction: %d msgs → %d msgs (was %d chars, now %d)", len(history), len(slidingCompacted), total, newTotal)
+			w.WriteSSE(map[string]interface{}{
+				"type":    "step",
+				"step":    "compact",
+				"content": fmt.Sprintf("历史已压缩：%d 条消息 → %d 条（%d 字符 → %d 字符，零成本滑动窗口）", len(history), len(slidingCompacted), total, newTotal),
+			})
 			return fixToolCallsInHistory(slidingCompacted)
 		}
 		// Still too large, use as input for incremental compaction
@@ -87,6 +92,11 @@ func (r *AgentRunner) smartCompressHistory(ctx context.Context, history []servic
 		}
 		if newTotal <= maxHistoryChars {
 			log.Printf("[Agent] incremental compaction: %d msgs → %d msgs (was %d chars, now %d)", len(history), len(compacted), total, newTotal)
+			w.WriteSSE(map[string]interface{}{
+				"type":    "step",
+				"step":    "compact",
+				"content": fmt.Sprintf("历史已压缩：%d 条消息 → %d 条（增量摘要，%d 字符 → %d 字符）", len(history), len(compacted), total, newTotal),
+			})
 			// Fix: ensure tool_calls/tool_call_id consistency after compression
 			compacted = fixToolCallsInHistory(compacted)
 			return compacted
@@ -100,6 +110,11 @@ func (r *AgentRunner) smartCompressHistory(ctx context.Context, history []servic
 	compacted2 := r.compactHistoryViaLLM(ctx, history, w, cfg)
 	if len(compacted2) > 0 {
 		log.Printf("[Agent] LLM compaction: %d msgs → %d msgs (was %d chars)", len(history), len(compacted2), total)
+		w.WriteSSE(map[string]interface{}{
+			"type":    "step",
+			"step":    "compact",
+			"content": fmt.Sprintf("历史已压缩：%d 条消息 → %d 条（LLM 摘要，%d 字符 → 摘要）", len(history), len(compacted2), total),
+		})
 		// Fix: ensure tool_calls/tool_call_id consistency after compression
 		compacted2 = fixToolCallsInHistory(compacted2)
 		return compacted2

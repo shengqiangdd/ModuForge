@@ -2227,8 +2227,13 @@ func (r *AgentRunner) GetToolStats() map[string]ToolStats {
 }
 
 // GetAuditHistory returns recent audit entries.
-func (r *AgentRunner) GetAuditHistory(toolName string, limit int) []AuditEntry {
-	return r.auditLog.GetHistory(toolName, limit)
+// GetPerfMetrics returns the aggregated process-lifetime performance metrics
+// (LLM calls/tokens, tool calls, errors, retries) for observability UIs.
+func (r *AgentRunner) GetPerfMetrics() map[string]interface{} {
+	return r.perfMetrics.GetSummary()
+}
+
+func (r *AgentRunner) GetAuditHistory(toolName string, limit int) []AuditEntry {	return r.auditLog.GetHistory(toolName, limit)
 }
 
 // GetPermissionDenials returns recent permission denials.

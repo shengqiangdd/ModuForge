@@ -158,7 +158,11 @@ export async function fetchSessionMessages(sessId: string): Promise<{
         }
         if (ri > maxRound) maxRound = ri;
       } else {
-        chatMsgs.push({ role: m.role, content: m.content, round: ri });
+        let tu: Message['token_usage'];
+        if (m.role === 'assistant' && m.token_usage) {
+          try { tu = typeof m.token_usage === 'string' ? JSON.parse(m.token_usage) : m.token_usage; } catch { tu = undefined; }
+        }
+        chatMsgs.push({ role: m.role, content: m.content, round: ri, token_usage: tu });
         if (m.role === 'user' && ri > maxRound) maxRound = ri;
       }
     }

@@ -485,7 +485,9 @@ func (h *AgentHandler) Run(c fiber.Ctx) error {
 					)
 					log.Printf("[Agent] PERSIST replaced old assistant round=%d", currentRound)
 				}
-				if err := service.SaveConversationMessage(h.db.Conn, req.SessionID, uid, "assistant", capturedAnswer, currentRound); err != nil {
+				if err := service.SaveConversationMessage(h.db.Conn, req.SessionID, uid, "assistant", capturedAnswer, currentRound, map[string]string{
+					"token_usage": captureW.tokenUsageJSON,
+				}); err != nil {
 					log.Printf("[Agent] PERSIST ERROR assistant: %v", err)
 				} else {
 					log.Printf("[Agent] PERSIST OK assistant round=%d len=%d", currentRound, len(capturedAnswer))
@@ -1065,12 +1067,23 @@ type answerCaptureWriter struct {
 	// Track tool calls for persistence
 	toolCallsJSON string
 	toolCallID    string
-	mu            sync.Mutex // serializes concurrent WriteSSE from parallel tool goroutines
+	// Last token usage reported by the LLM (persisted with the assistant message)
+	tokenUsageJSON string
+	mu             sync.Mutex // serializes concurrent WriteSSE from parallel tool goroutines
 }
 
 func (w *answerCaptureWriter) WriteSSE(data map[string]interface{}) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	// Capture token usage for persistence (frontend also receives this event directly)
+	if dataType, _ := data["type"].(string); dataType == "usage" {
+		if usage, ok := data["usage"]; ok {
+			if b, err := json.Marshal(usage); err == nil {
+				w.tokenUsageJSON = string(b)
+			}
+		}
+		return w.SSEWriter.WriteSSE(data)
+	}
 	// Accumulate reasoning chunks (streaming LLM extended thinking)
 	if dataType, _ := data["type"].(string); dataType == "reasoning" {
 		if content, _ := data["content"].(string); content != "" {
@@ -1138,6 +1151,12 @@ func (w *answerCaptureWriter) WriteSSE(data map[string]interface{}) error {
 func (h *AgentHandler) GetToolStats(c fiber.Ctx) error {
 	stats := h.runner.GetToolStats()
 	return c.JSON(fiber.Map{"stats": stats})
+}
+
+// GetAgentMetrics returns aggregated process-lifetime performance metrics
+// (LLM calls, token usage, tool calls, errors, retries) for the AI observability UI.
+func (h *AgentHandler) GetAgentMetrics(c fiber.Ctx) error {
+	return c.JSON(fiber.Map{"metrics": h.runner.GetPerfMetrics()})
 }
 
 // GetAuditHistory returns recent audit entries.

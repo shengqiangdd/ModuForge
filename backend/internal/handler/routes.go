@@ -572,6 +572,7 @@ func RegisterRoutes(api fiber.Router, db *database.DB, cfg *config.Config) {
 	r("GET", "/agent/custom-skills/:id/optimize", agentH.GetSkillOptimization)
 	// NEW: Statistics and monitoring endpoints
 	r("GET", "/agent/stats", agentH.GetToolStats)
+	r("GET", "/agent/metrics", agentH.GetAgentMetrics)
 	r("GET", "/agent/cache", agentH.GetCacheStats)
 	r("GET", "/agent/audit", agentH.GetAuditHistory)
 	r("GET", "/agent/denials", agentH.GetPermissionDenials)
