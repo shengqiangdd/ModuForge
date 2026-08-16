@@ -30,7 +30,17 @@ type AgentHandler struct {
 	db     *database.DB
 	cfg    *config.Config
 	mcpMgr *mcp.Manager
+
+	// agentSem limits concurrent Agent runs (server-level resource guard).
+	// Multiple users share the global LLM key when they have no custom
+	// provider, so unbounded concurrency can exhaust RPM/TPM quotas and
+	// server CPU/memory. See also per-key rate limiting in agent/llm.go.
+	agentSem chan struct{}
 }
+
+// maxConcurrentAgents is the default server-wide cap for concurrent
+// Agent runs. Overridable via AGENT_MAX_CONCURRENT env (see config).
+const maxConcurrentAgents = 4
 
 func NewAgentHandler(cfg *config.Config, db *database.DB) *AgentHandler {
 	// Auto-register all skills via init() factories — no manual registration needed
@@ -111,6 +121,7 @@ func NewAgentHandler(cfg *config.Config, db *database.DB) *AgentHandler {
 		db:     db,
 		cfg:    cfg,
 		mcpMgr: mcpMgr,
+		agentSem: make(chan struct{}, maxConcurrentAgents),
 	}
 }
 
@@ -155,6 +166,17 @@ func (h *AgentHandler) Run(c fiber.Ctx) error {
 
 	uid, _ := c.Locals("uid").(string)
 	slog.Info("Agent.Run", "task_len", len(req.Task), "session_id", req.SessionID, "uid", uid, "project_id", req.ProjectID)
+
+	// Server-wide concurrency guard. Wait for a slot instead of rejecting:
+	// Agent runs are long-lived (up to ~30 LLM rounds), so a 503 would
+	// force the client to retry the whole task. Blocking keeps UX smooth
+	// while still capping resource/LLM-quota pressure.
+	select {
+	case h.agentSem <- struct{}{}:
+	case <-c.Context().Done():
+		return nil
+	}
+	defer func() { <-h.agentSem }()
 
 	c.Set("Content-Type", "text/event-stream")
 	c.Set("Cache-Control", "no-cache")
@@ -717,6 +739,14 @@ func (h *AgentHandler) ExecuteCustomSkill(c fiber.Ctx) error {
 	c.Set("Content-Type", "text/event-stream")
 	c.Set("Cache-Control", "no-cache")
 	c.Set("X-Accel-Buffering", "no")
+
+	// Server-wide concurrency guard (same as Agent.Run).
+	select {
+	case h.agentSem <- struct{}{}:
+	case <-c.Context().Done():
+		return nil
+	}
+	defer func() { <-h.agentSem }()
 
 	// 每次请求独立的 RunConfig
 	runCfg := agent.NewRunConfig(userID)
