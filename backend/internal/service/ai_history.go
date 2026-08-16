@@ -326,7 +326,7 @@ func (ms *MemoryStore) ListMemory(userID, memoryType string) ([]MemoryEntry, err
 		userID, memoryType,
 	)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer rows.Close()
 
@@ -347,7 +347,7 @@ func (ms *MemoryStore) ListAllMemory(userID string) ([]MemoryEntry, error) {
 		userID,
 	)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer rows.Close()
 
@@ -446,7 +446,7 @@ func ListConversations(db *sql.DB, userID string) ([]ConversationSummary, error)
 		userID,
 	)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer rows.Close()
 
@@ -687,7 +687,7 @@ func ListUserSessions(db *sql.DB, userID string, limit, offset int) ([]map[strin
 		userID, userID, limit, offset,
 	)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer rows.Close()
 
@@ -770,7 +770,7 @@ func SearchSessionMessages(db *sql.DB, userID, query string, limit int) ([]map[s
 		userID, "%"+query+"%", userID, "%"+query+"%", limit,
 	)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer rows.Close()
 
