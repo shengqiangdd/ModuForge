@@ -20,7 +20,7 @@
     getFileIcon,
     getFileIconColor,
   }: {
-    node: TreeNode;
+    node: TreeNodeData;
     selectedFile?: string | null;
     expandedDirs: Set<string>;
     isExpanded?: boolean;

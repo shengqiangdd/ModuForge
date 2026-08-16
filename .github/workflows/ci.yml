@@ -80,7 +80,7 @@ jobs:
 
       - name: Type check
         working-directory: frontend
-        run: npx svelte-check --tsconfig ./tsconfig.json || true
+        run: npx svelte-check --tsconfig ./tsconfig.json
 
       - name: Build
         working-directory: frontend

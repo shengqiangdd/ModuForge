@@ -1,13 +1,13 @@
 <script lang="ts">
   import TreeNode from './TreeNode.svelte';
 
-  interface TreeNode {
+  interface FileTreeNode {
     name: string;
     path: string;
     type: 'file' | 'directory';
     size?: number;
     modified?: string;
-    children?: TreeNode[];
+    children?: FileTreeNode[];
   }
 
   let {
@@ -40,7 +40,7 @@
     onViewModeChange,
   }: {
     files?: { id?: number; path: string; content?: string }[];
-    treeData?: TreeNode | null;
+    treeData?: FileTreeNode | null;
     selectedFile?: string | null;
     project?: { id: string; name: string; path: string } | null;
     sidebarOpen?: boolean;
@@ -91,7 +91,7 @@
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   }
 
-  function getDirFileCount(node: TreeNode): number {
+  function getDirFileCount(node: FileTreeNode): number {
     if (!node.children) return 0;
     let count = 0;
     for (const child of node.children) {
@@ -101,12 +101,12 @@
     return count;
   }
 
-  function getIcon(node: TreeNode): string {
+  function getIcon(node: FileTreeNode): string {
     if (node.type === 'directory') return expandedDirs.has(node.path) ? 'folder_open' : 'folder';
     return getFileIcon?.(node.path) || 'description';
   }
 
-  function getIconColor(node: TreeNode): string {
+  function getIconColor(node: FileTreeNode): string {
     if (node.type === 'directory') return 'var(--color-warning)';
     return getFileIconColor?.(node.path) || 'var(--color-text-muted)';
   }
