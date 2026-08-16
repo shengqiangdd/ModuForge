@@ -3,6 +3,7 @@ package handler
 import (
 	"bufio"
 	"context"
+	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -90,16 +91,29 @@ func NewAgentHandler(cfg *config.Config, db *database.DB) *AgentHandler {
 
 	// MCP (Model Context Protocol) integration — connect to external tool
 	// servers (filesystem, GitHub, database, etc.) and expose their tools as
-	// dynamic agent skills. Config via MCP_SERVERS env or MCP_SERVERS_FILE.
+	// dynamic agent skills. Config sources: DB (UI-managed, takes precedence)
+	// then MCP_SERVERS env / MCP_SERVERS_FILE.
 	ctx := context.Background()
 	mcpMgr := mcp.NewManager()
-	if err := mcpMgr.LoadFromEnv(ctx); err != nil {
-		slog.Warn("MCP manager init failed", "error", err)
-	}
-	for _, client := range mcpMgr.Clients() {
+	mcpMgr.SetOnServerReady(func(client *mcp.Client) {
 		for _, tool := range client.Tools() {
 			registry.Register(mcp.NewToolSkill(client, tool))
 			slog.Info("MCP tool registered", "server", client.Name, "tool", tool.Name)
+		}
+	})
+	// 1. DB-managed servers (persisted via MCP page / API)
+	loadMCPServersFromDB(ctx, db.Conn, mcpMgr)
+	// 2. Static env/file servers (kept as fallback; UI-managed names win)
+	if err := mcpMgr.LoadFromEnv(ctx); err != nil {
+		slog.Warn("MCP manager init failed", "error", err)
+	}
+	// 3. Register tools from clients that were ready before the callback was set
+	for _, client := range mcpMgr.Clients() {
+		if client.IsReady() {
+			for _, tool := range client.Tools() {
+				registry.Register(mcp.NewToolSkill(client, tool))
+				slog.Info("MCP tool registered", "server", client.Name, "tool", tool.Name)
+			}
 		}
 	}
 	// skills_doc — dynamic skill catalog (SKILLS.md equivalent). Registered
@@ -557,6 +571,8 @@ func (h *AgentHandler) ListMCPStatus(c fiber.Ctx) error {
 			"ready":       cli.IsReady(),
 			"tool_count":  len(tools),
 			"tools":       toolInfos,
+			"connected_at": cli.ConnectedAt().Format(time.RFC3339),
+			"last_error":   cli.LastError(),
 		})
 	}
 	if servers == nil {
@@ -1270,4 +1286,274 @@ func (h *AgentHandler) GetSession(c fiber.Ctx) error {
 		"messages":    messages,
 		"tool_stats":  toolStats,
 	})
+}
+
+// ---------- MCP server configuration management (UI/API, persisted in DB) ----------
+
+// mcpServerRow is the DB representation of a managed MCP server.
+type mcpServerRow struct {
+	ID      int64  `json:"id"`
+	Name    string `json:"name"`
+	URL     string `json:"url"`
+	Headers string `json:"headers"` // JSON object string
+	Enabled bool   `json:"enabled"`
+}
+
+// loadMCPServersFromDB connects to all enabled servers stored in the DB.
+func loadMCPServersFromDB(ctx context.Context, db *sql.DB, mgr *mcp.Manager) {
+	rows, err := db.QueryContext(ctx, `SELECT id, name, url, headers, enabled FROM mcp_servers WHERE enabled=1 ORDER BY name`)
+	if err != nil {
+		slog.Warn("MCP: cannot load servers from DB", "error", err)
+		return
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var row mcpServerRow
+		if err := rows.Scan(&row.ID, &row.Name, &row.URL, &row.Headers, &row.Enabled); err != nil {
+			continue
+		}
+		cfg, err := rowToServerConfig(row)
+		if err != nil {
+			slog.Warn("MCP: skip server with invalid headers", "name", row.Name, "error", err)
+			continue
+		}
+		mgr.AddServer(ctx, cfg)
+	}
+}
+
+// rowToServerConfig converts a DB row into an mcp.ServerConfig.
+func rowToServerConfig(row mcpServerRow) (mcp.ServerConfig, error) {
+	var headers map[string]string
+	if row.Headers == "" || row.Headers == "{}" {
+		headers = map[string]string{}
+	} else {
+		if err := json.Unmarshal([]byte(row.Headers), &headers); err != nil {
+			return mcp.ServerConfig{}, fmt.Errorf("invalid headers JSON: %w", err)
+		}
+	}
+	return mcp.ServerConfig{
+		Name:    row.Name,
+		URL:     row.URL,
+		Headers: headers,
+	}, nil
+}
+
+// ListMCPServers returns DB-managed servers merged with env-configured ones
+// and live runtime status.
+// Response: {"servers":[{"id":1,"name":"github","url":"...","headers":{...},"enabled":true,
+//   "managed":true,"ready":true,"tool_count":42,"last_error":"","connected_at":"...","tools":[...]}]}
+func (h *AgentHandler) ListMCPServers(c fiber.Ctx) error {
+	rows, err := h.db.Conn.Query(`SELECT id, name, url, headers, enabled FROM mcp_servers ORDER BY name`)
+	if err != nil {
+		return InternalError(c, err.Error())
+	}
+	defer rows.Close()
+
+	servers := []map[string]interface{}{}
+	seen := map[string]bool{}
+	for rows.Next() {
+		var row mcpServerRow
+		if err := rows.Scan(&row.ID, &row.Name, &row.URL, &row.Headers, &row.Enabled); err != nil {
+			continue
+		}
+		seen[row.Name] = true
+		info := map[string]interface{}{
+			"id":         row.ID,
+			"name":       row.Name,
+			"url":        row.URL,
+			"enabled":    row.Enabled,
+			"managed":    true,
+			"ready":      false,
+			"tool_count": 0,
+			"last_error": "",
+			"tools":      []map[string]interface{}{},
+		}
+		var headers map[string]string
+		_ = json.Unmarshal([]byte(row.Headers), &headers)
+		if headers == nil {
+			headers = map[string]string{}
+		}
+		info["headers"] = headers
+
+		if cli, ok := h.mcpMgr.Get(row.Name); ok {
+			info["ready"] = cli.IsReady()
+			info["tool_count"] = len(cli.Tools())
+			info["server_name"] = cli.ServerName()
+			info["last_error"] = cli.LastError()
+			info["connected_at"] = cli.ConnectedAt().Format(time.RFC3339)
+			toolInfos := make([]map[string]interface{}, 0, len(cli.Tools()))
+			for _, t := range cli.Tools() {
+				toolInfos = append(toolInfos, map[string]interface{}{
+					"name":        t.Name,
+					"description": t.Description,
+					"inputSchema": t.InputSchema,
+				})
+			}
+			info["tools"] = toolInfos
+		} else if !row.Enabled {
+			info["last_error"] = "已禁用（enabled=false）"
+		} else {
+			info["last_error"] = "未连接（服务启动时可能失败）"
+		}
+		servers = append(servers, info)
+	}
+
+	// Merge env-configured servers (MCP_SERVERS / MCP_SERVERS_FILE) that are
+	// not DB-managed, so the UI shows every live server. These are read-only
+	// from the UI perspective (managed=false).
+	for _, cli := range h.mcpMgr.Clients() {
+		if seen[cli.Name] {
+			continue
+		}
+		toolInfos := make([]map[string]interface{}, 0, len(cli.Tools()))
+		for _, t := range cli.Tools() {
+			toolInfos = append(toolInfos, map[string]interface{}{
+				"name":        t.Name,
+				"description": t.Description,
+				"inputSchema": t.InputSchema,
+			})
+		}
+		servers = append(servers, map[string]interface{}{
+			"id":         0,
+			"name":       cli.Name,
+			"url":        cli.URL,
+			"headers":    cli.Headers,
+			"enabled":    true,
+			"managed":    false,
+			"ready":      cli.IsReady(),
+			"tool_count": len(cli.Tools()),
+			"server_name": cli.ServerName(),
+			"last_error": cli.LastError(),
+			"connected_at": cli.ConnectedAt().Format(time.RFC3339),
+			"tools":      toolInfos,
+		})
+	}
+	if servers == nil {
+		servers = []map[string]interface{}{}
+	}
+	return c.JSON(fiber.Map{"servers": servers})
+}
+
+// AddMCPServer creates a new MCP server config and hot-connects to it.
+// Body: {"name":"github","url":"http://.../mcp","headers":{"Authorization":"Bearer x"},"enabled":true}
+func (h *AgentHandler) AddMCPServer(c fiber.Ctx) error {
+	var req struct {
+		Name    string            `json:"name"`
+		URL     string            `json:"url"`
+		Headers map[string]string `json:"headers"`
+		Enabled *bool             `json:"enabled"`
+	}
+	if err := json.Unmarshal(c.Body(), &req); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid request body"})
+	}
+	if strings.TrimSpace(req.Name) == "" || strings.TrimSpace(req.URL) == "" {
+		return c.Status(400).JSON(fiber.Map{"error": "name and url are required"})
+	}
+	enabled := true
+	if req.Enabled != nil {
+		enabled = *req.Enabled
+	}
+	headersJSON, _ := json.Marshal(req.Headers)
+	if _, err := h.db.Conn.Exec(
+		`INSERT INTO mcp_servers (name, url, headers, enabled) VALUES (?, ?, ?, ?)
+		 ON CONFLICT(name) DO UPDATE SET url=excluded.url, headers=excluded.headers, enabled=excluded.enabled, updated_at=CURRENT_TIMESTAMP`,
+		req.Name, req.URL, string(headersJSON), boolToInt(enabled),
+	); err != nil {
+		return InternalError(c, err.Error())
+	}
+
+	client, err := h.mcpMgr.AddServer(c.Context(), mcp.ServerConfig{Name: req.Name, URL: req.URL, Headers: req.Headers})
+	if err != nil {
+		slog.Warn("MCP: add server connect failed", "name", req.Name, "error", err)
+	}
+	return c.JSON(fiber.Map{"server": req.Name, "ready": client.IsReady(), "last_error": client.LastError()})
+}
+
+// UpdateMCPServer updates an existing server config and reconnects.
+func (h *AgentHandler) UpdateMCPServer(c fiber.Ctx) error {
+	name := c.Params("name")
+	var req struct {
+		Name    string            `json:"name"`
+		URL     string            `json:"url"`
+		Headers map[string]string `json:"headers"`
+		Enabled *bool             `json:"enabled"`
+	}
+	if err := json.Unmarshal(c.Body(), &req); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid request body"})
+	}
+	// Rename support: when body.name differs, update the row name too.
+	newName := req.Name
+	if newName == "" {
+		newName = name
+	}
+	if strings.TrimSpace(newName) == "" || strings.TrimSpace(req.URL) == "" {
+		return c.Status(400).JSON(fiber.Map{"error": "name and url are required"})
+	}
+	enabled := true
+	if req.Enabled != nil {
+		enabled = *req.Enabled
+	}
+	headersJSON, _ := json.Marshal(req.Headers)
+
+	res, err := h.db.Conn.Exec(
+		`UPDATE mcp_servers SET name=?, url=?, headers=?, enabled=?, updated_at=CURRENT_TIMESTAMP WHERE name=?`,
+		newName, req.URL, string(headersJSON), boolToInt(enabled), name,
+	)
+	if err != nil {
+		return InternalError(c, err.Error())
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return c.Status(404).JSON(fiber.Map{"error": "server not found: " + name})
+	}
+
+	// Hot-reconnect: drop old client, connect the new config (if enabled).
+	h.mcpMgr.RemoveServer(name)
+	ready := false
+	lastErr := ""
+	if enabled {
+		client, err := h.mcpMgr.AddServer(c.Context(), mcp.ServerConfig{Name: newName, URL: req.URL, Headers: req.Headers})
+		ready = client.IsReady()
+		lastErr = client.LastError()
+		if err != nil {
+			slog.Warn("MCP: update server connect failed", "name", newName, "error", err)
+		}
+	} else {
+		// Disabled: leave disconnected; DB row keeps enabled=0.
+		lastErr = "已禁用（enabled=false）"
+	}
+	return c.JSON(fiber.Map{"server": newName, "ready": ready, "last_error": lastErr})
+}
+
+// DeleteMCPServer removes a server config and disconnects it.
+func (h *AgentHandler) DeleteMCPServer(c fiber.Ctx) error {
+	name := c.Params("name")
+	res, err := h.db.Conn.Exec(`DELETE FROM mcp_servers WHERE name=?`, name)
+	if err != nil {
+		return InternalError(c, err.Error())
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return c.Status(404).JSON(fiber.Map{"error": "server not found: " + name})
+	}
+	h.mcpMgr.RemoveServer(name)
+	return c.JSON(fiber.Map{"deleted": name})
+}
+
+// ReconnectMCPServer re-runs the handshake for an existing server.
+func (h *AgentHandler) ReconnectMCPServer(c fiber.Ctx) error {
+	name := c.Params("name")
+	client, err := h.mcpMgr.Reconnect(c.Context(), name)
+	if err != nil {
+		if client != nil {
+			return c.Status(502).JSON(fiber.Map{"error": err.Error(), "ready": false, "last_error": client.LastError()})
+		}
+		return c.Status(404).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(fiber.Map{"server": name, "ready": true, "tool_count": len(client.Tools())})
+}
+
+func boolToInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
 }

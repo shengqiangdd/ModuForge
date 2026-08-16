@@ -58,6 +58,10 @@ type Client struct {
 	serverName string
 	tools      []Tool
 	ready      bool
+
+	// Diagnostics (read-only after Initialize; guarded by mu)
+	connectedAt time.Time
+	lastError   string
 }
 
 // ServerConfig is the JSON shape of one MCP server in the config file/env.
@@ -97,6 +101,16 @@ func (c *Client) ServerName() string { return c.serverName }
 
 // Tools returns the discovered tools (only valid after Initialize).
 func (c *Client) Tools() []Tool { return c.tools }
+
+// ConnectedAt returns when the client last completed a handshake.
+func (c *Client) ConnectedAt() time.Time { return c.connectedAt }
+
+// LastError returns the most recent initialize error (empty if ready).
+func (c *Client) LastError() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.lastError
+}
 
 // Initialize performs the MCP handshake: initialize → initialized
 // notification → tools/list. It must be called before CallTool.
@@ -188,8 +202,21 @@ func (c *Client) Initialize(ctx context.Context) error {
 	}
 
 	c.ready = true
+	c.connectedAt = time.Now()
+	c.lastError = ""
 	slog.Info("MCP server ready", "name", c.Name, "url", c.URL, "server", c.serverName, "protocol", c.protocolV, "tools", len(c.tools))
 	return nil
+}
+
+// setError records a failed handshake so diagnostics can surface it.
+func (c *Client) setError(err error) {
+	c.ready = false
+	c.tools = nil
+	if err != nil {
+		c.lastError = err.Error()
+	} else {
+		c.lastError = "unknown error"
+	}
 }
 
 // JSONRPCError is a JSON-RPC 2.0 error object.

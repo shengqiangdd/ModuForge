@@ -219,6 +219,18 @@ func migrate(db *sql.DB) error {
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		)`,
 
+		// MCP server configurations (managed via UI/API, persisted across restarts)
+		// headers is a JSON object string, e.g. {"Authorization":"Bearer xxx"}
+		`CREATE TABLE IF NOT EXISTS mcp_servers (
+			id         INTEGER PRIMARY KEY AUTOINCREMENT,
+			name       TEXT NOT NULL UNIQUE,
+			url        TEXT NOT NULL,
+			headers    TEXT NOT NULL DEFAULT '{}',
+			enabled    INTEGER NOT NULL DEFAULT 1,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		)`,
+
 		// AI Conversations persistence
 	`CREATE TABLE IF NOT EXISTS ai_conversations (
 		id TEXT PRIMARY KEY,
