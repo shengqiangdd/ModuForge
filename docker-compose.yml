@@ -27,6 +27,11 @@ services:
       - JWT_SECRET=${JWT_SECRET:-}
       - MODUFORGE_DEV=0
       - TZ=Asia/Shanghai
+      # MCP (Model Context Protocol) servers: JSON array passed via env.
+      # Example: MCP_SERVERS='[{"name":"github","url":"http://host:8000/mcp","headers":{"Authorization":"Bearer x"}}]'
+      # or point to a file with MCP_SERVERS_FILE.
+      - MCP_SERVERS=${MCP_SERVERS:-}
+      - MCP_SERVERS_FILE=${MCP_SERVERS_FILE:-}
       # ADB 密钥持久化：HOME 指向 /data（moduforge_data 卷），adbkey 存到
       # /data/adbhome/.android/，容器重建后设备授权指纹不丢（否则每次重建
       # 都要重新在手机上允许 USB 调试）
