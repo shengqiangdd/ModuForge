@@ -16,6 +16,7 @@
     message_count: number;
     created_at: string;
     updated_at: string;
+    token_usage?: number;
   };
 
   type GenHistoryItem = {
@@ -78,6 +79,12 @@
   } = $props();
 
   let searchQuery = $state('');
+
+  function formatTokens(t: number): string {
+    if (t >= 1_000_000) return `${(t / 1_000_000).toFixed(1)}M`;
+    if (t >= 1000) return `${(t / 1000).toFixed(1)}K`;
+    return `${t}`;
+  }
 
   function handleSearch(e: Event) {
     const q = (e.target as HTMLInputElement).value.trim();
@@ -147,6 +154,9 @@
                       <div class="flex items-center gap-1.5 mt-0.5">
                         <span class="text-[10px] px-1 py-0.5 rounded" style="background: var(--color-primary-light); color: var(--color-primary)">{conv.mode}</span>
                         <span class="text-[10px] text-[var(--color-text-muted)]">{conv.message_count}条</span>
+                        {#if conv.token_usage}
+                          <span class="text-[10px] text-[var(--color-text-muted)]" title="该会话累计 token 用量">{formatTokens(conv.token_usage)} tokens</span>
+                        {/if}
                       </div>
                     </button>
                     <button class="p-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-[var(--color-surface)] transition-all" onclick={() => onDeleteConversation?.(conv.id)} title="删除">

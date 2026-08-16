@@ -817,6 +817,16 @@ func (db *DB) migrate() error {
 			api_key     TEXT DEFAULT '',
 			updated_at  DATETIME DEFAULT CURRENT_TIMESTAMP
 		)`,
+		// Daily AI usage aggregation (survives restarts, powers cost/usage trends)
+		`CREATE TABLE IF NOT EXISTS ai_usage_daily (
+			date TEXT PRIMARY KEY,
+			llm_call_count INTEGER DEFAULT 0,
+			llm_token_usage INTEGER DEFAULT 0,
+			tool_call_count INTEGER DEFAULT 0,
+			error_count INTEGER DEFAULT 0,
+			retry_count INTEGER DEFAULT 0,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		)`,
 	}
 	for _, m := range addColumnIfMissing {
 		db.Conn.Exec(m) // ignore errors for ALTER TABLE

@@ -1154,9 +1154,12 @@ func (h *AgentHandler) GetToolStats(c fiber.Ctx) error {
 }
 
 // GetAgentMetrics returns aggregated process-lifetime performance metrics
-// (LLM calls, token usage, tool calls, errors, retries) for the AI observability UI.
+// plus daily usage history (from ai_usage_daily) for the observability UI.
 func (h *AgentHandler) GetAgentMetrics(c fiber.Ctx) error {
-	return c.JSON(fiber.Map{"metrics": h.runner.GetPerfMetrics()})
+	return c.JSON(fiber.Map{
+		"metrics": h.runner.GetPerfMetrics(),
+		"daily":   h.runner.GetDailyUsage(30),
+	})
 }
 
 // GetAuditHistory returns recent audit entries.
@@ -1246,16 +1249,37 @@ func (h *AgentHandler) ListSessions(c fiber.Ctx) error {
 			continue
 		}
 		sessions = append(sessions, map[string]interface{}{
-			"id":          id,
-			"title":       title,
-			"model":       model,
-			"project_id":  projectID,
-			"agent_mode":  agentMode,
-			"updated_at":  updatedAt,
+			"id":         id,
+			"title":      title,
+			"model":      model,
+			"project_id": projectID,
+			"agent_mode": agentMode,
+			"updated_at": updatedAt,
 		})
 	}
 	if sessions == nil {
 		sessions = []map[string]interface{}{}
+	}
+	// Aggregate per-session token usage from persisted conversation messages.
+	tokenMap := map[string]int64{}
+	if len(sessions) > 0 {
+		trows, err := h.db.Conn.Query(`SELECT session_id, SUM(CAST(json_extract(token_usage, '$.total_tokens') AS INTEGER))
+			FROM conversation_messages
+			WHERE user_id=? AND token_usage IS NOT NULL AND token_usage != ''
+			GROUP BY session_id`, uid)
+		if err == nil {
+			for trows.Next() {
+				var sid string
+				var tokens int64
+				if err := trows.Scan(&sid, &tokens); err == nil {
+					tokenMap[sid] = tokens
+				}
+			}
+			trows.Close()
+		}
+	}
+	for _, s := range sessions {
+		s["token_usage"] = tokenMap[s["id"].(string)]
 	}
 	return c.JSON(fiber.Map{"sessions": sessions})
 }

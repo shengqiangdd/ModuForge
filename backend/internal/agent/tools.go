@@ -337,6 +337,10 @@ func (r *AgentRunner) executeSkill(ctx context.Context, name string, input map[s
 	}
 	result, err := r.registry.Execute(ctx, name, input)
 	duration := time.Since(start).Milliseconds()
+	r.perfMetrics.RecordToolCall(time.Since(start))
+	if err != nil {
+		r.perfMetrics.RecordError()
+	}
 	if r.db != nil {
 		go r.recordExecution(name, input, result, err, duration)
 	}

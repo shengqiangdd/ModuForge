@@ -670,6 +670,33 @@ func ListUserSessions(db *sql.DB, userID string) ([]map[string]interface{}, erro
 			"model":       model,
 		})
 	}
+	// Aggregate per-session token usage (agent mode messages persist token_usage).
+	if len(result) > 0 {
+		trows, err := db.Query(`SELECT session_id, SUM(CAST(json_extract(token_usage, '$.total_tokens') AS INTEGER))
+			FROM conversation_messages
+			WHERE user_id=? AND token_usage IS NOT NULL AND token_usage != ''
+			GROUP BY session_id`, userID)
+		if err == nil {
+			for trows.Next() {
+				var sid string
+				var tokens int64
+				if err := trows.Scan(&sid, &tokens); err == nil {
+					for _, s := range result {
+						if s["session_id"] == sid {
+							s["token_usage"] = tokens
+							break
+						}
+					}
+				}
+			}
+			trows.Close()
+		}
+	}
+	for _, s := range result {
+		if _, ok := s["token_usage"]; !ok {
+			s["token_usage"] = int64(0)
+		}
+	}
 	return result, nil
 }
 

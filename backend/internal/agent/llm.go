@@ -458,6 +458,7 @@ type LLMToolCall struct {
 }
 
 func (r *AgentRunner) callLLMWithTools(ctx context.Context, messages []map[string]interface{}, tools []ToolDef, w SSEWriter, userID, reqProviderID, reqModel string, cfg RunConfig) (*LLMResponse, error) {
+	llmStart := time.Now()
 	// P0-Optimization: Use cached resolved config from RunConfig instead of re-querying DB.
 	// The config was resolved once at Run() entry and stored in cfg.resolved* fields.
 	endpoint := cfg.resolvedEndpoint
@@ -553,6 +554,7 @@ func (r *AgentRunner) callLLMWithTools(ctx context.Context, messages []map[strin
 		if resp.StatusCode >= 400 {
 			lastErr, retryable = handleLLMHTTPError(resp, modelTier, reqProviderID)
 			if !retryable {
+				r.perfMetrics.RecordError()
 				return nil, lastErr // permanent error, no retry
 			}
 			continue // retry on 429/5xx
@@ -581,9 +583,11 @@ func (r *AgentRunner) callLLMWithTools(ctx context.Context, messages []map[strin
 				"usage": result.TokenUsage,
 			})
 		}
+		r.perfMetrics.RecordLLMCall(time.Since(llmStart))
 		return result, nil
 	}
 
+	r.perfMetrics.RecordError()
 	return nil, fmt.Errorf("LLM failed after %d attempts: %w", llmMaxRetries+1, lastErr)
 }
 
