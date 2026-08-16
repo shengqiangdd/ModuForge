@@ -58,10 +58,9 @@ func (r *AgentRunner) buildToolDefinitionsForMode(mode AgentMode, modelName stri
 			continue
 		}
 
-		// For free models with essential metadata, skip non-essential tools.
-		// Core tools (including MCP integrations, which are Core=true) stay
-		// visible to every tier: they are the primary workflow surface.
-		if isFree && hasEssentialMetadata && !essentialToolsFree[s.Name()] && !coreTools[s.Name()] {
+		// For free models with essential metadata, skip non-essential tools
+		// For free models without essential metadata, expose all tools
+		if isFree && hasEssentialMetadata && !essentialToolsFree[s.Name()] {
 			continue
 		}
 
@@ -219,17 +218,7 @@ func (r *AgentRunner) getToolDefinitions(mode AgentMode, modelName string) []Too
 	r.toolDefCacheMu.Lock()
 	r.toolDefCache[cacheKey] = defs
 	r.toolDefCacheMu.Unlock()
-
 	return defs
-}
-
-// InvalidateToolCache drops all cached tool definitions. Call after the
-// skill set changes dynamically (e.g. MCP server added/removed/reconnected)
-// so the LLM sees the new tools on the next iteration.
-func (r *AgentRunner) InvalidateToolCache() {
-	r.toolDefCacheMu.Lock()
-	r.toolDefCache = make(map[string][]ToolDef)
-	r.toolDefCacheMu.Unlock()
 }
 
 // validateRequiredParams checks that all required parameters are present for a given skill.

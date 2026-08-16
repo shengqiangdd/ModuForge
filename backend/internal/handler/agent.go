@@ -1469,8 +1469,6 @@ func (h *AgentHandler) AddMCPServer(c fiber.Ctx) error {
 	if err != nil {
 		slog.Warn("MCP: add server connect failed", "name", req.Name, "error", err)
 	}
-	// Tool set may have changed → invalidate LLM tool-definition cache.
-	h.runner.InvalidateToolCache()
 	return c.JSON(fiber.Map{"server": req.Name, "ready": client.IsReady(), "last_error": client.LastError()})
 }
 
@@ -1526,7 +1524,6 @@ func (h *AgentHandler) UpdateMCPServer(c fiber.Ctx) error {
 		// Disabled: leave disconnected; DB row keeps enabled=0.
 		lastErr = "已禁用（enabled=false）"
 	}
-	h.runner.InvalidateToolCache()
 	return c.JSON(fiber.Map{"server": newName, "ready": ready, "last_error": lastErr})
 }
 
@@ -1541,7 +1538,6 @@ func (h *AgentHandler) DeleteMCPServer(c fiber.Ctx) error {
 		return c.Status(404).JSON(fiber.Map{"error": "server not found: " + name})
 	}
 	h.mcpMgr.RemoveServer(name)
-	h.runner.InvalidateToolCache()
 	return c.JSON(fiber.Map{"deleted": name})
 }
 
@@ -1555,7 +1551,6 @@ func (h *AgentHandler) ReconnectMCPServer(c fiber.Ctx) error {
 		}
 		return c.Status(404).JSON(fiber.Map{"error": err.Error()})
 	}
-	h.runner.InvalidateToolCache()
 	return c.JSON(fiber.Map{"server": name, "ready": true, "tool_count": len(client.Tools())})
 }
 
