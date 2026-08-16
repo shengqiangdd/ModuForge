@@ -605,12 +605,13 @@ func getConversationMessagesPage(db *sql.DB, sessionID, userID string, limit int
 	}
 
 	// Fetch newest-first, limit+1 rows to detect has_more, then reverse to
-	// chronological order for rendering.
+	// chronological order for rendering. id breaks ties for rows sharing the
+	// same created_at second, keeping pagination deterministic.
 	if limit > 0 {
-		query += ` ORDER BY created_at DESC LIMIT ?`
+		query += ` ORDER BY created_at DESC, id DESC LIMIT ?`
 		args = append(args, limit+1)
 	} else {
-		query += ` ORDER BY created_at ASC`
+		query += ` ORDER BY created_at ASC, id ASC`
 	}
 
 	rows, err := db.Query(query, args...)
