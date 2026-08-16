@@ -25,6 +25,9 @@ export default defineConfig({
     target: 'esnext',
     cssCodeSplit: true,
     sourcemap: false,
+    // CodeMirror/Svelte 是大而稳定的库，已按库拆分为独立 chunk；
+    // 阈值上调到 700kB 避免对合理分块产生噪音 warning
+    chunkSizeWarningLimit: 700,
     rollupOptions: {
       output: {
         manualChunks(id: string) {

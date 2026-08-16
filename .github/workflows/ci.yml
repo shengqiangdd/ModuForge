@@ -32,6 +32,12 @@ jobs:
         working-directory: backend
         run: go vet ./...
 
+      - name: Vulnerability scan
+        working-directory: backend
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
+
       - name: Staticcheck
         working-directory: backend
         run: |
