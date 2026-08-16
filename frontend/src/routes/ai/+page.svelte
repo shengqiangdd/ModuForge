@@ -596,14 +596,14 @@ import { filterStepsByRound } from './lib/rounds';
     toast(`已加载对话 (${messages.length} 条消息${result.has_more ? '，可加载更早' : ''})`, 'success');
   }
 
-  // 向上加载更早的历史消息（游标分页）
+  // 向上加载更早的历史消息（复合游标 created_at+id 分页）
   async function loadEarlierMessages() {
     if (!sessionId || messages.length === 0 || loadingEarlier) return;
     const earliest = messages[0];
     if (!earliest.created_at) { toast('无法加载更早消息', 'error'); return; }
     loadingEarlier = true;
     try {
-      const result = await fetchSessionMessages(sessionId, 50, earliest.created_at);
+      const result = await fetchSessionMessages(sessionId, 50, earliest.created_at, earliest.id);
       if (!result || result.messages.length === 0) { hasMoreMessages = false; return; }
       messages = [...result.messages, ...messages];
       allAgentSteps = [...(result.allSteps as AgentStep[]), ...allAgentSteps];

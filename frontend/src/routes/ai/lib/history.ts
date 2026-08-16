@@ -121,7 +121,7 @@ export async function exportSessionById(targetSessionId: string, format: 'markdo
   } catch { return false; }
 }
 
-export async function fetchSessionMessages(sessId: string, limit = 0, before = ''): Promise<{
+export async function fetchSessionMessages(sessId: string, limit = 0, before = '', beforeId = ''): Promise<{
   messages: Message[];
   allSteps: AgentStep[];
   maxRound: number;
@@ -131,7 +131,11 @@ export async function fetchSessionMessages(sessId: string, limit = 0, before = '
   has_more: boolean;
 } | null> {
   try {
-    const q = limit > 0 ? `?limit=${limit}${before ? `&before=${encodeURIComponent(before)}` : ''}` : '';
+    const params = new URLSearchParams();
+    if (limit > 0) params.set('limit', String(limit));
+    if (before) params.set('before', before);
+    if (beforeId) params.set('before_id', beforeId);
+    const q = params.toString() ? `?${params}` : '';
     const res = await authFetch(`/api/v1/ai/sessions/${sessId}/messages${q}`);
     if (!res.ok) return null;
     const data = await res.json();
@@ -164,7 +168,7 @@ export async function fetchSessionMessages(sessId: string, limit = 0, before = '
         if (m.role === 'assistant' && m.token_usage) {
           try { tu = typeof m.token_usage === 'string' ? JSON.parse(m.token_usage) : m.token_usage; } catch { tu = undefined; }
         }
-        chatMsgs.push({ role: m.role, content: m.content, round: ri, created_at: m.created_at || '', token_usage: tu });
+        chatMsgs.push({ role: m.role, content: m.content, round: ri, created_at: m.created_at || '', id: m.id, token_usage: tu });
         if (m.role === 'user' && ri > maxRound) maxRound = ri;
       }
     }

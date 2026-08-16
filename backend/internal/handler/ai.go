@@ -1063,12 +1063,13 @@ func (h *AIHandler) GetSessionMessages(c fiber.Ctx) error {
 	}
 	limit, _ := strconv.Atoi(c.Query("limit", "50"))
 	before := c.Query("before", "")
+	beforeID := c.Query("before_id", "")
 	var messages []service.ConversationMessage
 	var hasMore bool
 	var mode string
 	var err error
 	if limit > 0 {
-		messages, hasMore, mode, err = service.GetConversationMessagesPage(h.db.Conn, sessionID, uid, limit, before)
+		messages, hasMore, mode, err = service.GetConversationMessagesPage(h.db.Conn, sessionID, uid, limit, before, beforeID)
 	} else {
 		messages, mode, err = service.GetConversationMessages(h.db.Conn, sessionID, uid)
 	}

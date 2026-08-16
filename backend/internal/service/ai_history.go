@@ -572,28 +572,36 @@ func SaveAgentStep(db *sql.DB, sessionID, userID, stepType, content string, roun
 }
 
 func GetConversationMessages(db *sql.DB, sessionID, userID string) ([]ConversationMessage, string, error) {
-	msgs, _, mode, err := getConversationMessagesPage(db, sessionID, userID, 0, "")
+	msgs, _, mode, err := getConversationMessagesPage(db, sessionID, userID, 0, "", "")
 	return msgs, mode, err
 }
 
 // GetConversationMessagesPage returns up to `limit` messages ending at or
-// before the `before` timestamp (exclusive), oldest first. `limit` must be > 0.
+// before the given cursor (created_at, id), oldest first. `limit` must be > 0.
 // The second return value reports whether older messages exist (has_more).
-func GetConversationMessagesPage(db *sql.DB, sessionID, userID string, limit int, before string) ([]ConversationMessage, bool, string, error) {
+// The composite cursor avoids dropping messages that share the same second
+// (SQLite created_at has second precision).
+func GetConversationMessagesPage(db *sql.DB, sessionID, userID string, limit int, before, beforeID string) ([]ConversationMessage, bool, string, error) {
 	if limit <= 0 {
 		limit = 50
 	}
-	return getConversationMessagesPage(db, sessionID, userID, limit, before)
+	return getConversationMessagesPage(db, sessionID, userID, limit, before, beforeID)
 }
 
 // getConversationMessagesPage is the shared implementation. limit<=0 means all.
-func getConversationMessagesPage(db *sql.DB, sessionID, userID string, limit int, before string) ([]ConversationMessage, bool, string, error) {
+func getConversationMessagesPage(db *sql.DB, sessionID, userID string, limit int, before, beforeID string) ([]ConversationMessage, bool, string, error) {
 	query := `SELECT id, session_id, user_id, role, content, COALESCE(step_type, ''), COALESCE(round_index, 0), created_at, COALESCE(tool_calls, ''), COALESCE(tool_call_id, ''), COALESCE(token_usage, '')
 		 FROM conversation_messages WHERE session_id=? AND user_id=?`
 	args := []interface{}{sessionID, userID}
 	if before != "" {
-		query += ` AND created_at < ?`
-		args = append(args, before)
+		if beforeID != "" {
+			// (created_at, id) composite cursor: strictly older than the page anchor
+			query += ` AND (created_at < ? OR (created_at = ? AND id < ?))`
+			args = append(args, before, before, beforeID)
+		} else {
+			query += ` AND created_at < ?`
+			args = append(args, before)
+		}
 	}
 
 	// Fetch newest-first, limit+1 rows to detect has_more, then reverse to
