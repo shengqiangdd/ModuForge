@@ -53,3 +53,9 @@ backend/moduforge_enhanced.exe
 
 # Local / generated scripts
 scripts/
+
+# 敏感文件与构建产物 (security)
+test_agent.py
+backend/cmd/moduforge/moduforge
+backend/moduforge.exe
+backend/moduforge
