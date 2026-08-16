@@ -1,4 +1,4 @@
-const CACHE_NAME = 'moduforge-v4';
+const CACHE_NAME = 'moduforge-v7';
 
 const STATIC_CACHE_URLS = [
   '/',
@@ -39,7 +39,10 @@ self.addEventListener('fetch', (event) => {
   }
 
   if (url.pathname.startsWith('/api/')) {
-    event.respondWith(networkFirst(event.request));
+    // API responses are NEVER cached — caching poll/build responses here can
+    // queue up Cache API writes and stall the page's fetch() forever, which
+    // froze the build UI at RUNNING. Route straight to network.
+    event.respondWith(fetch(event.request).catch(() => new Response('Network error', { status: 503 })));
     return;
   }
 

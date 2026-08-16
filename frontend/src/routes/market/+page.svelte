@@ -615,7 +615,7 @@
   onMount(() => { loadModules(); loadFavorites(); loadAllTags(); });
 </script>
 
-<div class="p-4 md:p-6 max-w-7xl mx-auto">
+<div class="w-full p-4 md:p-6 max-w-7xl mx-auto">
   <!-- Header -->
   <div class="market-header flex items-center justify-between mb-8">
     <div>

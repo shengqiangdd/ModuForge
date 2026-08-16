@@ -145,6 +145,12 @@
     gap: 0.75rem;
   }
 
+  @media (max-width: 640px) {
+    .info-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
   .info-item {
     display: flex;
     flex-direction: column;

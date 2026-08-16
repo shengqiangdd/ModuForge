@@ -1,4 +1,5 @@
 export interface Device {
+  id?: number; // saved-device id, present for saved devices (enables delete)
   serial: string;
   model: string;
   brand: string;

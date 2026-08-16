@@ -164,7 +164,7 @@
   };
 </script>
 
-<div class="p-6 max-w-4xl mx-auto">
+<div class="w-full p-6 max-w-4xl mx-auto">
   <div class="mb-6">
     <a href="/projects/{id}" class="inline-flex items-center gap-1 text-xs text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)] transition-colors mb-3 no-underline" onclick={(e) => { e.preventDefault(); window.history.pushState(null, '', '/projects/' + id); window.dispatchEvent(new PopStateEvent('popstate')); }}>
       <span class="material-symbols-outlined text-[14px]">arrow_back</span>

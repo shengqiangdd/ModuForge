@@ -117,7 +117,7 @@
   }
 </script>
 
-<div class="p-6 max-w-2xl mx-auto">
+<div class="w-full p-6 max-w-2xl mx-auto">
   <!-- Back -->
   <a href="/market" class="inline-flex items-center gap-1.5 text-sm text-[var(--color-text-secondary)] hover:text-primary-600 transition-colors mb-6 no-underline">
     <span class="material-symbols-outlined text-[16px]">arrow_back</span>

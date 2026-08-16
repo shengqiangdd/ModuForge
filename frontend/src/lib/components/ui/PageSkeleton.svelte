@@ -20,7 +20,7 @@
     </div>
   </div>
 {:else if variant === 'market'}
-  <div class="flex flex-col gap-4 p-4 md:p-6 max-w-7xl mx-auto">
+  <div class="w-full flex flex-col gap-4 p-4 md:p-6 max-w-7xl mx-auto">
     <div class="skeleton-line w-64 h-8 rounded-lg mb-2"></div>
     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
       {#each Array(6) as _}
@@ -43,7 +43,7 @@
     </div>
   </div>
 {:else if variant === 'list'}
-  <div class="flex flex-col gap-3 p-4 md:p-6 max-w-7xl mx-auto">
+  <div class="w-full flex flex-col gap-3 p-4 md:p-6 max-w-7xl mx-auto">
     <div class="skeleton-line w-48 h-8 rounded-lg mb-2"></div>
     <div class="skeleton-line w-full h-12 rounded-lg mb-2"></div>
     {#each Array(5) as _}
@@ -58,7 +58,7 @@
     {/each}
   </div>
 {:else}
-  <div class="flex flex-col gap-3 p-4 md:p-6 max-w-7xl mx-auto">
+  <div class="w-full flex flex-col gap-3 p-4 md:p-6 max-w-7xl mx-auto">
     <div class="skeleton-line w-48 h-8 rounded-lg mb-2"></div>
     <div class="skeleton-line w-full h-3 rounded mb-1"></div>
     <div class="skeleton-line w-3/4 h-3 rounded mb-1"></div>

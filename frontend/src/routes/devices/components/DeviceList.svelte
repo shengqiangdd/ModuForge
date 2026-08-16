@@ -3,6 +3,7 @@
   import Skeleton from '$lib/components/ui/Skeleton.svelte';
 
   interface Device {
+    id?: number; // saved-device id, present for saved devices (enables delete)
     serial: string;
     model: string;
     brand: string;
@@ -18,6 +19,7 @@
     onSelect,
     onSelectBatch,
     onConnect,
+    onDelete,
     onRefresh
   }: {
     devices?: Device[];
@@ -27,6 +29,7 @@
     onSelect?: (serial: string) => void;
     onSelectBatch?: (devices: Set<string>) => void;
     onConnect?: (address: string) => void;
+    onDelete?: (device: Device) => void;
     onRefresh?: () => void;
   } = $props();
 
@@ -114,6 +117,17 @@
           <span class="device-state" class:online={device.state === 'device'}>
             {device.state === 'device' ? '在线' : '离线'}
           </span>
+          {#if device.id !== undefined && device.id !== null}
+            <button
+              class="btn-delete"
+              title="删除已保存设备"
+              onclick={(e) => { e.stopPropagation(); onDelete?.(device); }}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6h14"/>
+              </svg>
+            </button>
+          {/if}
         </div>
       {/snippet}
     </ListTransition>
@@ -281,5 +295,23 @@
   .device-state.online {
     background: var(--color-success-light);
     color: var(--color-success);
+  }
+
+  .btn-delete {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.375rem;
+    border: none;
+    background: transparent;
+    border-radius: 0.375rem;
+    cursor: pointer;
+    color: var(--color-text-secondary);
+    flex-shrink: 0;
+  }
+
+  .btn-delete:hover {
+    background: var(--color-error-light);
+    color: var(--color-error);
   }
 </style>

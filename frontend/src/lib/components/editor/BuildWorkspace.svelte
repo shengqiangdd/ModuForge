@@ -56,8 +56,8 @@
   let savingGitConfig = $state(false);
   let savingSchedule = $state(false);
 
-  // Feature 1: Incremental compilation
-  let incrementalInfo = $state<{ needs_rebuild: boolean; changed_files: string[]; new_files: string[]; removed_files: string[]; reason: string } | null>(null);
+  // Feature 1: Incremental compilation — declared as $derived.by later in the
+  // file (must NOT be an effect-written $state — that froze the render pipeline).
 
   // Feature 2: Build cache status
   let cacheStatus = $state<{ total_size: number; file_count: number; hit_rate: number; total_builds: number; cache_hits: number } | null>(null);
@@ -184,7 +184,9 @@
         pollStatus();
       }
     })();
-    return () => { if (pollTimer) clearInterval(pollTimer); };
+    return () => {
+      if (pollTimer) clearInterval(pollTimer);
+    };
   });
 
   async function clearCache() {
@@ -211,7 +213,6 @@
     status = 'pending';
     logLines = [];
     taskId = null;
-    incrementalInfo = null;
     try {
       const res = await fetch(`/api/v1/projects/${projectId}/build`, {
         method: 'POST',
@@ -251,11 +252,19 @@
     if (pollTimer) clearInterval(pollTimer);
     pollTimer = setInterval(async () => {
       if (!taskId) return;
+      let consecutiveErrors = 0;
       try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000);
         const res = await fetch(`/api/v1/builds/${taskId}`, {
           headers: { 'Authorization': `Bearer ${localStorage.getItem('moduforge_token') || ''}` },
+          signal: controller.signal,
         });
-        if (!res.ok) { building = false; saveBuildState(); clearInterval(pollTimer!); return; }
+        clearTimeout(timeoutId);
+        if (!res.ok) {
+          if (++consecutiveErrors >= 6) { building = false; saveBuildState(); clearInterval(pollTimer!); return; }
+          return;
+        }
         const task = await res.json();
         status = task.status;
         if (task.log) logLines = task.log.split('\n').filter((l: string) => l);
@@ -280,7 +289,10 @@
           // Still running — persist state for page navigation
           saveBuildState();
         }
-      } catch { clearInterval(pollTimer!); pollTimer = null; building = false; saveBuildState(); }
+      } catch {
+        // Transient network/timeout errors must NOT kill the polling loop — only give up after many consecutive failures.
+        if (++consecutiveErrors >= 6) { clearInterval(pollTimer!); pollTimer = null; building = false; saveBuildState(); }
+      }
     }, 500);
   }
 
@@ -374,32 +386,32 @@
     }
   }
 
-  // Parse incremental info from build log
-  $effect(() => {
+  // Parse incremental info from build log.
+  // MUST be a $derived, not an $effect that writes $state: the old effect
+  // wrote `incrementalInfo` on the first poll tick and silently froze Svelte 5's
+  // render pipeline (UI stuck at RUNNING while polling kept running) — confirmed
+  // by DEBUG rounds (ticks kept counting in JS/title but the DOM never re-rendered).
+  let incrementalInfo = $derived.by(() => {
     const logText = logLines.join('\n');
-    if (logText.includes('Checking incremental build')) {
-      const changedMatch = logText.match(/Changed: (\d+) file/);
-      const newMatch = logText.match(/New: (\d+) file/);
-      const removedMatch = logText.match(/Removed: (\d+) file/);
-      const reasonMatch = logText.match(/📋 (.+)/);
-      incrementalInfo = {
-        needs_rebuild: !logText.includes('No changes detected'),
-        changed_files: [],
-        new_files: [],
-        removed_files: [],
-        reason: reasonMatch?.[1] || '',
-      };
-      if (changedMatch) incrementalInfo.changed_files = Array(parseInt(changedMatch[1])).fill('');
-      if (newMatch) incrementalInfo.new_files = Array(parseInt(newMatch[1])).fill('');
-      if (removedMatch) incrementalInfo.removed_files = Array(parseInt(removedMatch[1])).fill('');
-    }
+    if (!logText.includes('Checking incremental build')) return null;
+    const changedMatch = logText.match(/Changed: (\d+) file/);
+    const newMatch = logText.match(/New: (\d+) file/);
+    const removedMatch = logText.match(/Removed: (\d+) file/);
+    const reasonMatch = logText.match(/📋 (.+)/);
+    return {
+      needs_rebuild: !logText.includes('No changes detected'),
+      changed_files: changedMatch ? Array(parseInt(changedMatch[1])).fill('') : [],
+      new_files: newMatch ? Array(parseInt(newMatch[1])).fill('') : [],
+      removed_files: removedMatch ? Array(parseInt(removedMatch[1])).fill('') : [],
+      reason: reasonMatch?.[1] || '',
+    };
   });
 </script>
 
 <style>
 </style>
 
-<div class="p-4 sm:p-6 max-w-3xl mx-auto pb-28 overflow-x-hidden min-w-0">
+<div class="w-full p-4 sm:p-6 max-w-3xl mx-auto pb-28 overflow-x-hidden min-w-0">
   {#if !projectId}
     <div class="text-center py-16 text-[var(--color-text-secondary)]">
       <span class="material-symbols-outlined text-5xl mb-3 text-neutral-300">build</span>

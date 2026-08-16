@@ -479,11 +479,11 @@
 </script>
 
 <div class="screen-canvas-wrapper">
-  <div class="relative inline-block">
+  <div class="relative inline-block max-w-full">
     {#if !connected}
       <div
         class="flex items-center justify-center rounded-xl border"
-        style="width: {fitWidth}px; height: {fitWidth * 2}px; background: var(--color-surface); border-color: var(--color-border)"
+        style="width: {fitWidth}px; max-width: 100%; height: {fitWidth * 2}px; background: var(--color-surface); border-color: var(--color-border)"
       >
         <div class="text-center">
           <span class="material-symbols-outlined text-4xl block mb-2" style="color: var(--color-text-muted)">wifi_off</span>
@@ -494,7 +494,7 @@
       <canvas
         bind:this={canvasEl}
         class="rounded-xl border cursor-crosshair select-none"
-        style="width: {fitWidth}px; max-height: {fitWidth * 2}px; object-fit: contain; touch-action: none; border-color: var(--color-border)"
+        style="width: {fitWidth}px; max-width: 100%; max-height: {fitWidth * 2}px; object-fit: contain; touch-action: none; border-color: var(--color-border)"
         onpointerdown={handlePointerDown}
         onpointerup={handlePointerUp}
         onpointermove={handlePointerMove}

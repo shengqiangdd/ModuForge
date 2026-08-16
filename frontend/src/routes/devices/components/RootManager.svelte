@@ -70,8 +70,8 @@
   {#if showRootPermissions}
     <div class="mt-4 border-t pt-3" style="border-color: var(--color-border)">
       <h4 class="text-xs font-semibold mb-2" style="color: var(--color-text)">Root 权限管理</h4>
-      <div class="flex gap-2 mb-2">
-        <input type="text" class="input-field text-xs flex-1" placeholder="包名" bind:value={rootPermPackage} />
+      <div class="flex flex-wrap gap-2 mb-2">
+        <input type="text" class="input-field text-xs flex-1 min-w-[120px]" placeholder="包名" bind:value={rootPermPackage} />
         <label class="flex items-center gap-1 text-xs" style="color: var(--color-text-secondary)">
           <input type="checkbox" bind:checked={rootPermGrant} /> 授予
         </label>

@@ -159,12 +159,40 @@
   }
 
   async function deleteSavedDevice(id: number) {
-    const token = localStorage.getItem('moduforge_token') || '';
-    await fetch(`/api/v1/adb/saved-devices/${id}`, {
-      method: 'DELETE',
-      headers: { 'Authorization': `Bearer ${token}` },
-    });
-    loadSavedDevices();
+    try {
+      const res = await fetch(`/api/v1/adb/saved-devices/${id}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('moduforge_token') || sessionStorage.getItem('moduforge_token') || ''}` },
+      });
+      if (!res.ok) {
+        let data: any = {};
+        try { data = await res.json(); } catch { /* ignore */ }
+        throw new Error(data.error || data.message || `删除失败 (${res.status})`);
+      }
+      msg('', '设备已删除');
+      // Remove from local list so the UI updates immediately, then reload to be safe.
+      savedDevices = savedDevices.filter(sd => sd.id !== id);
+      devices = devices.filter(d => d.id !== id);
+      loadSavedDevices();
+      listDevices();
+    } catch (e: any) {
+      msg(e?.message || '删除失败');
+    }
+  }
+
+  function onDeleteDevice(device: Device) {
+    // Only saved devices (with id) can be deleted.
+    if (device.id === undefined || device.id === null) return;
+    onDeleteSavedId(device.id, device.serial);
+  }
+
+  function onDeleteSavedId(id: number, serial: string) {
+    showConfirm(
+      '删除设备',
+      `确定要从已保存设备中删除 ${serial} 吗？`,
+      'danger',
+      () => deleteSavedDevice(id)
+    );
   }
 
   function selectSavedDevice(addr: string) {
@@ -175,7 +203,17 @@
     if (!connectAddress.trim()) return;
     const d = await apiPost('/api/v1/adb/connect', { address: connectAddress.trim() });
     if (d.error) { msg(d.error); return; }
-    successMsg = d.output || 'Connected';
+    if (d.status === 'connected') {
+      successMsg = d.message || '连接成功 ✅';
+      // Auto-select the newly connected device so the management UI shows up
+      selectedDevice = d.serial || connectAddress.trim();
+      loadDeviceInfo();
+    } else {
+      // Failed / unauthorized / offline — surface the real error instead of
+      // pretending everything is fine.
+      const suggestions = (d.suggestions || []).join('\n');
+      msg((d.message || '连接失败') + (suggestions ? '\n' + suggestions : ''));
+    }
     listDevices();
     loadSavedDevices();
   }
@@ -759,9 +797,9 @@
   onCancel={() => confirmOpen = false}
 />
 
-<div class="p-4 md:p-6 max-w-7xl mx-auto">
+<div class="w-full p-4 md:p-6 max-w-7xl mx-auto min-w-0">
   <!-- Header -->
-  <div class="flex items-center justify-between mb-6">
+  <div class="flex flex-wrap items-center justify-between gap-3 mb-6">
     <div>
       <h1 class="text-xl md:text-2xl font-bold" style="color: var(--color-text)">设备管理</h1>
       <p class="text-sm mt-0.5" style="color: var(--color-text-secondary)">ADB 设备连接、模块管理、应用管理、文件浏览</p>
@@ -794,8 +832,35 @@
     onSelect={(serial) => { selectedDevice = serial; loadDeviceInfo(); switchTab(activeTab); }}
     onSelectBatch={(s) => { selectedDevices = s; }}
     onConnect={(addr) => { connectAddress = addr; connectDevice(); }}
+    onDelete={(device) => onDeleteDevice(device)}
     onRefresh={() => { listDevices(); if (selectedDevice) loadDeviceInfo(); }}
   />
+
+  <!-- Saved Devices (chips): click to fill address, × to delete -->
+  {#if savedDevices.length > 0}
+    <div class="mt-4 mb-2">
+      <div class="text-xs font-medium mb-2" style="color: var(--color-text-secondary)">已保存设备</div>
+      <div class="flex flex-wrap gap-2">
+        {#each savedDevices as sd}
+          <button
+            class="saved-chip"
+            onclick={() => { connectAddress = sd.address; }}
+            title={`最近连接: ${sd.last_connected_at || '未知'}`}
+          >
+            <span class="saved-chip-addr">{sd.address}</span>
+            {#if sd.name}
+              <span class="saved-chip-name">{sd.name}</span>
+            {/if}
+            <span
+              class="saved-chip-del"
+              role="button"
+              onclick={(e) => { e.stopPropagation(); onDeleteSavedId(sd.id, sd.address); }}
+            >×</span>
+          </button>
+        {/each}
+      </div>
+    </div>
+  {/if}
 
   {#if selectedDevice}
     <!-- Tabs -->
@@ -855,7 +920,7 @@
 
     {:else if activeTab === 'modules'}
       <div class="info-card overflow-x-auto">
-        <div class="p-4 border-b flex items-center justify-between" style="border-color: var(--color-border)">
+        <div class="p-4 border-b flex flex-wrap items-center justify-between gap-2" style="border-color: var(--color-border)">
           <span class="text-sm font-semibold" style="color: var(--color-text)">已安装模块 ({modules.length})</span>
           <div class="flex items-center gap-2">
             <button class="btn-ghost text-xs" onclick={() => showModuleCheckboxes = !showModuleCheckboxes}>
@@ -899,7 +964,7 @@
         <!-- Batch Operations Bar (1.3) -->
         {#if showModuleCheckboxes && filteredModules.length > 0}
           <div class="p-3 border-b" style="border-color: var(--color-border); background: var(--color-surface)">
-            <div class="flex items-center gap-2 text-xs">
+            <div class="flex flex-wrap items-center gap-2 text-xs">
               <button class="btn-ghost text-xs" onclick={selectAllModules}>全选/取消</button>
               <span style="color: var(--color-text-muted)">已选 {selectedModules.size} 个</span>
               <button class="btn-ghost text-xs" style="color: var(--color-success)" onclick={() => batchToggleModules(true)}>批量启用</button>
@@ -1008,11 +1073,11 @@
 
     {:else if activeTab === 'files'}
       <div class="info-card overflow-hidden">
-        <div class="p-4 border-b flex items-center justify-between" style="border-color: var(--color-border)">
-          <div class="flex items-center gap-2 text-sm">
+        <div class="p-4 border-b flex flex-wrap items-center justify-between gap-2" style="border-color: var(--color-border)">
+          <div class="flex items-center gap-2 text-sm min-w-0">
             <button class="btn-ghost text-xs px-2" onclick={goUp} disabled={currentPath === '/'}>⬆</button>
             <span style="color: var(--color-text-secondary)">路径:</span>
-            <code class="text-xs px-2 py-1 rounded" style="background: var(--color-surface)">{currentPath}</code>
+            <code class="text-xs px-2 py-1 rounded truncate max-w-[40vw] sm:max-w-none" style="background: var(--color-surface)">{currentPath}</code>
           </div>
           <button class="btn-ghost text-xs" onclick={() => loadFiles()}>刷新</button>
         </div>
@@ -1030,9 +1095,9 @@
               onkeydown={(e: KeyboardEvent) => { if (e.key === 'Enter') mkdir(); }} />
             <button class="btn-ghost text-xs" onclick={mkdir}>新建文件夹</button>
           </div>
-          <div class="flex items-center gap-2">
-            <input type="file" bind:this={fileInput} class="text-xs" style="color: var(--color-text)" />
-            <input type="text" class="input-field text-xs flex-1" placeholder="目标路径（留空使用当前目录）" bind:value={uploadTarget} />
+          <div class="flex flex-wrap items-center gap-2">
+            <input type="file" bind:this={fileInput} class="text-xs max-w-full" style="color: var(--color-text)" />
+            <input type="text" class="input-field text-xs flex-1 min-w-[120px]" placeholder="目标路径（留空使用当前目录）" bind:value={uploadTarget} />
             <button class="btn-primary text-xs" disabled={uploading} onclick={uploadFile}>
               {uploading ? '上传中...' : '上传'}
             </button>
@@ -1053,17 +1118,17 @@
           {/if}
         <div class="max-h-[500px] overflow-y-auto">
           {#each filteredFiles as file (file.path)}
-            <div class="flex items-center px-4 py-2 text-sm" style="border-bottom: 1px solid var(--color-border)">
+            <div class="flex flex-wrap items-center px-4 py-2 text-sm gap-y-1.5" style="border-bottom: 1px solid var(--color-border)">
               <span class="material-symbols-outlined text-[18px] mr-2" style="color: {file.is_dir ? 'var(--color-primary)' : 'var(--color-text-muted)'}">
                 {file.is_dir ? 'folder' : 'description'}
               </span>
               {#if renamePath === file.path}
-                <input type="text" class="input-field text-xs flex-1" bind:value={renameTarget}
+                <input type="text" class="input-field text-xs flex-1 min-w-[120px]" bind:value={renameTarget}
                   onkeydown={(e: KeyboardEvent) => { if (e.key === 'Enter') renameFile(file.path); if (e.key === 'Escape') { renamePath = ''; renameTarget = ''; } }}
                   onblur={() => { if (renameTarget !== file.name) renameFile(file.path); else { renamePath = ''; renameTarget = ''; } }} />
               {:else}
                 <button
-                  class="flex-1 text-left truncate"
+                  class="flex-1 min-w-0 text-left truncate"
                   style="color: {file.is_dir ? 'var(--color-primary)' : 'var(--color-text)'}"
                   onclick={() => file.is_dir ? navigateTo(file.path + '/') : null}
                 >
@@ -1072,12 +1137,14 @@
               {/if}
               <span class="text-xs ml-4" style="color: var(--color-text-muted)">{file.is_dir ? '' : formatSize(file.size)}</span>
               <span class="text-xs ml-4 hidden sm:inline" style="color: var(--color-text-muted)">{file.mode}</span>
-              <button class="text-xs ml-2" style="color: var(--color-text-secondary)" onclick={() => { renamePath = file.path; renameTarget = file.name; }}>重命名</button>
-              {#if !file.is_dir}
-                <button class="text-xs ml-2" style="color: var(--color-primary)" onclick={() => downloadFile(file.path)}>下载</button>
-                <button class="text-xs ml-2" style="color: var(--color-text-secondary)" onclick={() => previewFile(file.path)}>预览</button>
-              {/if}
-              <button class="text-xs ml-2" style="color: var(--color-error)" onclick={() => showConfirm('删除文件', `确定要删除 ${file.name} 吗？此操作不可撤销。`, 'danger', () => deleteFile(file.path))}>删除</button>
+              <div class="flex items-center gap-2 ml-auto">
+                <button class="text-xs" style="color: var(--color-text-secondary)" onclick={() => { renamePath = file.path; renameTarget = file.name; }}>重命名</button>
+                {#if !file.is_dir}
+                  <button class="text-xs" style="color: var(--color-primary)" onclick={() => downloadFile(file.path)}>下载</button>
+                  <button class="text-xs" style="color: var(--color-text-secondary)" onclick={() => previewFile(file.path)}>预览</button>
+                {/if}
+                <button class="text-xs" style="color: var(--color-error)" onclick={() => showConfirm('删除文件', `确定要删除 ${file.name} 吗？此操作不可撤销。`, 'danger', () => deleteFile(file.path))}>删除</button>
+              </div>
             </div>
           {/each}
           {#if files.length === 0}
@@ -1099,7 +1166,7 @@
 
     {:else if activeTab === 'logs'}
       <div class="info-card overflow-hidden">
-        <div class="p-4 border-b flex items-center gap-3" style="border-color: var(--color-border)">
+        <div class="p-4 border-b flex flex-wrap items-center gap-3" style="border-color: var(--color-border)">
           <input type="text" class="input-field text-xs flex-1" placeholder="Tag 过滤" bind:value={logFilter} />
           <select class="input-field text-xs py-1" bind:value={logLevel}>
             <option value="">全部</option>
@@ -1144,8 +1211,8 @@
           </div>
         </div>
 
-        <div class="flex gap-4">
-          <div class="flex-shrink-0">
+        <div class="flex flex-col md:flex-row gap-4">
+          <div class="w-full md:w-auto md:flex-shrink-0 flex justify-center">
             <ScreenCanvas
               serial={selectedDevice}
               fitWidth={screenFitWidth}
@@ -1154,7 +1221,7 @@
             />
           </div>
 
-          <div class="flex-1 space-y-4">
+          <div class="flex-1 space-y-4 min-w-0">
             <ScreenControls
               {screenWidth} {screenHeight} {screenRefreshing} {screenAutoRefresh}
               {inputText} {holdDuration} {holdActive} {recording}
@@ -1228,4 +1295,47 @@
   }
   .btn-ghost:hover { background: var(--color-surface); }
   .btn-ghost:disabled { opacity: 0.5; cursor: not-allowed; }
+  .saved-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    background: var(--color-bg-elevated);
+    border: 1px solid var(--color-border);
+    border-radius: 9999px;
+    font-size: 12px;
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    max-width: 100%;
+  }
+  .saved-chip:hover { border-color: var(--color-primary); }
+  .saved-chip-addr {
+    font-family: monospace;
+    color: var(--color-text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .saved-chip-name {
+    color: var(--color-text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .saved-chip-del {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    line-height: 1;
+    border-radius: 50%;
+    color: var(--color-text-secondary);
+    flex-shrink: 0;
+    font-size: 14px;
+  }
+  .saved-chip-del:hover {
+    background: var(--color-error-light);
+    color: var(--color-error);
+  }
 </style>

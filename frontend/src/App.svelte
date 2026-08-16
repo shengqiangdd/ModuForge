@@ -633,8 +633,8 @@
 
     <!-- Page Content -->
     {#if current === 'projects'}
-      <div class="flex-1 overflow-y-auto page-enter">
-        <div class="p-4 md:p-6 max-w-7xl mx-auto">
+      <div class="flex-1 overflow-y-auto page-enter min-w-0">
+        <div class="w-full p-4 md:p-6 max-w-7xl mx-auto">
           <div class="flex items-center gap-3 mb-4">
             <div class="flex-1">
               <h2 class="text-xl md:text-2xl font-bold" style="color: var(--color-text)">{$t('nav.projects')}</h2>
@@ -742,7 +742,7 @@
       {/if}
     {:else}
       <!-- Lazy-loaded route component -->
-      <div class="flex-1 overflow-y-auto overflow-x-hidden flex flex-col min-h-0 {current === 'ai' ? '' : 'page-enter'}">
+      <div class="flex-1 overflow-y-auto overflow-x-hidden flex flex-col min-h-0 min-w-0 {current === 'ai' ? '' : 'page-enter'}">
         {#if routeLoading}
           <PageSkeleton variant={current === 'editor' ? 'editor' : current === 'market' ? 'market' : current === 'market-publish' ? 'market' : 'list'} />
         {:else if routeComponent}

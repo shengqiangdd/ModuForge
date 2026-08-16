@@ -15,7 +15,7 @@
 
 {#if mod}
   <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" role="presentation" onclick={handleOverlayClick}>
-    <div class="bg-[var(--color-bg)] rounded-2xl p-6 w-full max-w-lg border border-[var(--color-border)] shadow-2xl" role="dialog" aria-modal="true" tabindex="-1">
+    <div class="bg-[var(--color-bg)] rounded-2xl p-4 sm:p-6 w-full max-w-lg border border-[var(--color-border)] shadow-2xl m-4" role="dialog" aria-modal="true" tabindex="-1">
       <div class="flex items-center justify-between mb-4">
         <h3 class="text-lg font-bold text-[var(--color-text)]">{mod.name}</h3>
         <button class="p-1 rounded-lg hover:bg-[var(--color-surface)]" onclick={onClose}>

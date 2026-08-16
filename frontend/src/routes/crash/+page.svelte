@@ -75,7 +75,7 @@
   };
 </script>
 
-<div class="p-6 max-w-5xl mx-auto space-y-6">
+<div class="w-full p-6 max-w-5xl mx-auto space-y-6">
   <div class="flex items-center justify-between">
     <div>
       <h1 class="text-2xl font-bold text-[var(--color-text)]">崩溃分析</h1>

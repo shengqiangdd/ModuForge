@@ -227,7 +227,7 @@
   const gridCols = 'grid grid-cols-1 md:grid-cols-2 gap-4';
 </script>
 
-<div class="p-4 md:p-6 max-w-7xl mx-auto">
+<div class="w-full p-4 md:p-6 max-w-7xl mx-auto">
   <div class="flex items-center justify-between mb-8">
     <div>
       <h1 class="text-xl md:text-2xl font-bold" style="color: var(--color-text)">{$t('dashboard.title')}</h1>
