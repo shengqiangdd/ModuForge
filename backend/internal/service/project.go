@@ -475,8 +475,28 @@ func (s *ProjectService) s3ObjectKey(projectID, path string) string {
 	return projectID + "/" + strings.TrimPrefix(path, "/")
 }
 
+// sanitizeProjectPath rejects path-traversal filenames before they reach
+// disk/S3. Project files never legitimately contain ".." or absolute paths;
+// allowing them would let an attacker write/delete arbitrary files readable
+// by the moduforge user (e.g. /data/.env holding JWT_SECRET).
+func sanitizeProjectPath(path string) error {
+	if path == "" {
+		return fmt.Errorf("file path is empty")
+	}
+	if strings.Contains(path, "..") {
+		return fmt.Errorf("invalid file path %q: contains '..'", path)
+	}
+	if filepath.IsAbs(path) {
+		return fmt.Errorf("invalid file path %q: absolute paths not allowed", path)
+	}
+	return nil
+}
+
 func (s *ProjectService) SaveFile(ctx context.Context, projectID, path, content, userID string) (*domain.ProjectFile, error) {
 	if err := s.checkProjectOwnership(ctx, projectID, userID); err != nil {
+		return nil, err
+	}
+	if err := sanitizeProjectPath(path); err != nil {
 		return nil, err
 	}
 
@@ -536,6 +556,9 @@ func (s *ProjectService) DeleteFile(ctx context.Context, projectID, path, userID
 	if err := s.checkProjectOwnership(ctx, projectID, userID); err != nil {
 		return err
 	}
+	if err := sanitizeProjectPath(path); err != nil {
+		return err
+	}
 	// Remove from S3 first (truth source). If S3 delete fails, abort so the DB
 	// index does not point at a dangling object.
 	if s.s3 != nil {
@@ -580,6 +603,11 @@ func (s *ProjectService) ExportToTempDir(ctx context.Context, projectID string) 
 			return "", err
 		}
 		fullPath := filepath.Join(tmpDir, filepath.Clean(f.Path))
+		// Defense in depth: never allow an entry to escape the temp dir.
+		if !strings.HasPrefix(fullPath, tmpDir+string(os.PathSeparator)) {
+			os.RemoveAll(tmpDir)
+			return "", fmt.Errorf("invalid path escapes export dir: %q", f.Path)
+		}
 		if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
 			os.RemoveAll(tmpDir)
 			return "", err
