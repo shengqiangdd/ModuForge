@@ -11,8 +11,11 @@ services:
         condition: service_started
     ports:
       - "8086:8080"
+      - "127.0.0.1:6060:6060"   # pprof 诊断端口（仅宿主本机可访问，不暴露局域网）
     environment:
       - PORT=:8080
+      - PPROF_ENABLED=1
+      - PPROF_PORT=6060
       - DATABASE_PATH=/data/moduforge.db
       - BUILD_DIR=/data/builds
       - MODULES_DIR=/data/modules
