@@ -802,6 +802,8 @@ func (db *DB) migrate() error {
 		"ALTER TABLE build_tasks ADD COLUMN commit_hash TEXT DEFAULT ''",
 		// MCP policy: three-state permission mode (allow/deny/ask)
 		"ALTER TABLE mcp_tool_policies ADD COLUMN mode TEXT NOT NULL DEFAULT 'deny'",
+		// Non-agent conversations aggregate LLM token usage (P3 usage stats)
+		"ALTER TABLE ai_conversations ADD COLUMN token_usage INTEGER DEFAULT 0",
 		// Backfill: old allow_auto=1 policies become mode='allow'
 		"UPDATE mcp_tool_policies SET mode='allow' WHERE allow_auto=1 AND mode='deny'",
 		// Fix existing NULL values in build_tasks

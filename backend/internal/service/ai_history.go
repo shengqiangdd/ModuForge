@@ -523,8 +523,6 @@ func EnsureConversationMessagesTable(db *sql.DB) error {
 	db.Exec(`ALTER TABLE conversation_messages ADD COLUMN step_type TEXT DEFAULT ''`)
 	db.Exec(`ALTER TABLE conversation_messages ADD COLUMN round_index INTEGER DEFAULT 0`)
 	db.Exec(`ALTER TABLE conversation_messages ADD COLUMN token_usage TEXT DEFAULT ''`)
-	// Migration: non-agent (chat/generate/...) conversations aggregate LLM token usage
-	db.Exec(`ALTER TABLE ai_conversations ADD COLUMN token_usage INTEGER DEFAULT 0`)
 	// Composite index for fast session+user+time queries
 	db.Exec(`CREATE INDEX IF NOT EXISTS idx_conv_msg_session ON conversation_messages(session_id)`)
 	db.Exec(`CREATE INDEX IF NOT EXISTS idx_conv_msg_user ON conversation_messages(user_id)`)
