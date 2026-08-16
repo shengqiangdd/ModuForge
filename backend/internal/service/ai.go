@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/exec"
@@ -256,13 +257,13 @@ Module Description: %s
 Generate all necessary files as JSON: {"files":[{"path":"...","content":"..."}]}
 Ensure module.prop has ksu.supported=true and apatch.supported=true.
 All shell scripts: shebang + set -euo pipefail + security best practices.`, description)
-	return s.streamChatWithSystemForUser(ctx, systemPrompt, userPrompt, userID, w)
+	return s.streamChatWithSystemForUser(ctx, systemPrompt, userPrompt, userID, sessionID, w)
 }
 
 // GatherRequirements 需求收集
 func (s *AIService) GatherRequirements(ctx context.Context, message, userID string, messages []Message, sessionID string, w *bufio.Writer) error {
 	systemPrompt := s.loadPrompt("gather", userID)
-	return s.streamChatWithSystemForUser(ctx, systemPrompt, message, userID, w)
+	return s.streamChatWithSystemForUser(ctx, systemPrompt, message, userID, sessionID, w)
 }
 
 // Chat 通用 AI 对话
@@ -272,14 +273,14 @@ func (s *AIService) Chat(ctx context.Context, message, contextInfo, userID strin
 	if contextInfo != "" {
 		userPrompt = fmt.Sprintf("Context:\n%s\n\nQuestion:\n%s", contextInfo, message)
 	}
-	return s.streamChatWithSystemForUser(ctx, systemPrompt, userPrompt, userID, w)
+	return s.streamChatWithSystemForUser(ctx, systemPrompt, userPrompt, userID, sessionID, w)
 }
 
 // RepairBuild 分析构建日志给出修复建议
 func (s *AIService) RepairBuild(ctx context.Context, buildLog, userID string, messages []Message, sessionID string, w *bufio.Writer) error {
 	systemPrompt := s.loadPrompt("repair", userID)
 	userPrompt := fmt.Sprintf("Analyze this build log and identify the failure:\n\n```\n%s\n```\n\nProvide diagnosis with specific fix instructions.", buildLog)
-	return s.streamChatWithSystemForUser(ctx, systemPrompt, userPrompt, userID, w)
+	return s.streamChatWithSystemForUser(ctx, systemPrompt, userPrompt, userID, sessionID, w)
 }
 
 // AutoBuild 自动构建 - 带phase事件的完整实现
@@ -563,6 +564,9 @@ module.prop, customize.sh, META-INF/(update-binary + updater-script含#MAGISK)
 		"message": "正在连接AI...",
 	})
 
+	// AutoBuild LLM usage captured from the stream trailer chunk
+	var llmUsage *TokenUsageInfo
+
 	for scanner.Scan() {
 		line := scanner.Text()
 		if !strings.HasPrefix(line, "data: ") {
@@ -571,6 +575,10 @@ module.prop, customize.sh, META-INF/(update-binary + updater-script含#MAGISK)
 		data := strings.TrimPrefix(line, "data: ")
 		if data == "[DONE]" {
 			break
+		}
+
+		if u := extractUsageFromChunk(data); u != nil {
+			llmUsage = u
 		}
 
 		var parsed struct {
@@ -624,6 +632,9 @@ module.prop, customize.sh, META-INF/(update-binary + updater-script含#MAGISK)
 			json.Unmarshal([]byte(jsonStr), &result)
 		}
 	}
+
+	// Persist AutoBuild LLM usage (chat/generate-style non-agent stats)
+	s.recordNonAgentUsage(sessionID, userID, model, llmUsage)
 
 	// 如果还没发过script phase，现在发
 	if chunkCount < 30 {
@@ -931,7 +942,7 @@ func (s *AIService) resolveUserProviderConfig(userID, providerID string) (endpoi
 }
 
 // streamChatWithSystemForUser 支持用户 specific LLM 配置的流式请求
-func (s *AIService) streamChatWithSystemForUser(ctx context.Context, systemPrompt, userPrompt, userID string, w *bufio.Writer) error {
+func (s *AIService) streamChatWithSystemForUser(ctx context.Context, systemPrompt, userPrompt, userID, sessionID string, w *bufio.Writer) error {
 	endpoint := s.cfg.LLMEndpoint
 	apiKey := s.cfg.LLMApiKey
 	model := s.cfg.LLMModel
@@ -1028,6 +1039,9 @@ func (s *AIService) streamChatWithSystemForUser(ctx context.Context, systemPromp
 		}
 	}()
 
+	// Non-agent LLM usage (persisted after the stream ends)
+	var usage *TokenUsageInfo
+
 	for scanner.Scan() {
 		line := scanner.Text()
 		if !strings.HasPrefix(line, "data: ") {
@@ -1041,12 +1055,69 @@ func (s *AIService) streamChatWithSystemForUser(ctx context.Context, systemPromp
 			w.Flush()
 			break
 		}
+		if u := extractUsageFromChunk(data); u != nil {
+			usage = u
+		}
 		w.WriteString(line + "\n")
 		w.Flush()
 	}
 
 	close(keepAliveDone)
+	s.recordNonAgentUsage(sessionID, userID, model, usage)
 	return nil
+}
+
+// extractUsageFromChunk parses a chat-completions SSE chunk and returns the
+// usage block when present (typically the trailing chunk with empty choices).
+func extractUsageFromChunk(data string) *TokenUsageInfo {
+	if !strings.Contains(data, "\"usage\"") {
+		return nil
+	}
+	var parsed struct {
+		Choices []json.RawMessage `json:"choices"`
+		Usage   *TokenUsageInfo   `json:"usage"`
+	}
+	if err := json.Unmarshal([]byte(data), &parsed); err != nil {
+		return nil
+	}
+	if parsed.Usage == nil || (parsed.Usage.TotalTokens <= 0 && len(parsed.Choices) > 0) {
+		return nil
+	}
+	return parsed.Usage
+}
+
+// TokenUsageInfo mirrors the standard chat-completions usage payload.
+type TokenUsageInfo struct {
+	PromptTokens     int `json:"prompt_tokens"`
+	CompletionTokens int `json:"completion_tokens"`
+	TotalTokens      int `json:"total_tokens"`
+}
+
+// recordNonAgentUsage persists non-agent-mode (chat/generate/repair/gather/
+// auto-build) LLM usage into ai_conversations.token_usage and the daily
+// aggregation table so usage/cost stats cover every AI mode.
+func (s *AIService) recordNonAgentUsage(sessionID, userID, model string, usage *TokenUsageInfo) {
+	if s.db == nil || sessionID == "" || userID == "" || usage == nil || usage.TotalTokens <= 0 {
+		return
+	}
+	total := int64(usage.TotalTokens)
+	if _, err := s.db.Exec(
+		`UPDATE ai_conversations SET token_usage = COALESCE(token_usage, 0) + ?, updated_at = datetime('now') WHERE id = ? AND user_id = ?`,
+		total, sessionID, userID,
+	); err != nil {
+		slog.Warn("recordNonAgentUsage update conversation", "error", err)
+	}
+	today := time.Now().Format("2006-01-02")
+	if _, err := s.db.Exec(
+		`INSERT INTO ai_usage_daily (date, llm_call_count, llm_token_usage) VALUES (?, 1, ?)
+		 ON CONFLICT(date) DO UPDATE SET
+		   llm_call_count = llm_call_count + 1,
+		   llm_token_usage = llm_token_usage + excluded.llm_token_usage,
+		   updated_at = CURRENT_TIMESTAMP`,
+		today, total,
+	); err != nil {
+		slog.Warn("recordNonAgentUsage daily", "error", err)
+	}
 }
 
 // sendSSE 发送SSE事件，写入失败时返回error

@@ -523,6 +523,8 @@ func EnsureConversationMessagesTable(db *sql.DB) error {
 	db.Exec(`ALTER TABLE conversation_messages ADD COLUMN step_type TEXT DEFAULT ''`)
 	db.Exec(`ALTER TABLE conversation_messages ADD COLUMN round_index INTEGER DEFAULT 0`)
 	db.Exec(`ALTER TABLE conversation_messages ADD COLUMN token_usage TEXT DEFAULT ''`)
+	// Migration: non-agent (chat/generate/...) conversations aggregate LLM token usage
+	db.Exec(`ALTER TABLE ai_conversations ADD COLUMN token_usage INTEGER DEFAULT 0`)
 	// Composite index for fast session+user+time queries
 	db.Exec(`CREATE INDEX IF NOT EXISTS idx_conv_msg_session ON conversation_messages(session_id)`)
 	db.Exec(`CREATE INDEX IF NOT EXISTS idx_conv_msg_user ON conversation_messages(user_id)`)
@@ -632,14 +634,15 @@ func GetConversationMessages(db *sql.DB, sessionID, userID string) ([]Conversati
 func ListUserSessions(db *sql.DB, userID string) ([]map[string]interface{}, error) {
 	// Union both sources: conversation_messages (agent mode) and ai_conversations (chat/generate modes)
 	rows, err := db.Query(
-		`SELECT session_id, started_at, last_at, msg_count, title, mode, model FROM (
+		`SELECT session_id, started_at, last_at, msg_count, title, mode, model, token_usage FROM (
 			SELECT cm.session_id,
 			       MIN(cm.created_at) as started_at,
 			       MAX(cm.created_at) as last_at,
 			       COUNT(*) as msg_count,
 			       COALESCE(ac.title, '') as title,
 			       COALESCE(ac.mode, '') as mode,
-			       COALESCE(ac.model, '') as model
+			       COALESCE(ac.model, '') as model,
+			       0 as token_usage
 			FROM conversation_messages cm
 			LEFT JOIN ai_conversations ac ON cm.session_id = ac.id AND cm.user_id = ac.user_id
 			WHERE cm.user_id=?
@@ -651,7 +654,8 @@ func ListUserSessions(db *sql.DB, userID string) ([]map[string]interface{}, erro
 			       json_array_length(ac.messages) as msg_count,
 			       COALESCE(ac.title, '') as title,
 			       COALESCE(ac.mode, '') as mode,
-			       COALESCE(ac.model, '') as model
+			       COALESCE(ac.model, '') as model,
+			       COALESCE(ac.token_usage, 0) as token_usage
 			FROM ai_conversations ac
 			WHERE ac.user_id=?
 			  AND NOT EXISTS (
@@ -671,7 +675,8 @@ func ListUserSessions(db *sql.DB, userID string) ([]map[string]interface{}, erro
 	for rows.Next() {
 		var sessionID, startedAt, lastAt, title, mode, model string
 		var msgCount int
-		if err := rows.Scan(&sessionID, &startedAt, &lastAt, &msgCount, &title, &mode, &model); err != nil {
+		var tokenUsage int64
+		if err := rows.Scan(&sessionID, &startedAt, &lastAt, &msgCount, &title, &mode, &model, &tokenUsage); err != nil {
 			continue
 		}
 		result = append(result, map[string]interface{}{
@@ -682,6 +687,7 @@ func ListUserSessions(db *sql.DB, userID string) ([]map[string]interface{}, erro
 			"title":       title,
 			"mode":        mode,
 			"model":       model,
+			"token_usage": tokenUsage,
 		})
 	}
 	// Aggregate per-session token usage (agent mode messages persist token_usage).
