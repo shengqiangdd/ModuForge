@@ -75,14 +75,12 @@ func (s *TaskDecomposerSkill) decomposeWithHeuristics(requirement, context strin
 	// Simple heuristic-based decomposition
 	// Analyze the requirement to determine complexity
 	complexity := "simple"
-	taskCount := 3
 
 	// Check for keywords that indicate complexity
 	complexKeywords := []string{"complex", "multiple", "integrate", "system", "architecture", "distributed"}
 	for _, keyword := range complexKeywords {
 		if strings.Contains(strings.ToLower(requirement), keyword) {
 			complexity = "complex"
-			taskCount = 6
 			break
 		}
 	}
@@ -91,14 +89,8 @@ func (s *TaskDecomposerSkill) decomposeWithHeuristics(requirement, context strin
 	for _, keyword := range mediumKeywords {
 		if strings.Contains(strings.ToLower(requirement), keyword) {
 			complexity = "medium"
-			taskCount = 4
 			break
 		}
-	}
-
-	// Limit to maxTasks
-	if taskCount > maxTasks {
-		taskCount = maxTasks
 	}
 
 	// Create tasks based on complexity
@@ -197,45 +189,6 @@ func (s *TaskDecomposerSkill) decomposeWithHeuristics(requirement, context strin
 		TotalTasks:  len(tasks),
 		Estimated:   estimatedTotal,
 		Complexity:  complexity,
-	}
-}
-
-func (s *TaskDecomposerSkill) createFallbackDecomposition(requirement string) *DecompositionResult {
-	// Simple fallback: create 3 basic tasks
-	return &DecompositionResult{
-		Requirement: requirement,
-		Tasks: []DecompositionTask{
-			{
-				ID:          1,
-				Task:        "Analyze requirements",
-				Description: "Understand the requirement and identify key components",
-				Depends:     []int{},
-				Files:       []string{},
-				Priority:    "P0",
-				Estimated:   "5 min",
-			},
-			{
-				ID:          2,
-				Task:        "Implement core logic",
-				Description: "Write the main implementation code",
-				Depends:     []int{1},
-				Files:       []string{},
-				Priority:    "P0",
-				Estimated:   "20 min",
-			},
-			{
-				ID:          3,
-				Task:        "Test and validate",
-				Description: "Write tests and verify the implementation works",
-				Depends:     []int{2},
-				Files:       []string{},
-				Priority:    "P1",
-				Estimated:   "10 min",
-			},
-		},
-		TotalTasks: 3,
-		Estimated:  "35 min",
-		Complexity: "medium",
 	}
 }
 

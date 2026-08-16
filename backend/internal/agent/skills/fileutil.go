@@ -87,33 +87,6 @@ func deleteFileContent(ctx context.Context, st storage.StorageAdapter, db *sql.D
 	return err
 }
 
-// readAllFileContents returns all project files as map[path]content (S3 first).
-func readAllFileContents(ctx context.Context, st storage.StorageAdapter, db *sql.DB, projectID string) (map[string]string, error) {
-	if db == nil {
-		return nil, fmt.Errorf("database not available")
-	}
-	rows, err := db.QueryContext(ctx,
-		`SELECT path FROM project_files WHERE project_id=?`, projectID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	result := make(map[string]string)
-	for rows.Next() {
-		var path string
-		if rows.Scan(&path) != nil {
-			continue
-		}
-		content, err := readFileContent(ctx, st, db, projectID, path)
-		if err != nil {
-			continue
-		}
-		result[path] = content
-	}
-	return result, nil
-}
-
 // storageLabel returns a human-readable label for logging.
 func storageLabel(st storage.StorageAdapter) string {
 	if st == nil {

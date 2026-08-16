@@ -82,7 +82,7 @@ func (s *SmartRefactorSkill) Execute(ctx context.Context, input map[string]inter
 
 func (s *SmartRefactorSkill) analyzeWithRules(filePath, errorMsg, context, issueType string) *RefactorResult {
 	// Rule-based analysis
-	suggestions := []RefactorSuggestion{}
+	var suggestions []RefactorSuggestion
 
 	// Analyze based on issue type
 	switch issueType {
@@ -278,39 +278,6 @@ func (s *SmartRefactorSkill) createGenericSuggestion(errorMsg string) []Refactor
 			Impact:    "Unknown",
 			References: []string{},
 		},
-	}
-}
-
-func (s *SmartRefactorSkill) createFallbackSuggestion(filePath, errorMsg, issueType string) *RefactorResult {
-	// Create a basic suggestion based on error type
-	suggestion := RefactorSuggestion{
-		RootCause: "Unable to determine root cause automatically",
-		Issue:     errorMsg,
-		Solution:  "Manual review required",
-		CodeChanges: []Change{},
-		Risk:      "medium",
-		Impact:    "Unknown",
-		References: []string{},
-	}
-
-	// Add specific suggestions based on issue type
-	switch issueType {
-	case "compile":
-		suggestion.Solution = "Check syntax, imports, and type compatibility"
-	case "runtime":
-		suggestion.Solution = "Add error handling and null checks"
-	case "performance":
-		suggestion.Solution = "Review algorithm complexity and memory usage"
-	case "security":
-		suggestion.Solution = "Review input validation and sanitization"
-	}
-
-	return &RefactorResult{
-		File:        filePath,
-		IssueType:   issueType,
-		Suggestions: []RefactorSuggestion{suggestion},
-		AutoFixable: false,
-		Confidence:  0.3,
 	}
 }
 

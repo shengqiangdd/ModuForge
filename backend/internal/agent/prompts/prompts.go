@@ -11,10 +11,7 @@ import (
 var fs embed.FS
 
 // Cache for loaded prompts (avoid repeated file reads)
-var (
-	promptCache sync.Map
-	loadOnce    sync.Once
-)
+var promptCache sync.Map
 
 // Prompt holds the assembled system prompt
 type Prompt struct {

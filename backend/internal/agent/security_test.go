@@ -55,6 +55,9 @@ func TestSecurityEngine_AuditAndCheck(t *testing.T) {
 	if allowed {
 		t.Error("Expected denied command to be blocked")
 	}
+	if needsConfirm {
+		t.Error("Expected denied command to not require confirmation")
+	}
 	if riskScore < 90 {
 		t.Errorf("Expected high risk score, got %d", riskScore)
 	}
@@ -70,6 +73,12 @@ func TestSecurityEngine_AuditAndCheck(t *testing.T) {
 	if !needsConfirm {
 		t.Error("Expected confirmation needed")
 	}
+	if riskScore < 50 {
+		t.Errorf("Expected elevated risk score for force push, got %d", riskScore)
+	}
+	if msg == "" {
+		t.Error("Expected confirmation message")
+	}
 
 	// Test auto command
 	allowed, needsConfirm, riskScore, msg = se.AuditAndCheck("git status", "session3")
@@ -78,6 +87,12 @@ func TestSecurityEngine_AuditAndCheck(t *testing.T) {
 	}
 	if needsConfirm {
 		t.Error("Expected no confirmation needed")
+	}
+	if riskScore > 30 {
+		t.Errorf("Expected low risk score for git status, got %d", riskScore)
+	}
+	if msg != "" {
+		t.Errorf("Expected no message for auto command, got %q", msg)
 	}
 
 	// Check audit log

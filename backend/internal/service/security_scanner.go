@@ -33,7 +33,6 @@ var (
 	reHardcodedKey   = regexp.MustCompile(`(?i)(api[_-]?key|api[_-]?secret|token|password|secret)\s*[=:]\s*['"][A-Za-z0-9_\-]{16,}['"]`)
 	reCurlPipeSh     = regexp.MustCompile(`curl\s+.*\|\s*(sh|bash)`)
 	reRmRf           = regexp.MustCompile(`rm\s+(-rf|--recursive)\s+/`)
-	reUnquotedVar    = regexp.MustCompile(`[^"'\$]\$[A-Za-z_][A-Za-z0-9_]*`)
 	reSimpleVar      = regexp.MustCompile(`\$[A-Za-z_][A-Za-z0-9_]*`)
 	reMissingSetEuo  = regexp.MustCompile(`set\s+-[^ ]*e[^ ]*u[^ ]*o[^ ]*pipefail`)
 	reShebang        = regexp.MustCompile(`^#!`)

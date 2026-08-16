@@ -1,10 +1,8 @@
 package service
 
 import (
-	"archive/zip"
 	"context"
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -125,50 +123,3 @@ func (s *ADBService) PushBuildByID(ctx context.Context, serial, buildID, moduleN
 	return s.PushBuildModule(ctx, serial, fullPath, moduleName, install)
 }
 
-// extractZip extracts a zip file to a destination directory.
-func extractZip(src, dst string) error {
-	r, err := zip.OpenReader(src)
-	if err != nil {
-		return err
-	}
-	defer r.Close()
-
-	for _, f := range r.File {
-		path := filepath.Join(dst, f.Name)
-
-		// Security: prevent path traversal
-		if !strings.HasPrefix(path, filepath.Clean(dst)+string(os.PathSeparator)) {
-			return fmt.Errorf("illegal file path: %s", f.Name)
-		}
-
-		if f.FileInfo().IsDir() {
-			os.MkdirAll(path, 0755)
-			continue
-		}
-
-		// Ensure parent directory exists
-		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-			return err
-		}
-
-		outFile, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, f.Mode())
-		if err != nil {
-			return err
-		}
-
-		rc, err := f.Open()
-		if err != nil {
-			outFile.Close()
-			return err
-		}
-
-		_, err = io.Copy(outFile, rc)
-		rc.Close()
-		outFile.Close()
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
-}

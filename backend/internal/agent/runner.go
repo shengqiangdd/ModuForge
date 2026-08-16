@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"hash/fnv"
 	"log"
@@ -248,98 +247,6 @@ type Subtask struct {
 	StartedAt    int64    `json:"started_at,omitempty"`
 	CompletedAt  int64    `json:"completed_at,omitempty"`
 	RetryCount   int      `json:"retry_count,omitempty"`
-}
-
-// decomposeWithLLM asks the LLM to break down a complex task into structured subtasks.
-// Returns nil if LLM is unavailable or fails.
-func (r *AgentRunner) decomposeWithLLM(ctx context.Context, task string, projectContext string, cfg RunConfig) []Subtask {
-	prompt := fmt.Sprintf(`Analyze the following task and break it into a list of concrete subtasks.
-Return ONLY a JSON array (no markdown, no explanation). Each element must have:
-- "id": short lowercase snake_case identifier (e.g. "analyze", "create_file", "verify")
-- "description": one-line Chinese description of what to do
-- "dependencies": array of id strings that must complete first (empty array if none)
-- "files": array of file paths likely involved (empty array if unknown)
-
-Task: %s
-
-Project context: %s
-
-Return the JSON array now:`, task, projectContext)
-
-	summaryPrompt := []map[string]string{
-		{"role": "system", "content": "You are a task planning assistant. Output only valid JSON arrays."},
-		{"role": "user", "content": prompt},
-	}
-
-	result, err := r.callLLMSummary(ctx, cfg, summaryPrompt)
-	if err != nil {
-		log.Printf("[Agent] LLM task decomposition failed: %v", err)
-		return nil
-	}
-
-	// Debug: log raw LLM response
-	log.Printf("[Agent] LLM task decomposition raw response (len=%d): %s", len(result), result)
-
-	// Try to extract JSON array from response
-	result = strings.TrimSpace(result)
-	// Strip markdown code fences if present
-	if idx := strings.Index(result, "```"); idx >= 0 {
-		result = strings.TrimPrefix(result[idx:], "```")
-		result = strings.TrimPrefix(result, "json\n")
-		result = strings.TrimPrefix(result, "json\r\n")
-		if endIdx := strings.LastIndex(result, "```"); endIdx >= 0 {
-			result = result[:endIdx]
-		}
-		result = strings.TrimSpace(result)
-	}
-
-	var raw []struct {
-		ID           string   `json:"id"`
-		Description  string   `json:"description"`
-		Dependencies []string `json:"dependencies"`
-		Files        []string `json:"files"`
-	}
-	if err := json.Unmarshal([]byte(result), &raw); err != nil {
-		log.Printf("[Agent] LLM task decomposition parse failed: %v (raw=%s)", err, result)
-		return nil
-	}
-
-	if len(raw) == 0 {
-		return nil
-	}
-
-	subtasks := make([]Subtask, 0, len(raw))
-	for i, r := range raw {
-		id := r.ID
-		if id == "" {
-			id = fmt.Sprintf("step_%d", i)
-		}
-		subtasks = append(subtasks, Subtask{
-			ID:           id,
-			Description:  r.Description,
-			Status:       "pending",
-			Dependencies: r.Dependencies,
-			Files:        r.Files,
-		})
-	}
-
-	// Validate dependencies reference existing IDs
-	idSet := make(map[string]bool)
-	for _, s := range subtasks {
-		idSet[s.ID] = true
-	}
-	for i := range subtasks {
-		validDeps := subtasks[i].Dependencies[:0]
-		for _, dep := range subtasks[i].Dependencies {
-			if idSet[dep] {
-				validDeps = append(validDeps, dep)
-			}
-		}
-		subtasks[i].Dependencies = validDeps
-	}
-
-	log.Printf("[Agent] LLM decomposed task into %d subtasks", len(subtasks))
-	return subtasks
 }
 
 // isComplexTask determines whether a task warrants LLM decomposition.

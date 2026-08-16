@@ -281,7 +281,7 @@ func (tp *TaskPlanner) MarkStepFailed(plan *ExecutionPlan, phaseID, stepID, erro
 func (tp *TaskPlanner) BuildStepContext(plan *ExecutionPlan, phase *PlanPhase, step *PlanStep) string {
 	var sb strings.Builder
 
-	sb.WriteString(fmt.Sprintf("📋 当前任务进度:\n"))
+	sb.WriteString("📋 当前任务进度:\n")
 	sb.WriteString(fmt.Sprintf("- 阶段: %s (%s)\n", phase.Name, phase.Description))
 	sb.WriteString(fmt.Sprintf("- 步骤: %s\n", step.Description))
 	sb.WriteString(fmt.Sprintf("- 进度: %d/%d 阶段, %d/%d 步骤\n",
@@ -318,7 +318,7 @@ func (tp *TaskPlanner) BuildStepContext(plan *ExecutionPlan, phase *PlanPhase, s
 func (tp *TaskPlanner) FormatPlanAsMarkdown(plan *ExecutionPlan) string {
 	var sb strings.Builder
 
-	sb.WriteString(fmt.Sprintf("# 任务执行计划\n\n"))
+	sb.WriteString("# 任务执行计划\n\n")
 	sb.WriteString(fmt.Sprintf("## 任务\n%s\n\n", plan.Task))
 	sb.WriteString(fmt.Sprintf("## 状态: %s\n\n", plan.Status))
 

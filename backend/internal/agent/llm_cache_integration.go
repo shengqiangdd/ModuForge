@@ -210,9 +210,7 @@ func (o *OptimizedLLMCall) buildOptimizedPrompt(
 	// 4. User messages last (most variable)
 	// Keep all but the last user message in the stable section
 	if len(userMessages) > 1 {
-		for _, msg := range userMessages[:len(userMessages)-1] {
-			optimized = append(optimized, msg)
-		}
+		optimized = append(optimized, userMessages[:len(userMessages)-1]...)
 	}
 
 	// 5. Last user message at the very end (changes every request)
@@ -431,15 +429,6 @@ func (r *AgentRunner) CondenseContext(
 
 	// Create an LLM caller for summarization
 	llmCaller := func(messages []map[string]string) (string, error) {
-		// Build a simple request to the LLM for summarization
-		var prompt []map[string]interface{}
-		for _, msg := range messages {
-			prompt = append(prompt, map[string]interface{}{
-				"role":    msg["role"],
-				"content": msg["content"],
-			})
-		}
-
 		// Use the existing callLLMSummary method
 		summaryPrompt := make([]map[string]string, len(messages))
 		for i, msg := range messages {

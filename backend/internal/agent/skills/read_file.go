@@ -198,14 +198,14 @@ done:
 		}
 	}
 
-	result.WriteString(fmt.Sprintf("--- Last 10 lines ---\n"))
+	result.WriteString("--- Last 10 lines ---\n")
 	for i := totalLines - 10; i < totalLines; i++ {
 		if i >= 0 {
 			result.WriteString(fmt.Sprintf("%d:> %s\n", i+1, lines[i]))
 		}
 	}
 
-	result.WriteString(fmt.Sprintf("(Use start_line/end_line to read specific ranges)\n"))
+	result.WriteString("(Use start_line/end_line to read specific ranges)\n")
 	return result.String()
 }
 
@@ -247,7 +247,7 @@ func getDefinitionPatterns(lang string) []*regexp.Regexp {
 	case "javascript":
 		return []*regexp.Regexp{
 			regexp.MustCompile(`^function\s+\w+`),
-			regexp.MustCompile(`^const\s+\w+\s*=\s*(`),
+			regexp.MustCompile(`^const\s+\w+\s*=\s*`),
 			regexp.MustCompile(`^class\s+\w+`),
 			regexp.MustCompile(`^export\s+`),
 			regexp.MustCompile(`^export\s+default\s+`),

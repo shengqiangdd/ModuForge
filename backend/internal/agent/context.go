@@ -642,38 +642,3 @@ NEVER output plans without writing. NEVER skip build_module.`
 // ═══════════════════════════════════════════════════════════════════
 // Helper Functions
 // ═══════════════════════════════════════════════════════════════════
-
-// isFileChangeConfirmation checks if an assistant message confirms a file change
-func isFileChangeConfirmation(content string) bool {
-	lower := strings.ToLower(content)
-	return strings.Contains(lower, "written") ||
-		strings.Contains(lower, "modified") ||
-		strings.Contains(lower, "created") ||
-		strings.Contains(lower, "updated")
-}
-
-// isErrorReport checks if a message is reporting an error
-func isErrorReport(content string) bool {
-	return strings.HasPrefix(content, "Error:") ||
-		strings.HasPrefix(content, "❌") ||
-		strings.HasPrefix(content, "⚠️") ||
-		strings.Contains(content, "failed") ||
-		strings.Contains(content, "error")
-}
-
-// isPlanOutline checks if a message is a plan outline
-func isPlanOutline(content string) bool {
-	lower := strings.ToLower(content)
-	return strings.Contains(lower, "plan") ||
-		strings.Contains(lower, "approach") ||
-		strings.Contains(lower, "step") ||
-		strings.Contains(lower, "implement")
-}
-
-// truncateMessage truncates a message to maxLen, adding ellipsis if truncated
-func truncateMessage(content string, maxLen int) string {
-	if len(content) <= maxLen {
-		return content
-	}
-	return content[:maxLen] + "..."
-}
