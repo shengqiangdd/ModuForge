@@ -10,6 +10,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -1033,8 +1034,8 @@ func (h *AIHandler) ListSessions(c fiber.Ctx) error {
 	if uid == "" {
 		return Unauthorized(c, "authentication required")
 	}
-	limit := c.QueryInt("limit", 100)
-	offset := c.QueryInt("offset", 0)
+	limit, _ := strconv.Atoi(c.Query("limit", "100"))
+	offset, _ := strconv.Atoi(c.Query("offset", "0"))
 	sessions, total, err := service.ListUserSessions(h.db.Conn, uid, limit, offset)
 	if err != nil {
 		slog.Error("ListSessions", "error", err)
