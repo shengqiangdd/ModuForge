@@ -7,6 +7,7 @@
     name: string;
     description: string;
     inputSchema: Record<string, unknown>;
+    writes: boolean;
   }
 
   interface MCPServer {
@@ -46,6 +47,36 @@
   let testArgs = $state('{}');
   let testResult = $state('');
   let testing = $state(false);
+
+  // Permission policies (write tools need allow_auto before Agent auto-calls)
+  let policies = $state<Record<string, boolean>>({});
+  let policyBusy = $state(false);
+
+  async function loadPolicies() {
+    try {
+      const data = await client.get<{ policies: { server: string; tool: string; allow_auto: boolean }[] }>('/agent/mcp/policies');
+      const map: Record<string, boolean> = {};
+      for (const p of data.policies || []) map[`${p.server}/${p.tool}`] = p.allow_auto;
+      policies = map;
+    } catch { /* 静默 */ }
+  }
+
+  async function togglePolicy(server: string, tool: MCPTool, allow: boolean) {
+    policyBusy = true;
+    try {
+      await client.put(`/agent/mcp/policies/${encodeURIComponent(server)}/${encodeURIComponent(tool.name)}`, { allow_auto: allow });
+      policies = { ...policies, [`${server}/${tool.name}`]: allow };
+      toast(allow ? `已允许 AI 自动调用 ${tool.name}` : `已阻止 AI 自动调用 ${tool.name}`, 'success');
+    } catch (e: any) {
+      toast(e.message || '策略保存失败', 'error');
+    } finally {
+      policyBusy = false;
+    }
+  }
+
+  function isAutoAllowed(server: string, tool: MCPTool): boolean {
+    return !!policies[`${server}/${tool.name}`];
+  }
 
   async function loadStatus() {
     loading = true;
@@ -211,7 +242,7 @@
     }
   }
 
-  onMount(() => { loadStatus(); });
+  onMount(() => { loadStatus(); loadPolicies(); });
 </script>
 
 <svelte:head><title>MCP 服务器 · ModuForge</title></svelte:head>
@@ -359,6 +390,9 @@ MCP_SERVERS_FILE=/path/to/servers.json   # 或使用配置文件</code></pre>
                            onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleTool(server.name + '/' + tool.name); } }}>
                         <span class="material-symbols-outlined text-[18px]" style="color: var(--color-primary)">bolt</span>
                         <span class="font-mono text-sm font-medium flex-1 truncate" style="color: var(--color-text)">{tool.name}</span>
+                        {#if tool.writes}
+                          <span class="badge text-[10px] flex-shrink-0" style="background: color-mix(in srgb, var(--color-warning) 14%, transparent); color: var(--color-warning)">写</span>
+                        {/if}
                         <button class="btn-ghost text-xs px-2 py-1 flex-shrink-0" onclick={(e) => { e.stopPropagation(); startTest(server.name, tool.name); }}>
                           测试
                         </button>
@@ -370,6 +404,21 @@ MCP_SERVERS_FILE=/path/to/servers.json   # 或使用配置文件</code></pre>
                         <div class="px-3 pb-3 space-y-3">
                           {#if tool.description}
                             <p class="text-sm" style="color: var(--color-text-secondary)">{tool.description}</p>
+                          {/if}
+                          {#if tool.writes}
+                            <div class="rounded-lg border p-2.5 flex items-center gap-2" style="border-color: color-mix(in srgb, var(--color-warning) 30%, transparent); background: color-mix(in srgb, var(--color-warning) 6%, transparent)">
+                              <span class="material-symbols-outlined text-[16px]" style="color: var(--color-warning)">warning</span>
+                              <div class="flex-1 min-w-0">
+                                <p class="text-xs font-medium" style="color: var(--color-warning)">写操作 — AI 自动调用需确认</p>
+                                <p class="text-[11px] mt-0.5" style="color: var(--color-text-secondary)">开启后 AI 可在对话中直接调用此工具，无需每次确认</p>
+                              </div>
+                              <label class="flex items-center gap-1.5 cursor-pointer select-none flex-shrink-0">
+                                <span class="text-[11px]" style="color: var(--color-text-muted)">自动允许</span>
+                                <input type="checkbox" checked={isAutoAllowed(server.name, tool)} disabled={policyBusy}
+                                       onchange={(e) => togglePolicy(server.name, tool, (e.target as HTMLInputElement).checked)}
+                                       class="accent-[var(--color-warning)]" />
+                              </label>
+                            </div>
                           {/if}
                           {#if (schemaProps(tool.inputSchema || {})).length > 0}
                             <div>

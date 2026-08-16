@@ -7,6 +7,7 @@
     name: string;
     description: string;
     inputSchema: Record<string, unknown>;
+    writes: boolean;
   }
 
   interface MCPServer {
@@ -117,7 +118,12 @@
                           onclick={() => insertTool(server.name, tool)}>
                     <span class="material-symbols-outlined text-[16px] mt-0.5" style="color: var(--color-primary)">bolt</span>
                     <span class="min-w-0 flex-1">
-                      <span class="block font-mono text-xs font-medium truncate" style="color: var(--color-text)">{tool.name}</span>
+                      <span class="flex items-center gap-1.5">
+                        <span class="font-mono text-xs font-medium truncate" style="color: var(--color-text)">{tool.name}</span>
+                        {#if tool.writes}
+                          <span class="badge text-[9px] flex-shrink-0" style="background: color-mix(in srgb, var(--color-warning) 14%, transparent); color: var(--color-warning)">写</span>
+                        {/if}
+                      </span>
                       {#if tool.description}
                         <span class="block text-[11px] mt-0.5 line-clamp-2" style="color: var(--color-text-muted)">{tool.description}</span>
                       {/if}

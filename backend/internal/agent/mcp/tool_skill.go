@@ -59,6 +59,11 @@ func (s *ToolSkill) Description() string {
 // Metadata implements registry.MetadataProvider.
 func (s *ToolSkill) Metadata() registry.SkillMeta { return s.meta }
 
+// Writes reports whether this tool mutates state (used for permission
+// enforcement — write tools require explicit user approval before the Agent
+// may call them automatically).
+func (s *ToolSkill) Writes() bool { return IsWriteTool(s.tool) }
+
 // Parameters implements registry.ParameterProvider — returns the MCP tool's
 // native JSON Schema so the LLM sees real argument fields instead of a
 // generic {"input": string} wrapper.

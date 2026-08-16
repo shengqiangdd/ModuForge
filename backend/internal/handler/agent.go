@@ -562,6 +562,7 @@ func (h *AgentHandler) ListMCPStatus(c fiber.Ctx) error {
 				"name":        t.Name,
 				"description": t.Description,
 				"inputSchema": t.InputSchema,
+				"writes":      mcp.IsWriteTool(t),
 			})
 		}
 		servers = append(servers, map[string]interface{}{
@@ -1387,6 +1388,7 @@ func (h *AgentHandler) ListMCPServers(c fiber.Ctx) error {
 					"name":        t.Name,
 					"description": t.Description,
 					"inputSchema": t.InputSchema,
+					"writes":      mcp.IsWriteTool(t),
 				})
 			}
 			info["tools"] = toolInfos
@@ -1411,6 +1413,7 @@ func (h *AgentHandler) ListMCPServers(c fiber.Ctx) error {
 				"name":        t.Name,
 				"description": t.Description,
 				"inputSchema": t.InputSchema,
+				"writes":      mcp.IsWriteTool(t),
 			})
 		}
 		servers = append(servers, map[string]interface{}{
@@ -1556,4 +1559,58 @@ func boolToInt(b bool) int {
 		return 1
 	}
 	return 0
+}
+
+// ---------- MCP tool permission policies (Claude Code-style permission mode) ----------
+
+// ListMCPPolicies returns all configured write-tool permission policies.
+// Response: {"policies":[{"server":"github","tool":"push_files","allow_auto":true}]}
+func (h *AgentHandler) ListMCPPolicies(c fiber.Ctx) error {
+	rows, err := h.db.Conn.Query(`SELECT server, tool, allow_auto FROM mcp_tool_policies ORDER BY server, tool`)
+	if err != nil {
+		return InternalError(c, err.Error())
+	}
+	defer rows.Close()
+	policies := []map[string]interface{}{}
+	for rows.Next() {
+		var server, tool string
+		var allow int
+		if err := rows.Scan(&server, &tool, &allow); err != nil {
+			continue
+		}
+		policies = append(policies, map[string]interface{}{
+			"server":     server,
+			"tool":       tool,
+			"allow_auto": allow == 1,
+		})
+	}
+	if policies == nil {
+		policies = []map[string]interface{}{}
+	}
+	return c.JSON(fiber.Map{"policies": policies})
+}
+
+// SetMCPPolicy upserts the allow_auto flag for a single tool.
+// Body: {"allow_auto":true}
+func (h *AgentHandler) SetMCPPolicy(c fiber.Ctx) error {
+	server := c.Params("server")
+	tool := c.Params("tool")
+	if server == "" || tool == "" {
+		return c.Status(400).JSON(fiber.Map{"error": "server and tool are required"})
+	}
+	var req struct {
+		AllowAuto bool `json:"allow_auto"`
+	}
+	if err := json.Unmarshal(c.Body(), &req); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid request body"})
+	}
+	_, err := h.db.Conn.Exec(
+		`INSERT INTO mcp_tool_policies (server, tool, allow_auto) VALUES (?, ?, ?)
+		 ON CONFLICT(server, tool) DO UPDATE SET allow_auto=excluded.allow_auto, updated_at=CURRENT_TIMESTAMP`,
+		server, tool, boolToInt(req.AllowAuto),
+	)
+	if err != nil {
+		return InternalError(c, err.Error())
+	}
+	return c.JSON(fiber.Map{"server": server, "tool": tool, "allow_auto": req.AllowAuto})
 }

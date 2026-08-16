@@ -2,7 +2,10 @@ package agent
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -299,6 +302,16 @@ func coerceTypes(input map[string]interface{}) {
 
 func (r *AgentRunner) executeSkill(ctx context.Context, name string, input map[string]interface{}) (string, error) {
 	start := time.Now()
+	// MCP write-tool permission enforcement (Claude Code-style permission mode).
+	// Write tools (create_*/update_*/delete_*/push_* etc.) require an explicit
+	// allow_auto policy before the Agent may call them automatically.
+	if strings.HasPrefix(name, "mcp__") {
+		if allowed, msg, err := r.mcpWriteAllowed(name); err != nil {
+			return "", err
+		} else if !allowed {
+			return "", errors.New(msg)
+		}
+	}
 	result, err := r.registry.Execute(ctx, name, input)
 	duration := time.Since(start).Milliseconds()
 	if r.db != nil {
@@ -308,6 +321,39 @@ func (r *AgentRunner) executeSkill(ctx context.Context, name string, input map[s
 		return "", err
 	}
 	return result, nil
+}
+
+// mcpWriteAllowed checks the permission policy for an MCP tool call. Read-only
+// tools always pass; write tools pass only if mcp_tool_policies has
+// allow_auto=1 for (server, tool).
+func (r *AgentRunner) mcpWriteAllowed(name string) (bool, string, error) {
+	parts := strings.SplitN(name, "__", 3)
+	if len(parts) != 3 {
+		return true, "", nil // malformed mcp name — let registry handle it
+	}
+	server, tool := parts[1], parts[2]
+
+	sk, err := r.registry.Get(name)
+	if err != nil {
+		return true, "", nil // unknown skill — let execution surface the error
+	}
+	ws, ok := sk.(interface{ Writes() bool })
+	if !ok || !ws.Writes() {
+		return true, "", nil // read-only tool
+	}
+
+	if r.db == nil {
+		return false, "MCP 写工具需要用户确认，但数据库不可用，已阻止自动调用", nil
+	}
+	var allow int
+	err = r.db.QueryRow(`SELECT allow_auto FROM mcp_tool_policies WHERE server=? AND tool=?`, server, tool).Scan(&allow)
+	if err == sql.ErrNoRows || allow == 0 {
+		return false, fmt.Sprintf("MCP 工具 %s 属于写操作（变更远端状态），需用户在 MCP 页面开启「自动允许」后才能由 AI 自动调用；当前调用已阻止。如需执行请使用工具测试或手动确认。", name), nil
+	}
+	if err != nil {
+		return false, "", err
+	}
+	return true, "", nil
 }
 
 func (r *AgentRunner) recordExecution(name string, input map[string]interface{}, result string, err error, durationMs int64) {

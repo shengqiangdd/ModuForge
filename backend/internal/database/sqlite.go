@@ -531,6 +531,16 @@ func (db *DB) migrate() error {
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		)`,
+		// MCP tool permission policies — which write tools the Agent may call
+		// automatically without user confirmation (Claude Code permission mode).
+		`CREATE TABLE IF NOT EXISTS mcp_tool_policies (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			server TEXT NOT NULL,
+			tool TEXT NOT NULL,
+			allow_auto INTEGER NOT NULL DEFAULT 0,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE(server, tool)
+		)`,
 		// ===== Batch 2: Module System Enhancements =====
 		// Feature 1: Project Version Management (snapshots)
 		`CREATE TABLE IF NOT EXISTS project_versions (
