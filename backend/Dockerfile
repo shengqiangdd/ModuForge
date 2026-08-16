@@ -45,15 +45,21 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
     --default-toolchain stable \
     && /usr/local/cargo/bin/rustup target add aarch64-linux-android \
     && /usr/local/cargo/bin/rustup component add clippy rustfmt \
+    && rm -rf /usr/local/rustup/toolchains/*/share/doc \
     && chown -R moduforge:moduforge /usr/local/cargo /usr/local/rustup
 
 # --- Android NDK r27c (trimmed: clang + sysroot) ---
+# Kept: bin/ (clang), lib/ (LLVM/clang runtime), sysroot/ (headers+libs)
+# Removed: liblldb.so (~165MB, debugger — not needed for compilation),
+#          x86_64-w64-windows-gnu (~31MB, Windows cross-compile — Android-only builds)
 RUN mkdir -p /opt/android-ndk && cd /tmp \
     && wget -q https://dl.google.com/android/repository/android-ndk-r27c-linux.zip -O ndk.zip \
     && unzip -q ndk.zip -d ndk_tmp \
     && mv ndk_tmp/android-ndk-r27c/toolchains/llvm/prebuilt/linux-x86_64/bin /opt/android-ndk/bin \
     && mv ndk_tmp/android-ndk-r27c/toolchains/llvm/prebuilt/linux-x86_64/lib /opt/android-ndk/lib \
     && mv ndk_tmp/android-ndk-r27c/toolchains/llvm/prebuilt/linux-x86_64/sysroot /opt/android-ndk/sysroot \
+    && rm -rf /opt/android-ndk/lib/liblldb.so \
+    && rm -rf /opt/android-ndk/lib/x86_64-w64-windows-gnu \
     && rm -rf /tmp/ndk.zip /tmp/ndk_tmp \
     && chmod -R 755 /opt/android-ndk
 

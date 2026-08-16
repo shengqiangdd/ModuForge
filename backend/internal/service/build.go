@@ -75,17 +75,38 @@ func (s *BuildService) getCacheKey(projectID, filesHash string) string {
 func (s *BuildService) computeFilesHash(ctx context.Context, projectID string) (string, error) {
 	h := sha256.New()
 	if s.fr != nil {
-		files, err := s.fr.ReadAll(ctx, projectID)
+		// S3-first mode: use the cached per-file sha256 from DB metadata to
+		// avoid downloading every file from S3 on each build. Only files
+		// missing a hash (legacy rows) fall back to reading content.
+		rows, err := s.db.QueryContext(ctx,
+			`SELECT path, COALESCE(sha256,'') FROM project_files WHERE project_id=? ORDER BY path`, projectID)
 		if err != nil {
 			return "", err
 		}
-		for _, f := range files {
-			content, err := s.fr.ReadOne(ctx, projectID, f.Path)
-			if err != nil {
+		defer rows.Close()
+
+		legacyFetch := 0
+		for rows.Next() {
+			var path, sha string
+			if err := rows.Scan(&path, &sha); err != nil {
 				continue
 			}
-			h.Write([]byte(f.Path))
-			h.Write([]byte(content))
+			if sha == "" {
+				// No cached hash — fetch content (S3 first, DB fallback).
+				content, err := s.fr.ReadOne(ctx, projectID, path)
+				if err != nil {
+					continue
+				}
+				h.Write([]byte(path))
+				h.Write([]byte(content))
+				legacyFetch++
+				continue
+			}
+			h.Write([]byte(path))
+			h.Write([]byte(sha))
+		}
+		if legacyFetch > 0 {
+			log.Printf("[Build] computeFilesHash: %d legacy rows fetched via content (missing sha256)", legacyFetch)
 		}
 		return fmt.Sprintf("%x", h.Sum(nil)), nil
 	}

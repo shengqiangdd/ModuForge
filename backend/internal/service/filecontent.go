@@ -19,11 +19,11 @@ import (
 // is only a fallback for legacy data / no-S3 environments.
 type FileContentRepo struct {
 	db *sql.DB
-	s3 *storage.S3Adapter
+	s3 storage.StorageAdapter
 }
 
 // NewFileContentRepo creates a repo with the given DB and optional S3 adapter.
-func NewFileContentRepo(db *sql.DB, s3 *storage.S3Adapter) *FileContentRepo {
+func NewFileContentRepo(db *sql.DB, s3 storage.StorageAdapter) *FileContentRepo {
 	return &FileContentRepo{db: db, s3: s3}
 }
 
