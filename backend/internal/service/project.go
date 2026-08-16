@@ -530,7 +530,6 @@ func (s *ProjectService) dbContent(content string) any {
 	}
 	return content
 }
-}
 
 // DeleteFile removes a file from the database, disk, and S3.
 func (s *ProjectService) DeleteFile(ctx context.Context, projectID, path, userID string) error {

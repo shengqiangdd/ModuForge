@@ -2,6 +2,7 @@ package handler
 
 import (
 	"bufio"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -14,7 +15,9 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/moduforge/backend/internal/agent"
+	"github.com/moduforge/backend/internal/agent/mcp"
 	"github.com/moduforge/backend/internal/agent/registry"
+	"github.com/moduforge/backend/internal/agent/skills"
 	"github.com/moduforge/backend/internal/config"
 	"github.com/moduforge/backend/internal/database"
 	"github.com/moduforge/backend/internal/llm"
@@ -26,6 +29,7 @@ type AgentHandler struct {
 	runner *agent.AgentRunner
 	db     *database.DB
 	cfg    *config.Config
+	mcpMgr *mcp.Manager
 }
 
 func NewAgentHandler(cfg *config.Config, db *database.DB) *AgentHandler {
@@ -74,6 +78,24 @@ func NewAgentHandler(cfg *config.Config, db *database.DB) *AgentHandler {
 	}
 	registry := agent.NewSkillRegistry(deps)
 
+	// MCP (Model Context Protocol) integration — connect to external tool
+	// servers (filesystem, GitHub, database, etc.) and expose their tools as
+	// dynamic agent skills. Config via MCP_SERVERS env or MCP_SERVERS_FILE.
+	ctx := context.Background()
+	mcpMgr := mcp.NewManager()
+	if err := mcpMgr.LoadFromEnv(ctx); err != nil {
+		slog.Warn("MCP manager init failed", "error", err)
+	}
+	for _, client := range mcpMgr.Clients() {
+		for _, tool := range client.Tools() {
+			registry.Register(mcp.NewToolSkill(client, tool))
+			slog.Info("MCP tool registered", "server", client.Name, "tool", tool.Name)
+		}
+	}
+	// skills_doc — dynamic skill catalog (SKILLS.md equivalent). Registered
+	// after MCP tools so it reflects the complete live skill set.
+	registry.Register(skills.NewSkillsDocSkill(registry))
+
 	runner := agent.NewAgentRunner(
 		registry,
 		cfg.EffectiveLLMKey(),
@@ -88,6 +110,7 @@ func NewAgentHandler(cfg *config.Config, db *database.DB) *AgentHandler {
 		runner: runner,
 		db:     db,
 		cfg:    cfg,
+		mcpMgr: mcpMgr,
 	}
 }
 
@@ -487,6 +510,33 @@ func (h *AgentHandler) ListSkills(c fiber.Ctx) error {
 		})
 	}
 	return c.JSON(fiber.Map{"skills": skillsList})
+}
+
+// ListMCPStatus returns the connected MCP servers and their tool counts.
+func (h *AgentHandler) ListMCPStatus(c fiber.Ctx) error {
+	if h.mcpMgr == nil {
+		return c.JSON(fiber.Map{"servers": []interface{}{}})
+	}
+	var servers []map[string]interface{}
+	for _, cli := range h.mcpMgr.Clients() {
+		tools := cli.Tools()
+		names := make([]string, 0, len(tools))
+		for _, t := range tools {
+			names = append(names, t.Name)
+		}
+		servers = append(servers, map[string]interface{}{
+			"name":        cli.Name,
+			"url":         cli.URL,
+			"server_name": cli.ServerName(),
+			"ready":       cli.IsReady(),
+			"tool_count":  len(tools),
+			"tools":       names,
+		})
+	}
+	if servers == nil {
+		servers = []map[string]interface{}{}
+	}
+	return c.JSON(fiber.Map{"servers": servers})
 }
 
 // ===== Custom Skills =====

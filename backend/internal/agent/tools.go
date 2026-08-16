@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/moduforge/backend/internal/agent/registry"
 )
 
 type ToolDef struct {
@@ -168,9 +170,21 @@ func (r *AgentRunner) buildToolDefinitionsForMode(mode AgentMode, modelName stri
 				"project_id": map[string]interface{}{"type": "string", "description": "Project ID"},
 			}, []string{"files"})
 		default:
-			def.Function.Parameters = toolParams(map[string]interface{}{
-				"input": map[string]interface{}{"type": "string", "description": "Input for the skill"},
-			}, nil)
+			// MCP-backed and other parameterized skills expose their own
+			// JSON-Schema definition; fall back to a generic input wrapper.
+			if pp, ok := s.(registry.ParameterProvider); ok {
+				if params := pp.Parameters(); params != nil {
+					def.Function.Parameters = params
+				} else {
+					def.Function.Parameters = toolParams(map[string]interface{}{
+						"input": map[string]interface{}{"type": "string", "description": "Input for the skill"},
+					}, nil)
+				}
+			} else {
+				def.Function.Parameters = toolParams(map[string]interface{}{
+					"input": map[string]interface{}{"type": "string", "description": "Input for the skill"},
+				}, nil)
+			}
 		}
 
 		defs = append(defs, def)

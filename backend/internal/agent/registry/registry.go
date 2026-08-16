@@ -35,6 +35,13 @@ type MetadataProvider interface {
 	Metadata() SkillMeta
 }
 
+// ParameterProvider is an optional interface for skills that want to expose
+// a JSON-Schema parameter definition (used by MCP-backed tools instead of the
+// generic {"input": string} fallback).
+type ParameterProvider interface {
+	Parameters() map[string]interface{}
+}
+
 // Skill is the interface all skills must implement.
 type Skill interface {
 	Name() string
