@@ -471,6 +471,46 @@ import { filterStepsByRound } from './lib/rounds';
   }
 
   // ─── Session management ───
+  // ─── MCP ask-mode permission confirmation ───
+  let pendingPermission = $state<{
+    request_id: string;
+    server: string;
+    tool: string;
+    args: Record<string, unknown>;
+    timeout_s: number;
+  } | null>(null);
+  let permissionBusy = $state(false);
+
+  async function resolvePermission(allow: boolean) {
+    const req = pendingPermission;
+    if (!req) return;
+    permissionBusy = true;
+    try {
+      const res = await fetch('/api/v1/agent/mcp/confirm', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('moduforge_token') || ''}` },
+        body: JSON.stringify({ request_id: req.request_id, allow }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        toast(data.error || '确认请求失败（可能已超时）', 'error');
+      } else {
+        toast(allow ? `已允许调用 ${req.tool}` : `已拒绝调用 ${req.tool}`, allow ? 'success' : 'info');
+      }
+    } catch (e: any) {
+      toast(e.message || '确认请求失败', 'error');
+    } finally {
+      permissionBusy = false;
+      pendingPermission = null;
+    }
+  }
+
+  function permissionArgsPreview(): string {
+    const req = pendingPermission;
+    if (!req || !req.args || Object.keys(req.args).length === 0) return '（无参数）';
+    try { return JSON.stringify(req.args, null, 2); } catch { return String(req.args); }
+  }
+
   async function loadSessions() {
     sessionsLoading = true;
     sessions = await loadSessionsList();
@@ -794,6 +834,7 @@ import { filterStepsByRound } from './lib/rounds';
       saveConfigToBackend: (pid, mid) => saveConfigToBackend(pid, mid),
       scrollToBottom: async () => { await tick(); chatMessages?.scrollToBottom(); },
       toast,
+      onPermissionRequest: (req) => { pendingPermission = req; },
     });
     handler.setupEventListeners();
     handler.startElapsedTimer();
@@ -926,6 +967,38 @@ import { filterStepsByRound } from './lib/rounds';
       onOpenMcpTools={() => showMcpTools = true}
     />
   </div>
+
+  <!-- MCP write-tool permission confirmation (ask mode) -->
+  {#if pendingPermission}
+    <div class="fixed inset-0 z-[60] flex items-center justify-center p-4" style="background: rgba(0,0,0,0.55); backdrop-filter: blur(6px)">
+      <div class="w-full max-w-md rounded-2xl border p-5 shadow-2xl" style="background: var(--color-surface); border-color: var(--color-border)">
+        <div class="flex items-start gap-3">
+          <span class="material-symbols-outlined text-[28px] flex-shrink-0" style="color: var(--color-warning)">shield_person</span>
+          <div class="min-w-0 flex-1">
+            <h3 class="text-base font-semibold" style="color: var(--color-text)">MCP 写操作确认</h3>
+            <p class="text-xs mt-1" style="color: var(--color-text-secondary)">
+              AI 请求调用 <span class="font-mono font-semibold" style="color: var(--color-warning)">{pendingPermission.tool}</span>
+              {#if pendingPermission.server}（{pendingPermission.server}）{/if}，
+              该工具会<strong>变更远端状态</strong>。
+            </p>
+          </div>
+          <button class="btn-ghost flex-shrink-0" onclick={() => pendingPermission = null} aria-label="关闭">✕</button>
+        </div>
+        <div class="mt-3 rounded-lg p-3 overflow-auto max-h-48 font-mono text-[11px]" style="background: var(--color-bg-elevated, rgba(127,127,127,0.07)); color: var(--color-text-secondary)">
+          {permissionArgsPreview()}
+        </div>
+        <div class="mt-4 flex gap-2 justify-end">
+          <button class="px-4 py-2 rounded-lg text-sm font-medium border" disabled={permissionBusy}
+                  style="border-color: var(--color-border); color: var(--color-text-secondary)"
+                  onclick={() => resolvePermission(false)}>拒绝</button>
+          <button class="px-4 py-2 rounded-lg text-sm font-semibold" disabled={permissionBusy}
+                  style="background: var(--color-warning); color: #fff"
+                  onclick={() => resolvePermission(true)}>允许本次调用</button>
+        </div>
+        <p class="text-[10px] mt-2 text-center" style="color: var(--color-text-muted)">{pendingPermission.timeout_s} 秒内未确认将自动拒绝；可在 MCP 页面设置「自动允许」</p>
+      </div>
+    </div>
+  {/if}
 
   <!-- Modals -->
   <ProviderConfigModal show={showProviderConfig} {providers} {selectedProviderID} {configEndpoint} {configApiKey} {configSaving} onClose={() => showProviderConfig = false} onEndpointChange={(v) => configEndpoint = v} onApiKeyChange={(v) => configApiKey = v} onSave={saveProviderConfig} />

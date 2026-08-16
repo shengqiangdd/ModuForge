@@ -533,11 +533,13 @@ func (db *DB) migrate() error {
 		)`,
 		// MCP tool permission policies — which write tools the Agent may call
 		// automatically without user confirmation (Claude Code permission mode).
+		// mode: 'allow' (auto), 'deny' (blocked), 'ask' (per-call user confirmation)
 		`CREATE TABLE IF NOT EXISTS mcp_tool_policies (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			server TEXT NOT NULL,
 			tool TEXT NOT NULL,
 			allow_auto INTEGER NOT NULL DEFAULT 0,
+			mode TEXT NOT NULL DEFAULT 'deny',
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			UNIQUE(server, tool)
 		)`,
@@ -798,6 +800,10 @@ func (db *DB) migrate() error {
 		// Add trigger and commit_hash to existing build_tasks table
 		"ALTER TABLE build_tasks ADD COLUMN trigger TEXT DEFAULT 'manual'",
 		"ALTER TABLE build_tasks ADD COLUMN commit_hash TEXT DEFAULT ''",
+		// MCP policy: three-state permission mode (allow/deny/ask)
+		"ALTER TABLE mcp_tool_policies ADD COLUMN mode TEXT NOT NULL DEFAULT 'deny'",
+		// Backfill: old allow_auto=1 policies become mode='allow'
+		"UPDATE mcp_tool_policies SET mode='allow' WHERE allow_auto=1 AND mode='deny'",
 		// Fix existing NULL values in build_tasks
 		"UPDATE build_tasks SET log='' WHERE log IS NULL",
 		"UPDATE build_tasks SET target='' WHERE target IS NULL",

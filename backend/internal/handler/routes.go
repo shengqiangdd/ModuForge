@@ -561,6 +561,7 @@ func RegisterRoutes(api fiber.Router, db *database.DB, cfg *config.Config) {
 	r("POST", "/agent/mcp/servers/:name/reconnect", agentH.ReconnectMCPServer)
 	r("GET", "/agent/mcp/policies", agentH.ListMCPPolicies)
 	r("PUT", "/agent/mcp/policies/:server/:tool", agentH.SetMCPPolicy)
+	r("POST", "/agent/mcp/confirm", agentH.ConfirmMCPApproval)
 	r("POST", "/agent/mcp/test", agentH.TestMCPTool)
 	r("GET", "/agent/custom-skills", agentH.ListCustomSkills)
 	r("POST", "/agent/custom-skills", agentH.CreateCustomSkill)

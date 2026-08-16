@@ -92,6 +92,13 @@ const (
 	ModeAct  AgentMode = "act"
 )
 
+// MCP ask-mode approval timeout: how long the runner waits for the user to
+// confirm a write-tool call before treating it as denied.
+const (
+	mcpApprovalTimeout    = 120 * time.Second
+	mcpApprovalTimeoutSec = 120
+)
+
 // ═══════════════════════════════════════════════════════════════════
 // File Checkpoint — for undo support (inspired by Cline)
 // ═══════════════════════════════════════════════════════════════════
@@ -165,6 +172,9 @@ type AgentRunner struct {
 
 	// Optimization 51: Performance metrics tracking
 	perfMetrics *PerformanceMetrics
+
+	// In-flight MCP write-tool permission requests awaiting user confirmation (ask mode)
+	pendingApprovals sync.Map // requestID -> *ApprovalRequest
 
 	// File hash cache for UNCHANGED detection in read_file
 	fileHashCache *fileHashCache
@@ -1731,7 +1741,7 @@ You are running WITHOUT a project context. This means:
 				}
 			}
 
-			result, err := r.executeSkill(toolCtx, st.skillName, st.skillInput)
+			result, err := r.executeSkill(toolCtx, st.skillName, st.skillInput, w)
 			toolCancel()
 			close(skillDone)
 
@@ -1765,7 +1775,7 @@ You are running WITHOUT a project context. This means:
 					result = fmt.Sprintf("Error: %v. Please try again.", err)
 				case RecoverySimplifyInput:
 					simplified := toolRetryFallback.SimplifyTaskInput(st.skillName, st.skillInput)
-					retryResult, retryErr := r.executeSkill(toolCtx, st.skillName, simplified)
+					retryResult, retryErr := r.executeSkill(toolCtx, st.skillName, simplified, w)
 					if retryErr == nil {
 						result = retryResult
 						m.toolConsecutiveErrors[st.skillName] = 0
@@ -2068,7 +2078,7 @@ You are running WITHOUT a project context. This means:
 		buildCtx, buildCancel := context.WithTimeout(ctx, buildTimeout)
 		buildResult, buildErr := r.executeSkill(buildCtx, "build_module", map[string]interface{}{
 			"project_id": cfg.ProjectID,
-		})
+		}, w)
 		buildCancel()
 		if buildErr != nil {
 			log.Printf("[Agent] Auto-trigger build_module failed: %v", buildErr)
@@ -2167,7 +2177,7 @@ func executeParallelTask(task toolTask, r *AgentRunner, ctx context.Context, w S
 	toolTimeout := toolTimeoutForName(task.skillName)
 	toolCtx, toolCancel := context.WithTimeout(ctx, toolTimeout)
 	defer toolCancel()
-	result, err := r.executeSkill(toolCtx, task.skillName, task.skillInput)
+	result, err := r.executeSkill(toolCtx, task.skillName, task.skillInput, w)
 	if toolCtx.Err() == context.DeadlineExceeded {
 		result = fmt.Sprintf("⚠️ Tool execution timed out after %v", toolTimeout)
 	} else if err != nil {

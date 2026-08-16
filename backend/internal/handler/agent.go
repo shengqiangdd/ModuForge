@@ -1588,24 +1588,25 @@ func boolToInt(b bool) int {
 // ---------- MCP tool permission policies (Claude Code-style permission mode) ----------
 
 // ListMCPPolicies returns all configured write-tool permission policies.
-// Response: {"policies":[{"server":"github","tool":"push_files","allow_auto":true}]}
+// Response: {"policies":[{"server":"github","tool":"push_files","allow_auto":true,"mode":"allow"}]}
 func (h *AgentHandler) ListMCPPolicies(c fiber.Ctx) error {
-	rows, err := h.db.Conn.Query(`SELECT server, tool, allow_auto FROM mcp_tool_policies ORDER BY server, tool`)
+	rows, err := h.db.Conn.Query(`SELECT server, tool, allow_auto, COALESCE(mode, CASE WHEN allow_auto=1 THEN 'allow' ELSE 'deny' END) FROM mcp_tool_policies ORDER BY server, tool`)
 	if err != nil {
 		return InternalError(c, err.Error())
 	}
 	defer rows.Close()
 	policies := []map[string]interface{}{}
 	for rows.Next() {
-		var server, tool string
+		var server, tool, mode string
 		var allow int
-		if err := rows.Scan(&server, &tool, &allow); err != nil {
+		if err := rows.Scan(&server, &tool, &allow, &mode); err != nil {
 			continue
 		}
 		policies = append(policies, map[string]interface{}{
 			"server":     server,
 			"tool":       tool,
 			"allow_auto": allow == 1,
+			"mode":       mode,
 		})
 	}
 	if policies == nil {
@@ -1614,8 +1615,8 @@ func (h *AgentHandler) ListMCPPolicies(c fiber.Ctx) error {
 	return c.JSON(fiber.Map{"policies": policies})
 }
 
-// SetMCPPolicy upserts the allow_auto flag for a single tool.
-// Body: {"allow_auto":true}
+// SetMCPPolicy upserts the permission mode for a single tool.
+// Body: {"mode":"allow"} | {"mode":"deny"} | {"mode":"ask"} | legacy {"allow_auto":true}
 func (h *AgentHandler) SetMCPPolicy(c fiber.Ctx) error {
 	server := c.Params("server")
 	tool := c.Params("tool")
@@ -1623,18 +1624,56 @@ func (h *AgentHandler) SetMCPPolicy(c fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "server and tool are required"})
 	}
 	var req struct {
-		AllowAuto bool `json:"allow_auto"`
+		AllowAuto bool   `json:"allow_auto"`
+		Mode      string `json:"mode"`
 	}
 	if err := json.Unmarshal(c.Body(), &req); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid request body"})
 	}
+	mode := req.Mode
+	if mode == "" {
+		// Legacy callers pass allow_auto only.
+		if req.AllowAuto {
+			mode = "allow"
+		} else {
+			mode = "deny"
+		}
+	}
+	switch mode {
+	case "allow", "deny", "ask":
+	default:
+		return c.Status(400).JSON(fiber.Map{"error": "mode must be one of: allow, deny, ask"})
+	}
+	allowAuto := 0
+	if mode == "allow" {
+		allowAuto = 1
+	}
 	_, err := h.db.Conn.Exec(
-		`INSERT INTO mcp_tool_policies (server, tool, allow_auto) VALUES (?, ?, ?)
-		 ON CONFLICT(server, tool) DO UPDATE SET allow_auto=excluded.allow_auto, updated_at=CURRENT_TIMESTAMP`,
-		server, tool, boolToInt(req.AllowAuto),
+		`INSERT INTO mcp_tool_policies (server, tool, allow_auto, mode) VALUES (?, ?, ?, ?)
+		 ON CONFLICT(server, tool) DO UPDATE SET allow_auto=excluded.allow_auto, mode=excluded.mode, updated_at=CURRENT_TIMESTAMP`,
+		server, tool, allowAuto, mode,
 	)
 	if err != nil {
 		return InternalError(c, err.Error())
 	}
-	return c.JSON(fiber.Map{"server": server, "tool": tool, "allow_auto": req.AllowAuto})
+	return c.JSON(fiber.Map{"server": server, "tool": tool, "allow_auto": allowAuto == 1, "mode": mode})
+}
+
+// ConfirmMCPApproval resolves a pending ask-mode permission request.
+// Body: {"request_id":"...", "allow":true|false}
+func (h *AgentHandler) ConfirmMCPApproval(c fiber.Ctx) error {
+	var req struct {
+		RequestID string `json:"request_id"`
+		Allow     bool   `json:"allow"`
+	}
+	if err := json.Unmarshal(c.Body(), &req); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid request body"})
+	}
+	if req.RequestID == "" {
+		return c.Status(400).JSON(fiber.Map{"error": "request_id is required"})
+	}
+	if !h.runner.ResolveApproval(req.RequestID, req.Allow) {
+		return c.Status(404).JSON(fiber.Map{"error": "permission request not found or already resolved", "request_id": req.RequestID})
+	}
+	return c.JSON(fiber.Map{"request_id": req.RequestID, "allow": req.Allow, "resolved": true})
 }

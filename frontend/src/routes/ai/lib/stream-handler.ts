@@ -58,6 +58,13 @@ export interface StreamHandlerState {
 export interface StreamHandlerCallbacks {
   loadProjectFiles: (projectId: string) => Promise<void>;
   loadConversations: () => Promise<void>;
+  onPermissionRequest?: (req: {
+    request_id: string;
+    server: string;
+    tool: string;
+    args: Record<string, unknown>;
+    timeout_s: number;
+  }) => void;
   loadGenHistory: () => Promise<void>;
   saveConfigToBackend: (providerId: string, modelId: string) => Promise<void>;
   scrollToBottom: () => void | Promise<void>;
@@ -297,6 +304,15 @@ export class StreamHandler {
     } else if (parsed.type === 'usage' && parsed.usage) {
       const msgIdx = s.messages.length - 1;
       if (msgIdx >= 0) { s.messageUsages.set(msgIdx, parsed.usage as { prompt_tokens: number; completion_tokens: number; total_tokens: number }); s.messageUsages = s.messageUsages; }
+    } else if (parsed.type === 'permission_request' && parsed.request_id) {
+      // MCP write-tool ask-mode: surface a confirmation request to the UI.
+      this.cb.onPermissionRequest?.({
+        request_id: String(parsed.request_id),
+        server: String(parsed.server || ''),
+        tool: String(parsed.tool || ''),
+        args: (parsed.args as Record<string, unknown>) || {},
+        timeout_s: Number(parsed.timeout_s || 120),
+      });
     } else if (parsed.type === 'reasoning') {
       if (s.messages.length === 0 || s.messages[s.messages.length - 1].role !== 'assistant') s.messages = [...s.messages, { role: 'assistant', content: '', reasoning: '' }];
       const lastIdx = s.messages.length - 1;

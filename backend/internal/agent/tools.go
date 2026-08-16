@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/moduforge/backend/internal/agent/registry"
 )
 
@@ -311,16 +312,27 @@ func coerceTypes(input map[string]interface{}) {
 	}
 }
 
-func (r *AgentRunner) executeSkill(ctx context.Context, name string, input map[string]interface{}) (string, error) {
+func (r *AgentRunner) executeSkill(ctx context.Context, name string, input map[string]interface{}, w SSEWriter) (string, error) {
 	start := time.Now()
 	// MCP write-tool permission enforcement (Claude Code-style permission mode).
 	// Write tools (create_*/update_*/delete_*/push_* etc.) require an explicit
-	// allow_auto policy before the Agent may call them automatically.
+	// policy: 'allow' (auto), 'deny' (blocked), or 'ask' (per-call confirmation).
 	if strings.HasPrefix(name, "mcp__") {
-		if allowed, msg, err := r.mcpWriteAllowed(name); err != nil {
+		decision, msg, err := r.mcpPermissionDecision(name)
+		if err != nil {
 			return "", err
-		} else if !allowed {
+		}
+		switch decision {
+		case "deny":
 			return "", errors.New(msg)
+		case "ask":
+			approved, aerr := r.requestMCPApproval(ctx, w, name, input)
+			if aerr != nil {
+				return "", aerr
+			}
+			if !approved {
+				return "", errors.New(fmt.Sprintf("用户拒绝了 MCP 工具 %s 的调用", name))
+			}
 		}
 	}
 	result, err := r.registry.Execute(ctx, name, input)
@@ -334,37 +346,131 @@ func (r *AgentRunner) executeSkill(ctx context.Context, name string, input map[s
 	return result, nil
 }
 
-// mcpWriteAllowed checks the permission policy for an MCP tool call. Read-only
-// tools always pass; write tools pass only if mcp_tool_policies has
-// allow_auto=1 for (server, tool).
-func (r *AgentRunner) mcpWriteAllowed(name string) (bool, string, error) {
+// mcpPermissionDecision returns the permission decision for an MCP tool call.
+// Read-only tools always pass; write tools are checked against mcp_tool_policies:
+//   - mode='allow'  → "allow"
+//   - mode='ask'    → "ask" (runner will request user confirmation)
+//   - otherwise     → "deny"
+func (r *AgentRunner) mcpPermissionDecision(name string) (string, string, error) {
 	parts := strings.SplitN(name, "__", 3)
 	if len(parts) != 3 {
-		return true, "", nil // malformed mcp name — let registry handle it
+		return "allow", "", nil // malformed mcp name — let registry handle it
 	}
 	server, tool := parts[1], parts[2]
 
 	sk, err := r.registry.Get(name)
 	if err != nil {
-		return true, "", nil // unknown skill — let execution surface the error
+		return "allow", "", nil // unknown skill — let execution surface the error
 	}
 	ws, ok := sk.(interface{ Writes() bool })
 	if !ok || !ws.Writes() {
-		return true, "", nil // read-only tool
+		return "allow", "", nil // read-only tool
 	}
 
 	if r.db == nil {
-		return false, "MCP 写工具需要用户确认，但数据库不可用，已阻止自动调用", nil
+		return "deny", "MCP 写工具需要用户确认，但数据库不可用，已阻止自动调用", nil
 	}
-	var allow int
-	err = r.db.QueryRow(`SELECT allow_auto FROM mcp_tool_policies WHERE server=? AND tool=?`, server, tool).Scan(&allow)
-	if err == sql.ErrNoRows || allow == 0 {
-		return false, fmt.Sprintf("MCP 工具 %s 属于写操作（变更远端状态），需用户在 MCP 页面开启「自动允许」后才能由 AI 自动调用；当前调用已阻止。如需执行请使用工具测试或手动确认。", name), nil
+	var mode string
+	err = r.db.QueryRow(`SELECT COALESCE(mode, CASE WHEN allow_auto=1 THEN 'allow' ELSE 'deny' END) FROM mcp_tool_policies WHERE server=? AND tool=?`, server, tool).Scan(&mode)
+	if err == sql.ErrNoRows || mode == "" {
+		return "deny", fmt.Sprintf("MCP 工具 %s 属于写操作（变更远端状态），需在 MCP 页面设置权限（自动允许/每次询问）后才能由 AI 调用；当前调用已阻止。", name), nil
 	}
 	if err != nil {
-		return false, "", err
+		return "deny", "", err
 	}
-	return true, "", nil
+	if mode == "ask" {
+		return "ask", "", nil
+	}
+	if mode == "allow" {
+		return "allow", "", nil
+	}
+	return "deny", fmt.Sprintf("MCP 工具 %s 属于写操作且权限为「拒绝」，当前调用已阻止。可在 MCP 页面调整权限。", name), nil
+}
+
+// ApprovalRequest is an in-flight permission request waiting for user confirmation.
+type ApprovalRequest struct {
+	ID        string
+	Server    string
+	Tool      string
+	Args      map[string]interface{}
+	CreatedAt time.Time
+	done      chan bool
+}
+
+// requestMCPApproval suspends the tool call and asks the user (via SSE) to
+// approve or reject it. Blocks until a confirm API call resolves it, or the
+// timeout elapses (treated as deny).
+func (r *AgentRunner) requestMCPApproval(ctx context.Context, w SSEWriter, name string, input map[string]interface{}) (bool, error) {
+	parts := strings.SplitN(name, "__", 3)
+	server, tool := "", name
+	if len(parts) == 3 {
+		server, tool = parts[1], parts[2]
+	}
+	req := &ApprovalRequest{
+		ID:        uuid.NewString(),
+		Server:    server,
+		Tool:      tool,
+		Args:      input,
+		CreatedAt: time.Now(),
+		done:      make(chan bool, 1),
+	}
+	r.pendingApprovals.Store(req.ID, req)
+
+	if w != nil {
+		w.WriteSSE(map[string]interface{}{
+			"type":       "permission_request",
+			"request_id": req.ID,
+			"server":     server,
+			"tool":       tool,
+			"args":       input,
+			"timeout_s":  mcpApprovalTimeoutSec,
+		})
+	}
+
+	// Wait for user confirmation with a hard timeout (treated as deny).
+	timer := time.NewTimer(mcpApprovalTimeout)
+	defer timer.Stop()
+	select {
+	case approved := <-req.done:
+		r.pendingApprovals.Delete(req.ID)
+		return approved, nil
+	case <-timer.C:
+		r.pendingApprovals.Delete(req.ID)
+		if w != nil {
+			w.WriteSSE(map[string]interface{}{
+				"type":    "step",
+				"step":    "think",
+				"content": fmt.Sprintf("⏰ MCP 工具 %s 权限确认超时（%d 秒未响应），已按拒绝处理", name, mcpApprovalTimeoutSec),
+			})
+		}
+		return false, nil
+	case <-ctx.Done():
+		r.pendingApprovals.Delete(req.ID)
+		return false, ctx.Err()
+	}
+}
+
+// ResolveApproval completes a pending permission request with the user's decision.
+// Returns false if the request ID is unknown or already resolved.
+func (r *AgentRunner) ResolveApproval(requestID string, allow bool) bool {
+	v, ok := r.pendingApprovals.Load(requestID)
+	if !ok {
+		return false
+	}
+	req := v.(*ApprovalRequest)
+	select {
+	case req.done <- allow:
+		return true
+	default:
+		return false // already resolved
+	}
+}
+
+// PendingApprovalCount returns the number of in-flight permission requests.
+func (r *AgentRunner) PendingApprovalCount() int {
+	n := 0
+	r.pendingApprovals.Range(func(_, _ interface{}) bool { n++; return true })
+	return n
 }
 
 func (r *AgentRunner) recordExecution(name string, input map[string]interface{}, result string, err error, durationMs int64) {
