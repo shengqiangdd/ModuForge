@@ -20,6 +20,8 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
+          # 强制取最新 patch（runner 缓存可能落后于安全修复版，如 1.25.12 < 1.25.13）
+          check-latest: true
 
       - name: Install gcc (for CGO/sqlite3)
         run: sudo apt-get update && sudo apt-get install -y gcc
