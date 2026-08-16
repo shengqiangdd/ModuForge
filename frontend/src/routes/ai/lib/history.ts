@@ -88,15 +88,15 @@ export async function saveConversationToBackend(params: {
 }
 
 // ─── Sessions ───
-export async function loadSessionsList(): Promise<any[]> {
+export async function loadSessionsList(offset = 0, limit = 100): Promise<{ sessions: any[]; total: number }> {
   try {
     const token = localStorage.getItem('moduforge_token') || '';
-    const res = await fetch('/api/v1/ai/sessions', {
+    const res = await fetch(`/api/v1/ai/sessions?limit=${limit}&offset=${offset}`, {
       headers: { 'Authorization': `Bearer ${token}` },
     });
-    if (res.ok) { const data = await res.json(); return data.sessions || []; }
+    if (res.ok) { const data = await res.json(); return { sessions: data.sessions || [], total: data.total ?? (data.sessions || []).length }; }
   } catch {}
-  return [];
+  return { sessions: [], total: 0 };
 }
 
 export async function deleteSessionById(targetSessionId: string): Promise<boolean> {

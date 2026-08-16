@@ -53,6 +53,9 @@
     onDeleteConversation,
     onRestoreHistory,
     onClearHistory,
+    onLoadMore,
+    sessionsTotal = 0,
+    sessionsLoading = false,
   }: {
     sessions?: SessionInfo[];
     savedConversations?: SavedConv[];
@@ -76,6 +79,9 @@
     onDeleteConversation?: (id: string) => void;
     onRestoreHistory?: (item: GenHistoryItem) => void;
     onClearHistory?: () => void;
+    onLoadMore?: () => void;
+    sessionsTotal?: number;
+    sessionsLoading?: boolean;
   } = $props();
 
   let searchQuery = $state('');
@@ -144,7 +150,7 @@
       {:else}
         {#if savedConversations.length > 0}
           <div class="mb-2">
-            <p class="text-[10px] font-medium text-[var(--color-text-muted)] uppercase tracking-wider mb-1.5 px-1">保存的对话</p>
+            <p class="text-[10px] font-medium text-[var(--color-text-muted)] uppercase tracking-wider mb-1.5 px-1">保存的对话{#if sessionsTotal} · {sessionsTotal}{/if}</p>
             <div class="space-y-1">
               {#each savedConversations as conv (conv.id)}
                 <div class="px-2 py-1.5 rounded-lg transition-colors hover:bg-[var(--color-surface)] group">
@@ -223,6 +229,15 @@
               {/each}
             </div>
           </div>
+        {/if}
+        {#if sessionsTotal !== undefined && sessions.length < sessionsTotal}
+          <button
+            class="w-full py-2 text-xs text-[var(--color-text-muted)] hover:text-[var(--color-text)] rounded-lg hover:bg-[var(--color-surface)] transition-colors disabled:opacity-50"
+            onclick={() => onLoadMore?.()}
+            disabled={sessionsLoading}
+          >
+            {sessionsLoading ? '加载中...' : `加载更多（${sessions.length}/${sessionsTotal}）`}
+          </button>
         {/if}
         {#if savedConversations.length === 0 && sessions.length === 0}
           <div class="flex flex-col items-center justify-center py-8 text-[var(--color-text-muted)] gap-1.5">

@@ -1033,7 +1033,9 @@ func (h *AIHandler) ListSessions(c fiber.Ctx) error {
 	if uid == "" {
 		return Unauthorized(c, "authentication required")
 	}
-	sessions, err := service.ListUserSessions(h.db.Conn, uid)
+	limit := c.QueryInt("limit", 100)
+	offset := c.QueryInt("offset", 0)
+	sessions, total, err := service.ListUserSessions(h.db.Conn, uid, limit, offset)
 	if err != nil {
 		slog.Error("ListSessions", "error", err)
 		return InternalError(c, "failed to list sessions")
@@ -1041,7 +1043,12 @@ func (h *AIHandler) ListSessions(c fiber.Ctx) error {
 	if sessions == nil {
 		sessions = []map[string]interface{}{}
 	}
-	return c.JSON(fiber.Map{"sessions": sessions})
+	return c.JSON(fiber.Map{
+		"sessions": sessions,
+		"total":    total,
+		"limit":    limit,
+		"offset":   offset,
+	})
 }
 
 func (h *AIHandler) GetSessionMessages(c fiber.Ctx) error {

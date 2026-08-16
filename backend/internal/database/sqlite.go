@@ -878,6 +878,20 @@ func (db *DB) migrate() error {
 	// Users.id is UUID (TEXT), so user_id must also be TEXT for foreign keys to work.
 	db.migrateUserIDTypes()
 
+	// Periodic WAL checkpoint keeps the WAL file bounded (agent runs can write
+	// bursts of steps/messages). PASSIVE never blocks writers; if checkpointing
+	// would contend it simply skips and the next tick retries.
+	go func() {
+		ticker := time.NewTicker(15 * time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
+			if _, err := db.Conn.Exec(`PRAGMA wal_checkpoint(PASSIVE)`); err != nil {
+				log.Printf("[DB] WAL checkpoint: %v", err)
+			}
+		}
+	}()
+	log.Println("[DB] WAL checkpoint scheduler started (15m interval)")
+
 	// Migrate adb_saved_devices: rebuild with UNIQUE(user_id, address) instead of UNIQUE(address)
 	db.migrateADBSavedDevices()
 

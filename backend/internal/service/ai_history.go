@@ -629,7 +629,29 @@ func GetConversationMessages(db *sql.DB, sessionID, userID string) ([]Conversati
 	return result, mode, nil
 }
 
-func ListUserSessions(db *sql.DB, userID string) ([]map[string]interface{}, error) {
+// ListUserSessions returns the user's AI/agent conversations, newest first,
+// with pagination (limit/offset). Also returns the total number of sessions.
+func ListUserSessions(db *sql.DB, userID string, limit, offset int) ([]map[string]interface{}, int64, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
+	// Total count (both agent-mode messages and non-agent conversations)
+	var total int64
+	err := db.QueryRow(
+		`SELECT COUNT(DISTINCT sid) FROM (
+			SELECT cm.session_id AS sid FROM conversation_messages cm WHERE cm.user_id=?
+			UNION
+			SELECT ac.id AS sid FROM ai_conversations ac WHERE ac.user_id=?
+		)`, userID, userID,
+	).Scan(&total)
+	if err != nil {
+		return nil, 0, err
+	}
+
 	// Union both sources: conversation_messages (agent mode) and ai_conversations (chat/generate modes)
 	rows, err := db.Query(
 		`SELECT session_id, started_at, last_at, msg_count, title, mode, model, token_usage FROM (
@@ -661,8 +683,8 @@ func ListUserSessions(db *sql.DB, userID string) ([]map[string]interface{}, erro
 				WHERE cm2.session_id = ac.id AND cm2.user_id = ac.user_id
 			  )
 		) combined
-		ORDER BY last_at DESC LIMIT 100`,
-		userID, userID,
+		ORDER BY last_at DESC LIMIT ? OFFSET ?`,
+		userID, userID, limit, offset,
 	)
 	if err != nil {
 		return nil, err
@@ -715,7 +737,7 @@ func ListUserSessions(db *sql.DB, userID string) ([]map[string]interface{}, erro
 			s["token_usage"] = int64(0)
 		}
 	}
-	return result, nil
+	return result, total, nil
 }
 
 func DeleteSessionMessages(db *sql.DB, sessionID, userID string) error {

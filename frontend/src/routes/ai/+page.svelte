@@ -159,7 +159,9 @@ import { filterStepsByRound } from './lib/rounds';
 
   // Session state
   let sessions = $state<any[]>([]);
+  let sessionsTotal = $state(0);
   let sessionsLoading = $state(false);
+  const SESSIONS_PAGE_SIZE = 50;
   let activeSessionId = $state('');
   let searchResults = $state<any[]>([]);
 
@@ -532,7 +534,18 @@ import { filterStepsByRound } from './lib/rounds';
 
   async function loadSessions() {
     sessionsLoading = true;
-    sessions = await loadSessionsList();
+    const { sessions: list, total } = await loadSessionsList(0, SESSIONS_PAGE_SIZE);
+    sessions = list;
+    sessionsTotal = total;
+    sessionsLoading = false;
+  }
+
+  async function loadMoreSessions() {
+    if (sessionsLoading) return;
+    sessionsLoading = true;
+    const { sessions: more, total } = await loadSessionsList(sessions.length, SESSIONS_PAGE_SIZE);
+    sessions = [...sessions, ...more];
+    sessionsTotal = total;
     sessionsLoading = false;
   }
 
@@ -915,7 +928,7 @@ import { filterStepsByRound } from './lib/rounds';
   }
 }}>
   {#if showHistorySidebar}
-    <ChatSidebar {sessions} {savedConversations} {genHistory} {convSaving} {convLoading} {historyTab} {activeSessionId} {searchResults} messagesLength={messages.length}
+    <ChatSidebar {sessions} {sessionsTotal} {sessionsLoading} onLoadMore={loadMoreSessions} {savedConversations} {genHistory} {convSaving} {convLoading} {historyTab} {activeSessionId} {searchResults} messagesLength={messages.length}
       onNewConversation={() => { messages = []; currentStepIndex = -1; progressStepDetails = []; autoBuildPhases = []; agentSteps = []; allAgentSteps = []; selectedRound = -1; maxRoundIndex = 0; expandedReasoning = new Set(); activeSessionId = ''; sessionId = generateUUID(); mode = 'generate'; showHistorySidebar = false; autoBuildProjectId = ''; autoBuildProjectName = ''; autoBuildFiles = []; subtasks = []; }}
       onRefresh={() => { loadConversations(); loadSessions(); loadGenHistory(); }} onSave={saveConversation}
       onClose={() => showHistorySidebar = false} onTabChange={(t) => historyTab = t}
