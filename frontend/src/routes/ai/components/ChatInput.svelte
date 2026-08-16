@@ -6,11 +6,13 @@
     messages = [] as any[],
     buildLog = '',
     analysisModes = [] as { id: string; label: string; icon: string; prompt: string }[],
+    mcpToolCount = 0,
     onSend,
     onStop,
     onSendAnalysis,
     onBuildLogChange,
     onInputChange,
+    onOpenMcpTools,
   }: {
     input?: string;
     streaming?: boolean;
@@ -18,11 +20,13 @@
     messages?: any[];
     buildLog?: string;
     analysisModes?: { id: string; label: string; icon: string; prompt: string }[];
+    mcpToolCount?: number;
     onSend?: () => void;
     onStop?: () => void;
     onSendAnalysis?: (text: string, modeId: string) => void;
     onBuildLogChange?: (value: string) => void;
     onInputChange?: (value: string) => void;
+    onOpenMcpTools?: () => void;
   } = $props();
 
   function handleKeydown(e: KeyboardEvent) {
@@ -69,6 +73,19 @@
     ></textarea>
   {/if}
   <div class="flex items-center gap-2 input-row">
+    <button
+      class="p-1.5 rounded-lg transition-colors relative flex-shrink-0"
+      style="color: var(--color-text-secondary); background: var(--color-surface); border: 1px solid var(--color-border);"
+      onclick={onOpenMcpTools}
+      title="MCP 工具面板"
+      aria-label="打开 MCP 工具面板"
+    >
+      <span class="material-symbols-outlined text-[16px]">hub</span>
+      {#if mcpToolCount > 0}
+        <span class="absolute -top-1 -right-1 text-[8px] font-bold px-1 py-0.5 rounded-full min-w-[14px] text-center"
+              style="background: var(--color-success); color: white;">{mcpToolCount > 99 ? '99+' : mcpToolCount}</span>
+      {/if}
+    </button>
     <textarea
       class="flex-1 input-field resize-none"
       rows="2"

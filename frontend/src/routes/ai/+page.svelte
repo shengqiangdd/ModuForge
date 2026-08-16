@@ -1,6 +1,7 @@
 <script lang="ts">
 import { onMount, onDestroy, tick } from 'svelte';
 import { toast } from '$lib/stores/toast.svelte';
+import { client } from '$lib/api/client';
 
 import ChatSidebar from './components/ChatSidebar.svelte';
 import ChatInput from './components/ChatInput.svelte';
@@ -119,6 +120,7 @@ import { filterStepsByRound } from './lib/rounds';
   // AI Capability dashboard
   let showCapability = $state(false);
   let showMcpTools = $state(false);
+  let mcpToolCount = $state(0);
   let capability = $state<any>(null);
   let capabilityLoading = $state(false);
 
@@ -801,6 +803,13 @@ import { filterStepsByRound } from './lib/rounds';
     loadConversations();
     loadGenHistory();
     loadContextProjectList();
+    // Preload MCP tool count for the input badge (best-effort)
+    (async () => {
+      try {
+        const data = await client.get<{ servers: { tools?: unknown[] }[] }>('/agent/mcp/status');
+        mcpToolCount = (data.servers || []).reduce((acc, s) => acc + (s.tools?.length || 0), 0);
+      } catch { /* 静默失败，仅影响徽章 */ }
+    })();
     // Show onboarding for first-time users
     if (!localStorage.getItem('ai_onboarding_done')) {
       showOnboarding = true;
@@ -903,10 +912,11 @@ import { filterStepsByRound } from './lib/rounds';
       onContextChange={(v) => projectContext = v}
     />
 
-    <ChatInput {input} {mode} {streaming} {buildLog}
+    <ChatInput {input} {mode} {streaming} {buildLog} {mcpToolCount}
       onSend={() => handler.send()} onStop={handler.stopStream}
       onInputChange={(v) => input = v}
       onBuildLogChange={(v) => buildLog = v}
+      onOpenMcpTools={() => showMcpTools = true}
     />
   </div>
 
@@ -927,6 +937,7 @@ import { filterStepsByRound } from './lib/rounds';
   <ShortcutPanel show={showShortcutPanel} onClose={() => showShortcutPanel = false} />
   <McpToolPanel show={showMcpTools} onClose={() => showMcpTools = false}
     onInsertTool={(text: string) => { input = text; showMcpTools = false; }}
+    onToolCountChange={(n: number) => mcpToolCount = n}
     {onNavigate}
   />
 </div>

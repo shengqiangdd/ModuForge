@@ -85,6 +85,7 @@
 
   /** Build tool icon based on skill name */
   function toolIcon(skill: string): string {
+    if (skill.startsWith('mcp__')) return '🔌';
     if (skill === 'read_file') return '📖';
     if (skill === 'write_file' || skill === 'write_file_batch') return '✏️';
     if (skill === 'edit_file') return '🔍';
@@ -95,6 +96,23 @@
     if (skill === 'glob_search') return '📁';
     if (skill === 'list_dir') return '📂';
     return '🔧';
+  }
+
+  /** Shorten mcp__server__tool to the last segment */
+  function shortSkillName(skill: string): string {
+    if (!skill) return '';
+    const parts = skill.split('__');
+    return parts.length >= 3 ? parts.slice(2).join('__') : skill;
+  }
+
+  /** MCP server name extracted from mcp__server__tool */
+  function mcpServerOf(skill: string): string {
+    const parts = skill.split('__');
+    return parts.length >= 2 ? parts[1] : '';
+  }
+
+  function isMcpSkill(skill: string): boolean {
+    return !!skill && skill.startsWith('mcp__');
   }
 </script>
 
@@ -159,10 +177,16 @@
               </div>
             {:else if step.type === 'skill_call'}
               <div class="flex gap-2 items-start">
-                <div class="step-icon skill">{toolIcon(step.skill || '')}</div>
+                <div class="step-icon skill" class:mcp={isMcpSkill(step.skill || '')}>{toolIcon(step.skill || '')}</div>
                 <div class="step-content flex-1 min-w-0">
                   <div class="step-label skill">
-                    <span class="font-mono text-[10px]">{step.skill}</span>
+                    {#if isMcpSkill(step.skill || '')}
+                      <span class="text-[9px] px-1 py-0.5 rounded font-semibold uppercase" style="background: var(--color-success-light); color: var(--color-success);">MCP</span>
+                      <span class="text-[9px] font-normal" style="color: var(--color-text-muted);">{mcpServerOf(step.skill || '')}</span>
+                      <span class="font-mono text-[10px]">{shortSkillName(step.skill || '')}</span>
+                    {:else}
+                      <span class="font-mono text-[10px]">{step.skill}</span>
+                    {/if}
                     {#if step.input}
                       {@const summary = buildParamSummary(step.input)}
                       {#if summary}
@@ -185,7 +209,14 @@
               <div class="flex gap-2 items-start">
                 <div class="step-icon result">📋</div>
                 <div class="step-content flex-1 min-w-0">
-                  <div class="step-label result">结果: {step.skill}</div>
+                  <div class="step-label result">
+                    {#if isMcpSkill(step.skill || '')}
+                      <span class="text-[9px] px-1 py-0.5 rounded font-semibold uppercase" style="background: var(--color-success-light); color: var(--color-success);">MCP</span>
+                      <span style="color: var(--color-text-muted);">{shortSkillName(step.skill || '')}</span>
+                    {:else}
+                      结果: {step.skill}
+                    {/if}
+                  </div>
                   <ToolResult
                     skillName={step.skill || ''}
                     content={step.content || ''}
@@ -235,6 +266,9 @@
 {/if}
 
 <style>
+  .step-icon.mcp {
+    background: var(--color-success-light);
+  }
   .thinking-dots {
     display: inline-flex;
     gap: 1px;

@@ -22,11 +22,13 @@
     show = false,
     onClose,
     onInsertTool,
+    onToolCountChange,
     onNavigate,
   }: {
     show: boolean;
     onClose: () => void;
     onInsertTool: (text: string) => void;
+    onToolCountChange?: (count: number) => void;
     onNavigate?: (route: string) => void;
   } = $props();
 
@@ -40,6 +42,8 @@
     try {
       const data = await client.get<{ servers: MCPServer[] }>('/agent/mcp/status');
       servers = data.servers || [];
+      const total = servers.reduce((acc, s) => acc + (s.tools?.length || 0), 0);
+      onToolCountChange?.(total);
     } catch (e: any) {
       toast(e.message || '加载 MCP 工具失败', 'error');
     } finally {
