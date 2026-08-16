@@ -28,7 +28,10 @@ func TestSanitizeProjectPath(t *testing.T) {
 		{"traversal mixed", "src/../../data/.env", false},
 		{"traversal encoded dots", "src/....//data", false},
 		{"absolute", "/etc/cron.d/evil", false},
-		{"absolute windows", `C:\Windows\system32\evil.exe`, false},
+		// On Linux a backslash is an ordinary filename char (not a separator),
+		// so a Windows-style path is harmless unless it contains "..".
+		{"backslash filename", `a\b\c.txt`, true},
+		{"backslash traversal", `a\..\..\b`, false},
 		{"empty", "", false},
 	}
 	for _, tc := range cases {
