@@ -52,7 +52,8 @@ services:
         max-file: "3"
 
   seaweedfs:
-    image: chrislusf/seaweedfs:latest
+    # 固定版本 4.41（latest 当前指向 4.41，tag 便于升级与回滚）
+    image: chrislusf/seaweedfs:4.41
     container_name: seaweedfs
     restart: unless-stopped
     ports:
@@ -78,7 +79,8 @@ services:
   # 注意：官方镜像是 distroless（无 shell/wget），容器内 healthcheck 无法执行，
   # 存活探测由宿主机 /usr/local/bin/moduforge-health-check.sh 完成（JSON-RPC initialize）。
   github-mcp-server:
-    image: ghcr.io/github/github-mcp-server:latest
+    # 固定 digest（对应 2026-08-10 的 v1.9.0 release；ghcr 版本 tag 体系混乱，digest 最可靠）
+    image: ghcr.io/github/github-mcp-server@sha256:881b53d6f75f69bdbc1b5b10fc2f1361717c19054143b3a8529fb5c32061a50e
     container_name: github-mcp-server
     restart: unless-stopped
     command: ["http", "--port", "3333"]
