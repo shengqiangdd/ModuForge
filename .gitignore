@@ -59,3 +59,24 @@ test_agent.py
 backend/cmd/moduforge/moduforge
 backend/moduforge.exe
 backend/moduforge
+
+# ============ 不相关文件规范 (2026-08-16) ============
+# 根目录散落的调试/一次性脚本 — 项目源码只允许位于 backend/ frontend/ scripts/ docs/
+/*.py
+/*.pyc
+# 一次性部署/运维脚本
+/deploy*.sh
+/deploy*.ps1
+/*.bat
+/backup_db.sh
+/entrypoint.sh
+# 调试归档与产物
+/_scripts_archive/
+/build_artifacts/
+/containers_bak/
+# 分析/诊断文本与本地工具配置
+/opencode_analysis.txt
+/opencode.json
+# 配置备份变体
+*.bak-round*
+*.hostmode
