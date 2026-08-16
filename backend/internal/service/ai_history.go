@@ -572,7 +572,7 @@ func SaveAgentStep(db *sql.DB, sessionID, userID, stepType, content string, roun
 }
 
 func GetConversationMessages(db *sql.DB, sessionID, userID string) ([]ConversationMessage, string, error) {
-	msgs, hasMore, mode, err := getConversationMessagesPage(db, sessionID, userID, 0, "")
+	msgs, _, mode, err := getConversationMessagesPage(db, sessionID, userID, 0, "")
 	return msgs, mode, err
 }
 
