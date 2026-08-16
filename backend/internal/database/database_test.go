@@ -13,8 +13,12 @@ func TestTableExists(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 
-	if !tableExists(db, "sqlite_master") {
-		t.Error("expected sqlite_master to exist")
+	// sqlite_master 是系统影子表，不在自身中列出；用真实创建的表验证检测逻辑
+	if _, err := db.Exec(`CREATE TABLE test_exists_check (id INTEGER PRIMARY KEY)`); err != nil {
+		t.Fatalf("failed to create test table: %v", err)
+	}
+	if !tableExists(db, "test_exists_check") {
+		t.Error("expected created table to exist")
 	}
 	if tableExists(db, "nonexistent_table_xyz") {
 		t.Error("expected nonexistent table to not exist")
