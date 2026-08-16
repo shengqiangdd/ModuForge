@@ -112,9 +112,15 @@ export function saveModelSelectionToStorage(providerID: string, modelID: string)
   }
 }
 
+// Only persist backend config when the selection actually changed, so we don't
+// write DB on every message send (provider/model unchanged is the common case).
+let lastSavedConfig: { provider: string; model: string } | null = null;
+
 export async function saveConfigToBackend(providerID: string, modelID: string): Promise<void> {
   const token = localStorage.getItem('moduforge_token');
   if (!token || !providerID || !modelID) return;
+  if (lastSavedConfig && lastSavedConfig.provider === providerID && lastSavedConfig.model === modelID) return;
+  lastSavedConfig = { provider: providerID, model: modelID };
   try {
     const res = await fetch('/api/v1/llm/config', {
       method: 'POST',

@@ -336,13 +336,9 @@ func (r *AgentRunner) executeSkill(ctx context.Context, name string, input map[s
 		}
 	}
 	result, err := r.registry.Execute(ctx, name, input)
-	duration := time.Since(start).Milliseconds()
 	r.perfMetrics.RecordToolCall(time.Since(start))
 	if err != nil {
 		r.perfMetrics.RecordError()
-	}
-	if r.db != nil {
-		go r.recordExecution(name, input, result, err, duration)
 	}
 	if err != nil {
 		return "", err
@@ -519,52 +515,6 @@ func (r *AgentRunner) PendingApprovalCount() int {
 	n := 0
 	r.pendingApprovals.Range(func(_, _ interface{}) bool { n++; return true })
 	return n
-}
-
-func (r *AgentRunner) recordExecution(name string, input map[string]interface{}, result string, err error, durationMs int64) {
-	if r.db == nil {
-		return
-	}
-	inputJSON, _ := json.Marshal(input)
-	status := "success"
-	errMsg := ""
-	if err != nil {
-		status = "error"
-		errMsg = err.Error()
-	}
-	// Optimization 38: Batch DB writes in a single transaction (2 inserts → 1 transaction)
-	inputSize := len(inputJSON)
-	resultSize := len(result)
-	if resultSize > 2000 {
-		result = result[:2000] + "...(truncated)"
-		resultSize = 2000
-	}
-	tx, txErr := r.db.Begin()
-	if txErr != nil {
-		// Fallback: individual inserts if transaction fails
-		r.db.Exec(
-			`INSERT INTO skill_executions (skill_name, input, result, error_msg, duration_ms, status, created_at)
-			 VALUES (?, ?, ?, ?, ?, ?, datetime('now'))`,
-			name, string(inputJSON), result, errMsg, durationMs, status,
-		)
-		r.db.Exec(
-			`INSERT INTO skill_metrics (skill_name, input_size, result_size, duration_ms, status, created_at)
-			 VALUES (?, ?, ?, ?, ?, datetime('now'))`,
-			name, inputSize, resultSize, durationMs, status,
-		)
-		return
-	}
-	tx.Exec(
-		`INSERT INTO skill_executions (skill_name, input, result, error_msg, duration_ms, status, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?, datetime('now'))`,
-		name, string(inputJSON), result, errMsg, durationMs, status,
-	)
-	tx.Exec(
-		`INSERT INTO skill_metrics (skill_name, input_size, result_size, duration_ms, status, created_at)
-		 VALUES (?, ?, ?, ?, ?, datetime('now'))`,
-		name, inputSize, resultSize, durationMs, status,
-	)
-	tx.Commit()
 }
 
 func (r *AgentRunner) ListSkills() []Skill {
