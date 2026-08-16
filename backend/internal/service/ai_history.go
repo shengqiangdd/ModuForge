@@ -593,15 +593,15 @@ func getConversationMessagesPage(db *sql.DB, sessionID, userID string, limit int
 	query := `SELECT id, session_id, user_id, role, content, COALESCE(step_type, ''), COALESCE(round_index, 0), created_at, COALESCE(tool_calls, ''), COALESCE(tool_call_id, ''), COALESCE(token_usage, '')
 		 FROM conversation_messages WHERE session_id=? AND user_id=?`
 	args := []interface{}{sessionID, userID}
-	if before != "" {
-		if beforeID != "" {
-			// (created_at, id) composite cursor: strictly older than the page anchor
-			query += ` AND (created_at < ? OR (created_at = ? AND id < ?))`
-			args = append(args, before, before, beforeID)
-		} else {
-			query += ` AND created_at < ?`
-			args = append(args, before)
-		}
+	if beforeID != "" {
+		// id is an auto-increment PK ordered by insertion time, so it is the
+		// reliable pagination cursor (avoids SQLite created_at format/textual
+		// comparison pitfalls and second-precision duplicates).
+		query += ` AND id < ?`
+		args = append(args, beforeID)
+	} else if before != "" {
+		query += ` AND created_at < ?`
+		args = append(args, before)
 	}
 
 	// Fetch newest-first, limit+1 rows to detect has_more, then reverse to
