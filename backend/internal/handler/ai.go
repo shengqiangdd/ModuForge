@@ -1061,7 +1061,16 @@ func (h *AIHandler) GetSessionMessages(c fiber.Ctx) error {
 	if sessionID == "" {
 		return BadRequest(c, "session_id required")
 	}
-	messages, mode, err := service.GetConversationMessages(h.db.Conn, sessionID, uid)
+	limit, _ := strconv.Atoi(c.Query("limit", "50"))
+	before := c.Query("before", "")
+	var messages []service.ConversationMessage
+	var hasMore bool
+	var err error
+	if limit > 0 {
+		messages, hasMore, mode, err = service.GetConversationMessagesPage(h.db.Conn, sessionID, uid, limit, before)
+	} else {
+		messages, mode, err = service.GetConversationMessages(h.db.Conn, sessionID, uid)
+	}
 	if err != nil {
 		slog.Error("GetSessionMessages", "error", err)
 		return InternalError(c, "failed to get messages")
@@ -1072,7 +1081,7 @@ func (h *AIHandler) GetSessionMessages(c fiber.Ctx) error {
 	// 获取 project_id 和 agent_mode
 	var projectID, agentMode string
 	h.db.Conn.QueryRow(`SELECT COALESCE(project_id, ''), COALESCE(agent_mode, 'act') FROM ai_conversations WHERE id=? AND user_id=?`, sessionID, uid).Scan(&projectID, &agentMode)
-	return c.JSON(fiber.Map{"messages": messages, "mode": mode, "project_id": projectID, "agent_mode": agentMode})
+	return c.JSON(fiber.Map{"messages": messages, "mode": mode, "project_id": projectID, "agent_mode": agentMode, "has_more": hasMore, "limit": limit})
 }
 
 func (h *AIHandler) DeleteSession(c fiber.Ctx) error {

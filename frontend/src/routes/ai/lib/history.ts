@@ -121,16 +121,18 @@ export async function exportSessionById(targetSessionId: string, format: 'markdo
   } catch { return false; }
 }
 
-export async function fetchSessionMessages(sessId: string): Promise<{
+export async function fetchSessionMessages(sessId: string, limit = 0, before = ''): Promise<{
   messages: Message[];
   allSteps: AgentStep[];
   maxRound: number;
   mode: string;
   agent_mode: string;
   project_id: string;
+  has_more: boolean;
 } | null> {
   try {
-    const res = await authFetch(`/api/v1/ai/sessions/${sessId}/messages`);
+    const q = limit > 0 ? `?limit=${limit}${before ? `&before=${encodeURIComponent(before)}` : ''}` : '';
+    const res = await authFetch(`/api/v1/ai/sessions/${sessId}/messages${q}`);
     if (!res.ok) return null;
     const data = await res.json();
     if (!data.messages || data.messages.length === 0) return null;
@@ -162,7 +164,7 @@ export async function fetchSessionMessages(sessId: string): Promise<{
         if (m.role === 'assistant' && m.token_usage) {
           try { tu = typeof m.token_usage === 'string' ? JSON.parse(m.token_usage) : m.token_usage; } catch { tu = undefined; }
         }
-        chatMsgs.push({ role: m.role, content: m.content, round: ri, token_usage: tu });
+        chatMsgs.push({ role: m.role, content: m.content, round: ri, created_at: m.created_at || '', token_usage: tu });
         if (m.role === 'user' && ri > maxRound) maxRound = ri;
       }
     }
@@ -178,6 +180,7 @@ export async function fetchSessionMessages(sessId: string): Promise<{
     return {
       messages: chatMsgs, allSteps: allSteps as AgentStep[], maxRound,
       mode: data.mode || '', agent_mode: data.agent_mode || '', project_id: data.project_id || '',
+      has_more: !!data.has_more,
     };
   } catch { return null; }
 }

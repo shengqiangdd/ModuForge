@@ -21,6 +21,9 @@
     onOpenImportDialog = () => {},
     onOpenPreview = (files: { path: string; content: string }[]) => {},
     onInsertToInput = (text: string) => {},
+    hasMoreMessages = false,
+    loadingEarlier = false,
+    onLoadEarlier = () => {},
   } = $props();
 
   // Helper: get steps for a specific message round
@@ -69,6 +72,17 @@
   onscroll={(e) => { scrollTop = e.currentTarget.scrollTop; }}
   bind:this={containerEl}
   bind:clientHeight={containerHeight}>
+  {#if hasMoreMessages}
+    <div class="flex justify-center py-2">
+      <button
+        class="text-xs px-3 py-1.5 rounded-full border border-[var(--color-border)] text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface)] transition-colors disabled:opacity-50"
+        onclick={() => onLoadEarlier()}
+        disabled={loadingEarlier}
+      >
+        {loadingEarlier ? '加载中...' : '加载更早消息'}
+      </button>
+    </div>
+  {/if}
   {#if messages.length === 0}
     <div class="flex items-center justify-center h-full">
       <div class="text-center">

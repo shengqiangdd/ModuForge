@@ -162,6 +162,8 @@ import { filterStepsByRound } from './lib/rounds';
   let sessionsTotal = $state(0);
   let sessionsLoading = $state(false);
   const SESSIONS_PAGE_SIZE = 50;
+  let hasMoreMessages = $state(false);
+  let loadingEarlier = $state(false);
   let activeSessionId = $state('');
   let searchResults = $state<any[]>([]);
 
@@ -567,7 +569,7 @@ import { filterStepsByRound } from './lib/rounds';
   async function loadSessionMessages(sessId: string) {
     streaming = false;
     activeSessionId = sessId;
-    const result = await fetchSessionMessages(sessId);
+    const result = await fetchSessionMessages(sessId, 50);
     if (!result) { toast('无法加载对话消息', 'error'); return; }
     if (result.mode && modes.some(m => m.value === result.mode)) mode = result.mode as Mode;
     if (result.agent_mode === 'plan' || result.agent_mode === 'act') agentMode = result.agent_mode;
@@ -582,6 +584,7 @@ import { filterStepsByRound } from './lib/rounds';
     const latestSteps = allAgentSteps.filter(s => s.round === result.maxRound);
     agentSteps = latestSteps;
     messages = result.messages;
+    hasMoreMessages = result.has_more;
     // Restore per-message token usage from persisted conversation history
     const restored = new Map<number, TokenUsage>();
     result.messages.forEach((m, i) => { if (m.token_usage) restored.set(i, m.token_usage); });
@@ -590,7 +593,22 @@ import { filterStepsByRound } from './lib/rounds';
     showHistorySidebar = false;
     agentStepsCollapsed = true;
     agentHadFinalAnswer = false;
-    toast(`已加载对话 (${messages.length} 条消息)`, 'success');
+    toast(`已加载对话 (${messages.length} 条消息${result.has_more ? '，可加载更早' : ''})`, 'success');
+  }
+
+  // 向上加载更早的历史消息（游标分页）
+  async function loadEarlierMessages() {
+    if (!sessionId || messages.length === 0 || loadingEarlier) return;
+    const earliest = messages[0];
+    if (!earliest.created_at) { toast('无法加载更早消息', 'error'); return; }
+    loadingEarlier = true;
+    try {
+      const result = await fetchSessionMessages(sessionId, 50, earliest.created_at);
+      if (!result || result.messages.length === 0) { hasMoreMessages = false; return; }
+      messages = [...result.messages, ...messages];
+      allAgentSteps = [...(result.allSteps as AgentStep[]), ...allAgentSteps];
+      hasMoreMessages = result.has_more;
+    } catch {} finally { loadingEarlier = false; }
   }
 
   // ─── Auto-save ───
@@ -974,6 +992,7 @@ import { filterStepsByRound } from './lib/rounds';
 
     <ChatMessages bind:this={chatMessages}
       bind:messages {mode} {streaming} {expandedReasoning} {messageUsages} {messageTimes}
+      {hasMoreMessages} {loadingEarlier} onLoadEarlier={loadEarlierMessages}
       allAgentSteps={allAgentSteps} agentExpandedSteps={expandedSteps}
       onToggleAgentStep={(idx: number) => { const next = new Set(expandedSteps); if (next.has(idx)) next.delete(idx); else next.add(idx); expandedSteps = next; }}
       onToggleReasoning={(idx: number) => { const next = new Set(expandedReasoning); if (next.has(idx)) next.delete(idx); else next.add(idx); expandedReasoning = next; }}

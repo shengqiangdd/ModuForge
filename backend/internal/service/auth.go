@@ -2,7 +2,12 @@ package service
 
 import (
 	"context"
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/base64"
 	"fmt"
 	"strings"
 	"time"
@@ -397,17 +402,92 @@ func (s *AuthService) ChangePassword(userID, oldPassword, newPassword string) er
 }
 
 // GetGitHubToken retrieves the user's stored GitHub token.
+// Tokens are stored AES-GCM encrypted (prefix "enc:v1:"); legacy plaintext
+// values are returned as-is and migrated to encryption on the next save.
 func (s *AuthService) GetGitHubToken(userID string) (string, error) {
-	var token string
-	err := s.db.QueryRow(`SELECT COALESCE(github_token, '') FROM users WHERE id = ?`, userID).Scan(&token)
+	var stored string
+	err := s.db.QueryRow(`SELECT COALESCE(github_token, '') FROM users WHERE id = ?`, userID).Scan(&stored)
 	if err != nil {
 		return "", fmt.Errorf("user not found")
 	}
-	return token, nil
+	if stored == "" {
+		return "", nil
+	}
+	return s.decryptToken(stored)
 }
 
-// SetGitHubToken saves or clears the user's GitHub token.
+// SetGitHubToken saves or clears the user's GitHub token (encrypted at rest).
 func (s *AuthService) SetGitHubToken(userID, token string) error {
-	_, err := s.db.Exec(`UPDATE users SET github_token = ? WHERE id = ?`, token, userID)
+	stored := token
+	if token != "" {
+		enc, err := s.encryptToken(token)
+		if err != nil {
+			return err
+		}
+		stored = enc
+	}
+	_, err := s.db.Exec(`UPDATE users SET github_token = ? WHERE id = ?`, stored, userID)
 	return err
+}
+
+// githubTokenKey derives a stable AES-256 key from JWT_SECRET so rotating the
+// secret invalidates stored tokens (caller must re-save them).
+func (s *AuthService) githubTokenKey() ([]byte, error) {
+	if s.cfg == nil || s.cfg.JWTSecret == "" {
+		return nil, fmt.Errorf("JWT_SECRET not configured; cannot encrypt github token")
+	}
+	sum := sha256.Sum256([]byte("moduforge:github-token:v1:" + s.cfg.JWTSecret))
+	return sum[:], nil
+}
+
+func (s *AuthService) encryptToken(plain string) (string, error) {
+	key, err := s.githubTokenKey()
+	if err != nil {
+		return "", err
+	}
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return "", err
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", err
+	}
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err := rand.Read(nonce); err != nil {
+		return "", err
+	}
+	sealed := gcm.Seal(nonce, nonce, []byte(plain), nil)
+	return "enc:v1:" + base64.StdEncoding.EncodeToString(sealed), nil
+}
+
+func (s *AuthService) decryptToken(stored string) (string, error) {
+	if !strings.HasPrefix(stored, "enc:v1:") {
+		return stored, nil // legacy plaintext
+	}
+	key, err := s.githubTokenKey()
+	if err != nil {
+		return "", err
+	}
+	raw, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(stored, "enc:v1:"))
+	if err != nil {
+		return "", fmt.Errorf("github token: invalid encoding")
+	}
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return "", err
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", err
+	}
+	if len(raw) < gcm.NonceSize() {
+		return "", fmt.Errorf("github token: malformed ciphertext")
+	}
+	nonce, ct := raw[:gcm.NonceSize()], raw[gcm.NonceSize():]
+	plain, err := gcm.Open(nil, nonce, ct, nil)
+	if err != nil {
+		return "", fmt.Errorf("github token: decryption failed (JWT_SECRET changed?)")
+	}
+	return string(plain), nil
 }

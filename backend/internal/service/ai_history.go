@@ -572,18 +572,46 @@ func SaveAgentStep(db *sql.DB, sessionID, userID, stepType, content string, roun
 }
 
 func GetConversationMessages(db *sql.DB, sessionID, userID string) ([]ConversationMessage, string, error) {
-	rows, err := db.Query(
-		`SELECT id, session_id, user_id, role, content, COALESCE(step_type, ''), COALESCE(round_index, 0), created_at, COALESCE(tool_calls, ''), COALESCE(tool_call_id, ''), COALESCE(token_usage, '')
-		 FROM conversation_messages WHERE session_id=? AND user_id=?
-		 ORDER BY created_at ASC`,
-		sessionID, userID,
-	)
+	msgs, hasMore, mode, err := getConversationMessagesPage(db, sessionID, userID, 0, "")
+	return msgs, mode, err
+}
+
+// GetConversationMessagesPage returns up to `limit` messages ending at or
+// before the `before` timestamp (exclusive), oldest first. `limit` must be > 0.
+// The second return value reports whether older messages exist (has_more).
+func GetConversationMessagesPage(db *sql.DB, sessionID, userID string, limit int, before string) ([]ConversationMessage, bool, string, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	return getConversationMessagesPage(db, sessionID, userID, limit, before)
+}
+
+// getConversationMessagesPage is the shared implementation. limit<=0 means all.
+func getConversationMessagesPage(db *sql.DB, sessionID, userID string, limit int, before string) ([]ConversationMessage, bool, string, error) {
+	query := `SELECT id, session_id, user_id, role, content, COALESCE(step_type, ''), COALESCE(round_index, 0), created_at, COALESCE(tool_calls, ''), COALESCE(tool_call_id, ''), COALESCE(token_usage, '')
+		 FROM conversation_messages WHERE session_id=? AND user_id=?`
+	args := []interface{}{sessionID, userID}
+	if before != "" {
+		query += ` AND created_at < ?`
+		args = append(args, before)
+	}
+
+	// Fetch newest-first, limit+1 rows to detect has_more, then reverse to
+	// chronological order for rendering.
+	if limit > 0 {
+		query += ` ORDER BY created_at DESC LIMIT ?`
+		args = append(args, limit+1)
+	} else {
+		query += ` ORDER BY created_at ASC`
+	}
+
+	rows, err := db.Query(query, args...)
 	if err != nil {
-		return nil, "", err
+		return nil, false, "", err
 	}
 	defer rows.Close()
 
-	var result []ConversationMessage
+	var newest []ConversationMessage
 	const maxReadContent = 96 * 1024 // serve-side cap for legacy oversized rows
 	for rows.Next() {
 		var m ConversationMessage
@@ -593,15 +621,27 @@ func GetConversationMessages(db *sql.DB, sessionID, userID string) ([]Conversati
 		if len(m.Content) > maxReadContent {
 			m.Content = m.Content[:maxReadContent] + "\n...[truncated by server]"
 		}
-		result = append(result, m)
+		newest = append(newest, m)
 	}
 
-	// 从 ai_conversations 表获取 mode
+	hasMore := false
+	if limit > 0 && len(newest) > limit {
+		hasMore = true
+		newest = newest[:limit]
+	}
+	// reverse newest-first -> chronological
+	result := make([]ConversationMessage, 0, len(newest))
+	for i := len(newest) - 1; i >= 0; i-- {
+		result = append(result, newest[i])
+	}
+
+	// From ai_conversations table get mode
 	var mode string
 	db.QueryRow(`SELECT COALESCE(mode, '') FROM ai_conversations WHERE id=? AND user_id=?`, sessionID, userID).Scan(&mode)
 
-	// If no messages in conversation_messages, fall back to ai_conversations.messages JSON
-	// This handles non-agent modes (chat/generate) that store messages as JSON blob
+	// Fallback for non-agent modes (chat/generate) that store messages as JSON blob.
+	// Pagination only applies to conversation_messages; the JSON-blob path is
+	// small and always returns everything (limit=0 path only).
 	if len(result) == 0 {
 		var msgJSON string
 		err := db.QueryRow(
@@ -626,7 +666,7 @@ func GetConversationMessages(db *sql.DB, sessionID, userID string) ([]Conversati
 		}
 	}
 
-	return result, mode, nil
+	return result, hasMore, mode, nil
 }
 
 // ListUserSessions returns the user's AI/agent conversations, newest first,
