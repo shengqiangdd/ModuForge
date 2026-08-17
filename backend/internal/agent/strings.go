@@ -305,10 +305,18 @@ func userFriendlyError(err error) string {
 		strings.Contains(errStr, "payment") ||
 		strings.Contains(errStr, "balance") ||
 		strings.Contains(errStr, "no_quota") {
-		return "💳 该模型余额或配额不足，请到模型平台充值/领取额度，或切换其他模型"
+		msg := "💳 该模型余额或配额不足，请到模型平台充值/领取额度，或切换其他模型"
+		if hint := extractProviderModel(errStr); hint != "" {
+			msg += " " + hint
+		}
+		return msg
 	}
 	if strings.Contains(errStr, "quota_exceeded") || strings.Contains(errStr, "429") {
-		return "⏳ 请求频率超限（可能免费模型配额用尽），请稍后再试或切换到付费模型"
+		msg := "⏳ 请求被限流（可能免费模型配额用尽），请稍后再试或切换到付费模型"
+		if hint := extractProviderModel(errStr); hint != "" {
+			msg += " " + hint
+		}
+		return msg
 	}
 	if strings.Contains(errStr, "Upstream request failed") {
 		return "🔧 上游 LLM 服务异常，已自动重试失败，请稍后再试或切换模型"

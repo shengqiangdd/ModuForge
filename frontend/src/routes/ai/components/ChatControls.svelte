@@ -74,6 +74,8 @@
     onOpenPromptSettings?: () => void;
     onOpenMDPrompts?: () => void;
     onNavigate?: (route: string, id?: string) => void;
+    showSearch?: boolean;
+    onToggleSearch?: () => void;
   } = $props();
 </script>
 

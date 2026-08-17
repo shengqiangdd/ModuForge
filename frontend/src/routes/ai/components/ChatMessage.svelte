@@ -288,7 +288,7 @@
       <div class="ai-markdown" role="article">{@html memoRenderMarkdown(msg.content)}</div>
     {/if}
     {#if msg.role === 'assistant' && agentSteps.length > 0}
-      <AgentStepsInline steps={agentSteps} expandedSteps={agentExpandedSteps} onToggleStep={(idx) => onToggleAgentStep(idx)} />
+      <AgentStepsInline steps={agentSteps} expandedSteps={agentExpandedSteps} onToggleStep={(idx) => onToggleAgentStep(idx)} streaming={streaming && msg.round !== undefined && index === lastAssistantIdx} />
     {/if}
     {#if msg.role === 'assistant' && (usage || respTime)}
       <div class="flex items-center gap-3 mt-2 pt-2 border-t border-[var(--color-border)] text-[10px] text-[var(--color-text-muted)]">

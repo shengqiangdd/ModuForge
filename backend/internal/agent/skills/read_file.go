@@ -72,6 +72,22 @@ func (s *ReadFileSkill) Execute(ctx context.Context, input map[string]interface{
 		if err != nil {
 			return "", fmt.Errorf("s3 read failed: %w", err)
 		}
+		// Differential-cache also applies to S3 reads (production path).
+		if s.fileHash != nil && startLine == 0 && endLine == 0 {
+			h := sha256.Sum256(content)
+			hash := fmt.Sprintf("%x", h)
+			prev := s.fileHash.Get(path)
+			totalLines := len(strings.Split(string(content), "\n"))
+			if prev != "" && prev == hash && totalLines > 500 {
+				return fmt.Sprintf(
+					"File: %s (%d lines) — UNCHANGED since last read (sha256:%s).\n"+
+						"Content is identical to what you already have in context. "+
+						"No need to re-analyze. Use start_line/end_line to read any specific section if required.",
+					path, totalLines, hash[:12],
+				), nil
+			}
+			s.fileHash.Set(path, hash)
+		}
 		return s.formatContent(path, string(content), startLine, endLine), nil
 	}
 
@@ -99,10 +115,25 @@ func (s *ReadFileSkill) Execute(ctx context.Context, input map[string]interface{
 		}
 	}
 
-	// Check file hash cache for UNCHANGED detection
-	if s.fileHash != nil && !fromDB {
+	// Differential-cache: if the file hash is unchanged from the last read AND
+	// this is a full-file read of a large file (>500 lines), we can avoid
+	// re-emitting the whole (potentially huge) smart-summary and just confirm
+	// "unchanged", telling the model to use start_line/end_line for detail.
+	// Small files are cheap to re-read, so we always return them in full to
+	// avoid any risk of stale-context confusion.
+	if s.fileHash != nil && !fromDB && startLine == 0 && endLine == 0 {
 		h := sha256.Sum256(content)
 		hash := fmt.Sprintf("%x", h)
+		prev := s.fileHash.Get(path)
+		totalLines := len(strings.Split(string(content), "\n"))
+		if prev != "" && prev == hash && totalLines > 500 {
+			return fmt.Sprintf(
+				"File: %s (%d lines) — UNCHANGED since last read (sha256:%s).\n"+
+					"Content is identical to what you already have in context. "+
+					"No need to re-analyze. Use start_line/end_line to read any specific section if required.",
+				path, totalLines, hash[:12],
+			), nil
+		}
 		s.fileHash.Set(path, hash)
 	}
 

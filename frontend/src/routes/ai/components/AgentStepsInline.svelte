@@ -24,10 +24,12 @@
     steps = [],
     expandedSteps = new Set<number>(),
     onToggleStep,
+    streaming = false,
   }: {
     steps: AgentStep[];
     expandedSteps?: Set<number>;
     onToggleStep?: (index: number) => void;
+    streaming?: boolean; // true while the assistant is still producing steps
   } = $props();
 
   let collapsed = $state(true);
@@ -36,6 +38,17 @@
   let visibleCount = $derived(
     steps.filter(s => !(s.type === 'think' && s.content && s.content.length < 30)).length
   );
+
+  // Live "currently running" tool: the last step is an unclosed skill_call
+  // (no following skill_result for it) while the round is still streaming.
+  let activeTool = $derived.by(() => {
+    if (!streaming || steps.length === 0) return null;
+    const last = steps[steps.length - 1];
+    if (last.type === 'skill_call' && last.skill) return last.skill;
+    // skill_call followed immediately by a thin skill_result has no live state;
+    // but if the tail is a skill_result we are waiting for the next call.
+    return null;
+  });
 
   function toggleStep(index: number) {
     onToggleStep?.(index);
@@ -81,6 +94,12 @@
       <span class="material-symbols-outlined text-[14px]">robot_2</span>
       Agent 步骤
       <span class="text-[10px] text-[var(--color-text-muted)]">{visibleCount} 步</span>
+      {#if activeTool}
+        <span class="flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium" style="background: rgba(255,193,7,0.15); color: #fbbf24;">
+          <span class="live-dot"></span>
+          <span class="font-mono truncate max-w-[120px]">{activeTool}</span>
+        </span>
+      {/if}
       <span class="material-symbols-outlined text-[14px] ml-auto transition-transform {collapsed ? '' : 'rotate-180'}">expand_more</span>
     </button>
 
@@ -103,11 +122,14 @@
                   </div>
                 </div>
               {:else if step.type === 'skill_call'}
-                <div class="flex gap-1.5 items-start">
+                <div class="flex gap-1.5 items-start {activeTool === step.skill && i === steps.length - 1 ? 'step-live' : ''}">
                   <span class="flex-shrink-0 text-[12px]">{toolIcon(step.skill || '')}</span>
                   <div class="flex-1 min-w-0">
                     <div class="text-[10px] font-medium">
                       <span class="font-mono">{step.skill}</span>
+                      {#if activeTool === step.skill && i === steps.length - 1}
+                        <span class="ml-1 align-middle inline-block w-2 h-2 rounded-full" style="background:#fbbf24; animation: livePulse 1s ease-in-out infinite;"></span>
+                      {/if}
                       {#if step.input}
                         {@const summary = buildParamSummary(step.input)}
                         {#if summary}
@@ -182,6 +204,24 @@
   }
   .step-card:hover {
     background: var(--color-bg-hover, rgba(0,0,0,0.03));
+  }
+  .step-live {
+    background: rgba(255,193,7,0.08);
+    border: 1px solid rgba(255,193,7,0.25);
+    border-radius: 6px;
+    padding: 4px 6px;
+  }
+  .live-dot {
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #fbbf24;
+    animation: livePulse 1s ease-in-out infinite;
+  }
+  @keyframes livePulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.4; transform: scale(0.7); }
   }
   .step-result-content {
     display: -webkit-box;
