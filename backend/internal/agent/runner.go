@@ -1103,6 +1103,15 @@ You are running WITHOUT a project context. This means:
 - Keep your answers focused and practical`
 	}
 
+	// Auto-recall relevant past memories (works for every model tier; the
+	// memory_v2 skill alone is unreliable on free/small models because the
+	// LLM must remember to call it proactively).
+	if len(task) > 0 {
+		if recalled := r.autoRecallMemory(cfg, task, 3); recalled != "" {
+			systemPrompt += "\n" + recalled
+		}
+	}
+
 	// Build tool definitions — filtered by mode and model tier.
 	// Use resolvedModel (not cfg.LLMModel) so tier filtering matches the prompt
 	// branch above (free tier gets fewer tools, same as it gets a shorter prompt).
@@ -2104,6 +2113,12 @@ You are running WITHOUT a project context. This means:
 
 	// Exhausted iterations — send answer if we haven't already
 	sendFinalAnswer(w, cfg, lastLLMResp, answerSent)
+
+	// Auto-store the final answer as an episodic memory so future sessions can
+	// recall it without the LLM remembering to call the memory_v2 skill.
+	if lastLLMResp != nil && len(lastLLMResp.Content) > 0 {
+		r.autoStoreMemory(cfg.UserID, sessionID, lastLLMResp.Content)
+	}
 	// Clean up write-content cache for this session (tool result cache persists)
 	r.writeContentCache.Delete(sessionID)
 	r.readFileCache.Delete(sessionID)
