@@ -1550,6 +1550,11 @@ You are running WITHOUT a project context. This means:
 				r.convStore.Append(sessionID, service.Message{Role: "assistant", Content: answer})
 			}
 			w.WriteSSEPlain("[DONE]")
+			// Auto-store the direct answer as episodic memory (same hook as the
+			// exhausted-iterations path — direct answers bypass sendFinalAnswer).
+			if llmResp != nil && len(llmResp.Content) > 0 {
+				r.autoStoreMemory(cfg.UserID, sessionID, llmResp.Content)
+			}
 			iterCancel()
 			return nil
 		}
