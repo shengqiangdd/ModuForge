@@ -273,7 +273,7 @@ func (s *AIService) Chat(ctx context.Context, message, contextInfo, userID strin
 	if contextInfo != "" {
 		userPrompt = fmt.Sprintf("Context:\n%s\n\nQuestion:\n%s", contextInfo, message)
 	}
-	return s.streamChatWithSystemForUser(ctx, systemPrompt, userPrompt, userID, sessionID, w)
+	return s.streamChatWithSystemForUser(ctx, systemPrompt, userPrompt, userID, sessionID, w, messages)
 }
 
 // RepairBuild 分析构建日志给出修复建议
@@ -942,7 +942,40 @@ func (s *AIService) resolveUserProviderConfig(userID, providerID string) (endpoi
 }
 
 // streamChatWithSystemForUser 支持用户 specific LLM 配置的流式请求
-func (s *AIService) streamChatWithSystemForUser(ctx context.Context, systemPrompt, userPrompt, userID, sessionID string, w *bufio.Writer) error {
+// historyForLLM builds the chronological list of past user/assistant turns to
+// include in the next LLM request. It walks backwards from the newest turn,
+// keeps as many as fit within budgetChars, and drops the trailing current
+// user turn (== userPrompt) that the frontend includes in messages.
+func historyForLLM(history []Message, userPrompt string, budgetChars int) []Message {
+	if len(history) == 0 || budgetChars <= 0 {
+		return nil
+	}
+	limit := len(history)
+	if limit > 0 && history[limit-1].Role == "user" && history[limit-1].Content == userPrompt {
+		limit--
+	}
+	keep := make([]Message, 0, limit)
+	used := 0
+	for i := limit - 1; i >= 0; i-- {
+		m := history[i]
+		if m.Role != "user" && m.Role != "assistant" {
+			continue
+		}
+		sz := len(m.Content) + 8
+		if used+sz > budgetChars {
+			break
+		}
+		used += sz
+		keep = append(keep, m)
+	}
+	// Reverse back to chronological order.
+	for i, j := 0, len(keep)-1; i < j; i, j = i+1, j-1 {
+		keep[i], keep[j] = keep[j], keep[i]
+	}
+	return keep
+}
+
+func (s *AIService) streamChatWithSystemForUser(ctx context.Context, systemPrompt, userPrompt, userID, sessionID string, w *bufio.Writer, history ...[]Message) error {
 	endpoint := s.cfg.LLMEndpoint
 	apiKey := s.cfg.LLMApiKey
 	model := s.cfg.LLMModel
@@ -972,13 +1005,23 @@ func (s *AIService) streamChatWithSystemForUser(ctx context.Context, systemPromp
 		return nil
 	}
 
+	// Build the full message array: system + (bounded) history + current user
+	// turn. Previously history was dropped entirely, so "continue/改一下"
+	// follow-ups had no context. Cap history by token estimate to protect
+	// context windows on every tier.
+	msgs := []map[string]string{{"role": "system", "content": systemPrompt}}
+	if len(history) > 0 && len(history[0]) > 0 {
+		// ~4 chars per token is a safe upper bound for CJK + code.
+		for _, m := range historyForLLM(history[0], userPrompt, 20_000) {
+			msgs = append(msgs, map[string]string{"role": m.Role, "content": m.Content})
+		}
+	}
+	msgs = append(msgs, map[string]string{"role": "user", "content": userPrompt})
+
 	body := map[string]interface{}{
-		"model": model,
-		"messages": []map[string]string{
-			{"role": "system", "content": systemPrompt},
-			{"role": "user", "content": userPrompt},
-		},
-		"stream": true,
+		"model":    model,
+		"messages": msgs,
+		"stream":   true,
 	}
 	bodyBytes, _ := json.Marshal(body)
 
