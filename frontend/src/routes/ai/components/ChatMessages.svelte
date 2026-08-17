@@ -91,11 +91,6 @@
     stickToBottom = distanceToBottom < 120;
   }
 
-  // Exposed for parent to close search
-  export function closeSearch() {
-    closeSearch();
-  }
-
   // Exposed for parent to call after sending a message
   export function scrollToBottom() {
     const el = document.querySelector('.messages-area') as HTMLElement;
@@ -165,7 +160,7 @@
     gotoSearchHit();
   }
 
-  function closeSearch() {
+  export function closeSearch() {
     searchOpen = false;
     searchQuery = '';
     searchResults = [];
