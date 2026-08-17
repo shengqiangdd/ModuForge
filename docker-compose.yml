@@ -60,9 +60,13 @@ services:
     container_name: seaweedfs
     restart: unless-stopped
     ports:
-      - "8333:8333"   # S3 API
-      - "9333:9333"   # Master
-      - "8081:8081"   # Volume HTTP
+      # 全部仅绑定宿主机回环：master 9333 与 volume 8081 为无认证控制面/数据面
+      # 端口，暴露局域网可被匿名下载/篡改全部 S3 对象（项目源码泄露）。
+      # 容器间（moduforge -> seaweedfs:8333）走 compose 网络不受影响；
+      # 宿主机本机仍可用 127.0.0.1 访问 S3（minioadmin 凭据）。
+      - "127.0.0.1:8333:8333"   # S3 API（仅宿主）
+      - "127.0.0.1:9333:9333"   # Master（仅宿主）
+      - "127.0.0.1:8081:8081"   # Volume HTTP（仅宿主）
     command: "server -s3 -s3.port=8333 -master.port=9333 -volume.port=8081 -dir=/data -filer=false -s3.iam.config=/etc/seaweedfs/iam.json"
     volumes:
       - seaweedfs_data:/data
