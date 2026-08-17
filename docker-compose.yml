@@ -6,6 +6,10 @@ services:
     image: moduforge:latest
     container_name: moduforge
     restart: unless-stopped
+    # 宿主仅 3.8G 内存且共用 Swap（Committed_AS 曾达 12.4G）。
+    # 上限 3G 防止编译任务(NDK/Rust/Go 链接)爆发时 OOM 拖垮 qwenpaw 等宿主进程；
+    # 若编译任务因内存不足失败，按需调高（但不建议超过 3.5G）。
+    mem_limit: 3g
     depends_on:
       seaweedfs:
         condition: service_started
@@ -61,6 +65,7 @@ services:
     image: chrislusf/seaweedfs:4.41
     container_name: seaweedfs
     restart: unless-stopped
+    mem_limit: 512m
     ports:
       # 全部仅绑定宿主机回环：master 9333 与 volume 8081 为无认证控制面/数据面
       # 端口，暴露局域网可被匿名下载/篡改全部 S3 对象（项目源码泄露）。
@@ -92,6 +97,7 @@ services:
     image: ghcr.io/github/github-mcp-server@sha256:881b53d6f75f69bdbc1b5b10fc2f1361717c19054143b3a8529fb5c32061a50e
     container_name: github-mcp-server
     restart: unless-stopped
+    mem_limit: 256m
     command: ["http", "--port", "3333"]
     environment:
       - GITHUB_PERSONAL_ACCESS_TOKEN=${GITHUB_PAT:-}
