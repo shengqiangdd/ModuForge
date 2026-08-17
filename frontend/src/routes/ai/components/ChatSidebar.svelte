@@ -114,7 +114,7 @@
   }
 </script>
 
-<div class="w-72 flex-shrink-0 border-r border-[var(--color-border)] bg-[var(--color-bg)] flex flex-col overflow-hidden history-sidebar">
+<div class="w-72 max-md:fixed max-md:inset-0 max-md:w-full max-md:z-50 flex-shrink-0 border-r border-[var(--color-border)] bg-[var(--color-bg)] flex flex-col overflow-hidden history-sidebar">
   <!-- Sidebar Header -->
   <div class="flex items-center justify-between px-3 py-2 border-b border-[var(--color-border)]">
     <div class="flex items-center gap-1.5">

@@ -61,6 +61,7 @@
     messageUsages = new Map<number, TokenUsage>(),
     messageTimes = new Map<number, number>(),
     showTypingCursor = false,
+    highlighted = false,
   }: {
     msg: Message;
     index: number;
@@ -101,6 +102,7 @@
     messageUsages?: Map<number, TokenUsage>;
     messageTimes?: Map<number, number>;
     showTypingCursor?: boolean;
+    highlighted?: boolean;
   } = $props();
 
   let isEditing = $derived(editingMessageIdx === index);
@@ -117,7 +119,15 @@
     if (diff < 60_000) return '刚刚';
     if (diff < 3600_000) return Math.floor(diff / 60_000) + ' 分钟前';
     if (diff < 86_400_000) return Math.floor(diff / 3600_000) + ' 小时前';
-    return new Date(t).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' });
+    const d = new Date(t);
+    const now = new Date();
+    const sameYear = d.getFullYear() === now.getFullYear();
+    const opts: Intl.DateTimeFormatOptions = {
+      month: 'short', day: 'numeric',
+      hour: '2-digit', minute: '2-digit',
+    };
+    if (!sameYear) opts.year = 'numeric';
+    return d.toLocaleDateString('zh-CN', opts);
   }
 
   function handleCopy(text: string) {
@@ -129,6 +139,7 @@
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <div class="{msg.role === 'user' ? 'max-w-[85%] sm:max-w-[75%]' : 'max-w-lg sm:max-w-xl md:max-w-2xl'} rounded-2xl text-[13px] leading-snug msg-bubble group
+    {highlighted ? 'ring-2 ring-primary-500/70 shadow-lg' : ''}
     {msg.role === 'user'
       ? 'bg-primary-600 text-white rounded-br-md px-2 py-0.5'
       : 'bg-[var(--color-surface)] text-[var(--color-text)] border border-[var(--color-border)] rounded-bl-md px-3 py-1.5'}
