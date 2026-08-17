@@ -257,13 +257,13 @@ Module Description: %s
 Generate all necessary files as JSON: {"files":[{"path":"...","content":"..."}]}
 Ensure module.prop has ksu.supported=true and apatch.supported=true.
 All shell scripts: shebang + set -euo pipefail + security best practices.`, description)
-	return s.streamChatWithSystemForUser(ctx, systemPrompt, userPrompt, userID, sessionID, w)
+	return s.streamChatWithSystemForUser(ctx, systemPrompt, userPrompt, userID, sessionID, w, messages)
 }
 
 // GatherRequirements 需求收集
 func (s *AIService) GatherRequirements(ctx context.Context, message, userID string, messages []Message, sessionID string, w *bufio.Writer) error {
 	systemPrompt := s.loadPrompt("gather", userID)
-	return s.streamChatWithSystemForUser(ctx, systemPrompt, message, userID, sessionID, w)
+	return s.streamChatWithSystemForUser(ctx, systemPrompt, message, userID, sessionID, w, messages)
 }
 
 // Chat 通用 AI 对话
@@ -280,7 +280,7 @@ func (s *AIService) Chat(ctx context.Context, message, contextInfo, userID strin
 func (s *AIService) RepairBuild(ctx context.Context, buildLog, userID string, messages []Message, sessionID string, w *bufio.Writer) error {
 	systemPrompt := s.loadPrompt("repair", userID)
 	userPrompt := fmt.Sprintf("Analyze this build log and identify the failure:\n\n```\n%s\n```\n\nProvide diagnosis with specific fix instructions.", buildLog)
-	return s.streamChatWithSystemForUser(ctx, systemPrompt, userPrompt, userID, sessionID, w)
+	return s.streamChatWithSystemForUser(ctx, systemPrompt, userPrompt, userID, sessionID, w, messages)
 }
 
 // AutoBuild 自动构建 - 带phase事件的完整实现
