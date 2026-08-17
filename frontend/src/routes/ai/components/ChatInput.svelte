@@ -33,6 +33,45 @@
 
   let textareaEl: HTMLTextAreaElement | undefined = $state();
 
+  // 输入历史：↑ 恢复上一条发送内容，↓ 下一条（sessionStorage 持久化，跨刷新保留）
+  const HISTORY_KEY = 'moduforge_ai_input_history';
+  const MAX_HISTORY = 30;
+  let inputHistory = $state<string[]>([]);
+  let historyIndex = $state(-1);
+
+  onMount(() => {
+    try {
+      const raw = sessionStorage.getItem(HISTORY_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) inputHistory = parsed.filter((h: unknown) => typeof h === 'string');
+      }
+    } catch { /* ignore */ }
+    // Focus the input on load so the user can start typing right away
+    textareaEl?.focus();
+  });
+
+  function saveToHistory(text: string) {
+    const t = text.trim();
+    if (!t) return;
+    const next = [t, ...inputHistory.filter((h) => h !== t)].slice(0, MAX_HISTORY);
+    inputHistory = next;
+    try { sessionStorage.setItem(HISTORY_KEY, JSON.stringify(next)); } catch { /* ignore */ }
+  }
+
+  // 输入区高度自适应：内容多时自动增高（上限 200px 后滚动），发送清空后复位
+  const MAX_INPUT_HEIGHT = 200;
+  function autoResize(el: HTMLTextAreaElement | undefined) {
+    if (!el) return;
+    el.style.height = 'auto';
+    const h = Math.max(48, Math.min(el.scrollHeight, MAX_INPUT_HEIGHT));
+    el.style.height = h + 'px';
+    el.style.overflowY = el.scrollHeight > MAX_INPUT_HEIGHT ? 'auto' : 'hidden';
+  }
+  $effect(() => {
+    if (input === '') autoResize(textareaEl);
+  });
+
   // 统一的操作按钮样式：固定尺寸 + flex 居中，彻底解决图标与背景错位
   // (material symbols 图标字体 line-height 偏大，必须用 leading-none + flex 显式居中)
   const actionBtnClass =
@@ -42,15 +81,26 @@
   // material-symbols 全局类有 font-size:24px，用内联样式确保 20px + 行高 1（视觉居中）
   const iconStyle = 'font-size: 20px; line-height: 1;';
 
-  onMount(() => {
-    // Focus the input on load so the user can start typing right away
-    textareaEl?.focus();
-  });
-
   function handleKeydown(e: KeyboardEvent) {
-    if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey) {
+    if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.isComposing) {
       e.preventDefault();
+      if (input.trim()) saveToHistory(input);
       onSend?.();
+      return;
+    }
+    // ↑/↓ 浏览输入历史：↑ 仅在光标在行首或输入为空时触发，避免干扰多行编辑
+    if (e.key === 'ArrowUp' && inputHistory.length > 0 && !e.shiftKey && !e.altKey) {
+      const el = textareaEl;
+      const atStart = !el || el.selectionStart === 0;
+      if (input === '' || atStart) {
+        e.preventDefault();
+        historyIndex = Math.min(historyIndex + 1, inputHistory.length - 1);
+        onInputChange?.(inputHistory[historyIndex] ?? '');
+      }
+    } else if (e.key === 'ArrowDown' && historyIndex >= 0 && !e.shiftKey && !e.altKey) {
+      e.preventDefault();
+      historyIndex = historyIndex - 1;
+      onInputChange?.(historyIndex >= 0 ? inputHistory[historyIndex] : '');
     }
   }
 </script>
@@ -110,7 +160,7 @@
       style="min-height: 48px;"
       placeholder={mode === 'auto-build' ? '描述你想要创建的模块，AI 将自动完成开发全流程...' : mode === 'generate' ? '描述你的通用模块功能...' : mode === 'repair' ? '描述问题...' : mode === 'gather' ? '描述你的模块想法（如：我想做个电量管理模块）...' : '输入消息...'}
       value={input}
-      oninput={(e) => onInputChange?.((e.target as HTMLTextAreaElement).value)}
+      oninput={(e) => { onInputChange?.((e.target as HTMLTextAreaElement).value); autoResize(e.target as HTMLTextAreaElement); }}
       onkeydown={handleKeydown}
       bind:this={textareaEl}
     ></textarea>
@@ -131,7 +181,7 @@
     {/if}
   </div>
   <div class="flex items-center justify-between mt-1 px-0.5">
-    <span class="text-[9px] text-[var(--color-text-muted)] opacity-60">Enter 发送 · Shift+Enter 换行</span>
+    <span class="text-[9px] text-[var(--color-text-muted)] opacity-60">Enter 发送 · Shift+Enter 换行 · ↑ 历史</span>
     <span class="text-[9px] text-[var(--color-text-muted)] opacity-60" style="opacity: 0.45;">{input.length} 字符</span>
   </div>
 </div>

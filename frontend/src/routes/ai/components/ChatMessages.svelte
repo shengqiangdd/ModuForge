@@ -94,51 +94,72 @@
     const el = document.querySelector('.messages-area') as HTMLElement;
     if (el) requestAnimationFrame(() => { el.scrollTop = el.scrollHeight; });
   }
+
+  // 回到最新：用户上滚阅读历史时显示浮动按钮，点击一键回到底部并恢复跟随
+  function jumpToLatest() {
+    if (!containerEl) return;
+    stickToBottom = true;
+    containerEl.scrollTop = containerEl.scrollHeight;
+  }
 </script>
 
-<div class="flex-1 overflow-y-auto px-3 py-1.5 space-y-1.5 messages-area"
-  onscroll={handleScroll}
-  bind:this={containerEl}
-  bind:clientHeight={containerHeight}>
-  {#if hasMoreMessages}
-    <div class="flex justify-center py-2">
-      <button
-        class="text-xs px-3 py-1.5 rounded-full border border-[var(--color-border)] text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface)] transition-colors disabled:opacity-50"
-        onclick={() => onLoadEarlier()}
-        disabled={loadingEarlier}
-      >
-        {loadingEarlier ? '加载中...' : '加载更早消息'}
-      </button>
-    </div>
-  {/if}
-  {#if messages.length === 0}
-    <div class="flex items-center justify-center h-full">
-      <div class="text-center">
-        <div class="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4" style="background: var(--gradient-brand-subtle)">
-          <span class="material-symbols-outlined text-3xl" style="color: var(--color-primary)">psychology</span>
-        </div>
-        <p class="text-lg font-semibold text-[var(--color-text)]">AI 助手</p>
-        <p class="text-sm text-[var(--color-text-muted)] mt-1">开始对话，或者选择一种模式来生成模块、修复构建错误等</p>
+<div class="relative flex-1 min-h-0 flex flex-col">
+  <div class="flex-1 overflow-y-auto px-3 py-1.5 space-y-1.5 messages-area"
+    onscroll={handleScroll}
+    bind:this={containerEl}
+    bind:clientHeight={containerHeight}>
+    {#if hasMoreMessages}
+      <div class="flex justify-center py-2">
+        <button
+          class="text-xs px-3 py-1.5 rounded-full border border-[var(--color-border)] text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface)] transition-colors disabled:opacity-50"
+          onclick={() => onLoadEarlier()}
+          disabled={loadingEarlier}
+        >
+          {loadingEarlier ? '加载中...' : '加载更早消息'}
+        </button>
       </div>
-    </div>
-  {:else}
-    {#if virtualSpacerTop > 0}<div style="height:{virtualSpacerTop}px"></div>{/if}
-    {#each virtualMessages as msg, i (virtualStart + i + '-' + msg.role)}
-      {@const msgSteps = getStepsForRound(msg.round)}
-      <ChatMessage {msg} index={virtualStart + i} {mode} {streaming} {expandedReasoning} {messageUsages} {messageTimes}
-        showTypingCursor={streaming && virtualStart + i === messages.length - 1 && msg.role === 'assistant'}
-        agentSteps={msgSteps} {agentExpandedSteps} onToggleAgentStep={(idx) => onToggleAgentStep(idx)}
-        onToggleReasoning={(idx) => onToggleReasoning(idx)}
-        onEdit={(idx) => onEdit(idx)}
-        onDelete={(idx) => onDelete(idx)}
-        onReply={(idx) => onReply(idx)}
-        onCopy={(text) => onCopy(text)}
-        onOpenImportDialog={() => onOpenImportDialog()}
-        onOpenPreview={(files) => onOpenPreview(files)}
-        onInsertToInput={(text) => onInsertToInput(text)}
-      />
-    {/each}
-    {#if virtualSpacerBottom > 0}<div style="height:{virtualSpacerBottom}px"></div>{/if}
-    <div bind:this={chatEnd}></div>
+    {/if}
+    {#if messages.length === 0}
+      <div class="flex items-center justify-center h-full">
+        <div class="text-center">
+          <div class="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4" style="background: var(--gradient-brand-subtle)">
+            <span class="material-symbols-outlined text-3xl" style="color: var(--color-primary)">psychology</span>
+          </div>
+          <p class="text-lg font-semibold text-[var(--color-text)]">AI 助手</p>
+          <p class="text-sm text-[var(--color-text-muted)] mt-1">开始对话，或者选择一种模式来生成模块、修复构建错误等</p>
+        </div>
+      </div>
+    {:else}
+      {#if virtualSpacerTop > 0}<div style="height:{virtualSpacerTop}px"></div>{/if}
+      {#each virtualMessages as msg, i (virtualStart + i + '-' + msg.role)}
+        {@const msgSteps = getStepsForRound(msg.round)}
+        <ChatMessage {msg} index={virtualStart + i} {mode} {streaming} {expandedReasoning} {messageUsages} {messageTimes}
+          showTypingCursor={streaming && virtualStart + i === messages.length - 1 && msg.role === 'assistant'}
+          agentSteps={msgSteps} {agentExpandedSteps} onToggleAgentStep={(idx) => onToggleAgentStep(idx)}
+          onToggleReasoning={(idx) => onToggleReasoning(idx)}
+          onEdit={(idx) => onEdit(idx)}
+          onDelete={(idx) => onDelete(idx)}
+          onReply={(idx) => onReply(idx)}
+          onCopy={(text) => onCopy(text)}
+          onOpenImportDialog={() => onOpenImportDialog()}
+          onOpenPreview={(files) => onOpenPreview(files)}
+          onInsertToInput={(text) => onInsertToInput(text)}
+        />
+      {/each}
+      {#if virtualSpacerBottom > 0}<div style="height:{virtualSpacerBottom}px"></div>{/if}
+      <div bind:this={chatEnd}></div>
+    {/if}
+  </div>
+
+  {#if !stickToBottom && messages.length > 0}
+    <button
+      class="absolute bottom-4 right-4 z-10 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium shadow-lg backdrop-blur transition-all hover:scale-105 active:scale-95"
+      style="background: var(--color-bg-elevated); border: 1px solid var(--color-border); color: var(--color-text-secondary); box-shadow: 0 4px 16px rgba(0,0,0,0.15);"
+      onclick={jumpToLatest}
+      title="回到最新消息"
+    >
+      <span class="material-symbols-outlined text-[14px]" style="font-size: 14px; line-height: 1;">keyboard_arrow_down</span>
+      <span>回到最新</span>
+    </button>
   {/if}
 </div>
