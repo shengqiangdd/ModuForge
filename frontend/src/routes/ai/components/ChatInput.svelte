@@ -33,6 +33,15 @@
 
   let textareaEl: HTMLTextAreaElement | undefined = $state();
 
+  // 统一的操作按钮样式：固定尺寸 + flex 居中，彻底解决图标与背景错位
+  // (material symbols 图标字体 line-height 偏大，必须用 leading-none + flex 显式居中)
+  const actionBtnClass =
+    'w-9 h-9 p-0 rounded-xl flex items-center justify-center flex-shrink-0 select-none ' +
+    'transition-all active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50';
+  const iconClass = 'material-symbols-outlined pointer-events-none';
+  // material-symbols 全局类有 font-size:24px，用内联样式确保 20px + 行高 1（视觉居中）
+  const iconStyle = 'font-size: 20px; line-height: 1;';
+
   onMount(() => {
     // Focus the input on load so the user can start typing right away
     textareaEl?.focus();
@@ -83,13 +92,13 @@
   {/if}
   <div class="flex items-center gap-2 input-row">
     <button
-      class="p-1.5 rounded-lg transition-colors relative flex-shrink-0"
+      class="{actionBtnClass} relative"
       style="color: var(--color-text-secondary); background: var(--color-surface); border: 1px solid var(--color-border);"
       onclick={onOpenMcpTools}
       title="MCP 工具面板"
       aria-label="打开 MCP 工具面板"
     >
-      <span class="material-symbols-outlined text-[16px]">hub</span>
+      <span class="{iconClass}" style="{iconStyle}">hub</span>
       {#if mcpToolCount > 0}
         <span class="absolute -top-1 -right-1 text-[8px] font-bold px-1 py-0.5 rounded-full min-w-[14px] text-center"
               style="background: var(--color-success); color: white;">{mcpToolCount > 99 ? '99+' : mcpToolCount}</span>
@@ -106,12 +115,18 @@
       bind:this={textareaEl}
     ></textarea>
     {#if streaming}
-      <button class="p-1.5 rounded-lg transition-colors" onclick={onStop} style="background: var(--color-error-light); color: var(--color-error)" title="停止生成">
-        <span class="material-symbols-outlined text-[16px]">stop_circle</span>
+      <button class="{actionBtnClass}" onclick={onStop} style="background: var(--color-error-light); color: var(--color-error);" title="停止生成" aria-label="停止生成">
+        <span class="{iconClass}" style="{iconStyle}">stop_circle</span>
       </button>
     {:else}
-      <button class="p-1.5 rounded-lg bg-primary-600 text-white hover:bg-primary-700 transition-colors disabled:opacity-50" onclick={() => onSend?.()} disabled={!input.trim()} title="发送 (Enter)">
-        <span class="material-symbols-outlined text-[16px]">send</span>
+      <button
+        class="{actionBtnClass} bg-primary-600 text-white hover:bg-primary-700 disabled:opacity-40 disabled:cursor-not-allowed"
+        onclick={() => onSend?.()}
+        disabled={!input.trim()}
+        title="发送 (Enter)"
+        aria-label="发送"
+      >
+        <span class="{iconClass}" style="{iconStyle}">send</span>
       </button>
     {/if}
   </div>
