@@ -61,7 +61,19 @@ RUN mkdir -p /opt/android-ndk && cd /tmp \
     && rm -rf /opt/android-ndk/lib/liblldb.so \
     && rm -rf /opt/android-ndk/lib/x86_64-w64-windows-gnu \
     && rm -rf /tmp/ndk.zip /tmp/ndk_tmp \
-    && chmod -R 755 /opt/android-ndk
+    && chmod -R 755 /opt/android-ndk \
+    \
+    # --- NDK 瘦身：项目只编译 aarch64(arm64) / arm(armeabi-v7a) 两个目标 --- \
+    # 1) 删掉静态分析工具（编译不调用）clang-check / clang-tidy (~120MB) \
+    && rm -f /opt/android-ndk/bin/clang-check /opt/android-ndk/bin/clang-tidy \
+    # 2) 删掉非目标架构的 clang 运行时目录（i386/i686/x86_64/riscv64） \
+    && find /opt/android-ndk/lib/clang -maxdepth 4 -type d \( -name 'i386*' -o -name 'i686*' -o -name 'x86_64*' -o -name 'riscv64*' -o -name 'windows*' \) -exec rm -rf {} + 2>/dev/null || true \
+    # 3) 只保留链接必需的 libclang_rt.builtins-*，删 sanitizer/profile 等运行时 (~590MB) \
+    && find /opt/android-ndk/lib/clang/*/lib/linux -maxdepth 1 -type f ! -name 'libclang_rt.builtins-*' -delete 2>/dev/null || true \
+    # 4) 删 sysroot 里非目标架构的系统库 (riscv64/x86_64/i686, ~74MB) \
+    && rm -rf /opt/android-ndk/sysroot/usr/lib/riscv64-linux-android \
+             /opt/android-ndk/sysroot/usr/lib/x86_64-linux-android \
+             /opt/android-ndk/sysroot/usr/lib/i686-linux-android
 
 # --- Copy backend binary ---
 COPY --from=backend-builder --chown=moduforge:moduforge /server /app/server
