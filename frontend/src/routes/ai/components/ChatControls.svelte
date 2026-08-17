@@ -38,6 +38,8 @@
     onOpenPromptSettings,
     onOpenMDPrompts,
     onNavigate,
+    showSearch = false,
+    onToggleSearch,
   }: {
     providers?: Provider[];
     selectedProviderID?: string;

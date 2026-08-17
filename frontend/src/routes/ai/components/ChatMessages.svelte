@@ -92,7 +92,7 @@
   }
 
   // Exposed for parent to close search
-  export function closeSearchExternal() {
+  export function closeSearch() {
     closeSearch();
   }
 

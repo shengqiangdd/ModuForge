@@ -19,6 +19,8 @@ let {
   onOpenPromptSettings,
   onOpenMDPrompts,
   onNavigate,
+  showSearch = false,
+  onToggleSearch,
 }: {
   mode: Mode;
   streaming: boolean;
@@ -36,6 +38,8 @@ let {
   onOpenPromptSettings: () => void;
   onOpenMDPrompts: () => void;
   onNavigate?: (route: string) => void;
+  showSearch?: boolean;
+  onToggleSearch?: () => void;
 } = $props();
 </script>
 
