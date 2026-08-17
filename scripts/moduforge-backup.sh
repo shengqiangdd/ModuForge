@@ -5,6 +5,9 @@
 # crontab: 30 3 * * * /vol1/1000/docker/qwenpaw/data/backups/moduforge-backup.sh >> /vol1/1000/docker/qwenpaw/data/backups/moduforge-backup.log 2>&1
 set -e
 
+# 备份含完整数据库（用户消息、会话、token 密文）——仅所有者可读。
+umask 077
+
 SRC=/vol1/docker/volumes/moduforge_moduforge_data/_data/moduforge.db
 DEST=/vol1/1000/docker/qwenpaw/data/backups
 STAMP=$(date +%Y%m%d-%H%M%S)
@@ -16,6 +19,7 @@ if [ ! -f "$SRC" ]; then
 fi
 
 mkdir -p "$DEST"
+chmod 700 "$DEST" 2>/dev/null || true
 
 # sqlite3 .backup 走 SQLite backup API，WAL 模式下也能拿到一致快照
 sqlite3 "$SRC" ".backup '$OUT'"

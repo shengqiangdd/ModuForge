@@ -3,6 +3,9 @@
 # 部署位置: /vol1/1000/docker/qwenpaw/data/backups/moduforge-health-monitor.sh
 # crontab: */5 * * * * /vol1/1000/docker/qwenpaw/data/backups/moduforge-health-monitor.sh >> /vol1/1000/docker/qwenpaw/data/backups/moduforge-health-monitor.log 2>&1
 
+# 告警/状态文件含服务状态信息，仅所有者可读写。
+umask 077
+
 STATE_FILE=/vol1/1000/docker/qwenpaw/data/backups/.moduforge-health-failures
 ALERT_FILE=/vol1/1000/docker/qwenpaw/data/backups/moduforge-ALERT.txt
 FAILURES=0
