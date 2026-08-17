@@ -277,8 +277,12 @@
       {/if}
     {:else}
       {#if mode === 'agent' && msg.round !== undefined}
-        <div class="flex items-center gap-1 mb-1 opacity-60">
-          <span class="text-[9px] px-1 py-0.5 rounded" style="background: rgba(255,255,255,0.15);">轮次 {msg.round + 1}</span>
+        <div class="flex items-center gap-2 mb-2 mt-1">
+          <div class="flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium" style="background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.7);">
+            <span class="material-symbols-outlined" style="font-size: 10px; line-height: 1;">tag</span>
+            轮次 {msg.round + 1}
+          </div>
+          <div class="flex-1 h-px" style="background: rgba(255,255,255,0.1);"></div>
         </div>
       {/if}
       <div class="ai-markdown" role="article">{@html memoRenderMarkdown(msg.content)}</div>

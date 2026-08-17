@@ -78,5 +78,9 @@ let {
     <button class="flex-shrink-0 flex items-center justify-center p-1.5 rounded-lg text-[var(--color-text-secondary)] hover:bg-[var(--color-surface)] transition-all min-h-[32px]" onclick={onOpenMDPrompts} title="MD 提示词编辑器">
       <span class="material-symbols-outlined text-[16px]">code</span>
     </button>
+    <div class="w-px h-4 bg-[var(--color-border)] mx-0.5 flex-shrink-0"></div>
+    <button class="flex-shrink-0 flex items-center justify-center p-1.5 rounded-lg transition-all min-h-[32px] {showSearch ? 'bg-primary-500/10 text-primary-500' : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-surface)]'}" onclick={onToggleSearch} title="搜索会话">
+      <span class="material-symbols-outlined text-[16px]">search</span>
+    </button>
   </div>
 </div>

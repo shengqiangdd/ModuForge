@@ -94,4 +94,6 @@
   onOpenPromptSettings={() => onOpenPromptSettings?.()}
   onOpenMDPrompts={() => onOpenMDPrompts?.()}
   {onNavigate}
+  {showSearch}
+  onToggleSearch={() => onToggleSearch?.()}
 />

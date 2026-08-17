@@ -205,6 +205,7 @@ import { filterStepsByRound } from './lib/rounds';
   // Onboarding & shortcuts
   let showOnboarding = $state(false);
   let showShortcutPanel = $state(false);
+  let showSearch = $state(false);
   let onboardingDone = $state(false);
 
   // Generated files
@@ -989,6 +990,8 @@ import { filterStepsByRound } from './lib/rounds';
       onOpenPromptSettings={openPromptSettings}
       onOpenMDPrompts={() => showMDPrompts = true}
       {onNavigate}
+      {showSearch}
+      onToggleSearch={() => { showSearch = !showSearch; if (!showSearch) chatMessages?.closeSearch?.(); }}
     />
 
     <MetricsPanel inputPricePerM={selectedModel?.price_input_per_m || 0} outputPricePerM={selectedModel?.price_output_per_m || 0} />
@@ -1008,6 +1011,8 @@ import { filterStepsByRound } from './lib/rounds';
       onCopy={(text: string) => safeCopyText(text).then(ok => { if (ok) toast('已复制', 'success'); })}
       onOpenImportDialog={openImportDialog} onOpenPreview={(files: {path: string; content: string}[]) => openPreview(files)}
       onInsertToInput={(text: string) => input = text}
+      {showSearch}
+      onSearchClose={() => showSearch = false}
     />
 
     <GatherSpecCard show={showSpecCard} spec={gatheredSpec} onClose={() => showSpecCard = false} onGenerate={switchToGenerateWithSpec} />

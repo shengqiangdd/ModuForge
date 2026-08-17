@@ -24,6 +24,8 @@
     hasMoreMessages = false,
     loadingEarlier = false,
     onLoadEarlier = () => {},
+    showSearch = false,
+    onSearchClose = () => {},
   } = $props();
 
   // Helper: get steps for a specific message round
@@ -89,6 +91,11 @@
     stickToBottom = distanceToBottom < 120;
   }
 
+  // Exposed for parent to close search
+  export function closeSearchExternal() {
+    closeSearch();
+  }
+
   // Exposed for parent to call after sending a message
   export function scrollToBottom() {
     const el = document.querySelector('.messages-area') as HTMLElement;
@@ -104,6 +111,15 @@
 
   // ─── 会话内全文搜索（本地遍历 + 虚拟滚动定位跳转 + 短暂高亮）───
   let searchOpen = $state(false);
+  
+  // Sync external search toggle
+  $effect(() => {
+    if (showSearch && !searchOpen) {
+      searchOpen = true;
+    } else if (!showSearch && searchOpen) {
+      closeSearch();
+    }
+  });
   let searchQuery = $state('');
   let searchResults = $state<number[]>([]);
   let searchIdx = $state(-1);
@@ -156,19 +172,13 @@
     searchIdx = -1;
     highlightIdx = -1;
     if (highlightTimer) { clearTimeout(highlightTimer); highlightTimer = undefined; }
+    onSearchClose();
   }
 </script>
 
 <div class="relative flex-1 min-h-0 flex flex-col">
   {#if !searchOpen && messages.length > 0}
-    <button
-      class="absolute top-2 right-2 z-10 flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface)] border border-transparent hover:border-[var(--color-border)] transition-all"
-      onclick={() => searchOpen = true}
-      title="搜索此会话内容"
-    >
-      <span class="material-symbols-outlined text-[13px]" style="font-size: 13px; line-height: 1;">search</span>
-      <span>搜索</span>
-    </button>
+    <!-- Search button moved to CompactToolbar -->
   {/if}
   {#if searchOpen}
     <div class="px-3 py-2 border-b border-[var(--color-border)] flex items-center gap-2 bg-[var(--color-bg)] z-10 flex-shrink-0">
