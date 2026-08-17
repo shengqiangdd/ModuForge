@@ -28,6 +28,8 @@ services:
       - GIN_MODE=release
       # JWT_SECRET: 必须显式配置（在 .env 设置），留空时登录/认证不可用（GenerateJWT 拒绝空密钥）
       - JWT_SECRET=${JWT_SECRET:-}
+      # AI 月度成本上限（USD）：当月估算成本达到该值后拒绝新 AI 任务；0 = 不限制
+      - AI_MONTHLY_COST_LIMIT=${AI_MONTHLY_COST_LIMIT:-0}
       - MODUFORGE_DEV=0
       - TZ=Asia/Shanghai
       # MCP (Model Context Protocol) servers: JSON array passed via env.
@@ -95,7 +97,9 @@ services:
       - GITHUB_PERSONAL_ACCESS_TOKEN=${GITHUB_PAT:-}
       - GITHUB_MCP_LOG_LEVEL=info
     ports:
-      - "3333:3333"
+      # 仅宿主本机可访问，不暴露局域网（与 seaweedfs/pprof 端口策略一致）。
+      # moduforge 容器通过 compose 网络访问 github-mcp-server:3333，不受影响。
+      - "127.0.0.1:3333:3333"
 
 volumes:
   moduforge_data:

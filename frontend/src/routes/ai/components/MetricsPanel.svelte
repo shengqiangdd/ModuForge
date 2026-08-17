@@ -10,6 +10,7 @@
   let collapsed = $state(true);
   let metrics: any = $state(null);
   let daily: any[] = $state([]);
+  let monthlyCost: any = $state(null);
   let loading = $state(false);
 
   async function refresh() {
@@ -21,6 +22,7 @@
         const data = await res.json();
         metrics = data.metrics || {};
         daily = data.daily || [];
+        monthlyCost = data.monthly_cost || null;
       }
     } catch { /* silent */ }
     loading = false;
@@ -65,6 +67,13 @@
     return last.date === today ? (last.llm_call_count || 0) : 0;
   }
 
+  function fmtCost(v: number | undefined): string {
+    if (v == null || isNaN(v)) return '-';
+    if (v === 0) return '$0';
+    if (v < 0.01) return `$${v.toFixed(4)}`;
+    return `$${v.toFixed(2)}`;
+  }
+
   function maxDailyTokens(): number {
     let m = 0;
     for (const d of daily) m = Math.max(m, d.llm_token_usage || 0);
@@ -87,6 +96,17 @@
   </button>
   {#if !collapsed}
     <div class="metrics-body">
+      {#if monthlyCost && monthlyCost.limit_usd > 0}
+        <div class="monthly-cost {monthlyCost.exceeded ? 'danger' : ''}">
+          <span class="label">本月成本（{monthlyCost.month}）</span>
+          <span class="value">已用 {fmtCost(monthlyCost.estimated_cost)} / 上限 {fmtCost(monthlyCost.limit_usd)}</span>
+          {#if monthlyCost.exceeded}
+            <span class="over">⚠ 已达上限，新 AI 任务将被拒绝</span>
+          {:else}
+            <span class="ok">剩余 {fmtCost(Math.max(0, monthlyCost.limit_usd - (monthlyCost.estimated_cost || 0)))}</span>
+          {/if}
+        </div>
+      {/if}
       <div class="metric-grid">
         <div class="metric"><span class="label">LLM 调用</span><span class="value">{metrics?.llm_call_count ?? '-'}</span></div>
         <div class="metric"><span class="label">Token 用量</span><span class="value">{fmtTokens(metrics?.llm_token_usage)}</span></div>
@@ -145,6 +165,16 @@
   .value.err { color: #e5484d; }
   .value.retry { color: #f5a623; }
   .metrics-foot { display: flex; align-items: center; justify-content: space-between; margin-top: 8px; }
+  .monthly-cost {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    padding: 6px 10px; margin-bottom: 8px; border-radius: 8px;
+    background: rgba(59,130,246,0.08);
+    border: 1px solid rgba(59,130,246,0.25);
+    font-size: 12px;
+  }
+  .monthly-cost .over { color: #ef4444; font-weight: 600; }
+  .monthly-cost .ok { color: #22c55e; font-weight: 500; }
+  .monthly-cost.danger { background: rgba(239,68,68,0.1); border-color: rgba(239,68,68,0.4); }
   .hint { font-size: 10px; color: var(--color-text-muted, #888); }
   .refresh-btn {
     font-size: 11px; padding: 2px 10px; border-radius: 6px; cursor: pointer;

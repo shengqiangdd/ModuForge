@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/moduforge/backend/internal/agent"
 	"github.com/moduforge/backend/internal/config"
 	"github.com/moduforge/backend/internal/database"
 	"github.com/moduforge/backend/internal/llm"
@@ -38,10 +39,27 @@ type AIHandler struct {
 	memoryStore *service.MemoryStore
 	memV2       *service.MemoryV2Store
 	fr          *service.FileContentRepo // S3-first content access (optional)
+	// Runner (optional) used for monthly AI cost-cap checks in chat/generate.
+	runner *agent.AgentRunner
 }
 
 func NewAIHandler(svc *service.AIService, cfg *config.Config, db *database.DB) *AIHandler {
 	return &AIHandler{svc: svc, cfg: cfg, db: db, memV2: service.NewMemoryV2Store(db.Conn)}
+}
+
+// SetRunner injects the AgentRunner for monthly cost-cap enforcement.
+func (h *AIHandler) SetRunner(r *agent.AgentRunner) {
+	h.runner = r
+}
+
+// costCapExceeded returns the monthly cost info and whether the cap is hit.
+func (h *AIHandler) costCapExceeded(uid, modelID string) (*agent.MonthlyCostInfo, bool) {
+	if h.runner == nil {
+		return nil, false
+	}
+	pi, po := agent.ModelPricer(modelID)
+	info := h.runner.CalcMonthlyCostInfo(uid, pi, po)
+	return &info, info.Exceeded
 }
 
 func (h *AIHandler) SetMemoryStore(ms *service.MemoryStore) {
@@ -146,6 +164,11 @@ func (h *AIHandler) GenerateModule(c fiber.Ctx) error {
 	}
 
 	uid, _ := c.Locals("uid").(string)
+
+	// Monthly AI cost cap guard (generation mode).
+	if info, exceeded := h.costCapExceeded(uid, req.Model); exceeded {
+		return BadRequest(c, fmt.Sprintf("本月 AI 成本已达上限（$%.2f / $%.2f），请调整 AI_MONTHLY_COST_LIMIT 或下月再试", info.EstimatedCost, info.LimitUSD))
+	}
 
 	// Merge project context into description if available
 	description := req.Description
@@ -280,6 +303,11 @@ func (h *AIHandler) Chat(c fiber.Ctx) error {
 	}
 
 	uid, _ := c.Locals("uid").(string)
+
+	// Monthly AI cost cap guard (chat mode).
+	if info, exceeded := h.costCapExceeded(uid, req.Model); exceeded {
+		return BadRequest(c, fmt.Sprintf("本月 AI 成本已达上限（$%.2f / $%.2f），请调整 AI_MONTHLY_COST_LIMIT 或下月再试", info.EstimatedCost, info.LimitUSD))
+	}
 
 	// Merge project context: manual context takes precedence
 	contextInfo := req.Context

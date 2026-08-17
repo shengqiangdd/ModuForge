@@ -551,6 +551,8 @@ func RegisterRoutes(api fiber.Router, db *database.DB, cfg *config.Config) {
 
 	// Agent
 	agentH := NewAgentHandler(cfg, db)
+	// Share the runner's monthly cost-cap checker with the AI chat/generate handlers.
+	aiH.SetRunner(agentH.GetRunner())
 	r("POST", "/agent/run", agentH.Run)
 	r("GET", "/agent/skills", agentH.ListSkills)
 	r("GET", "/agent/mcp/status", agentH.ListMCPStatus)

@@ -129,6 +129,7 @@ func NewAgentHandler(cfg *config.Config, db *database.DB) *AgentHandler {
 	)
 	runner.SetMemoryStore(memStore)
 	runner.SetFileHashCache(fileHashCache)
+	runner.SetMonthlyCostLimit(cfg.MonthlyCostLimit)
 
 	return &AgentHandler{
 		runner: runner,
@@ -153,6 +154,12 @@ func (h *AgentHandler) GetCacheStats(c fiber.Ctx) error {
 		"status": "ok",
 		"caches": stats,
 	})
+}
+
+// GetRunner exposes the underlying AgentRunner so other handlers can share
+// its services (e.g. monthly cost cap for AI chat/generate).
+func (h *AgentHandler) GetRunner() *agent.AgentRunner {
+	return h.runner
 }
 
 func (h *AgentHandler) Run(c fiber.Ctx) error {
@@ -180,6 +187,14 @@ func (h *AgentHandler) Run(c fiber.Ctx) error {
 
 	uid, _ := c.Locals("uid").(string)
 	slog.Info("Agent.Run", "task_len", len(req.Task), "session_id", req.SessionID, "uid", uid, "project_id", req.ProjectID)
+
+	// Monthly AI cost cap: reject new tasks once the estimated cost for the
+	// current month reaches the configured limit (AI_MONTHLY_COST_LIMIT, USD).
+	// Free models (price 0) never trip this; only paid models accumulate cost.
+	if pi, po := agent.ModelPricer(req.Model); h.runner.MonthlyCostExceeded(uid, pi, po) {
+		info := h.runner.CalcMonthlyCostInfo(uid, pi, po)
+		return BadRequest(c, fmt.Sprintf("本月 AI 成本已达上限（$%.2f / $%.2f），请调整 AI_MONTHLY_COST_LIMIT 或下月再试", info.EstimatedCost, info.LimitUSD))
+	}
 
 	// Server-wide concurrency guard. Wait for a slot instead of rejecting:
 	// Agent runs are long-lived (up to ~30 LLM rounds), so a 503 would
@@ -1157,9 +1172,15 @@ func (h *AgentHandler) GetToolStats(c fiber.Ctx) error {
 // plus daily usage history (from ai_usage_daily) for the observability UI.
 func (h *AgentHandler) GetAgentMetrics(c fiber.Ctx) error {
 	uid, _ := c.Locals("uid").(string)
+	// Free models resolve to price 0 and never accumulate cost, so this is
+	// safe for the built-in catalog as well as custom endpoints (unknown ->
+	// price 0, conservative for the cap).
+	pi, po := agent.ModelPricer(h.cfg.LLMModelID)
+	costInfo := h.runner.CalcMonthlyCostInfo(uid, pi, po)
 	return c.JSON(fiber.Map{
-		"metrics": h.runner.GetPerfMetrics(),
-		"daily":   h.runner.GetDailyUsage(30, uid),
+		"metrics":      h.runner.GetPerfMetrics(),
+		"daily":        h.runner.GetDailyUsage(30, uid),
+		"monthly_cost": costInfo,
 	})
 }
 

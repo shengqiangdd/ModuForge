@@ -40,6 +40,7 @@ type Config struct {
 	RateLimitPublic  float64 // 公共路由限流 (req/min)
 	RateLimitAuth    float64 // 认证路由限流 (req/min)
 	RateLimitAI      float64 // AI 路由限流 (req/min)
+	MonthlyCostLimit float64 // AI 月度成本上限 (USD)，0 = 不限制
 }
 
 func (c *Config) Lock()    { c.mu.Lock() }
@@ -82,6 +83,9 @@ func Load() *Config {
 		// - 仍保留抗滥用能力（60/min 对单用户足够，对脚本压力仍有限制）。
 		// 通过环境变量 RATE_LIMIT_AI 可进一步调整。
 		RateLimitAI: getEnvFloat("RATE_LIMIT_AI", 60),
+		// AI 月度成本上限（USD）：当月估算成本超过该值后拒绝新任务。
+		// 默认 0 = 不限制成本（避免意外拦截）。按当前模型单价 × 当月 token 估算。
+		MonthlyCostLimit: getEnvFloat("AI_MONTHLY_COST_LIMIT", 0),
 	}
 }
 

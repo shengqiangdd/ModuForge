@@ -144,6 +144,9 @@ type AgentRunner struct {
 	memoryStore *service.MemoryStore
 	memV2Store  *service.MemoryV2Store
 
+	// Monthly AI cost cap (USD, 0 = unlimited). Set from app config at construction.
+	monthlyCostLimit float64
+
 	// Optimization 13: Tool definition cache (avoids rebuilding every iteration)
 	toolDefCache   map[string][]ToolDef // key: mode+":"+modelName -> cached defs
 	toolDefCacheMu sync.RWMutex
