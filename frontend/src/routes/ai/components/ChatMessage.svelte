@@ -13,6 +13,7 @@
     content: string;
     round?: number;
     reasoning?: string;
+    created_at?: string;
   };
 
   type Segment = { type: 'text'; content: string } | { type: 'code'; language: string; content: string };
@@ -59,6 +60,7 @@
     onHandleMsgClick,
     messageUsages = new Map<number, TokenUsage>(),
     messageTimes = new Map<number, number>(),
+    showTypingCursor = false,
   }: {
     msg: Message;
     index: number;
@@ -98,11 +100,25 @@
     onHandleMsgClick?: (msg: Message) => void;
     messageUsages?: Map<number, TokenUsage>;
     messageTimes?: Map<number, number>;
+    showTypingCursor?: boolean;
   } = $props();
 
   let isEditing = $derived(editingMessageIdx === index);
   let usage = $derived(messageUsages.get(index));
   let respTime = $derived(messageTimes.get(index));
+  let relTime = $derived(formatRelativeTime(msg.created_at));
+
+  function formatRelativeTime(ts?: string): string {
+    if (!ts) return '';
+    const t = new Date(ts).getTime();
+    if (isNaN(t)) return '';
+    const diff = Date.now() - t;
+    if (diff < 0) return '';
+    if (diff < 60_000) return '刚刚';
+    if (diff < 3600_000) return Math.floor(diff / 60_000) + ' 分钟前';
+    if (diff < 86_400_000) return Math.floor(diff / 3600_000) + ' 小时前';
+    return new Date(t).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' });
+  }
 
   function handleCopy(text: string) {
     onCopy?.(text);
@@ -125,6 +141,9 @@
         <span class="text-xs font-medium text-primary-600">AI</span>
         {#if selectedModel}
           <span class="text-[9px] px-1 py-0.5 rounded text-[var(--color-text-muted)]" style="background: var(--color-surface); border: 1px solid var(--color-border);">{selectedModel.name}</span>
+        {/if}
+        {#if relTime}
+          <span class="text-[9px] text-[var(--color-text-muted)]" title={msg.created_at ? new Date(msg.created_at).toLocaleString('zh-CN') : ''}>{relTime}</span>
         {/if}
         <button
           class="ml-auto p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-[var(--color-surface)] transition-all"
@@ -208,6 +227,9 @@
               </div>
             {/if}
           {/each}
+          {#if showTypingCursor}
+            <span class="typing-cursor" aria-hidden="true"></span>
+          {/if}
         </div>
         {@const _files = memoExtractFiles(msg.content)}
         {#if _files}
@@ -306,3 +328,20 @@
     </div>
   </div>
 </div>
+
+<style>
+  .typing-cursor {
+    display: inline-block;
+    width: 7px;
+    height: 14px;
+    margin-left: 2px;
+    vertical-align: text-bottom;
+    border-radius: 1px;
+    background: var(--color-primary);
+    animation: typing-blink 1s steps(2, start) infinite;
+  }
+  @keyframes typing-blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
+  }
+</style>

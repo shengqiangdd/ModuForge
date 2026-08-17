@@ -37,7 +37,6 @@
   let containerHeight = $state(0);
   let containerEl: HTMLDivElement | undefined = $state();
   let chatEnd: HTMLDivElement | undefined = $state();
-  let lastMsgCount = $state(0);
 
   const ITEM_HEIGHT = 80;
   const OVERSCAN = 5;
@@ -47,10 +46,14 @@
   let virtualSpacerTop = $derived(virtualStart * ITEM_HEIGHT);
   let virtualSpacerBottom = $derived((messages.length - virtualEnd) * ITEM_HEIGHT);
 
-  // Auto-scroll when new messages are added
+  // Auto-scroll when new messages are added — but only follow when the user
+  // is already near the bottom (don't yank them away while reading history).
+  let stickToBottom = $state(true);
+  let lastMsgCount = $state(0);
+
   $effect(() => {
     const count = messages.length;
-    if (count > lastMsgCount && containerEl) {
+    if (count > lastMsgCount && containerEl && stickToBottom) {
       lastMsgCount = count;
       requestAnimationFrame(() => {
         if (containerEl) {
@@ -61,6 +64,31 @@
     lastMsgCount = count;
   });
 
+  // Keep following while streaming if the user hasn't scrolled away
+  let wasStreaming = $state(false);
+  $effect(() => {
+    if (streaming && !wasStreaming) stickToBottom = true; // new stream starts → follow
+    wasStreaming = streaming;
+  });
+  $effect(() => {
+    const last = messages[messages.length - 1];
+    if (streaming && stickToBottom && containerEl && last) {
+      void last.content; // track streaming content changes to keep scrolling
+      requestAnimationFrame(() => {
+        if (containerEl) {
+          containerEl.scrollTop = containerEl.scrollHeight;
+        }
+      });
+    }
+  });
+
+  function handleScroll(e: Event) {
+    const el = e.currentTarget as HTMLElement;
+    scrollTop = el.scrollTop;
+    const distanceToBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    stickToBottom = distanceToBottom < 120;
+  }
+
   // Exposed for parent to call after sending a message
   export function scrollToBottom() {
     const el = document.querySelector('.messages-area') as HTMLElement;
@@ -69,7 +97,7 @@
 </script>
 
 <div class="flex-1 overflow-y-auto px-3 py-1.5 space-y-1.5 messages-area"
-  onscroll={(e) => { scrollTop = e.currentTarget.scrollTop; }}
+  onscroll={handleScroll}
   bind:this={containerEl}
   bind:clientHeight={containerHeight}>
   {#if hasMoreMessages}
@@ -98,6 +126,7 @@
     {#each virtualMessages as msg, i (virtualStart + i + '-' + msg.role)}
       {@const msgSteps = getStepsForRound(msg.round)}
       <ChatMessage {msg} index={virtualStart + i} {mode} {streaming} {expandedReasoning} {messageUsages} {messageTimes}
+        showTypingCursor={streaming && virtualStart + i === messages.length - 1 && msg.role === 'assistant'}
         agentSteps={msgSteps} {agentExpandedSteps} onToggleAgentStep={(idx) => onToggleAgentStep(idx)}
         onToggleReasoning={(idx) => onToggleReasoning(idx)}
         onEdit={(idx) => onEdit(idx)}

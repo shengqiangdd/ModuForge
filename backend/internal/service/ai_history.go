@@ -439,6 +439,27 @@ func SaveConversation(db *sql.DB, userID, id, title, mode string, messages []Mes
 	return id, err
 }
 
+// RenameSession updates a saved conversation's title, creating a stub record
+// when the session only exists in conversation_messages (no ai_conversations row).
+func RenameSession(db *sql.DB, sessionID, userID, title string) error {
+	res, err := db.Exec(
+		`UPDATE ai_conversations SET title=?, updated_at=datetime('now') WHERE id=? AND user_id=?`,
+		title, sessionID, userID,
+	)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n > 0 {
+		return nil
+	}
+	_, err = db.Exec(
+		`INSERT OR IGNORE INTO ai_conversations (id, user_id, title, mode, messages, updated_at)
+		 VALUES (?, ?, ?, '', '[]', datetime('now'))`,
+		sessionID, userID, title,
+	)
+	return err
+}
+
 func ListConversations(db *sql.DB, userID string) ([]ConversationSummary, error) {
 	rows, err := db.Query(
 		`SELECT id, title, mode, model, COALESCE(project_id, ''), json_array_length(messages), created_at, updated_at

@@ -50,6 +50,7 @@
     onSelectSession,
     onDeleteSession,
     onExportSession,
+    onRenameSession,
     onDeleteConversation,
     onRestoreHistory,
     onClearHistory,
@@ -76,6 +77,7 @@
     onSelectSession?: (sessionId: string) => void;
     onDeleteSession?: (sessionId: string) => void;
     onExportSession?: (sessionId: string, format: 'markdown' | 'json') => void;
+    onRenameSession?: (sessionId: string, title: string) => void;
     onDeleteConversation?: (id: string) => void;
     onRestoreHistory?: (item: GenHistoryItem) => void;
     onClearHistory?: () => void;
@@ -85,6 +87,19 @@
   } = $props();
 
   let searchQuery = $state('');
+  let renamingId = $state('');
+  let renameValue = $state('');
+
+  function startRename(sess: SessionInfo) {
+    renamingId = sess.session_id;
+    renameValue = sess.title || '';
+  }
+  function commitRename(sessionId: string) {
+    const title = renameValue.trim();
+    if (title) onRenameSession?.(sessionId, title);
+    renamingId = '';
+    renameValue = '';
+  }
 
   function formatTokens(t: number): string {
     if (t >= 1_000_000) return `${(t / 1_000_000).toFixed(1)}M`;
@@ -203,6 +218,25 @@
               {#each sessions as sess (sess.session_id)}
                 <div class="px-2 py-1.5 rounded-lg transition-colors hover:bg-[var(--color-surface)] group {activeSessionId === sess.session_id ? 'bg-primary-500/5' : ''}">
                   <div class="flex items-center gap-1.5">
+                    {#if renamingId === sess.session_id}
+                      <div class="flex-1 min-w-0 flex items-center gap-1">
+                        <input
+                          class="flex-1 min-w-0 px-1.5 py-0.5 rounded text-xs border border-[var(--color-border)] bg-[var(--color-bg)] text-[var(--color-text)] outline-none focus:border-primary-500"
+                          value={renameValue}
+                          placeholder="输入新标题"
+                          maxlength="100"
+                          oninput={(e) => renameValue = (e.target as HTMLInputElement).value}
+                          onkeydown={(e) => { if (e.key === 'Enter') commitRename(sess.session_id); if (e.key === 'Escape') { renamingId = ''; } }}
+                          autofocus
+                        />
+                        <button class="p-0.5 rounded hover:bg-[var(--color-surface)]" onclick={() => commitRename(sess.session_id)} title="保存">
+                          <span class="material-symbols-outlined text-[13px] text-[var(--color-success)]">check</span>
+                        </button>
+                        <button class="p-0.5 rounded hover:bg-[var(--color-surface)]" onclick={() => { renamingId = ''; }} title="取消">
+                          <span class="material-symbols-outlined text-[13px] text-[var(--color-text-muted)]">close</span>
+                        </button>
+                      </div>
+                    {:else}
                     <button class="flex-1 text-left min-w-0" onclick={() => onSelectSession?.(sess.session_id)}>
                       <span class="text-xs font-medium text-[var(--color-text)] truncate block">{sess.title || '会话 ' + sess.session_id.slice(0, 8) + '...'}</span>
                       <div class="flex items-center gap-1.5 mt-0.5 flex-wrap">
@@ -216,14 +250,21 @@
                         <span class="text-[10px] text-[var(--color-text-muted)]">{new Date(sess.last_at).toLocaleString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
                       </div>
                     </button>
-                    <div class="flex flex-col gap-0.5 opacity-0 group-hover:opacity-100 transition-all">
+                    <div class="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-all flex-shrink-0">
+                      <button class="p-0.5 rounded hover:bg-[var(--color-surface)]" onclick={() => startRename(sess)} title="重命名">
+                        <span class="material-symbols-outlined text-[12px] text-[var(--color-text-muted)]">edit</span>
+                      </button>
                       <button class="p-0.5 rounded hover:bg-[var(--color-surface)]" onclick={() => onExportSession?.(sess.session_id, 'markdown')} title="导出 Markdown">
                         <span class="material-symbols-outlined text-[12px] text-[var(--color-text-muted)]">download</span>
+                      </button>
+                      <button class="p-0.5 rounded hover:bg-[var(--color-surface)]" onclick={() => onExportSession?.(sess.session_id, 'json')} title="导出 JSON">
+                        <span class="material-symbols-outlined text-[12px] text-[var(--color-text-muted)]">data_object</span>
                       </button>
                       <button class="p-0.5 rounded hover:bg-[var(--color-surface)]" onclick={() => onDeleteSession?.(sess.session_id)} title="删除">
                         <span class="material-symbols-outlined text-[12px] text-red-500">delete</span>
                       </button>
                     </div>
+                    {/if}
                   </div>
                 </div>
               {/each}

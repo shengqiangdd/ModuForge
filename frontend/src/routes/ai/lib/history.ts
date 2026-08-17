@@ -106,6 +106,17 @@ export async function deleteSessionById(targetSessionId: string): Promise<boolea
   } catch { return false; }
 }
 
+export async function renameSessionById(targetSessionId: string, title: string): Promise<boolean> {
+  try {
+    const res = await authFetch(`/api/v1/ai/sessions/${targetSessionId}/title`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title }),
+    });
+    return res.ok;
+  } catch { return false; }
+}
+
 export async function exportSessionById(targetSessionId: string, format: 'markdown' | 'json' = 'markdown'): Promise<boolean> {
   try {
     const res = await authFetch(`/api/v1/ai/sessions/${targetSessionId}/export?format=${format}`);

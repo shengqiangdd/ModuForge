@@ -15,13 +15,15 @@ func TestPersistDailyUsage(t *testing.T) {
 	}
 	defer db.Close()
 	if _, err := db.Exec(`CREATE TABLE ai_usage_daily (
-		date TEXT PRIMARY KEY,
+		date TEXT NOT NULL,
+		user_id TEXT NOT NULL DEFAULT '',
 		llm_call_count INTEGER DEFAULT 0,
 		llm_token_usage INTEGER DEFAULT 0,
 		tool_call_count INTEGER DEFAULT 0,
 		error_count INTEGER DEFAULT 0,
 		retry_count INTEGER DEFAULT 0,
-		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		PRIMARY KEY (date, user_id)
 	)`); err != nil {
 		t.Fatal(err)
 	}
@@ -67,7 +69,7 @@ func TestPersistDailyUsage(t *testing.T) {
 	}
 
 	// GetDailyUsage returns the row (ascending order)
-	days := r.GetDailyUsage(10)
+	days := r.GetDailyUsage(10, "test-user")
 	if len(days) != 1 || days[0]["date"] != today || days[0]["llm_token_usage"].(int64) != 7500 {
 		t.Fatalf("GetDailyUsage = %+v, want 1 row with 7500 tokens", days)
 	}

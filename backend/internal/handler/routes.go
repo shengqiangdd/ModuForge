@@ -639,6 +639,7 @@ func RegisterRoutes(api fiber.Router, db *database.DB, cfg *config.Config) {
 	r("GET", "/ai/sessions", aiH.ListSessions)
 	r("GET", "/ai/sessions/:session_id/messages", aiH.GetSessionMessages)
 	r("DELETE", "/ai/sessions/:session_id", aiH.DeleteSession)
+	r("PUT", "/ai/sessions/:session_id/title", aiH.RenameSession)
 	r("GET", "/ai/sessions/:session_id/export", aiH.ExportSession)
 	r("GET", "/ai/sessions/search", aiH.SearchSessions)
 	r("POST", "/ai/diff", aiH.ComputeDiff)

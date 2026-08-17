@@ -1104,6 +1104,32 @@ func (h *AIHandler) DeleteSession(c fiber.Ctx) error {
 
 // ---------- Session Export ----------
 
+func (h *AIHandler) RenameSession(c fiber.Ctx) error {
+	uid, _ := c.Locals("uid").(string)
+	if uid == "" {
+		return Unauthorized(c, "authentication required")
+	}
+	sessionID := c.Params("session_id")
+	var req struct {
+		Title string `json:"title"`
+	}
+	if err := json.Unmarshal(c.Body(), &req); err != nil {
+		return BadRequest(c, "invalid request body")
+	}
+	req.Title = strings.TrimSpace(req.Title)
+	if req.Title == "" {
+		return BadRequest(c, "title is required")
+	}
+	if len([]rune(req.Title)) > 100 {
+		return BadRequest(c, "title too long (max 100 chars)")
+	}
+	if err := service.RenameSession(h.db.Conn, sessionID, uid, req.Title); err != nil {
+		slog.Error("RenameSession", "error", err)
+		return InternalError(c, "failed to rename session")
+	}
+	return c.JSON(fiber.Map{"ok": true})
+}
+
 func (h *AIHandler) ExportSession(c fiber.Ctx) error {
 	uid, _ := c.Locals("uid").(string)
 	if uid == "" {

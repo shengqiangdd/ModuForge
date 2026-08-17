@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
+
   let {
     input = '',
     streaming = false,
@@ -28,6 +30,13 @@
     onInputChange?: (value: string) => void;
     onOpenMcpTools?: () => void;
   } = $props();
+
+  let textareaEl: HTMLTextAreaElement | undefined = $state();
+
+  onMount(() => {
+    // Focus the input on load so the user can start typing right away
+    textareaEl?.focus();
+  });
 
   function handleKeydown(e: KeyboardEvent) {
     if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey) {
@@ -94,15 +103,20 @@
       value={input}
       oninput={(e) => onInputChange?.((e.target as HTMLTextAreaElement).value)}
       onkeydown={handleKeydown}
+      bind:this={textareaEl}
     ></textarea>
     {#if streaming}
-      <button class="p-1.5 rounded-lg transition-colors" onclick={onStop} style="background: var(--color-error-light); color: var(--color-error)">
+      <button class="p-1.5 rounded-lg transition-colors" onclick={onStop} style="background: var(--color-error-light); color: var(--color-error)" title="停止生成">
         <span class="material-symbols-outlined text-[16px]">stop_circle</span>
       </button>
     {:else}
-      <button class="p-1.5 rounded-lg bg-primary-600 text-white hover:bg-primary-700 transition-colors disabled:opacity-50" onclick={() => onSend?.()} disabled={!input.trim()}>
+      <button class="p-1.5 rounded-lg bg-primary-600 text-white hover:bg-primary-700 transition-colors disabled:opacity-50" onclick={() => onSend?.()} disabled={!input.trim()} title="发送 (Enter)">
         <span class="material-symbols-outlined text-[16px]">send</span>
       </button>
     {/if}
+  </div>
+  <div class="flex items-center justify-between mt-1 px-0.5">
+    <span class="text-[9px] text-[var(--color-text-muted)] opacity-60">Enter 发送 · Shift+Enter 换行</span>
+    <span class="text-[9px] text-[var(--color-text-muted)] opacity-60" style="opacity: 0.45;">{input.length} 字符</span>
   </div>
 </div>

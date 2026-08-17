@@ -53,7 +53,7 @@ import {
   loadGenHistory as loadGenHistoryFromStorage, saveGenHistory as saveGenHistoryToStorage,
   addGenHistory as createGenHistoryItem, fetchConversations,
   fetchConversation, deleteConversationById, saveConversationToBackend,
-  loadSessionsList, deleteSessionById, exportSessionById,
+  loadSessionsList, deleteSessionById, exportSessionById, renameSessionById,
   fetchSessionMessages, exportConversationToFile, searchSessions,
   fetchProjectFiles, fetchProjectList, deployToAdb
 } from './lib/history';
@@ -560,10 +560,18 @@ import { filterStepsByRound } from './lib/rounds';
     } else { toast('删除失败', 'error'); }
   }
 
-  async function exportSession(targetSessionId: string) {
-    const ok = await exportSessionById(targetSessionId);
-    if (ok) toast('导出成功', 'success');
+  async function exportSession(targetSessionId: string, format: 'markdown' | 'json' = 'markdown') {
+    const ok = await exportSessionById(targetSessionId, format);
+    if (ok) toast(format === 'json' ? '已导出 JSON' : '导出成功', 'success');
     else toast('导出失败', 'error');
+  }
+
+  async function renameSession(targetSessionId: string, title: string) {
+    const ok = await renameSessionById(targetSessionId, title);
+    if (ok) {
+      toast('已重命名', 'success');
+      loadSessions();
+    } else { toast('重命名失败', 'error'); }
   }
 
   async function loadSessionMessages(sessId: string) {
@@ -952,7 +960,7 @@ import { filterStepsByRound } from './lib/rounds';
       onClose={() => showHistorySidebar = false} onTabChange={(t) => historyTab = t}
       onSearch={(q) => { if (!q) { searchResults = []; return; } searchSessions(q).then(r => searchResults = r); }}
       onSelectConversation={loadConversation} onSelectSession={loadSessionMessages}
-      onDeleteSession={deleteSession} onExportSession={exportSession}
+      onDeleteSession={deleteSession} onExportSession={exportSession} onRenameSession={renameSession}
       onDeleteConversation={deleteConversation}
       onRestoreHistory={(item) => { if (item.messages && item.messages.length > 0) { messages = item.messages.map((m: any) => ({ role: m.role, content: m.content })); activeSessionId = ''; sessionId = generateUUID(); streaming = false; currentStepIndex = -1; progressStepDetails = []; expandedReasoning = new Set(); agentSteps = []; allAgentSteps = []; selectedRound = -1; maxRoundIndex = 0; subtasks = []; if (item.mode && modes.some((m: any) => m.value === item.mode)) mode = item.mode as Mode; showHistorySidebar = false; toast('已加载生成记录', 'success'); } }}
       onClearHistory={() => { genHistory = []; localStorage.removeItem('moduforge_ai_history'); }}
