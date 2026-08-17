@@ -50,3 +50,34 @@ describe('renderMarkdown', () => {
     expect(result).toContain('<a href="http://example.com"');
   });
 });
+  it('escapes quotes in links to prevent attribute injection', () => {
+    const result = renderMarkdown('[x](" onmouseover="alert(1))');
+    // Dangerous URL is stripped entirely (link becomes plain text).
+    expect(result).not.toContain('onmouseover=');
+    expect(result).not.toContain('href=');
+  });
+
+  it('strips javascript: links', () => {
+    const result = renderMarkdown('[click](javascript:alert(1))');
+    expect(result).not.toContain('href=');
+    expect(result).toContain('click');
+  });
+
+  it('strips data: links', () => {
+    const result = renderMarkdown('[img](data:text/html;base64,PHNjcmlwdD4=)');
+    expect(result).not.toContain('href=');
+  });
+
+  it('allows http, https, mailto and relative links', () => {
+    expect(renderMarkdown('[a](https://x.com)')).toContain('href="https://x.com"');
+    expect(renderMarkdown('[a](http://x.com)')).toContain('href="http://x.com"');
+    expect(renderMarkdown('[a](mailto:a@b.com)')).toContain('href="mailto:a@b.com"');
+    expect(renderMarkdown('[a](/local/path)')).toContain('href="/local/path"');
+  });
+
+  it('escapes quotes in raw HTML input', () => {
+    const result = renderMarkdown('<img src=x onerror=alert(1)>');
+    // Fully escaped: the tag is rendered as plain text, never as an element.
+    expect(result).not.toContain('<img');
+    expect(result).toContain('&lt;img');
+  });

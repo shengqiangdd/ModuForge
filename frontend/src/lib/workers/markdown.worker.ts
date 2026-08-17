@@ -15,7 +15,15 @@ interface RenderResponse {
 function renderMarkdown(text: string): string {
   // 1. Extract code blocks first to protect them
   const codeBlocks: string[] = [];
-  const escapeHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  // Quotes are escaped too to prevent attribute injection (e.g. a language
+  // name or link URL containing `"` breaking out of an attribute).
+  const escapeHtml = (s: string) =>
+    s
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
   let html = text.replace(/```(\w*)\n?([\s\S]*?)```/g, (_m, lang, code) => {
     codeBlocks.push(`<div class="code-block-wrapper relative group"><div class="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-medium" style="background: #181825; color: #a6adc8; border-bottom: 1px solid #313244;"><span class="material-symbols-outlined text-[12px]">code</span>${escapeHtml(lang || 'code')}<div class="ml-auto"><button class="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] transition-colors hover:bg-white/10" style="color: #a6adc8;" onclick="copyCode(this)"><span class="material-symbols-outlined text-[12px]">content_copy</span></button></div></div><pre class="code-block"><code class="language-${escapeHtml(lang)}">${escapeHtml(code)}</code></pre></div>`);
     return `\x00CB${codeBlocks.length - 1}\x00`;
@@ -36,7 +44,10 @@ function renderMarkdown(text: string): string {
     if (/^(javascript|data|vbscript):/i.test(url.trim())) {
       return text; // strip dangerous links, show text only
     }
-    return `<a href="${url}" target="_blank" rel="noopener noreferrer" class="ai-link">${text}</a>`;
+    // Quote-escape the URL so it cannot break out of the href attribute
+    // (attribute injection, e.g. [x](" onmouseover="alert(1))).
+    const safeUrl = escapeHtml(url);
+    return `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer" class="ai-link">${text}</a>`;
   });
 
   // 6. Process line by line
