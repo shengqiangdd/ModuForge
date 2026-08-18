@@ -59,11 +59,15 @@
     toast(`已插入 ${fullName} 提示`, 'success');
   }
 
+  // 打开面板(show=true)时加载一次。用 `!loaded` 作重入护栏：
+  // load() 会写 loading/servers/loaded 这些 $state, 若不加护栏,
+  // $effect 会因这些 state 变化自我重跑形成死循环, 致 /agent/mcp/status
+  // 被高频轮询(实测 3 秒内连续 429)。loaded 置位后 effect 不再重入。
+  // 手动刷新走右上角 refresh 按钮(onclick={load})。
   $effect(() => {
-    if (show) load();
+    if (show && !loaded) load();
   });
-
-  onMount(() => { if (show) load(); });
+  // 不再用 onMount 自动加载, 避免与 $effect 首开重复触发。
 </script>
 
 {#if show}
