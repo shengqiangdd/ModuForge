@@ -34,6 +34,13 @@ services:
       - JWT_SECRET=${JWT_SECRET:-}
       # AI 月度成本上限（USD）：当月估算成本达到该值后拒绝新 AI 任务；0 = 不限制
       - AI_MONTHLY_COST_LIMIT=${AI_MONTHLY_COST_LIMIT:-0}
+      # LLM 提供商配置（透传 .env；未设置时保持 legacy 默认）
+      # 例：provider=opencode-go + model=deepseek-v4-flash/mimo-v2.5（订阅制零单价）
+      - LLM_ENDPOINT=${LLM_ENDPOINT:-}
+      - LLM_PROVIDER=${LLM_PROVIDER:-}
+      - LLM_MODEL=${LLM_MODEL:-}
+      - LLM_MODEL_ID=${LLM_MODEL_ID:-}
+      - OPENCODE_API_KEY=${OPENCODE_API_KEY:-}
       - MODUFORGE_DEV=0
       - TZ=Asia/Shanghai
       # MCP (Model Context Protocol) servers: JSON array passed via env.
