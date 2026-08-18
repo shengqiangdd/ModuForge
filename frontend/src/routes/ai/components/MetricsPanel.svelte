@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   let {
     inputPricePerM = 0,
     outputPricePerM = 0,
@@ -28,7 +29,11 @@
     loading = false;
   }
 
-  $effect(() => { refresh(); });
+  // 首次挂载加载一次。展开(点击)时手动 refresh。
+  // 注：之前用 `$effect(() => refresh())` 会造成 Svelte 5 effect 自我触发循环
+  // （refresh 异步覆写 metrics/daily/monthlyCost 这些外部模板也在读的 $state），
+  // 导致 /agent/metrics 每秒被疯狂轮询打满限流。改为 onMount + 手动刷新。
+  onMount(() => { refresh(); });
 
   function fmtMs(ms: number | undefined): string {
     if (ms == null) return '-';
