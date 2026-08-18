@@ -734,7 +734,16 @@ func (h *AIHandler) SaveConversation(c fiber.Ctx) error {
 	if len(req.Messages) == 0 {
 		return BadRequest(c, "messages required")
 	}
-	savedID, err := service.SaveConversation(h.db.Conn, uid, req.ID, req.Title, req.Mode, req.Messages, req.Model, req.ProjectID)
+	// 智能标题：大部分模式 auto-save 不传 title；用轻量 LLM 从首条消息
+	// 生成短标题（失败自动 fallback 到 service 内的默认截断逻辑）。
+	useTitle := strings.TrimSpace(req.Title)
+	isDefault := useTitle == "" || strings.HasSuffix(useTitle, "...") || useTitle == req.Mode
+	if isDefault && h.svc != nil {
+		if suggested := h.svc.SuggestTitle(c.Context(), uid, req.Messages); suggested != "" {
+			useTitle = suggested
+		}
+	}
+	savedID, err := service.SaveConversation(h.db.Conn, uid, req.ID, useTitle, req.Mode, req.Messages, req.Model, req.ProjectID)
 	if err != nil {
 		slog.Error("SaveConversation", "error", err)
 		return InternalError(c, "failed to save conversation")

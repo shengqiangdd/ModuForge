@@ -934,6 +934,7 @@ func (r *AgentRunner) startSessionCacheCleanup() {
 	ticker := time.NewTicker(cleanupInterval)
 	defer ticker.Stop()
 	lastMemoryCleanup := time.Now()
+	lastVacuum := time.Now()
 	for range ticker.C {
 		now := time.Now()
 		expired := make([]string, 0)
@@ -964,6 +965,19 @@ func (r *AgentRunner) startSessionCacheCleanup() {
 					if n, _ := res.RowsAffected(); n > 0 {
 						log.Printf("[Agent] memory cleanup: deleted %d expired entries", n)
 					}
+				}
+			}
+		}
+
+		// Weekly SQLite VACUUM to reclaim space from deleted rows.
+		// Runs on the same daily tick but only once a week (7*24h).
+		if now.Sub(lastVacuum) > 7*24*time.Hour {
+			lastVacuum = now
+			if r.db != nil {
+				if _, err := r.db.Exec("VACUUM"); err != nil {
+					log.Printf("[Agent] VACUUM failed: %v", err)
+				} else {
+					log.Printf("[Agent] VACUUM completed")
 				}
 			}
 		}
@@ -2279,6 +2293,14 @@ func (r *AgentRunner) GetToolStats() map[string]ToolStats {
 }
 
 // GetAuditHistory returns recent audit entries.
+// PrefixCache exposes the agent's shared prefix cache for metrics reporting.
+func (r *AgentRunner) PrefixCache() *PrefixCache {
+	if r == nil {
+		return nil
+	}
+	return r.prefixCache
+}
+
 // GetPerfMetrics returns the aggregated process-lifetime performance metrics
 // (LLM calls/tokens, tool calls, errors, retries) for observability UIs.
 func (r *AgentRunner) GetPerfMetrics() map[string]interface{} {

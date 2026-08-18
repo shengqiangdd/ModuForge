@@ -6,6 +6,7 @@ import (
 	"log"
 	"strings"
 	"sync"
+	"time"
 )
 
 // toolResultCacheMax is the maximum number of entries per agent session.
@@ -15,6 +16,11 @@ const toolResultCacheMax = 200
 // Results larger than this (e.g. read_file on a big file) are truncated
 // with a marker so callers know the full result is available on re-fetch.
 const cacheMaxEntrySize = 65536 // 64 KB
+
+// cacheTTL is the maximum age of a cached tool result before it is treated
+// as stale (miss) and re-fetched. This guards against returning outdated file
+// contents after external mutations (e.g. git pull, manual edits).
+const cacheTTL = 3 * time.Minute
 
 // toolResultCache implements an O(1) LRU cache using a doubly-linked list + map.
 // - get/put/moveToEnd: O(1)
@@ -32,8 +38,9 @@ type toolResultCache struct {
 
 // cacheEntry is stored in the doubly-linked list.
 type cacheEntry struct {
-	key    string
-	result string
+	key       string
+	result    string
+	createdAt time.Time
 }
 
 func newToolResultCache() *toolResultCache {
@@ -145,10 +152,20 @@ func (c *toolResultCache) get(skillName string, input map[string]interface{}) st
 	c.mu.Lock()
 	elem, ok := c.entries[key]
 	if ok {
+		entry := elem.Value.(*cacheEntry)
+		// TTL check: if expired, treat as miss and evict
+		if time.Since(entry.createdAt) > cacheTTL {
+			c.accessOrder.Remove(elem)
+			delete(c.entries, key)
+			c.removeFromPathIndex(key)
+			c.mu.Unlock()
+			log.Printf("[ToolCache] EXPIRED: %s (TTL)", skillName)
+			return ""
+		}
 		// O(1): move to back of list (most recently used)
 		c.accessOrder.MoveToFront(elem)
 		log.Printf("[ToolCache] HIT: %s", skillName)
-		result := elem.Value.(*cacheEntry).result
+		result := entry.result
 		c.mu.Unlock()
 		return result
 	}
@@ -177,6 +194,7 @@ func (c *toolResultCache) put(skillName string, input map[string]interface{}, re
 	// Update existing entry — move to front (most recently used)
 	if elem, exists := c.entries[key]; exists {
 		elem.Value.(*cacheEntry).result = result
+		elem.Value.(*cacheEntry).createdAt = time.Now()
 		c.accessOrder.MoveToFront(elem)
 		log.Printf("[ToolCache] UPDATE: %s (total=%d)", skillName, len(c.entries))
 		return
@@ -194,7 +212,7 @@ func (c *toolResultCache) put(skillName string, input map[string]interface{}, re
 	}
 
 	// Insert new entry at back (most recently used) — O(1)
-	entry := &cacheEntry{key: key, result: result}
+	entry := &cacheEntry{key: key, result: result, createdAt: time.Now()}
 	elem := c.accessOrder.PushBack(entry)
 	c.entries[key] = elem
 	c.addToPathIndex(key)

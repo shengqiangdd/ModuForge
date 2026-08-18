@@ -912,6 +912,102 @@ func (s *AIService) CompareModels(ctx context.Context, message string, modelIDs 
 	return results, nil
 }
 
+// SuggestTitle generates a short (<=12 chars) conversation title from the
+// first user message using a lightweight non-streaming LLM call. Falls back
+// to the empty string when LLM is not configured or the call fails, so the
+// caller keeps its default truncation-based title.
+func (s *AIService) SuggestTitle(ctx context.Context, userID string, messages []Message) string {
+	if len(messages) == 0 || s.cfg.LLMEndpoint == "" {
+		return ""
+	}
+	var firstUser string
+	for _, m := range messages {
+		if m.Role == "user" && strings.TrimSpace(m.Content) != "" {
+			firstUser = strings.TrimSpace(m.Content)
+			break
+		}
+	}
+	if firstUser == "" {
+		return ""
+	}
+	if len([]rune(firstUser)) > 200 {
+		firstUser = string([]rune(firstUser)[:200]) + "…"
+	}
+
+	endpoint := s.cfg.LLMEndpoint
+	apiKey := s.cfg.LLMApiKey
+	model := s.cfg.LLMModel
+	providerID := s.cfg.LLMProvider
+	if userID != "" && providerID != "" {
+		if ue, uk := s.resolveUserProviderConfig(userID, providerID); ue != "" {
+			endpoint = ue
+			if uk != "" {
+				apiKey = uk
+			}
+		}
+	}
+	providerNeedsKey := true
+	if p := llm.FindProvider(providerID); p != nil {
+		providerNeedsKey = p.RequiresKey
+	}
+	if providerNeedsKey && apiKey == "" {
+		return ""
+	}
+
+	msgs := []map[string]string{
+		{"role": "system", "content": "你是会话标题生成器。根据用户第一条消息，生成一个简洁的中文标题，不超过12个字，不要标点、不要引号、不要'关于'等前缀。只输出标题本身。"},
+		{"role": "user", "content": firstUser},
+	}
+	body, _ := json.Marshal(map[string]interface{}{
+		"model":    model,
+		"messages": msgs,
+		"stream":   false,
+		"max_tokens": 30,
+	})
+	chatURL := endpoint
+	if !strings.HasSuffix(endpoint, "/chat/completions") {
+		chatURL = endpoint + "/chat/completions"
+	}
+	req, err := http.NewRequestWithContext(ctx, "POST", chatURL, bytes.NewReader(body))
+	if err != nil {
+		return ""
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+	}
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return ""
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return ""
+	}
+	var out struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return ""
+	}
+	if len(out.Choices) == 0 {
+		return ""
+	}
+	title := strings.TrimSpace(out.Choices[0].Message.Content)
+	title = strings.Trim(title, "\"'“”《》（）[]()。，、")
+	if title == "" {
+		return ""
+	}
+	if len([]rune(title)) > 20 {
+		title = string([]rune(title)[:20])
+	}
+	return title
+}
+
 // GetHistory 获取对话历史
 func (s *AIService) GetHistory(sessionID string) []Message {
 	return nil

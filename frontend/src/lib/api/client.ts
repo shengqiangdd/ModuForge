@@ -300,6 +300,12 @@ export function streamRequest(path: string, body: unknown, idleMs = 90000): Even
   const token = getToken();
   const ctrl = new AbortController();
   let idleTimer: ReturnType<typeof setTimeout> | null = null;
+  // Retry only when NOTHING has been received yet — once any SSE chunk
+  // arrived, the model is mid-generation and a retry would duplicate output.
+  // This keeps auto-recovery safe for flaky connections.
+  const MAX_EMPTY_RETRIES = 2;
+  const RETRY_BACKOFF_MS = 2000;
+  let receivedAny = false;
 
   function resetIdle() {
     if (idleTimer) clearTimeout(idleTimer);
@@ -309,49 +315,61 @@ export function streamRequest(path: string, body: unknown, idleMs = 90000): Even
     }, idleMs);
   }
 
+  async function attempt(attemptNo: number) {
+    try {
+      const res = await fetch(`${BASE}${path}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(body),
+        signal: ctrl.signal,
+      });
+      if (!res.ok || !res.body) {
+        if (idleTimer) clearTimeout(idleTimer);
+        let errMsg = `HTTP ${res.status}`;
+        try {
+          const errText = await res.text();
+          const errJson = JSON.parse(errText);
+          errMsg = errJson.error || errJson.message || errMsg;
+        } catch {}
+        window.dispatchEvent(new CustomEvent('ai-stream-error', { detail: errMsg }));
+        ctrl.abort('http error');
+        return;
+      }
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        // Data arrived — reset idle timer
+        receivedAny = true;
+        resetIdle();
+        const text = decoder.decode(value, { stream: true });
+        window.dispatchEvent(new CustomEvent('ai-stream', { detail: text }));
+      }
+      // Stream finished normally — clear idle timer
+      if (idleTimer) clearTimeout(idleTimer);
+      window.dispatchEvent(new CustomEvent('ai-stream-done'));
+    } catch (e) {
+      if (idleTimer) clearTimeout(idleTimer);
+      // AbortError means we intentionally closed (idle timeout or user stop)
+      if (e?.name === 'AbortError') return;
+      const msg = e?.message || '网络连接失败';
+      // Auto-retry ONLY on an empty (no bytes received) failure.
+      if (!receivedAny && attemptNo < MAX_EMPTY_RETRIES) {
+        window.dispatchEvent(new CustomEvent('ai-stream-retry', { detail: { attempt: attemptNo + 1 } }));
+        setTimeout(() => attempt(attemptNo + 1), RETRY_BACKOFF_MS * attemptNo);
+        return;
+      }
+      window.dispatchEvent(new CustomEvent('ai-stream-error', { detail: msg }));
+    }
+  }
+
   // Start idle timer immediately
   resetIdle();
-
-  fetch(`${BASE}${path}`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    body: JSON.stringify(body),
-    signal: ctrl.signal,
-  }).then(async (res) => {
-    if (!res.ok || !res.body) {
-      if (idleTimer) clearTimeout(idleTimer);
-      let errMsg = `HTTP ${res.status}`;
-      try {
-        const errText = await res.text();
-        const errJson = JSON.parse(errText);
-        errMsg = errJson.error || errJson.message || errMsg;
-      } catch {}
-      window.dispatchEvent(new CustomEvent('ai-stream-error', { detail: errMsg }));
-      ctrl.abort('http error');
-      return;
-    }
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      // Data arrived — reset idle timer
-      resetIdle();
-      const text = decoder.decode(value, { stream: true });
-      window.dispatchEvent(new CustomEvent('ai-stream', { detail: text }));
-    }
-    // Stream finished normally — clear idle timer
-    if (idleTimer) clearTimeout(idleTimer);
-    window.dispatchEvent(new CustomEvent('ai-stream-done'));
-  }).catch((e) => {
-    if (idleTimer) clearTimeout(idleTimer);
-    // AbortError means we intentionally closed (idle timeout or user stop)
-    if (e?.name === 'AbortError') return;
-    window.dispatchEvent(new CustomEvent('ai-stream-error', { detail: e?.message || '网络连接失败' }));
-  });
+  attempt(0);
 
   return { close: () => { if (idleTimer) clearTimeout(idleTimer); ctrl.abort('user cancelled'); } } as unknown as EventSource;
 }

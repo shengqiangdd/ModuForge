@@ -48,6 +48,37 @@
   let virtualSpacerTop = $derived(virtualStart * ITEM_HEIGHT);
   let virtualSpacerBottom = $derived((messages.length - virtualEnd) * ITEM_HEIGHT);
 
+  // Keyboard navigation: Alt+ArrowUp/Down moves focus between messages.
+  let navIndex = $state(-1); // -1 = no keyboard-navigation highlight
+
+  function navToMessage(idx: number) {
+    if (idx < 0 || idx >= messages.length) return;
+    navIndex = idx;
+    // Align the target message to the middle of the viewport so the user
+    // always sees it (virtual scroll estimate: ITEM_HEIGHT per message).
+    if (containerEl) {
+      const target = idx * ITEM_HEIGHT - containerHeight / 2 + ITEM_HEIGHT / 2;
+      containerEl.scrollTop = Math.max(0, target);
+    }
+  }
+
+  function handleMessagesKeydown(e: KeyboardEvent) {
+    if (!e.altKey || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')) return;
+    // Ignore when typing in an input/textarea/contenteditable
+    const t = e.target as HTMLElement | null;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+    e.preventDefault();
+    if (messages.length === 0) return;
+    if (navIndex === -1) {
+      // Start from bottom (most recent) for ArrowDown, from top for ArrowUp
+      navToMessage(e.key === 'ArrowUp' ? 0 : messages.length - 1);
+    } else {
+      const step = e.key === 'ArrowUp' ? -1 : 1;
+      const next = navIndex + step;
+      if (next >= 0 && next < messages.length) navToMessage(next);
+    }
+  }
+
   // Auto-scroll when new messages are added — but only follow when the user
   // is already near the bottom (don't yank them away while reading history).
   let stickToBottom = $state(true);
@@ -207,6 +238,8 @@
   {/if}
   <div class="flex-1 overflow-y-auto px-3 py-1.5 space-y-1.5 messages-area"
     onscroll={handleScroll}
+    onkeydown={handleMessagesKeydown}
+    tabindex="0"
     bind:this={containerEl}
     bind:clientHeight={containerHeight}>
     {#if hasMoreMessages}
@@ -236,7 +269,7 @@
         {@const msgSteps = getStepsForRound(msg.round)}
         <ChatMessage {msg} index={virtualStart + i} {mode} {streaming} {expandedReasoning} {messageUsages} {messageTimes}
           showTypingCursor={streaming && virtualStart + i === messages.length - 1 && msg.role === 'assistant'}
-          highlighted={highlightIdx === virtualStart + i}
+          highlighted={highlightIdx === virtualStart + i || navIndex === virtualStart + i}
           agentSteps={msgSteps} {agentExpandedSteps} onToggleAgentStep={(idx) => onToggleAgentStep(idx)}
           onToggleReasoning={(idx) => onToggleReasoning(idx)}
           onEdit={(idx) => onEdit(idx)}

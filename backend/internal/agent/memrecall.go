@@ -4,7 +4,10 @@ import (
 	"fmt"
 	"hash/fnv"
 	"log"
+	"math"
+	"sort"
 	"strings"
+	"time"
 
 	"github.com/moduforge/backend/internal/agent/memory"
 )
@@ -31,12 +34,11 @@ func (r *AgentRunner) autoRecallMemory(cfg RunConfig, taskText string, k int) st
 
 	// Load this user's non-archived, non-expired memories.
 	rows, err := r.db.Query(`
-		SELECT id, content, category, importance, tags
+		SELECT id, content, category, importance, tags, created_at
 		FROM memory_v2
 		WHERE user_id = ?
 		  AND (tier != 'archive' OR tier IS NULL)
 		  AND (expires_at IS NULL OR expires_at > datetime('now'))
-		ORDER BY importance DESC, last_accessed DESC NULLS LAST, created_at DESC
 		LIMIT 200
 	`, cfg.UserID)
 	if err != nil {
@@ -50,8 +52,8 @@ func (r *AgentRunner) autoRecallMemory(cfg RunConfig, taskText string, k int) st
 	for rows.Next() {
 		var id, content, category string
 		var importance int
-		var tagsJSON string
-		if err := rows.Scan(&id, &content, &category, &importance, &tagsJSON); err != nil {
+		var tagsJSON, createdAt string
+		if err := rows.Scan(&id, &content, &category, &importance, &tagsJSON, &createdAt); err != nil {
 			continue
 		}
 		if strings.TrimSpace(content) == "" {
@@ -64,6 +66,7 @@ func (r *AgentRunner) autoRecallMemory(cfg RunConfig, taskText string, k int) st
 		meta["category"] = category
 		meta["importance"] = importance
 		meta["tags"] = tagsJSON
+		meta["created_at"] = createdAt
 		vs.AddDocument(id, content, meta)
 		ids = append(ids, id)
 	}
@@ -71,9 +74,36 @@ func (r *AgentRunner) autoRecallMemory(cfg RunConfig, taskText string, k int) st
 		return ""
 	}
 
-	results := vs.Search(taskText, k)
+	results := vs.Search(taskText, len(ids))
 	if len(results) == 0 {
 		return ""
+	}
+
+	// Recency-aware re-rank: score * exp(-ageDays/halfLife) * (1 + importance/20).
+	// Older memories fade smoothly instead of being ranked purely by keyword
+	// similarity, so recent context wins ties while still allowing important
+	// old facts (importance >= 7) to surface.
+	const halfLifeDays = 30.0
+	for i := range results {
+		ageDays := 0.0
+		if created, ok := results[i].Metadata["created_at"].(string); ok && created != "" {
+			if t, err := time.Parse("2006-01-02 15:04:05", created); err == nil {
+				ageDays = time.Since(t).Hours() / 24.0
+			} else if t, err := time.Parse(time.RFC3339, created); err == nil {
+				ageDays = time.Since(t).Hours() / 24.0
+			} else if t, err := time.Parse("2006-01-02T15:04:05Z", created); err == nil {
+				ageDays = time.Since(t).Hours() / 24.0
+			}
+		}
+		decay := math.Exp(-ageDays / halfLifeDays)
+		imp, _ := results[i].Metadata["importance"].(float64)
+		results[i].Score = results[i].Score * decay * (1 + imp/20.0)
+	}
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].Score > results[j].Score
+	})
+	if len(results) > k {
+		results = results[:k]
 	}
 
 	var sb strings.Builder

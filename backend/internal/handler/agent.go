@@ -1177,10 +1177,17 @@ func (h *AgentHandler) GetAgentMetrics(c fiber.Ctx) error {
 	// price 0, conservative for the cap).
 	pi, po := agent.ModelPricer(h.cfg.LLMModelID)
 	costInfo := h.runner.CalcMonthlyCostInfo(uid, pi, po)
+	prefixStats := map[string]interface{}{}
+	if h.runner.PrefixCache() != nil {
+		if s := h.runner.PrefixCache().GetStats(); s != nil {
+			prefixStats = s
+		}
+	}
 	return c.JSON(fiber.Map{
-		"metrics":      h.runner.GetPerfMetrics(),
-		"daily":        h.runner.GetDailyUsage(30, uid),
-		"monthly_cost": costInfo,
+		"metrics":       h.runner.GetPerfMetrics(),
+		"daily":         h.runner.GetDailyUsage(30, uid),
+		"monthly_cost":  costInfo,
+		"prefix_cache":  prefixStats,
 	})
 }
 
