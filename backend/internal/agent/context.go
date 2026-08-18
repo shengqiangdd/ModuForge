@@ -3,6 +3,8 @@ package agent
 import (
 	"fmt"
 	"log"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"unsafe"
@@ -133,6 +135,23 @@ You are evaluated on whether you ACTUALLY WROTE FILES AND VERIFIED THE BUILD.`
 func (r *AgentRunner) buildProjectContext(cfg RunConfig) string {
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("\n## CURRENT PROJECT\nProject ID: %s\n", cfg.ProjectID))
+
+	// Tell the agent where it can actually write files. Without this the agent
+	// blind-guesses absolute paths and often concludes the FS is read-only.
+	if cfg.ProjectID != "" {
+		storageRoot := os.Getenv("STORAGE_PATH")
+		if storageRoot == "" {
+			storageRoot = "/data/storage"
+		}
+		workdir := filepath.Join(storageRoot, "projects", cfg.ProjectID)
+		sb.WriteString(fmt.Sprintf("Working directory (writable): %s\n", workdir))
+		sb.WriteString(`写文件请一律使用「项目内相对路径」（例如 polyglot/goapp/main.go），不要使用 /data、/app 等绝对路径。
+bash 命令默认在项目工作目录执行（cwd = 上面给出的工作目录），因此：
+- 用 ` + "`pwd`" + ` 即可确认当前模型的工作目录；
+- 用 ` + "`ls .`" + ` 查看项目现有文件，不要探测 / 下的系统路径；
+- 构建命令（go build / cargo build / gcc）直接在相对路径下运行即可。
+`)
+	}
 
 	if cfg.ProjectContext != "" {
 		sb.WriteString(fmt.Sprintf("Description:\n%s\n", cfg.ProjectContext))

@@ -145,12 +145,6 @@ func (s *BashSkill) syncProjectToDisk(projectID, projectDir string) error {
 		return nil
 	}
 
-	// Check if directory already has files — skip sync if so
-	entries, err := os.ReadDir(projectDir)
-	if err == nil && len(entries) > 0 {
-		return nil // directory already populated
-	}
-
 	// Read all files from database/S3
 	rows, err := s.db.Query(
 		`SELECT path FROM project_files WHERE project_id=?`, projectID,
