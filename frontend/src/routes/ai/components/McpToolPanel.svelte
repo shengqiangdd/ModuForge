@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import { toast } from '$lib/stores/toast.svelte';
   import { client } from '$lib/api/client';
 
@@ -59,15 +59,15 @@
     toast(`已插入 ${fullName} 提示`, 'success');
   }
 
-  // 打开面板(show=true)时加载一次。用 `!loaded` 作重入护栏：
-  // load() 会写 loading/servers/loaded 这些 $state, 若不加护栏,
-  // $effect 会因这些 state 变化自我重跑形成死循环, 致 /agent/mcp/status
-  // 被高频轮询(实测 3 秒内连续 429)。loaded 置位后 effect 不再重入。
-  // 手动刷新走右上角 refresh 按钮(onclick={load})。
+  // show 打开(true)时加载。用 untrack 包住 load(): load 内部会写
+  // loading/servers/loaded 这些 $state, 若不 untrack, $effect 会因这些
+  // state 变化自我重跑形成死循环, 致 /agent/mcp/status 被高频轮询
+  // (实测 60s 内 1002 次, 其中 789 次 429)。untrack 使 effect 只追踪 show,
+  // 既不循环, 又保留"每次打开都刷新"的边沿触发, 避免 !loaded 护栏在
+  // 常驻组件二次打开时不刷新的退化。手动刷新仍走 refresh 按钮。
   $effect(() => {
-    if (show && !loaded) load();
+    if (show) untrack(() => load());
   });
-  // 不再用 onMount 自动加载, 避免与 $effect 首开重复触发。
 </script>
 
 {#if show}
