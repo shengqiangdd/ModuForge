@@ -80,3 +80,19 @@ backend/moduforge
 # 配置备份变体
 *.bak-round*
 *.hostmode
+
+# ============ 补充：backend/ 内的一次性/编译产物（2026-08-18 P0 清理） ============
+# backend 内被历史 commit 误提交的编译二进制（.gitignore 无法挡已跟踪文件，已 git rm --cached）
+backend/moduforge-server-linux
+backend/bin/*.exe
+# backend 内一次性 Dockerfile 变体（仅保留 backend/Dockerfile 为唯一有效构建文件）
+backend/Dockerfile.fix
+backend/Dockerfile.optimized
+backend/Dockerfile.rebuild
+backend/Dockerfile.simple
+backend/Dockerfile.bak
+# backend 内一次性 prompt 替换脚本（历史调试残留，硬编码本地绝对路径）
+backend/replace_prompt*.py
+backend/replace_prompt*.ps1
+backend/replace_free_prompt*.py
+backend/replace_free_prompt*.ps1
