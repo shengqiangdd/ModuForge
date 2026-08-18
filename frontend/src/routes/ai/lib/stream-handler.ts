@@ -535,7 +535,7 @@ export class StreamHandler {
     if (s.messages.length === 0 || !s.activeSessionId) return;
     if (this.autoSaveTimer) clearTimeout(this.autoSaveTimer);
     this.autoSaveTimer = setTimeout(() => {
-      if (s.mode === 'agent' && s.messages.length > 0) {
+      if (s.messages.length > 0) {
         saveConversationToBackend({
           id: s.activeSessionId || s.sessionId, title: '', mode: s.mode, messages: s.messages,
           model: s.selectedModel?.name || s.selectedModelID || '',

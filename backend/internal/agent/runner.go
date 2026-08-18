@@ -933,6 +933,7 @@ func (r *AgentRunner) startSessionCacheCleanup() {
 	)
 	ticker := time.NewTicker(cleanupInterval)
 	defer ticker.Stop()
+	lastMemoryCleanup := time.Now()
 	for range ticker.C {
 		now := time.Now()
 		expired := make([]string, 0)
@@ -952,6 +953,19 @@ func (r *AgentRunner) startSessionCacheCleanup() {
 		}
 		if len(expired) > 0 {
 			log.Printf("[Agent] session cache cleanup: evicted %d expired sessions", len(expired))
+		}
+
+		// Daily memory_v2 cleanup: delete expired entries.
+		// Runs at most once per day to avoid repeated DB writes.
+		if now.Sub(lastMemoryCleanup) > 24*time.Hour {
+			lastMemoryCleanup = now
+			if r.db != nil {
+				if res, err := r.db.Exec("DELETE FROM memory_v2 WHERE expires_at IS NOT NULL AND expires_at < datetime('now')"); err == nil {
+					if n, _ := res.RowsAffected(); n > 0 {
+						log.Printf("[Agent] memory cleanup: deleted %d expired entries", n)
+					}
+				}
+			}
 		}
 	}
 }
