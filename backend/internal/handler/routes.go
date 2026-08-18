@@ -210,6 +210,8 @@ func RegisterRoutes(api fiber.Router, db *database.DB, cfg *config.Config) {
 	// Repo
 	api.Post("/repo/fetch", repoH.Fetch)
 	api.Post("/repo/files", repoH.FetchFiles)
+	api.Post("/repo/file", repoH.FetchFileContent)
+	api.Post("/repo/smart-select", repoH.SmartSelect)
 
 	// Translate
 	api.Post("/translate", translateH.Translate)

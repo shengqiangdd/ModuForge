@@ -7,12 +7,14 @@ let {
   streaming = false,
   showComparison = false,
   showProjectContext = false,
+  showRepoReference = false,
   showHistorySidebar = false,
   showCapability = false,
   showMcpTools = false,
   onModeChange,
   onToggleComparison,
   onToggleProjectContext,
+  onToggleRepoReference,
   onToggleHistory,
   onLoadCapability,
   onToggleMcpTools,
@@ -26,12 +28,14 @@ let {
   streaming: boolean;
   showComparison: boolean;
   showProjectContext: boolean;
+  showRepoReference: boolean;
   showHistorySidebar: boolean;
   showCapability: boolean;
   showMcpTools: boolean;
   onModeChange: (m: Mode) => void;
   onToggleComparison: () => void;
   onToggleProjectContext: () => void;
+  onToggleRepoReference: () => void;
   onToggleHistory: () => void;
   onLoadCapability: () => void;
   onToggleMcpTools: () => void;
@@ -66,6 +70,9 @@ let {
     </button>
     <button class="flex-shrink-0 flex items-center justify-center p-1.5 rounded-lg text-[var(--color-text-secondary)] hover:bg-[var(--color-surface)] transition-all min-h-[32px]" onclick={onToggleProjectContext} title="项目上下文">
       <span class="material-symbols-outlined text-[16px]">folder</span>
+    </button>
+    <button class="flex-shrink-0 flex items-center justify-center p-1.5 rounded-lg transition-all min-h-[32px] {showRepoReference ? 'bg-primary-500/10 text-primary-500' : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-surface)]'}" onclick={onToggleRepoReference} title="参考仓库">
+      <span class="material-symbols-outlined text-[16px]">link</span>
     </button>
     <button class="flex-shrink-0 flex items-center justify-center p-1.5 rounded-lg transition-all disabled:opacity-50 min-h-[32px] {showHistorySidebar ? 'bg-primary-500/10 text-primary-500' : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-surface)]'}" onclick={onToggleHistory} title="历史记录">
       <span class="material-symbols-outlined text-[16px]">history</span>

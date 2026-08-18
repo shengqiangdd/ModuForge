@@ -20,6 +20,7 @@
     streaming = false,
     showComparison = false,
     showProjectContext = false,
+    showRepoReference = false,
     showHistorySidebar = false,
     showCapability = false,
     showMcpTools = false,
@@ -32,6 +33,7 @@
     onModeChange,
     onToggleComparison,
     onToggleProjectContext,
+    onToggleRepoReference,
     onToggleHistory,
     onLoadCapability,
     onToggleMcpTools,
@@ -56,6 +58,7 @@
     streaming?: boolean;
     showComparison?: boolean;
     showProjectContext?: boolean;
+    showRepoReference?: boolean;
     showHistorySidebar?: boolean;
     showCapability?: boolean;
     showMcpTools?: boolean;
@@ -68,6 +71,7 @@
     onModeChange?: (m: Mode) => void;
     onToggleComparison?: () => void;
     onToggleProjectContext?: () => void;
+    onToggleRepoReference?: () => void;
     onToggleHistory?: () => void;
     onLoadCapability?: () => void;
     onToggleMcpTools?: () => void;
@@ -88,10 +92,11 @@
   onEditMaxTokensStart={(id, val) => onEditMaxTokensStart?.(id, val)}
 />
 
-<CompactToolbar {mode} {streaming} {showComparison} {showProjectContext} {showHistorySidebar} {showCapability} {showMcpTools}
+<CompactToolbar {mode} {streaming} {showComparison} {showProjectContext} {showRepoReference} {showHistorySidebar} {showCapability} {showMcpTools}
   onModeChange={(m) => onModeChange?.(m)}
   onToggleComparison={() => onToggleComparison?.()}
   onToggleProjectContext={() => onToggleProjectContext?.()}
+  onToggleRepoReference={() => onToggleRepoReference?.()}
   onToggleHistory={() => onToggleHistory?.()}
   onLoadCapability={() => onLoadCapability?.()}
   onToggleMcpTools={() => onToggleMcpTools?.()}

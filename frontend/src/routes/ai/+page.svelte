@@ -15,6 +15,7 @@ import AutoBuildProjectCard from './components/AutoBuildProjectCard.svelte';
 import GatherSpecCard from './components/GatherSpecCard.svelte';
 import GeneratedFilesPanel from './components/GeneratedFilesPanel.svelte';
 import ProjectContextPanel from './components/ProjectContextPanel.svelte';
+import RepoReferencePanel from './components/RepoReferencePanel.svelte';
 import BuildProgressBar from './components/BuildProgressBar.svelte';
 import ProviderConfigModal from './components/modals/ProviderConfigModal.svelte';
 import ImportDialogModal from './components/modals/ImportDialogModal.svelte';
@@ -222,6 +223,7 @@ import { filterStepsByRound } from './lib/rounds';
   // Project context
   let projectContext = $state('');
   let showProjectContext = $state(false);
+  let showRepoReference = $state(false);
   let contextProjects = $state<ContextProject[]>([]);
   let selectedContextProject = $state('');
   let selectedContextFile = $state('');
@@ -768,6 +770,14 @@ import { filterStepsByRound } from './lib/rounds';
   }
   function handleCopyText(text: string) { safeCopyText(text).then(ok => { if (ok) toast('已复制', 'success'); }); }
   function handleInsertToInput(text: string) { input = text; }
+
+  function addRepoReference(text: string) {
+    if (text) {
+      projectContext = projectContext ? projectContext + '\n\n' + text : text;
+      showRepoReference = false;
+      toast('已加入生成参考', 'success');
+    }
+  }
   function handleNewConversation() {
     messages = []; currentStepIndex = -1; progressStepDetails = []; autoBuildPhases = []; agentSteps = []; allAgentSteps = []; selectedRound = -1; maxRoundIndex = 0; expandedReasoning = new Set(); messageUsages = new Map(); activeSessionId = ''; sessionId = generateUUID(); mode = 'generate'; showHistorySidebar = false; autoBuildProjectId = ''; autoBuildProjectName = ''; autoBuildFiles = [];
   }
@@ -948,7 +958,7 @@ import { filterStepsByRound } from './lib/rounds';
   if (e.ctrlKey && e.key === 'k') { e.preventDefault(); messages = []; currentStepIndex = -1; progressStepDetails = []; autoBuildPhases = []; agentSteps = []; allAgentSteps = []; selectedRound = -1; maxRoundIndex = 0; expandedReasoning = new Set(); messageUsages = new Map(); activeSessionId = ''; sessionId = generateUUID(); mode = 'generate'; autoBuildProjectId = ''; autoBuildProjectName = ''; autoBuildFiles = []; subtasks = []; }
   if (e.ctrlKey && e.key === 'e') { e.preventDefault(); if (messages.length > 0) exportConversation('markdown'); }
   if (e.key === '?') { e.preventDefault(); showShortcutPanel = !showShortcutPanel; }
-  if (e.key === 'Escape') { showHistorySidebar = false; showPromptSettings = false; showMDPrompts = false; showProviderConfig = false; showPreviewModal = false; showImportDialog = false; showComparison = false; showPromptTemplates = false; showDiffPanel = false; showCapability = false; showMcpTools = false; showShortcutPanel = false; }
+  if (e.key === 'Escape') { showHistorySidebar = false; showPromptSettings = false; showMDPrompts = false; showProviderConfig = false; showPreviewModal = false; showImportDialog = false; showComparison = false; showPromptTemplates = false; showDiffPanel = false; showCapability = false; showMcpTools = false; showShortcutPanel = false; showRepoReference = false; }
   if (!e.ctrlKey && !e.metaKey && !e.altKey && ['1','2','3','4','5','6'].includes(e.key)) {
     const idx = parseInt(e.key) - 1;
     if (idx >= 0 && idx < modes.length && !streaming && mode !== modes[idx].value) { messages = []; currentStepIndex = -1; progressStepDetails = []; autoBuildPhases = []; agentSteps = []; expandedReasoning = new Set(); activeSessionId = ''; sessionId = generateUUID(); mode = modes[idx].value; subtasks = []; }
@@ -973,7 +983,7 @@ import { filterStepsByRound } from './lib/rounds';
       {providers} {selectedProviderID} {selectedModelID} {configLoaded}
       {showModelDropdown} {editingModelMaxTokens} {editMaxTokensValue}
       {availableModels} {freeModels} {paidModels} {selectedModel}
-      {mode} {streaming} {showComparison} {showProjectContext}
+      {mode} {streaming} {showComparison} {showProjectContext} {showRepoReference}
       {showHistorySidebar} {showCapability} {showMcpTools}
       onProviderChange={(v) => { selectedProviderID = v; onProviderChange(); }}
       onModelSelect={(id) => { selectedModelID = id; showModelDropdown = false; onModelSelect(id); }}
@@ -984,6 +994,7 @@ import { filterStepsByRound } from './lib/rounds';
       onModeChange={(m) => { if (mode !== m) { messages = []; currentStepIndex = -1; progressStepDetails = []; autoBuildPhases = []; agentSteps = []; expandedReasoning = new Set(); subtasks = []; } mode = m; }}
       onToggleComparison={() => showComparison = !showComparison}
       onToggleProjectContext={() => showProjectContext = !showProjectContext}
+      onToggleRepoReference={() => showRepoReference = !showRepoReference}
       onToggleHistory={() => { if (!showHistorySidebar) { loadConversations(); loadSessions(); loadGenHistory(); } showHistorySidebar = !showHistorySidebar; }}
       onLoadCapability={() => { loadCapability(); showCapability = !showCapability; }}
       onToggleMcpTools={() => showMcpTools = !showMcpTools}
@@ -1023,6 +1034,7 @@ import { filterStepsByRound } from './lib/rounds';
       onFileAdd={(v) => { if (v) { projectContext += (projectContext ? '\n' : '') + '文件: ' + v; selectedContextFile = ''; } }}
       onContextChange={(v) => projectContext = v}
     />
+    <RepoReferencePanel show={showRepoReference} onClose={() => showRepoReference = false} onAddReference={addRepoReference} />
 
     <ChatInput {input} {mode} {streaming} {buildLog} {mcpToolCount}
       onSend={() => handler.send()} onStop={handler.stopStream}
