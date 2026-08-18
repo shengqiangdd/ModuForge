@@ -176,4 +176,4 @@ async function addReference() {
     {/if}
   </div>
 {/if}
-</script>
+
