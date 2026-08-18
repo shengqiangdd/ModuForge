@@ -497,7 +497,7 @@ export class StreamHandler {
     if (s.mode === 'agent') {
       path = '/agent/run';
       body = { task: text, session_id: s.sessionId, messages: s.messages, provider_id: s.selectedProviderID || '', model: s.selectedModelID || '', project_id: s.selectedContextProject || '', project_context: s.projectContext.trim() || '', agent_mode: s.agentMode };
-    } else if (s.mode === 'auto-build') { path = '/ai/auto-build'; body = { description: text, session_id: s.sessionId, project_id: s.autoBuildProjectId || '', provider: s.selectedProviderID || '', model: s.selectedModelID || '' }; }
+    } else if (s.mode === 'auto-build') { path = '/ai/auto-build'; body = { description: text, session_id: s.sessionId, project_id: s.autoBuildProjectId || '', messages: s.messages, provider: s.selectedProviderID || '', model: s.selectedModelID || '' }; }
     else if (s.mode === 'gather') { body.message = text; body.provider = s.selectedProviderID || ''; body.model = s.selectedModelID || ''; path = '/ai/gather'; }
     else if (s.mode === 'generate') { body.description = text; body.provider = s.selectedProviderID || ''; body.model = s.selectedModelID || ''; path = '/ai/generate'; }
     else if (s.mode === 'repair') { body.build_log = s.buildLog || text; body.provider = s.selectedProviderID || ''; body.model = s.selectedModelID || ''; path = '/ai/repair'; }
