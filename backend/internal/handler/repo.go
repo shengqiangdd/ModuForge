@@ -50,6 +50,24 @@ func (h *RepoHandler) FetchFiles(c fiber.Ctx) error {
 	return c.JSON(files)
 }
 
+// FetchRepoTree 一次性递归拉取仓库完整文件树（git trees API）。
+func (h *RepoHandler) FetchTree(c fiber.Ctx) error {
+	var req struct {
+		URL string `json:"url"`
+	}
+	if err := c.Bind().JSON(&req); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
+	}
+	if req.URL == "" {
+		return c.Status(400).JSON(fiber.Map{"error": "url required"})
+	}
+	files, err := h.svc.FetchRepoTree(c.Context(), req.URL)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(files)
+}
+
 // FetchFileContent 拉取仓库中单个文件并解码为文本（智能参考用）。
 func (h *RepoHandler) FetchFileContent(c fiber.Ctx) error {
 	var req struct {

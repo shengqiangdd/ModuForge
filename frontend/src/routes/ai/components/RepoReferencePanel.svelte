@@ -44,28 +44,13 @@ async function loadAndSmartSelect() {
   if (!info?.owner || !info?.name || !url.trim()) { error = '请先获取仓库信息'; return; }
   loadingFiles = true; error = '';
   try {
-    // 拉取根目录文件树
-    const res = await fetch('/api/v1/repo/files', {
-      method: 'POST', headers: authHeader(), body: JSON.stringify({ url: url.trim(), path: '' }),
+    // 一次性拉取完整文件树（后端用 git trees API 递归，1 次调用，规避 rate-limit）
+    const res = await fetch('/api/v1/repo/tree', {
+      method: 'POST', headers: authHeader(), body: JSON.stringify({ url: url.trim() }),
     });
     const data = await res.json();
-    if (!res.ok) throw new Error(data.error || '拉取文件失败');
-
-    // 递归展开所有子目录，收集完整文件列表
-    const flat: any[] = [];
-    const stack = [''];
-    while (stack.length) {
-      const p = stack.pop()!;
-      const fr = await fetch('/api/v1/repo/files', {
-        method: 'POST', headers: authHeader(), body: JSON.stringify({ url: url.trim(), path: p }),
-      });
-      const fd = await fr.json();
-      if (!Array.isArray(fd)) continue;
-      for (const f of fd) {
-        if (f.type === 'dir') stack.push(f.path);
-        else flat.push(f);
-      }
-    }
+    if (!res.ok) throw new Error(data.error || '拉取文件树失败');
+    const flat: any[] = Array.isArray(data) ? data : [];
     allFiles = flat;
 
     // 智能选择关键文件

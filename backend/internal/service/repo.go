@@ -129,6 +129,73 @@ func (s *RepoService) FetchRepoFiles(ctx context.Context, repoURL, path string) 
 	return result, nil
 }
 
+// FetchRepoTree 用 GitHub git trees API 一次性递归拉取仓库完整文件树（仅需 1 次 API 调用）。
+// 相比逐目录调用 contents API，大幅降低 rate-limit 消耗并显著提速，适合大仓库。
+func (s *RepoService) FetchRepoTree(ctx context.Context, repoURL string) ([]map[string]interface{}, error) {
+	repoURL = strings.TrimSuffix(repoURL, ".git")
+	parts := strings.Split(repoURL, "/")
+	if len(parts) < 2 {
+		return nil, fmt.Errorf("invalid repo URL: %s", repoURL)
+	}
+	owner, name := parts[len(parts)-2], parts[len(parts)-1]
+
+	// 先取默认分支
+	repoReq, _ := http.NewRequestWithContext(ctx, "GET", fmt.Sprintf("https://api.github.com/repos/%s/%s", owner, name), nil)
+	repoReq.Header.Set("Accept", "application/vnd.github.v3+json")
+	repoResp, err := s.client.Do(repoReq)
+	if err != nil {
+		return nil, err
+	}
+	var repoMeta struct {
+		DefaultBranch string `json:"default_branch"`
+	}
+	_ = json.NewDecoder(repoResp.Body).Decode(&repoMeta)
+	repoResp.Body.Close()
+	branch := repoMeta.DefaultBranch
+	if branch == "" {
+		branch = "main"
+	}
+
+	// 一次性递归拉取文件树
+	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/git/trees/%s?recursive=1", owner, name, branch)
+	req, _ := http.NewRequestWithContext(ctx, "GET", url, nil)
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("GitHub tree API returned %d", resp.StatusCode)
+	}
+
+	var treeResp struct {
+		Tree []struct {
+			Path string `json:"path"`
+			Mode string `json:"mode"`
+			Type string `json:"type"`
+			Size int64  `json:"size"`
+		} `json:"tree"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&treeResp); err != nil {
+		return nil, err
+	}
+
+	var files []map[string]interface{}
+	for _, t := range treeResp.Tree {
+		// 只保留文件（blob），忽略子模块/树节点
+		if t.Type != "blob" {
+			continue
+		}
+		files = append(files, map[string]interface{}{
+			"path": t.Path,
+			"type": "file",
+			"size": t.Size,
+		})
+	}
+	return files, nil
+}
+
 // FetchFileContent 拉取仓库中单个文件并解码为 UTF-8 文本（用于智能参考喂给 AI）。
 func (s *RepoService) FetchFileContent(ctx context.Context, repoURL, filePath string) (map[string]interface{}, error) {
 	repoURL = strings.TrimSuffix(repoURL, ".git")
