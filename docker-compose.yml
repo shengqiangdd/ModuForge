@@ -41,6 +41,7 @@ services:
       - LLM_MODEL=${LLM_MODEL:-}
       - LLM_MODEL_ID=${LLM_MODEL_ID:-}
       - OPENCODE_API_KEY=${OPENCODE_API_KEY:-}
+      - LLM_API_KEY=${LLM_API_KEY:-}
       - MODUFORGE_DEV=0
       - TZ=Asia/Shanghai
       # MCP (Model Context Protocol) servers: JSON array passed via env.

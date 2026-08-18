@@ -390,7 +390,7 @@ module.prop, customize.sh, META-INF/(update-binary + updater-script含#MAGISK)
 	}
 
 	endpoint := s.cfg.LLMEndpoint
-	apiKey := s.cfg.LLMApiKey
+	apiKey := s.cfg.EffectiveLLMKey()
 	model := s.cfg.LLMModel
 	providerID := s.cfg.LLMProvider
 
@@ -935,7 +935,7 @@ func (s *AIService) SuggestTitle(ctx context.Context, userID string, messages []
 	}
 
 	endpoint := s.cfg.LLMEndpoint
-	apiKey := s.cfg.LLMApiKey
+	apiKey := s.cfg.EffectiveLLMKey()
 	model := s.cfg.LLMModel
 	providerID := s.cfg.LLMProvider
 	if userID != "" && providerID != "" {
@@ -1073,7 +1073,7 @@ func historyForLLM(history []Message, userPrompt string, budgetChars int) []Mess
 
 func (s *AIService) streamChatWithSystemForUser(ctx context.Context, systemPrompt, userPrompt, userID, sessionID string, w *bufio.Writer, history ...[]Message) error {
 	endpoint := s.cfg.LLMEndpoint
-	apiKey := s.cfg.LLMApiKey
+	apiKey := s.cfg.EffectiveLLMKey()
 	model := s.cfg.LLMModel
 	providerID := s.cfg.LLMProvider
 
