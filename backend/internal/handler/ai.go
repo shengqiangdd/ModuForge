@@ -222,14 +222,16 @@ func (h *AIHandler) resolveProvider(providerID, modelID string) {
 		h.cfg.LLMApiKey = h.cfg.EffectiveLLMKey()
 		slog.Info("resolveProvider", "provider", providerID, "model", modelID, "endpoint", h.cfg.LLMEndpoint, "has_key", h.cfg.LLMApiKey != "")
 
-		// Restore original values after the request completes
+		// Restore original values before returning. The outer Lock (taken at
+		// the top of this function and released by the first defer) is still
+		// held here, so the restore closure must NOT re-acquire the write lock
+		// — Locking again would self-deadlock (the outer Unlock only runs after
+		// this closure, so it would wait forever on a lock owned by us).
 		defer func() {
-			h.cfg.Lock()
 			h.cfg.LLMProvider = savedProvider
 			h.cfg.LLMModel = savedModel
 			h.cfg.LLMEndpoint = savedEndpoint
 			h.cfg.LLMApiKey = savedKey
-			h.cfg.Unlock()
 		}()
 	}
 }
