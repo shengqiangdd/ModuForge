@@ -96,3 +96,4 @@ backend/replace_prompt*.py
 backend/replace_prompt*.ps1
 backend/replace_free_prompt*.py
 backend/replace_free_prompt*.ps1
+/deploy*.py
