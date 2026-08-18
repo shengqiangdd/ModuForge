@@ -40,6 +40,8 @@ type Config struct {
 	RateLimitPublic  float64 // 公共路由限流 (req/min)
 	RateLimitAuth    float64 // 认证路由限流 (req/min)
 	RateLimitAI      float64 // AI 路由限流 (req/min)
+	MaxAIConcurrency int     // 同时进行的 AI 流式调用上限（并发守卫）
+	RateLimitRepo    float64 // GitHub 外部调用路由限流 (req/min)
 	MonthlyCostLimit float64 // AI 月度成本上限 (USD)，0 = 不限制
 }
 
@@ -83,6 +85,13 @@ func Load() *Config {
 		// - 仍保留抗滥用能力（60/min 对单用户足够，对脚本压力仍有限制）。
 		// 通过环境变量 RATE_LIMIT_AI 可进一步调整。
 		RateLimitAI: getEnvFloat("RATE_LIMIT_AI", 60),
+		// 同时进行的 AI 流式调用上限：免费订阅对并发很严格，后端并发守卫
+		// 在入口限制同时挂起的 LLM 流请求数，避免多开/脚本打爆上游并发配额。
+		MaxAIConcurrency: getEnvInt("AI_MAX_CONCURRENCY", 5),
+		// GitHub 外部调用路由限流（repo/tree、repo/fetch、repo/file 等走 git API）：
+		// 针对对 GitHub 的远端真实调用，避免被滥用打爆 GitHub 配额。
+		// 本地纯计算端点（repo/smart-select 等）不限流。
+		RateLimitRepo: getEnvFloat("RATE_LIMIT_REPO", 30),
 		// AI 月度成本上限（USD）：当月估算成本超过该值后拒绝新任务。
 		// 默认 0 = 不限制成本（避免意外拦截）。按当前模型单价 × 当月 token 估算。
 		MonthlyCostLimit: getEnvFloat("AI_MONTHLY_COST_LIMIT", 0),
@@ -94,6 +103,16 @@ func getEnvFloat(key string, fallback float64) float64 {
 	if v := os.Getenv(key); v != "" {
 		if f, err := strconv.ParseFloat(v, 64); err == nil {
 			return f
+		}
+	}
+	return fallback
+}
+
+// getEnvInt reads an int env var with a fallback. Invalid values fall back.
+func getEnvInt(key string, fallback int) int {
+	if v := os.Getenv(key); v != "" {
+		if i, err := strconv.Atoi(v); err == nil {
+			return i
 		}
 	}
 	return fallback

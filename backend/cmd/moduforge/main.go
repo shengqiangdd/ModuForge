@@ -155,9 +155,16 @@ func main() {
 		},
 	}))
 
-	// API rate limiting (S2 security fix: 30 req/s per IP, burst 50)
+	// Global coarse DoS guard (S2 security fix). Tight per-endpoint buckets
+	// (auth/AI/repo) live in routes.go. This whole-app guard is kept loose
+	// (200/s, burst) and SKIPS local-compute endpoints so they are never
+	// wrongly throttled — a tight global bucket previously 429'd
+	// /repo/smart-select in the same second /repo/tree succeeded.
 	rl := middleware.NewRateLimiter()
-	app.Use(middleware.RateLimit(rl, 50, 30))
+	app.Use(middleware.RateLimitWithSkip(rl, 200, 150,
+		"/api/v1/repo/smart-select",
+		"/health",
+	))
 
 	// API routes
 	apiGroup := app.Group("/api/v1")

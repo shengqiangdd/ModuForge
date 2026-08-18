@@ -49,6 +49,12 @@ func RegisterRoutes(api fiber.Router, db *database.DB, cfg *config.Config) {
 	jwtMW := AuthMiddleware(cfg.JWTSecret)
 	rateAuth := middleware.RateLimit(rateLimiter, cfg.RateLimitAuth, cfg.RateLimitAuth/60)
 	rateAI := middleware.RateLimit(rateLimiter, cfg.RateLimitAI, cfg.RateLimitAI/60)
+	rateRepo := middleware.RateLimit(rateLimiter, cfg.RateLimitRepo, cfg.RateLimitRepo/60)
+
+	// AI 流式调用并发守卫：免费订阅对并发严格，入口限制同时挂起的 LLM 流
+	// 请求数，避免多开标签页/脚本并发打爆上游配额（请求占用权随 handler
+	// 返回释放，SSE 断流经 ctx cancel 后也会归还）。
+	aiSem := make(chan struct{}, cfg.MaxAIConcurrency)
 	adminMW := AdminOnly()
 
 	// Services
@@ -164,7 +170,21 @@ func RegisterRoutes(api fiber.Router, db *database.DB, cfg *config.Config) {
 
 	// Shorthand: r = register protected route
 	r := func(method, path string, h fiber.Handler) { reg3(api, method, path, authMW, jwtMW, rateAuth, h) }
-	rA := func(method, path string, h fiber.Handler) { reg3(api, method, path, authMW, jwtMW, rateAI, h) }
+	rA := func(method, path string, h fiber.Handler) {
+		wrapped := func(c fiber.Ctx) error {
+			select {
+			case aiSem <- struct{}{}:
+			default:
+				return c.Status(429).JSON(fiber.Map{
+					"error": "AI 并发忙，请稍后再试",
+					"code":  "AI_BUSY",
+				})
+			}
+			defer func() { <-aiSem }()
+			return h(c)
+		}
+		reg3(api, method, path, authMW, jwtMW, rateAI, wrapped)
+	}
 	rAdmin := func(method, path string, h fiber.Handler) {
 		reg4(api, method, path, authMW, jwtMW, rateAuth, adminMW, h)
 	}
@@ -207,11 +227,13 @@ func RegisterRoutes(api fiber.Router, db *database.DB, cfg *config.Config) {
 	api.Get("/llm/providers", OptionalAuth(cfg.JWTSecret), CacheMiddleware(cache), aiH.ListProviders)
 	api.Get("/llm/refresh", aiH.RefreshModels)
 
-	// Repo
-	api.Post("/repo/fetch", repoH.Fetch)
-	api.Post("/repo/files", repoH.FetchFiles)
-	api.Post("/repo/tree", repoH.FetchTree)
-	api.Post("/repo/file", repoH.FetchFileContent)
+	// Repo — 远端 Git/GitHub 调用挂 rateRepo 桶；纯本地计算端点（smart-select）不限流。
+	// 原因：/repo/smart-select 只对已拉取的文件树做本地启发式打分，不访问远端，
+	// 不消耗 GitHub 配额，也不应被限流误伤（此前被全局限流 429 掉）。
+	api.Post("/repo/fetch", rateRepo, repoH.Fetch)
+	api.Post("/repo/files", rateRepo, repoH.FetchFiles)
+	api.Post("/repo/tree", rateRepo, repoH.FetchTree)
+	api.Post("/repo/file", rateRepo, repoH.FetchFileContent)
 	api.Post("/repo/smart-select", repoH.SmartSelect)
 
 	// Translate

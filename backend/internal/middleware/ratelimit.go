@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"strings"
 	"sync"
 	"time"
 
@@ -96,6 +97,33 @@ func (rl *RateLimiter) getBucket(key string, capacity, rate float64) *TokenBucke
 
 func RateLimit(rl *RateLimiter, capacity, rate float64) fiber.Handler {
 	return func(c fiber.Ctx) error {
+		ip := c.IP()
+		b := rl.getBucket(ip, capacity, rate)
+		if !b.Allow() {
+			return c.Status(429).JSON(fiber.Map{
+				"error": "请求过于频繁，请稍后再试",
+				"code":  "RATE_LIMITED",
+				"retry_after": "1s",
+			})
+		}
+		return c.Next()
+	}
+}
+
+// RateLimitWithSkip is a global DoS-guard limiter that ALSO skips a set of
+// path prefixes. Use it for a coarse whole-app guard: endpoints that are
+// purely local computation (e.g. /repo/smart-select) must NOT be throttled —
+// they consume no external resource and a tight global bucket would wrongly
+// 429 them (previously happened because a global 50/30 bucket shared between
+// /repo/tree and /repo/smart-select drained the token in the same second).
+func RateLimitWithSkip(rl *RateLimiter, capacity, rate float64, skip ...string) fiber.Handler {
+	return func(c fiber.Ctx) error {
+		path := c.Path()
+		for _, pre := range skip {
+			if strings.HasPrefix(path, pre) {
+				return c.Next() // skip throttling for local-compute endpoints
+			}
+		}
 		ip := c.IP()
 		b := rl.getBucket(ip, capacity, rate)
 		if !b.Allow() {
