@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import { authFetch } from '$lib/api/client';
 
   let { projectId = '', filePath = '', onLineNumberClick = (line: number) => {} }: {
@@ -54,12 +54,11 @@
     return lines;
   });
 
-  onMount(() => {
-    if (filePath) loadComments();
-  });
-
+  // filePath 出现/变化时加载评论。untrack 包住 loadComments(): 它异步写
+  // comments/loading 等 $state, 不 untrack 会因这些 state 变化自我重跑死循环
+  // (同 McpToolPanel/MetricsPanel/MDPromptsModal 已修模式)。只追踪 filePath 边沿。
   $effect(() => {
-    if (filePath) loadComments();
+    if (filePath) untrack(() => loadComments());
   });
 
   async function loadComments() {

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
   import { toast } from '$lib/stores/toast.svelte';
   
   let { open, onClose }: { open: boolean; onClose: () => void } = $props();
@@ -9,11 +10,13 @@
   let loading = $state(false);
   let saving = $state(false);
   
-  // Load prompts when modal opens
+  // Load prompts when modal opens.
+  // 用 untrack 包住 loadPrompts(): 它异步写 loading/prompts/selectedPrompt 这些
+  // $state, 若不 untrack, $effect 会因这些 state 变化自我重跑形成死循环(同
+  // McpToolPanel/MetricsPanel 已修模式), 高频打爆 /md-prompts 限流。
+  // untrack 使 effect 只追踪 open 边沿, 既防循环又保留每次打开刷新。
   $effect(() => {
-    if (open) {
-      loadPrompts();
-    }
+    if (open) untrack(() => loadPrompts());
   });
   
   async function loadPrompts() {
