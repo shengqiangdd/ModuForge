@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"strconv"
 	"strings"
 	"time"
@@ -344,8 +344,13 @@ func (r *AgentRunner) executeSkill(ctx context.Context, name string, input map[s
 	r.perfMetrics.RecordToolCall(dur)
 	if err != nil {
 		r.perfMetrics.RecordError()
-		log.Printf("[Agent] MCP tool '%s' failed after %v: %v (mcp=%v, decision=%q)",
-			name, dur.Round(time.Millisecond), err, strings.HasPrefix(name, "mcp__"), decision)
+		slog.Error("MCP tool failed",
+			"tool", name,
+			"duration_ms", dur.Milliseconds(),
+			"err", err.Error(),
+			"mcp", strings.HasPrefix(name, "mcp__"),
+			"decision", decision,
+		)
 	}
 	if err != nil {
 		return "", err
