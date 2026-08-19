@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"database/sql"
+	"io"
 	"log/slog"
 	"testing"
 	"time"
@@ -38,10 +39,16 @@ func TestDBSlogHandler_PersistsWarnAndError(t *testing.T) {
 	db := openSlogTestDB(t)
 	defer db.Close()
 
-	// Wrapper must preserve stdout output (via a discardable buffer handler),
-	// while also writing to a real DB. Restore the default after the test.
+	// EnableDBLogSink wraps slog.Default().Handler(), so first install a base
+	// handler that writes directly to a destination (io.Discard) — mirroring
+	// production, where main.go installs a JSON handler to stdout. Wrapping the
+	// raw stdlib defaultHandler would deadlock: defaultHandler writes via the
+	// stdlib log package, and slog.SetDefault redirects that package's output
+	// back into the slog default logger (a handlerWriter → dBSlogHandler →
+	// defaultHandler → log.Mutex cycle).
 	prev := slog.Default()
 	defer slog.SetDefault(prev)
+	slog.SetDefault(slog.New(slog.NewTextHandler(io.Discard, nil)))
 
 	EnableDBLogSink(db)
 
@@ -74,6 +81,7 @@ func TestDBSlogHandler_DoesNotPersistInfo(t *testing.T) {
 
 	prev := slog.Default()
 	defer slog.SetDefault(prev)
+	slog.SetDefault(slog.New(slog.NewTextHandler(io.Discard, nil)))
 
 	EnableDBLogSink(db)
 	slog.Info("heartbeat ok", "module", "health")

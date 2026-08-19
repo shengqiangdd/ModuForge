@@ -42,6 +42,7 @@ func (h *dBSlogHandler) Handle(ctx context.Context, r slog.Record) error {
 		level := r.Level.String()
 		ts := r.Time.Format("2006-01-02T15:04:05Z07:00")
 		// Non-blocking best-effort write; ignore errors (logging must never fail the app).
+		// Exec on the same *sql.DB from a goroutine is safe.
 		go func(db *sql.DB, lvl, mod, msg, det, created string) {
 			_, _ = db.Exec(
 				`INSERT INTO app_logs (level, module, message, details, created_at) VALUES (?, ?, ?, ?, ?)`,
@@ -77,5 +78,11 @@ func EnableDBLogSink(db *sql.DB) {
 	if _, ok := base.(*dBSlogHandler); ok {
 		return
 	}
+	// Note: EnableLogSink (called right after this in main.go) re-routes the
+	// stdlib log package to its own writer, so production never re-enters slog
+	// through log.Printf. The wrapped handler therefore only sees records that
+	// originate from slog calls, keeping the log → slog → log loop impossible in
+	// production. Tests must install a non-stdlib base handler (io.Discard) to
+	// avoid that loop in the test binary.
 	slog.SetDefault(slog.New(&dBSlogHandler{Handler: base, db: db}))
 }
