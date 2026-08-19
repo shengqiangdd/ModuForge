@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"strconv"
 	"strings"
 	"time"
@@ -314,11 +315,14 @@ func coerceTypes(input map[string]interface{}) {
 
 func (r *AgentRunner) executeSkill(ctx context.Context, name string, input map[string]interface{}, w SSEWriter) (string, error) {
 	start := time.Now()
+	decision := "" // MCP 权限决策(allow/ask/deny), 供失败日志区分失败来源
 	// MCP write-tool permission enforcement (Claude Code-style permission mode).
 	// Write tools (create_*/update_*/delete_*/push_* etc.) require an explicit
 	// policy: 'allow' (auto), 'deny' (blocked), or 'ask' (per-call confirmation).
 	if strings.HasPrefix(name, "mcp__") {
-		decision, msg, err := r.mcpPermissionDecision(name)
+		var msg string
+		var err error
+		decision, msg, err = r.mcpPermissionDecision(name)
 		if err != nil {
 			return "", err
 		}
@@ -336,9 +340,12 @@ func (r *AgentRunner) executeSkill(ctx context.Context, name string, input map[s
 		}
 	}
 	result, err := r.registry.Execute(ctx, name, input)
-	r.perfMetrics.RecordToolCall(time.Since(start))
+	dur := time.Since(start)
+	r.perfMetrics.RecordToolCall(dur)
 	if err != nil {
 		r.perfMetrics.RecordError()
+		log.Printf("[Agent] MCP tool '%s' failed after %v: %v (mcp=%v, decision=%q)",
+			name, dur.Round(time.Millisecond), err, strings.HasPrefix(name, "mcp__"), decision)
 	}
 	if err != nil {
 		return "", err

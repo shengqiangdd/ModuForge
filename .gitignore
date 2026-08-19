@@ -97,3 +97,7 @@ backend/replace_prompt*.ps1
 backend/replace_free_prompt*.py
 backend/replace_free_prompt*.ps1
 /deploy*.py
+
+# 敏感配置备份(含 token), 严禁进仓库
+*.bak-*
+.env.bak-*
