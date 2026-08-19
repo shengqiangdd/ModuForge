@@ -85,6 +85,8 @@ func main() {
 
 	// Structured logger
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})))
+	// Persist WARN/ERROR slog records to app_logs so the admin log page has data.
+	handler.EnableDBLogSink(db.Conn)
 
 	// WebSocket — registered as pre-middleware (BEFORE all other middleware)
 	// to completely bypass middleware chain for WS upgrade requests.
