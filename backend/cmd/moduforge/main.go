@@ -87,6 +87,8 @@ func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})))
 	// Persist WARN/ERROR slog records to app_logs so the admin log page has data.
 	handler.EnableDBLogSink(db.Conn)
+	// Also mirror stdlib `log` error/warning lines into app_logs (stdout preserved).
+	handler.EnableLogSink(db.Conn)
 
 	// WebSocket — registered as pre-middleware (BEFORE all other middleware)
 	// to completely bypass middleware chain for WS upgrade requests.
