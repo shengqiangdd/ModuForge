@@ -17,6 +17,10 @@ func openSlogTestDB(t *testing.T) *sql.DB {
 	if err := db.Ping(); err != nil {
 		t.Skipf("sqlite3 ping failed: %v", err)
 	}
+	// Force a single connection: sqlite :memory: databases are per-connection, so
+	// without this the write (db.Exec) and read (db.QueryRow) test queries would hit
+	// distinct empty in-memory DBs and report 0 rows.
+	db.SetMaxOpenConns(1)
 	if _, err := db.Exec(`CREATE TABLE app_logs (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		level TEXT NOT NULL,

@@ -26,8 +26,10 @@ type logSinkWriter struct {
 // error-ish patterns that mark a log line as worth persisting for troubleshooting.
 var errLineRe = regexp.MustCompile(`(?i)(fail(ed|ing)?|error|panic|denied|timeout|timed out|limit (reached|exceeded)|retry|rollback|recover|abort|reject|fatal|deadlock|conflict|拒绝|失败|超时|熔断|panic)`)
 
-// moduleRe extracts the leading [Module] tag, e.g. "[Agent]" or "[BashSkill]".
-var moduleRe = regexp.MustCompile(`^\[?\[?([A-Za-z_][A-Za-z0-9_]*)\]?`)
+// moduleRe extracts the first leading [Module] tag, e.g. "[Agent]" or
+// "[BashSkill]". The stdlib log line begins with a timestamp prefix, so we must
+// NOT anchor at the line start.
+var moduleRe = regexp.MustCompile(`\[([A-Za-z_][A-Za-z0-9_]*)\]`)
 
 // EnableLogSink routes the stdlib log package through a writer that mirrors the
 // existing stderr output and persists WARN-worthy lines to app_logs.
@@ -79,7 +81,7 @@ func (w *logSinkWriter) persistIfDiagnostic(line string) {
 		}
 		_, _ = db.Exec(
 			`INSERT INTO app_logs (level, module, message, details, created_at) VALUES ('WARN', ?, ?, ?, datetime('now'))`,
-			module, "", message, // message holds the full line
+			module, message, "",
 		)
 	}(w.db, mod, msg)
 }
