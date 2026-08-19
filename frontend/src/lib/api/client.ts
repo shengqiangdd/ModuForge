@@ -352,11 +352,12 @@ export function streamRequest(path: string, body: unknown, idleMs = 90000): Even
       // Stream finished normally — clear idle timer
       if (idleTimer) clearTimeout(idleTimer);
       window.dispatchEvent(new CustomEvent('ai-stream-done'));
-    } catch (e) {
+    } catch (e: unknown) {
       if (idleTimer) clearTimeout(idleTimer);
       // AbortError means we intentionally closed (idle timeout or user stop)
-      if (e?.name === 'AbortError') return;
-      const msg = e?.message || '网络连接失败';
+      const err = e instanceof Error ? e : null;
+      if (err && err.name === 'AbortError') return;
+      const msg = err?.message || (typeof e === 'string' ? e : '网络连接失败');
       // Auto-retry ONLY on an empty (no bytes received) failure.
       if (!receivedAny && attemptNo < MAX_EMPTY_RETRIES) {
         window.dispatchEvent(new CustomEvent('ai-stream-retry', { detail: { attempt: attemptNo + 1 } }));
