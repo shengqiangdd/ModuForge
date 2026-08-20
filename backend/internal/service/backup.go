@@ -26,7 +26,6 @@ func (s *BackupService) GetDB() *sql.DB { return s.db }
 
 func (s *BackupService) ExportDatabase(ctx context.Context) (string, error) {
 	tables := []string{
-		"users", "projects", "build_tasks", "plugins", "plugin_hooks",
 		"market_modules", "market_versions", "market_reviews", "market_stars",
 		"collaborators", "collab_comments", "collab_edit_sessions",
 		"team_members", "audit_logs", "ai_history", "benchmark_history",

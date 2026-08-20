@@ -124,8 +124,6 @@ func RegisterRoutes(api fiber.Router, db *database.DB, cfg *config.Config) {
 	signingH.SetFileContentRepo(fileRepo)
 	vulnH := NewVulnerabilityHandler(db.Conn)
 	vulnH.SetFileContentRepo(fileRepo)
-	permAuditH := NewPermissionAuditHandler(db.Conn)
-	permAuditH.SetFileContentRepo(fileRepo)
 
 	securitySvc := service.NewSecurityScanner()
 	securityH := NewSecurityHandler(securitySvc, db.Conn)
@@ -151,8 +149,6 @@ func RegisterRoutes(api fiber.Router, db *database.DB, cfg *config.Config) {
 	analyticsSvc := service.NewAnalyticsService(db.Conn)
 	analyticsH := NewAnalyticsHandler(analyticsSvc)
 	tagsH := NewTagsHandler(db.Conn)
-	pluginSvc := service.NewPluginService(db.Conn)
-	pluginH := NewPluginHandler(pluginSvc)
 	badgeSvc := service.NewBadgeService(db.Conn)
 	badgeH := NewBadgeHandler(badgeSvc)
 	dashboardH := NewDashboardHandler(db.Conn)
@@ -302,8 +298,6 @@ func RegisterRoutes(api fiber.Router, db *database.DB, cfg *config.Config) {
 	// Analytics
 	api.Get("/analytics/module-stats", analyticsH.ModuleStats)
 
-	// Plugins (read)
-	api.Get("/plugins", pluginH.List)
 
 	// Tags
 	api.Get("/tags", tagsH.List)
@@ -640,14 +634,6 @@ func RegisterRoutes(api fiber.Router, db *database.DB, cfg *config.Config) {
 	// webhookH := NewWebhookHandler(cfg, buildSvc)
 	// r("POST", "/webhook/git", webhookH.HandleGitWebhook)
 
-	// Plugin write
-	r("POST", "/plugins/hooks/execute", pluginH.ExecuteHook)
-	r("POST", "/plugins/install", pluginH.Install)
-	r("POST", "/plugins/:id/enable", pluginH.Enable)
-	r("POST", "/plugins/:id/disable", pluginH.Disable)
-	r("DELETE", "/plugins/:id", pluginH.Uninstall)
-	r("POST", "/plugins/:id/hooks", pluginH.RegisterHook)
-	r("GET", "/plugins/:id/hooks", pluginH.GetHooks)
 
 	// AI rate-limited
 	rA("POST", "/ai/generate", aiH.GenerateModule)
@@ -763,8 +749,6 @@ func RegisterRoutes(api fiber.Router, db *database.DB, cfg *config.Config) {
 	r("GET", "/projects/:id/signature", signingH.GetSignatureInfo)
 	r("POST", "/projects/:id/scan-vulns-ai", vulnH.ScanModuleVulnerabilities)
 	r("GET", "/projects/:id/vulnerabilities", vulnH.GetModuleVulnerabilities)
-	r("POST", "/projects/:id/audit", permAuditH.AuditModulePermissions)
-	r("GET", "/projects/:id/permissions", permAuditH.GetModulePermissions)
 
 	// ============================================================================
 	// ADMIN ROUTES

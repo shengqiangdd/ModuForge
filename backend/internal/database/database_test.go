@@ -67,7 +67,6 @@ func TestMigrate(t *testing.T) {
 	}
 
 	// Verify key tables exist
-	expectedTables := []string{"users", "projects", "project_files", "build_tasks", "market_modules", "ai_prompts", "plugins"}
 	for _, table := range expectedTables {
 		if !tableExists(db, table) {
 			t.Errorf("expected table %s to exist after migration", table)

@@ -160,7 +160,6 @@ func (h *RecycleHandler) cascadeDeleteProject(projectID string) {
 		"build_tasks", "project_files", "file_comments", "comments",
 		"collaborators", "edit_sessions", "team_members", "activities",
 		"vulnerability_scans", "project_versions", "git_branches",
-		"collaboration_sessions", "module_vuln_scans", "permission_audits",
 	}
 	for _, table := range projectTables {
 		// Validate table name against whitelist to prevent injection

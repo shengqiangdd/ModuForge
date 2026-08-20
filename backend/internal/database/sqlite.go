@@ -171,27 +171,6 @@ func (db *DB) migrate() error {
 			last_active DATETIME DEFAULT CURRENT_TIMESTAMP,
 			FOREIGN KEY (project_id) REFERENCES projects(id)
 		)`,
-		`CREATE TABLE IF NOT EXISTS plugins (
-			id TEXT PRIMARY KEY,
-			name TEXT NOT NULL,
-			slug TEXT UNIQUE NOT NULL,
-			description TEXT,
-			author TEXT,
-			version TEXT,
-			enabled INTEGER DEFAULT 0,
-			config TEXT,
-			installed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-		)`,
-		`CREATE TABLE IF NOT EXISTS plugin_hooks (
-			id TEXT PRIMARY KEY,
-			plugin_id TEXT NOT NULL,
-			hook_name TEXT NOT NULL,
-			hook_type TEXT,
-			entry_point TEXT,
-			config TEXT,
-			FOREIGN KEY (plugin_id) REFERENCES plugins(id)
-		)`,
 		// Provider configs: per-user overrides for preset providers
 		`CREATE TABLE IF NOT EXISTS provider_configs (
 			id TEXT NOT NULL,

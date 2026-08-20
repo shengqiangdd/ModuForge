@@ -156,28 +156,6 @@ func migrate(db *sql.DB) error {
 			last_active DATETIME
 		)`,
 
-		// Wave 2: Plugin tables
-		`CREATE TABLE IF NOT EXISTS plugins (
-			id TEXT PRIMARY KEY,
-			name TEXT NOT NULL,
-			slug TEXT UNIQUE NOT NULL,
-			description TEXT,
-			author TEXT,
-			version TEXT,
-			enabled BOOLEAN DEFAULT 0,
-			config TEXT,
-			installed_at DATETIME,
-			updated_at DATETIME
-		)`,
-		`CREATE TABLE IF NOT EXISTS plugin_hooks (
-			id TEXT PRIMARY KEY,
-			plugin_id TEXT NOT NULL,
-			hook_name TEXT NOT NULL,
-			hook_type TEXT,
-			entry_point TEXT,
-			config TEXT,
-			FOREIGN KEY (plugin_id) REFERENCES plugins(id)
-		)`,
 
 		// Market tables
 		`CREATE TABLE IF NOT EXISTS market_modules (
