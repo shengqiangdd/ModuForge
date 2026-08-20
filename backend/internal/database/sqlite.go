@@ -781,15 +781,8 @@ func (db *DB) migrate() error {
 		"ALTER TABLE users ADD COLUMN location TEXT DEFAULT ''",
 		"ALTER TABLE users ADD COLUMN website TEXT DEFAULT ''",
 		"ALTER TABLE users ADD COLUMN github_token TEXT DEFAULT ''",
-		"CREATE INDEX IF NOT EXISTS idx_project_files_project ON project_files(project_id)",
 		// Add project_id to ai_conversations for linking conversations to projects
 		"ALTER TABLE ai_conversations ADD COLUMN project_id TEXT DEFAULT ''",
-		"CREATE INDEX IF NOT EXISTS idx_build_tasks_project ON build_tasks(project_id)",
-		"CREATE INDEX IF NOT EXISTS idx_build_tasks_status ON build_tasks(status)",
-		"CREATE INDEX IF NOT EXISTS idx_comments_project ON comments(project_id)",
-		"CREATE INDEX IF NOT EXISTS idx_edit_sessions_project ON edit_sessions(project_id)",
-		"CREATE INDEX IF NOT EXISTS idx_collaborators_project ON collaborators(project_id)",
-		"CREATE INDEX IF NOT EXISTS idx_collaborators_user ON collaborators(user_id)",
 		"ALTER TABLE module_screenshots ADD COLUMN caption TEXT DEFAULT ''",
 		// Add file_count and total_size to existing module_versions table
 		"ALTER TABLE module_versions ADD COLUMN file_count INTEGER DEFAULT 0",
@@ -813,8 +806,6 @@ func (db *DB) migrate() error {
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
 		)`,
-		"CREATE INDEX IF NOT EXISTS idx_build_schedules_project ON build_schedules(project_id)",
-		"CREATE INDEX IF NOT EXISTS idx_build_schedules_next ON build_schedules(is_active, next_build_at)",
 		// Add trigger and commit_hash to existing build_tasks table
 		"ALTER TABLE build_tasks ADD COLUMN trigger TEXT DEFAULT 'manual'",
 		"ALTER TABLE build_tasks ADD COLUMN commit_hash TEXT DEFAULT ''",
