@@ -85,7 +85,7 @@ func (s *BashSkill) Execute(ctx context.Context, input map[string]interface{}) (
 
 	// Ensure project files exist on disk (sync from DB if needed)
 	if projectID != "" {
-		if err := s.syncProjectToDisk(projectID, projectPath); err != nil {
+		if err := s.syncProjectToDisk(ctx, projectID, projectPath); err != nil {
 			log.Printf("[BashSkill] sync warning: %v", err)
 		}
 	}
@@ -140,7 +140,7 @@ func (s *BashSkill) validateCommand(command string) error {
 // syncProjectToDisk ensures all project files from the database exist on disk.
 // This is needed because bash runs commands on the filesystem, but files may
 // only exist in the database (e.g., after write_file in a read-only container).
-func (s *BashSkill) syncProjectToDisk(projectID, projectDir string) error {
+func (s *BashSkill) syncProjectToDisk(ctx context.Context, projectID, projectDir string) error {
 	if s.db == nil || projectID == "" {
 		return nil
 	}
@@ -160,7 +160,7 @@ func (s *BashSkill) syncProjectToDisk(projectID, projectDir string) error {
 		if err := rows.Scan(&path); err != nil {
 			continue
 		}
-		content, err := readFileContent(context.Background(), s.storage, s.db, projectID, path)
+		content, err := readFileContent(ctx, s.storage, s.db, projectID, path)
 		if err != nil {
 			log.Printf("[BashSkill] read failed for %s: %v", path, err)
 			continue

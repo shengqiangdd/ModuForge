@@ -304,7 +304,7 @@ func (s *BuildModuleSkill) Execute(ctx context.Context, input map[string]interfa
 				if err := rows.Scan(&path); err != nil {
 					continue
 				}
-				content, err := readFileContent(context.Background(), s.storage, s.db, projectID, path)
+				content, err := readFileContent(ctx, s.storage, s.db, projectID, path)
 				if err != nil {
 					continue
 				}

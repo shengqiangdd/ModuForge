@@ -26,7 +26,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 
 # ============================================================
 # Stage 2: Runtime (Go compiler + Rust + Android NDK)
-FROM golang:1.25-alpine
+FROM alpine:3.20
 
 LABEL org.opencontainers.image.title="ModuForge"
 LABEL org.opencontainers.image.description="Modular software forge platform"
@@ -96,7 +96,7 @@ ENV PORT=:8080 \
     PROJECTS_DIR=/data/projects \
     GIN_MODE=release \
     DIST_DIR=/app/dist \
-    PATH="/usr/local/cargo/bin:/usr/local/go/bin:${PATH}" \
+    PATH="/usr/local/cargo/bin:${PATH}" \
     CARGO_HOME="/usr/local/cargo" \
     RUSTUP_HOME="/usr/local/rustup"
 

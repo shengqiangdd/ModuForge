@@ -54,7 +54,7 @@ func (s *GlobSearchSkill) Execute(ctx context.Context, input map[string]interfac
 
 	// Ensure files exist on disk
 	if projectID != "" {
-		_ = s.syncProjectToDisk(projectID, projectPath)
+		_ = s.syncProjectToDisk(ctx, projectID, projectPath)
 	}
 
 	// If pattern contains **, use filepath.Walk for recursive matching
@@ -143,7 +143,7 @@ func (s *GlobSearchSkill) walkSearch(projectPath, pattern string, maxResults int
 }
 
 // syncProjectToDisk ensures project files from DB exist on disk for searching.
-func (s *GlobSearchSkill) syncProjectToDisk(projectID, projectDir string) error {
+func (s *GlobSearchSkill) syncProjectToDisk(ctx context.Context, projectID, projectDir string) error {
 	if s.db == nil || projectID == "" {
 		return nil
 	}
@@ -162,7 +162,7 @@ func (s *GlobSearchSkill) syncProjectToDisk(projectID, projectDir string) error 
 		if err := rows.Scan(&path); err != nil {
 			continue
 		}
-		content, err := readFileContent(context.Background(), s.storage, s.db, projectID, path)
+		content, err := readFileContent(ctx, s.storage, s.db, projectID, path)
 		if err != nil {
 			continue
 		}

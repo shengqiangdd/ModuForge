@@ -64,22 +64,22 @@ func (s *SyntaxCheckerSkill) Execute(ctx context.Context, input map[string]inter
 		// Auto-detect and check all languages
 		sources := s.detectLanguages(projectPath)
 		if sources.hasGo {
-			results = append(results, s.checkGo(projectPath))
+			results = append(results, s.checkGo(ctx, projectPath))
 		}
 		if sources.hasCargo {
-			results = append(results, s.checkRust(projectPath))
+			results = append(results, s.checkRust(ctx, projectPath))
 		}
 		if sources.hasCpp {
-			results = append(results, s.checkCpp(projectPath))
+			results = append(results, s.checkCpp(ctx, projectPath))
 		}
 	} else {
 		switch language {
 		case "go":
-			results = append(results, s.checkGo(projectPath))
+			results = append(results, s.checkGo(ctx, projectPath))
 		case "rust":
-			results = append(results, s.checkRust(projectPath))
+			results = append(results, s.checkRust(ctx, projectPath))
 		case "cpp", "c":
-			results = append(results, s.checkCpp(projectPath))
+			results = append(results, s.checkCpp(ctx, projectPath))
 		default:
 			return "", fmt.Errorf("unsupported language: %s (use go, rust, cpp, or auto)", language)
 		}
@@ -126,7 +126,7 @@ func (s *SyntaxCheckerSkill) detectLanguages(projectPath string) sourceInfo {
 }
 
 // checkGo runs `go vet` and parses errors.
-func (s *SyntaxCheckerSkill) checkGo(projectPath string) SyntaxResult {
+func (s *SyntaxCheckerSkill) checkGo(ctx context.Context, projectPath string) SyntaxResult {
 	result := SyntaxResult{Language: "go", Hints: []string{}}
 
 	goBin := findGoBinary()
@@ -150,7 +150,6 @@ func (s *SyntaxCheckerSkill) checkGo(projectPath string) SyntaxResult {
 	}
 
 	// Phase 1: go vet (catches common errors)
-	ctx := context.Background()
 	cmd := exec.CommandContext(ctx, goBin, "vet", "./...")
 	cmd.Dir = goModDir
 	cmd.Env = append(os.Environ(), "GOOS=android", "GOARCH=arm64", "CGO_ENABLED=0")
@@ -181,7 +180,7 @@ func (s *SyntaxCheckerSkill) checkGo(projectPath string) SyntaxResult {
 }
 
 // checkRust runs `cargo check` and parses errors.
-func (s *SyntaxCheckerSkill) checkRust(projectPath string) SyntaxResult {
+func (s *SyntaxCheckerSkill) checkRust(ctx context.Context, projectPath string) SyntaxResult {
 	result := SyntaxResult{Language: "rust", Hints: []string{}}
 
 	sources := s.detectLanguages(projectPath)
@@ -197,7 +196,6 @@ func (s *SyntaxCheckerSkill) checkRust(projectPath string) SyntaxResult {
 	}
 
 	// cargo check is faster than cargo build, validates syntax and types
-	ctx := context.Background()
 	cmd := exec.CommandContext(ctx, cargoPath, "check", "--message-format=short")
 	cmd.Dir = cargoDir
 	output, err := cmd.CombinedOutput()
@@ -221,7 +219,7 @@ func (s *SyntaxCheckerSkill) checkRust(projectPath string) SyntaxResult {
 }
 
 // checkCpp runs gcc/g++ syntax-only check.
-func (s *SyntaxCheckerSkill) checkCpp(projectPath string) SyntaxResult {
+func (s *SyntaxCheckerSkill) checkCpp(ctx context.Context, projectPath string) SyntaxResult {
 	result := SyntaxResult{Language: "cpp", Hints: []string{}}
 
 	compiler := findCppCompiler()
@@ -246,7 +244,6 @@ func (s *SyntaxCheckerSkill) checkCpp(projectPath string) SyntaxResult {
 		return result
 	}
 
-	ctx := context.Background()
 	args := append([]string{"-std=c++17", "-fsyntax-only", "-Wall", "-Wextra"}, srcFiles...)
 	cmd := exec.CommandContext(ctx, compiler, args...)
 	output, err := cmd.CombinedOutput()

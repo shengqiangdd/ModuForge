@@ -57,7 +57,7 @@ func (s *GrepSearchSkill) Execute(ctx context.Context, input map[string]interfac
 
 	// Ensure files exist on disk
 	if projectID != "" {
-		_ = s.syncProjectToDisk(projectID, projectPath)
+		_ = s.syncProjectToDisk(ctx, projectID, projectPath)
 	}
 
 	// Compile regex
@@ -205,7 +205,7 @@ func (s *GrepSearchSkill) literalSearch(projectPath, pattern, includeFilter stri
 }
 
 // syncProjectToDisk ensures project files from DB exist on disk for searching.
-func (s *GrepSearchSkill) syncProjectToDisk(projectID, projectDir string) error {
+func (s *GrepSearchSkill) syncProjectToDisk(ctx context.Context, projectID, projectDir string) error {
 	if s.db == nil || projectID == "" {
 		return nil
 	}
@@ -224,7 +224,7 @@ func (s *GrepSearchSkill) syncProjectToDisk(projectID, projectDir string) error 
 		if err := rows.Scan(&path); err != nil {
 			continue
 		}
-		content, err := readFileContent(context.Background(), s.storage, s.db, projectID, path)
+		content, err := readFileContent(ctx, s.storage, s.db, projectID, path)
 		if err != nil {
 			continue
 		}

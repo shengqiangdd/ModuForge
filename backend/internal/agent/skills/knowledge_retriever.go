@@ -76,7 +76,7 @@ func (s *KnowledgeRetrieverSkill) Execute(ctx context.Context, input map[string]
 
 	switch searchType {
 	case "code":
-		results, err = s.searchCode(query, projectID, language, limit)
+		results, err = s.searchCode(ctx, query, projectID, language, limit)
 	case "doc":
 		results, err = s.searchDocumentation(query, projectID, limit)
 	case "example":
@@ -104,7 +104,7 @@ func (s *KnowledgeRetrieverSkill) Execute(ctx context.Context, input map[string]
 	return string(output), nil
 }
 
-func (s *KnowledgeRetrieverSkill) searchCode(query, projectID, language string, limit int) ([]KnowledgeResult, error) {
+func (s *KnowledgeRetrieverSkill) searchCode(ctx context.Context, query, projectID, language string, limit int) ([]KnowledgeResult, error) {
 	var results []KnowledgeResult
 
 	// Search in project files if projectID is provided
@@ -124,7 +124,7 @@ func (s *KnowledgeRetrieverSkill) searchCode(query, projectID, language string, 
 			if err := rows.Scan(&path); err != nil {
 				continue
 			}
-			content, err := readFileContent(context.Background(), s.storage, s.db, projectID, path)
+			content, err := readFileContent(ctx, s.storage, s.db, projectID, path)
 			if err != nil {
 				continue
 			}

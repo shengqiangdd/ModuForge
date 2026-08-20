@@ -30,6 +30,7 @@ func NewSQLiteDB(dbPath string) (*DB, error) {
 	conn.SetConnMaxLifetime(0)
 
 	db := &DB{Conn: conn}
+	db.Conn.Exec("PRAGMA mmap_size = 268435456") // 256MB
 	if err := db.migrate(); err != nil {
 		return nil, fmt.Errorf("migrate: %w", err)
 	}
