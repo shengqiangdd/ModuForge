@@ -1,32 +1,10 @@
 package agent
 
 import (
-	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
-	"time"
 )
-
-// ═══════════════════════════════════════════════════════════════════
-// File Dependency Graph — Track file dependencies for smart reads
-// Inspired by: Rust's cargo dependency graph, TypeScript's project refs
-//
-// Builds an in-memory directed graph of file dependencies:
-// - Go: import statements
-// - Rust: use/mod statements
-// - JS/TS: import/require statements
-// - Generic: grep for cross-file references
-//
-// Enables:
-// - Smart file selection (read most impactful files first)
-// - Incremental builds (only rebuild affected files)
-// - Impact analysis (what breaks when a file changes)
-// - Circular dependency detection
-// ══════════════════════════════════════════════════════════════════?
-// DependencyNode represents a single file in the dependency graph.
 
 func (dg *FileDependencyGraph) parseImports(relPath string) []string {
 	absPath := filepath.Join(dg.projectPath, relPath)
