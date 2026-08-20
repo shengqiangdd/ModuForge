@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"context"
 	"log"
 	"net/http"
 
