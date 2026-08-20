@@ -35,7 +35,7 @@ import DiffPanelModal from './components/modals/DiffPanelModal.svelte';
 
 // ─── Lib ───
 import { generateUUID, safeCopyText } from './lib/utils';
-import type { Mode, TokenUsage, AgentStep, Provider, Model, AIPrompt, GenHistoryItem, Message, ProgressStepDetail, AutoBuildPhase, ContextProject, ComparisonResult, SecurityScanResult, ProgressStepDetail } from './lib/types';
+import type { Mode, TokenUsage, AgentStep, Provider, Model, AIPrompt, GenHistoryItem, Message, AutoBuildPhase, ContextProject, ComparisonResult, SecurityScanResult } from './lib/types';
 import { MODES } from './lib/types';
 import { memoExtractFiles, preRenderVisibleMessages } from './lib/markdown';
 import { StreamHandler } from './lib/stream-handler';
