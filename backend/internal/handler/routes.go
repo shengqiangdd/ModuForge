@@ -297,8 +297,6 @@ func RegisterRoutes(api fiber.Router, db *database.DB, cfg *config.Config) {
 
 	// Analytics
 	api.Get("/analytics/module-stats", analyticsH.ModuleStats)
-
-
 	// Tags
 	api.Get("/tags", tagsH.List)
 
@@ -633,8 +631,6 @@ func RegisterRoutes(api fiber.Router, db *database.DB, cfg *config.Config) {
 	// Webhook (REMOVED - no longer needed)
 	// webhookH := NewWebhookHandler(cfg, buildSvc)
 	// r("POST", "/webhook/git", webhookH.HandleGitWebhook)
-
-
 	// AI rate-limited
 	rA("POST", "/ai/generate", aiH.GenerateModule)
 	rA("POST", "/ai/chat", aiH.Chat)
