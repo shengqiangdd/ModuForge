@@ -10,15 +10,15 @@ import (
 
 // AICapabilityScore 表示当前配置的 AI 能力评分
 type AICapabilityScore struct {
-	Grade           string   `json:"grade"`             // S/A/B/C/D
-	TotalScore      int      `json:"total_score"`       // 0-100
-	ModelScore      int      `json:"model_score"`       // 模型能力分
-	SpeedScore      int      `json:"speed_score"`       // 响应速度分
-	CostScore       int      `json:"cost_score"`        // 成本效率分
-	FeatureScore    int      `json:"feature_score"`     // 功能完整度分
-	CurrentModel    string   `json:"current_model"`     // 当前模型名称
-	CurrentProvider string   `json:"current_provider"`  // 当前提供商
-	Suggestions     []string `json:"suggestions"`       // 优化建议
+	Grade           string   `json:"grade"`            // S/A/B/C/D
+	TotalScore      int      `json:"total_score"`      // 0-100
+	ModelScore      int      `json:"model_score"`      // 模型能力分
+	SpeedScore      int      `json:"speed_score"`      // 响应速度分
+	CostScore       int      `json:"cost_score"`       // 成本效率分
+	FeatureScore    int      `json:"feature_score"`    // 功能完整度分
+	CurrentModel    string   `json:"current_model"`    // 当前模型名称
+	CurrentProvider string   `json:"current_provider"` // 当前提供商
+	Suggestions     []string `json:"suggestions"`      // 优化建议
 }
 
 // EvaluateAICapability 评估当前配置的 AI 能力等级
@@ -137,11 +137,11 @@ func evaluateModelCapability(model *llm.Model, provider *llm.Provider) int {
 	} else if model.PriceInput >= 3.0 {
 		score += 12 // 高端模型
 	} else if model.PriceInput >= 1.0 {
-		score += 9  // 中端模型
+		score += 9 // 中端模型
 	} else if model.PriceInput > 0 {
-		score += 6  // 经济模型
+		score += 6 // 经济模型
 	} else {
-		score += 4  // 免费模型
+		score += 4 // 免费模型
 	}
 
 	// 模型名称中的关键词评估
@@ -222,15 +222,15 @@ func evaluateCostScore(model *llm.Model) int {
 	case totalCost <= 0.5:
 		score += 10 // 极低成本
 	case totalCost <= 2.0:
-		score += 8  // 低成本
+		score += 8 // 低成本
 	case totalCost <= 5.0:
-		score += 6  // 中等成本
+		score += 6 // 中等成本
 	case totalCost <= 15.0:
-		score += 4  // 较高成本
+		score += 4 // 较高成本
 	case totalCost <= 50.0:
-		score += 2  // 高成本
+		score += 2 // 高成本
 	default:
-		score += 0  // 极高成本
+		score += 0 // 极高成本
 	}
 
 	if score > 20 {

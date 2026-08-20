@@ -14,10 +14,10 @@ import (
 )
 
 type Message struct {
-	Role       string        `json:"role"`
-	Content    string        `json:"content"`
-	ToolCalls  []ToolCall    `json:"tool_calls,omitempty"`
-	ToolCallID string        `json:"tool_call_id,omitempty"`
+	Role       string     `json:"role"`
+	Content    string     `json:"content"`
+	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
+	ToolCallID string     `json:"tool_call_id,omitempty"`
 }
 
 type ToolCall struct {
@@ -402,14 +402,14 @@ func (ms *MemoryStore) LoadUserPreferences(userID string) string {
 // ===== DB-Backed Conversation Persistence =====
 
 type ConversationSummary struct {
-	ID        string `json:"id"`
-	Title     string `json:"title"`
-	Mode      string `json:"mode"`
-	Model     string `json:"model"`
-	ProjectID string `json:"project_id"`
-	MessageCount int `json:"message_count"`
-	CreatedAt string `json:"created_at"`
-	UpdatedAt string `json:"updated_at"`
+	ID           string `json:"id"`
+	Title        string `json:"title"`
+	Mode         string `json:"mode"`
+	Model        string `json:"model"`
+	ProjectID    string `json:"project_id"`
+	MessageCount int    `json:"message_count"`
+	CreatedAt    string `json:"created_at"`
+	UpdatedAt    string `json:"updated_at"`
 }
 
 func SaveConversation(db *sql.DB, userID, id, title, mode string, messages []Message, model string, projectID string) (string, error) {
@@ -513,17 +513,17 @@ func DeleteConversation(db *sql.DB, userID, id string) error {
 // ===== Individual Message Persistence =====
 
 type ConversationMessage struct {
-	ID         int64    `json:"id"`
-	SessionID  string   `json:"session_id"`
-	UserID     string   `json:"user_id"`
-	Role       string   `json:"role"`
-	Content    string   `json:"content"`
-	StepType   string   `json:"step_type,omitempty"` // think, skill_call, skill_result, answer, ""
-	RoundIndex int      `json:"round_index"`          // which Q&A round this message/step belongs to
-	CreatedAt  string   `json:"created_at"`
-	ToolCalls  string   `json:"tool_calls,omitempty"`
-	ToolCallID string   `json:"tool_call_id,omitempty"`
-	TokenUsage string   `json:"token_usage,omitempty"` // JSON: {"prompt_tokens":N,"completion_tokens":N,"total_tokens":N}
+	ID         int64  `json:"id"`
+	SessionID  string `json:"session_id"`
+	UserID     string `json:"user_id"`
+	Role       string `json:"role"`
+	Content    string `json:"content"`
+	StepType   string `json:"step_type,omitempty"` // think, skill_call, skill_result, answer, ""
+	RoundIndex int    `json:"round_index"`         // which Q&A round this message/step belongs to
+	CreatedAt  string `json:"created_at"`
+	ToolCalls  string `json:"tool_calls,omitempty"`
+	ToolCallID string `json:"tool_call_id,omitempty"`
+	TokenUsage string `json:"token_usage,omitempty"` // JSON: {"prompt_tokens":N,"completion_tokens":N,"total_tokens":N}
 }
 
 func EnsureConversationMessagesTable(db *sql.DB) error {
@@ -856,11 +856,11 @@ func SearchSessionMessages(db *sql.DB, userID, query string, limit int) ([]map[s
 			content = string(runes[:120]) + "..."
 		}
 		result = append(result, map[string]interface{}{
-			"session_id":  sessionID,
-			"role":        role,
-			"content":     content,
-			"step_type":   stepType,
-			"created_at":  createdAt,
+			"session_id": sessionID,
+			"role":       role,
+			"content":    content,
+			"step_type":  stepType,
+			"created_at": createdAt,
 		})
 	}
 	return result, nil
