@@ -5,8 +5,11 @@
   import SystemOverviewWidget from './components/SystemOverviewWidget.svelte';
   import BuildStatsWidget from './components/BuildStatsWidget.svelte';
   import BuildTrendsWidget from './components/BuildTrendsWidget.svelte';
+  import MarketStatsWidget from './components/MarketStatsWidget.svelte';
+  import HealthCheckWidget from './components/HealthCheckWidget.svelte';
+  import AddWidgetModal from './components/AddWidgetModal.svelte';
+  import HealthDetailModal from './components/HealthDetailModal.svelte';
   import Skeleton from '$lib/components/ui/Skeleton.svelte';
-  import ListTransition from '$lib/components/ui/ListTransition.svelte';
 
   interface Widget {
     id: number; widget_type: string; title: string; config: string;
@@ -21,7 +24,6 @@
   let widgetTypes = $state<WidgetType[]>([]);
   let loading = $state(true);
   let showAddModal = $state(false);
-  let selectedWidgetType = $state('');
   let dragIdx = $state<number | null>(null);
   let dropIdx = $state<number | null>(null);
   let autoRefresh = $state(true);
@@ -76,7 +78,6 @@
         fetch('/api/v1/analytics/module-stats', { headers }).then(r => r.json()),
         fetch('/api/v1/market/stats/trending', { headers }).then(r => r.json()),
       ];
-      // Admin-only endpoints (under /admin prefix)
       if (isAdmin) {
         promises.unshift(
           fetch('/api/v1/admin/analytics/system', { headers }).then(r => r.json()),
@@ -124,44 +125,40 @@
     healthDetailLoading = false;
   }
 
-  // Admin-only widget types
   const adminWidgetTypes = new Set(['system_overview', 'system_info', 'health_check', 'build_stats', 'build_trends']);
-  // Visible widgets filtered by role
   let visibleWidgets = $derived(widgets.filter(w => w.is_visible && (isAdmin || !adminWidgetTypes.has(w.widget_type))));
+  let existingWidgetTypeSet = $derived(new Set(widgets.map(w => w.widget_type)));
 
   onMount(() => {
     void (async () => {
-    // Check admin role first
-    const token = getToken();
-    if (token) {
-      try {
-        const r = await fetch('/api/v1/auth/profile', { headers: { Authorization: `Bearer ${token}` } });
-        if (r.ok) { const d = await r.json(); isAdmin = d.is_admin || false; }
-      } catch {}
-    }
-    await Promise.all([loadWidgets(), loadWidgetTypes(), loadAll()]);
-    if (widgets.length === 0) {
-      if (!token) return;
-      const defaults = ['market_stats', 'recent_activity'];
-      if (isAdmin) defaults.unshift('system_overview', 'build_stats', 'build_trends', 'system_info', 'health_check');
-      for (let i = 0; i < defaults.length; i++) {
+      const token = getToken();
+      if (token) {
         try {
-          await fetch('/api/v1/dashboard/widgets', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-            body: JSON.stringify({ widget_type: defaults[i], title: defaults[i], position_x: 0, position_y: i, width: 2, height: 1 })
-          });
+          const r = await fetch('/api/v1/auth/profile', { headers: { Authorization: `Bearer ${token}` } });
+          if (r.ok) { const d = await r.json(); isAdmin = d.is_admin || false; }
         } catch {}
       }
-      await loadWidgets();
-    }
-    if (!systemStats) await loadAll();
+      await Promise.all([loadWidgets(), loadWidgetTypes(), loadAll()]);
+      if (widgets.length === 0) {
+        if (!token) return;
+        const defaults = ['market_stats', 'recent_activity'];
+        if (isAdmin) defaults.unshift('system_overview', 'build_stats', 'build_trends', 'system_info', 'health_check');
+        for (let i = 0; i < defaults.length; i++) {
+          try {
+            await fetch('/api/v1/dashboard/widgets', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+              body: JSON.stringify({ widget_type: defaults[i], title: defaults[i], position_x: 0, position_y: i, width: 2, height: 1 })
+            });
+          } catch {}
+        }
+        await loadWidgets();
+      }
+      if (!systemStats) await loadAll();
     })();
-
     return () => { if (autoRefreshTimer) clearInterval(autoRefreshTimer); };
   });
 
-  // Single effect for auto-refresh management (replaces duplicate in onMount)
   $effect(() => {
     if (autoRefresh) {
       if (autoRefreshTimer) clearInterval(autoRefreshTimer);
@@ -172,8 +169,7 @@
     return () => { if (autoRefreshTimer) { clearInterval(autoRefreshTimer); autoRefreshTimer = null; } };
   });
 
-  async function addWidget() {
-    if (!selectedWidgetType) return;
+  async function addWidget(type: string) {
     const token = getToken();
     if (!token) return;
     const maxY = Math.max(0, ...widgets.map(w => w.position_y + w.height));
@@ -181,11 +177,10 @@
       await fetch('/api/v1/dashboard/widgets', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ widget_type: selectedWidgetType, title: selectedWidgetType, position_x: 0, position_y: maxY, width: 2, height: 1 })
+        body: JSON.stringify({ widget_type: type, title: type, position_x: 0, position_y: maxY, width: 2, height: 1 })
       });
       await loadWidgets();
       showAddModal = false;
-      selectedWidgetType = '';
     } catch {}
   }
 
@@ -225,6 +220,12 @@
   }
 
   const gridCols = 'grid grid-cols-1 md:grid-cols-2 gap-4';
+
+  const widgetTitleMap: Record<string, string> = {
+    system_overview: '系统概览', build_stats: '构建统计', build_trends: '构建趋势',
+    market_stats: '市场统计', system_info: '系统信息', recent_activity: '最近活动',
+    trending_modules: '热门趋势', health_check: '系统健康',
+  };
 </script>
 
 <div class="w-full p-4 md:p-6 max-w-7xl mx-auto">
@@ -262,7 +263,9 @@
     <div class={gridCols}>
       {#each visibleWidgets as w, i (w.id)}
         {#if w.is_visible}
-          <div role="presentation" class="card p-5 relative group"
+          <div
+            role="presentation"
+            class="card p-5 relative group"
             style="{w.width > 1 ? 'grid-column: span ' + Math.min(w.width, 2) : ''}"
             draggable="true"
             ondragstart={(e) => handleDragStart(e, i)}
@@ -274,15 +277,7 @@
           >
             <div class="flex items-center justify-between mb-4">
               <h3 class="text-sm font-semibold" style="color: var(--color-text)">
-                {#if w.widget_type === 'system_overview'}系统概览
-                {:else if w.widget_type === 'build_stats'}构建统计
-                {:else if w.widget_type === 'build_trends'}构建趋势
-                {:else if w.widget_type === 'market_stats'}市场统计
-                {:else if w.widget_type === 'system_info'}系统信息
-                {:else if w.widget_type === 'recent_activity'}最近活动
-                {:else if w.widget_type === 'trending_modules'}热门趋势
-                {:else if w.widget_type === 'health_check'}系统健康
-                {:else}{w.title}{/if}
+                {widgetTitleMap[w.widget_type] ?? w.title}
               </h3>
               <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                 <button class="p-1 rounded hover:bg-[var(--color-surface)] transition-colors" onclick={() => removeWidget(w.id)} title="删除">
@@ -293,44 +288,12 @@
 
             {#if w.widget_type === 'system_overview'}
               <SystemOverviewWidget data={systemStats} loading={loading} t={$t} />
-
             {:else if w.widget_type === 'build_stats'}
               <BuildStatsWidget data={buildStats} loading={loading} />
-
             {:else if w.widget_type === 'build_trends'}
               <BuildTrendsWidget data={buildTrends} loading={loading} />
-
             {:else if w.widget_type === 'market_stats'}
-              <div class="grid grid-cols-3 gap-2 mb-3">
-                {#each [
-                  { label: $t('dashboard.total_modules'), value: moduleStats?.total_modules ?? 0 },
-                  { label: $t('dashboard.total_installs'), value: moduleStats?.total_installs ?? 0 },
-                  { label: $t('dashboard.total_stars'), value: moduleStats?.total_stars ?? 0 },
-                ] as s}
-                  <div>
-                    <p class="text-xs text-[var(--color-text-muted)] mb-1">{s.label}</p>
-                    <p class="text-base font-bold text-[var(--color-text)] tabular-nums">{s.value}</p>
-                  </div>
-                {/each}
-              </div>
-              {#if moduleStats?.top_categories?.length > 0}
-                <div class="pt-2 border-t border-[var(--color-border)]">
-                  <p class="text-xs text-[var(--color-text-muted)] mb-2">{$t('dashboard.top_categories')}</p>
-                  <div class="space-y-2">
-                    {#each moduleStats.top_categories.slice(0, 4) as cat}
-                      {@const maxC = Math.max(...moduleStats.top_categories.map((c: any) => c.count))}
-                      <div class="flex items-center gap-2 text-xs">
-                        <span class="w-16 truncate" style="color: var(--color-text-secondary)">{cat.category}</span>
-                        <div class="flex-1 rounded-full h-1.5" style="background: var(--color-surface)">
-                          <div class="rounded-full h-1.5" style="width: {(cat.count / maxC) * 100}%; background: var(--gradient-brand)"></div>
-                        </div>
-                        <span class="text-[var(--color-text-muted)] w-6 text-right">{cat.count}</span>
-                      </div>
-                    {/each}
-                  </div>
-                </div>
-              {/if}
-
+              <MarketStatsWidget data={moduleStats} {loading} />
             {:else if w.widget_type === 'system_info'}
               <div class="space-y-0">
                 {#each [
@@ -345,10 +308,8 @@
                   </div>
                 {/each}
               </div>
-
             {:else if w.widget_type === 'recent_activity'}
               <ActivityFeed activities={activities.slice(0, 5)} />
-
             {:else if w.widget_type === 'trending_modules'}
               {#if trendingMods.length === 0}
                 <p class="text-[var(--color-text-muted)] text-center py-8">暂无热门模块</p>
@@ -367,38 +328,7 @@
                 </div>
               {/if}
             {:else if w.widget_type === 'health_check'}
-              {#if healthData}
-                <div class="flex items-center gap-2 mb-3">
-                  <span class="w-2.5 h-2.5 rounded-full" style="background: {healthData.status === 'healthy' ? 'var(--color-success)' : healthData.status === 'warning' ? 'var(--color-warning)' : 'var(--color-error)'}"></span>
-                  <span class="text-sm font-medium" style="color: {healthData.status === 'healthy' ? 'var(--color-success)' : healthData.status === 'warning' ? 'var(--color-warning)' : 'var(--color-error)'}">{healthData.status === 'healthy' ? '健康' : healthData.status === 'warning' ? '警告' : '异常'}</span>
-                  <span class="text-xs ml-auto" style="color: var(--color-text-muted)">运行 {healthData.uptime}</span>
-                </div>
-                <div class="grid grid-cols-2 gap-2 mb-3">
-                  {#each Object.entries(healthData.checks || {}) as [key, check]}
-                    {@const checkStatus = (check as any).status}
-                    <div role="button" tabindex="0" class="p-2 rounded-lg cursor-pointer hover:opacity-80 transition-opacity" style="background: var(--color-surface);" onclick={() => loadHealthDetail()} onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); loadHealthDetail(); } }}>
-                      <div class="flex items-center justify-between mb-0.5">
-                        <span class="text-[10px] font-medium" style="color: var(--color-text-secondary)">{key}</span>
-                        <span class="w-1.5 h-1.5 rounded-full" style="background: {checkStatus === 'ok' ? 'var(--color-success)' : checkStatus === 'warning' ? 'var(--color-warning)' : 'var(--color-error)'}"></span>
-                      </div>
-                      {#if (check as any).response_ms != null}
-                        <p class="text-sm font-bold text-[var(--color-text)]">{(check as any).response_ms}ms</p>
-                      {:else if (check as any).free_gb != null}
-                        <p class="text-sm font-bold text-[var(--color-text)]">{(check as any).free_gb.toFixed(1)}GB</p>
-                      {:else if (check as any).used_mb != null}
-                        <p class="text-sm font-bold text-[var(--color-text)]">{(check as any).used_mb.toFixed(1)}MB</p>
-                      {:else}
-                        <p class="text-sm font-bold text-[var(--color-text)]">{(check as any).status}</p>
-                      {/if}
-                    </div>
-                  {/each}
-                </div>
-                <button class="text-xs w-full py-1.5 rounded-lg text-center hover:opacity-80 transition-opacity" style="background: var(--color-surface); color: var(--color-text-secondary)" onclick={() => loadHealthDetail()}>
-                  查看详细信息
-                </button>
-              {:else}
-                <p class="text-sm text-[var(--color-text-muted)]">加载中...</p>
-              {/if}
+              <HealthCheckWidget data={healthData} {loading} onViewDetail={loadHealthDetail} />
             {:else}
               <p class="text-sm text-[var(--color-text-muted)]">自定义 widget</p>
             {/if}
@@ -409,118 +339,18 @@
   {/if}
 </div>
 
-<!-- Add Widget Modal -->
-{#if showAddModal}
-  <div class="fixed inset-0 flex items-center justify-center z-50 p-4 animate-[fadeIn_0.15s_ease-out]" style="background: rgba(0,0,0,0.6); backdrop-filter: blur(8px)" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) showAddModal = false; }}>
-    <div class="rounded-2xl max-w-md w-full border animate-[scaleIn_0.2s_ease-out]" style="background: var(--color-bg-elevated); border-color: var(--color-border); box-shadow: var(--shadow-xl)" role="dialog" aria-modal="true" tabindex="-1">
-      <div class="p-5 border-b flex items-center justify-between" style="border-color: var(--color-border)">
-        <h3 class="text-lg font-bold text-[var(--color-text)]">添加 Widget</h3>
-        <button class="p-1 rounded hover:bg-[var(--color-surface)] transition-colors" onclick={() => showAddModal = false}>
-          <span class="material-symbols-outlined text-[18px]">close</span>
-        </button>
-      </div>
-      <div class="p-5 space-y-2 max-h-80 overflow-auto">
-        {#each widgetTypes.filter(wt => !widgets.some(w => w.widget_type === wt.type) && (isAdmin || !adminWidgetTypes.has(wt.type))) as wt}
-          <button
-            class="w-full text-left p-3 rounded-xl border transition-all"
-            style="border-color: {selectedWidgetType === wt.type ? 'var(--color-primary)' : 'var(--color-border)'}; background: {selectedWidgetType === wt.type ? 'var(--color-primary-light)' : 'var(--color-surface)'}"
-            onclick={() => selectedWidgetType = wt.type}
-          >
-            <p class="text-sm font-medium text-[var(--color-text)]">{wt.name}</p>
-            <p class="text-xs text-[var(--color-text-muted)] mt-0.5">{wt.desc}</p>
-          </button>
-        {:else}
-          <p class="text-sm text-center py-4" style="color: var(--color-text-muted)">所有 Widget 类型都已添加</p>
-        {/each}
-      </div>
-      <div class="p-5 border-t flex justify-end gap-3" style="border-color: var(--color-border)">
-        <button class="btn-ghost text-sm" onclick={() => showAddModal = false}>取消</button>
-        <button class="btn-primary text-sm" disabled={!selectedWidgetType} onclick={addWidget}>添加</button>
-      </div>
-    </div>
-  </div>
-{/if}
+<AddWidgetModal
+  open={showAddModal}
+  {widgetTypes}
+  existingWidgetTypes={existingWidgetTypeSet}
+  onClose={() => showAddModal = false}
+  onAdd={addWidget}
+/>
 
-<!-- Health Detail Modal -->
-{#if showHealthDetail}
-  <div class="fixed inset-0 flex items-center justify-center z-50 p-4 animate-[fadeIn_0.15s_ease-out]" style="background: rgba(0,0,0,0.6); backdrop-filter: blur(8px)" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) showHealthDetail = false; }}>
-    <div class="rounded-2xl max-w-lg w-full border animate-[scaleIn_0.2s_ease-out] max-h-[80vh] overflow-hidden flex flex-col" style="background: var(--color-bg-elevated); border-color: var(--color-border); box-shadow: var(--shadow-xl)" role="dialog" aria-modal="true" tabindex="-1">
-      <div class="p-5 border-b flex items-center justify-between" style="border-color: var(--color-border)">
-        <div class="flex items-center gap-3">
-          <div class="w-8 h-8 rounded-lg flex items-center justify-center" style="background: var(--color-success-light)">
-            <span class="material-symbols-outlined text-[16px]" style="color: var(--color-success)">monitor_heart</span>
-          </div>
-          <div>
-            <h3 class="text-base font-bold text-[var(--color-text)]">健康检查详情</h3>
-            <p class="text-xs" style="color: var(--color-text-muted)">系统运行状态和资源使用</p>
-          </div>
-        </div>
-        <button class="p-1 rounded hover:bg-[var(--color-surface)] transition-colors" onclick={() => showHealthDetail = false}>
-          <span class="material-symbols-outlined text-[18px]">close</span>
-        </button>
-      </div>
-      
-      <div class="p-5 overflow-auto flex-1">
-        {#if healthDetailLoading}
-          <div class="flex items-center justify-center py-8">
-            <div class="animate-spin h-8 w-8 border-2 border-primary-500 border-t-transparent rounded-full"></div>
-          </div>
-        {:else if healthDetail}
-          <!-- Overall Status -->
-          <div class="flex items-center gap-3 mb-5 p-3 rounded-xl" style="background: {healthDetail.status === 'healthy' ? 'var(--color-success-light)' : healthDetail.status === 'warning' ? 'var(--color-warning-light)' : 'var(--color-error-light)'}">
-            <span class="w-3 h-3 rounded-full" style="background: {healthDetail.status === 'healthy' ? 'var(--color-success)' : healthDetail.status === 'warning' ? 'var(--color-warning)' : 'var(--color-error)'}"></span>
-            <span class="text-sm font-semibold" style="color: {healthDetail.status === 'healthy' ? 'var(--color-success)' : healthDetail.status === 'warning' ? 'var(--color-warning)' : 'var(--color-error)'}">
-              {healthDetail.status === 'healthy' ? '系统健康' : healthDetail.status === 'warning' ? '存在警告' : '系统异常'}
-            </span>
-            <span class="text-xs ml-auto" style="color: var(--color-text-muted)">
-              运行 {healthDetail.uptime} · 检查耗时 {healthDetail.check_ms}ms
-            </span>
-          </div>
-
-          <!-- Check Details -->
-          <div class="space-y-3">
-            {#each Object.entries(healthDetail.checks || {}) as [key, check]}
-              {@const checkStatus = (check as any).status}
-              <div class="p-3 rounded-xl border" style="border-color: var(--color-border); background: var(--color-surface)">
-                <div class="flex items-center justify-between mb-2">
-                  <div class="flex items-center gap-2">
-                    <span class="w-2 h-2 rounded-full" style="background: {checkStatus === 'ok' ? 'var(--color-success)' : checkStatus === 'warning' ? 'var(--color-warning)' : 'var(--color-error)'}"></span>
-                    <span class="text-sm font-semibold text-[var(--color-text)]">{key}</span>
-                  </div>
-                  <span class="text-xs px-2 py-0.5 rounded-full" style="background: {checkStatus === 'ok' ? 'var(--color-success-light)' : checkStatus === 'warning' ? 'var(--color-warning-light)' : 'var(--color-error-light)'}; color: {checkStatus === 'ok' ? 'var(--color-success)' : checkStatus === 'warning' ? 'var(--color-warning)' : 'var(--color-error)'}">
-                    {checkStatus}
-                  </span>
-                </div>
-                <div class="grid grid-cols-2 gap-2 text-xs">
-                  {#each Object.entries(check as any) as [prop, val]}
-                    {#if prop !== 'status' && prop !== 'error'}
-                      <div>
-                        <span style="color: var(--color-text-muted)">{prop}:</span>
-                        <span class="font-medium text-[var(--color-text)] ml-1">{typeof val === 'number' ? (prop.includes('mb') || prop.includes('gb') ? val.toFixed(1) : prop.includes('ms') ? Math.round(val) : val) : val}{typeof val === 'number' && prop.includes('mb') ? 'MB' : typeof val === 'number' && prop.includes('gb') ? 'GB' : typeof val === 'number' && prop.includes('ms') ? 'ms' : ''}</span>
-                      </div>
-                    {/if}
-                  {/each}
-                  {#if (check as any).error}
-                    <div class="col-span-2 mt-1">
-                      <span class="text-[var(--color-error)]">错误: {(check as any).error}</span>
-                    </div>
-                  {/if}
-                </div>
-              </div>
-            {/each}
-          </div>
-        {:else}
-          <div class="text-center py-8">
-            <p class="text-sm text-[var(--color-text-muted)]">点击"刷新"加载详细健康信息</p>
-          </div>
-        {/if}
-      </div>
-
-      <div class="p-4 border-t flex justify-end" style="border-color: var(--color-border)">
-        <button class="btn-primary text-sm" onclick={() => { healthDetail = null; loadHealthDetail(); }} disabled={healthDetailLoading}>
-          {healthDetailLoading ? '刷新中...' : '刷新'}
-        </button>
-      </div>
-    </div>
-  </div>
-{/if}
+<HealthDetailModal
+  open={showHealthDetail}
+  detail={healthDetail}
+  loading={healthDetailLoading}
+  onClose={() => showHealthDetail = false}
+  onRefresh={loadHealthDetail}
+/>
