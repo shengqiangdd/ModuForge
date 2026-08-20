@@ -298,7 +298,9 @@ module.prop, customize.sh, META-INF/(update-binary + updater-script含#MAGISK)
 {"files":[{"path":"...","content":"..."}]}`, description)
 	}
 
-	endpoint, apiKey, model, _, err := s.buildLLMRequest(ctx, systemPrompt, userPrompt, userID, sessionID, w, messages)
+	endpoint, apiKey, model, _, err := s.buildLLMRequest(ctx, systemPrompt, userPrompt, userID, sessionID, w, messages, func(data map[string]interface{}) { fmt.Fprintf(w, "data: %s
+
+", mustJSON(data)); w.Flush() })
 	if err != nil {
 		return err
 	}
