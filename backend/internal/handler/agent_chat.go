@@ -2,7 +2,6 @@ package handler
 
 import (
 	"bufio"
-	"context"
 	"encoding/base64"
 	"fmt"
 	"log"
