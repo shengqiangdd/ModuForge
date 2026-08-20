@@ -143,6 +143,7 @@ func RegisterRoutes(api fiber.Router, db *database.DB, cfg *config.Config) {
 	// Admin feature flags
 	ctx.rAdmin("GET", "/admin/feature-flags", featureFlagH.List)
 	ctx.rAdmin("PUT", "/admin/feature-flags/:key", featureFlagH.Update)
+	ctx.rAdmin("POST", "/admin/feature-flags/batch", featureFlagH.BatchUpdate)
 
 	// Sub-register
 	registerCoreRoutes(ctx, authH)

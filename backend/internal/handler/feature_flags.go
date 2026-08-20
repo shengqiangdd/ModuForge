@@ -34,13 +34,45 @@ func (h *FeatureFlagHandler) Update(c fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "请求格式无效"})
 	}
 
-	if err := h.svc.SetEnabled(key, req.Enabled); err != nil {
+	uid, _ := c.Locals("user_id").(string)
+
+	if err := h.svc.SetEnabled(key, req.Enabled, uid); err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "更新失败: " + err.Error()})
 	}
 
 	return c.JSON(fiber.Map{
 		"key":     key,
 		"enabled": req.Enabled,
+		"status":  "ok",
+	})
+}
+
+// BatchUpdateRequest is the request body for batch-updating feature flags.
+type BatchUpdateRequest struct {
+	Flags []struct {
+		Key     string `json:"key"`
+		Enabled bool   `json:"enabled"`
+	} `json:"flags"`
+}
+
+// BatchUpdate toggles multiple feature flags in one request.
+func (h *FeatureFlagHandler) BatchUpdate(c fiber.Ctx) error {
+	var req BatchUpdateRequest
+	if err := c.Bind().JSON(&req); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "请求格式无效"})
+	}
+	if len(req.Flags) == 0 {
+		return c.Status(400).JSON(fiber.Map{"error": "flags 列表不能为空"})
+	}
+
+	uid, _ := c.Locals("user_id").(string)
+
+	if err := h.svc.SetEnabledBatch(req.Flags, uid); err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": "批量更新失败: " + err.Error()})
+	}
+
+	return c.JSON(fiber.Map{
+		"updated": len(req.Flags),
 		"status":  "ok",
 	})
 }

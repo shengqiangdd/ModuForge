@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"log/slog"
 	"sync"
 	"time"
@@ -149,8 +150,8 @@ func (s *FeatureFlagService) List() []FeatureFlag {
 	return result
 }
 
-// SetEnabled updates a single flag and persists it.
-func (s *FeatureFlagService) SetEnabled(key string, enabled bool) error {
+// SetEnabled updates a single flag, persists it, and writes an audit log entry.
+func (s *FeatureFlagService) SetEnabled(key string, enabled bool, userID string) error {
 	_, err := s.db.Exec(`UPDATE feature_flags SET enabled=?, updated_at=datetime('now') WHERE key=?`,
 		boolToInt(enabled), key)
 	if err != nil {
@@ -161,7 +162,68 @@ func (s *FeatureFlagService) SetEnabled(key string, enabled bool) error {
 	s.flags[key] = enabled
 	s.mu.Unlock()
 
+	// Write audit log entry for the change
+	state := "disabled"
+	if enabled {
+		state = "enabled"
+	}
+	s.db.Exec(`INSERT INTO audit_logs (project_id, user_id, action, details) VALUES (?, ?, ?, ?)`,
+		"", userID, "feature_flag",
+		fmt.Sprintf("Feature %s %s", key, state))
+
 	slog.Info("[FeatureFlags] updated", "key", key, "enabled", enabled)
+	return nil
+}
+
+// SetEnabledBatch updates multiple flags in a single transaction.
+func (s *FeatureFlagService) SetEnabledBatch(items []struct {
+	Key     string `json:"key"`
+	Enabled bool   `json:"enabled"`
+}, userID string) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	stmt, err := tx.Prepare(`UPDATE feature_flags SET enabled=?, updated_at=datetime('now') WHERE key=?`)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	auditStmt, err := tx.Prepare(`INSERT INTO audit_logs (project_id, user_id, action, details) VALUES (?, ?, ?, ?)`)
+	if err != nil {
+		return err
+	}
+	defer auditStmt.Close()
+
+	for _, item := range items {
+		if _, err := stmt.Exec(boolToInt(item.Enabled), item.Key); err != nil {
+			return err
+		}
+		state := "disabled"
+		if item.Enabled {
+			state = "enabled"
+		}
+		if _, err := auditStmt.Exec("", userID, "feature_flag",
+			fmt.Sprintf("Feature %s %s", item.Key, state)); err != nil {
+			return err
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+
+	// Update in-memory cache
+	s.mu.Lock()
+	for _, item := range items {
+		s.flags[item.Key] = item.Enabled
+	}
+	s.mu.Unlock()
+
+	slog.Info("[FeatureFlags] batch updated", "count", len(items))
 	return nil
 }
 
