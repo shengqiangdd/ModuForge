@@ -1,30 +1,26 @@
 // ─── Callback functions for AI page — extracted from +page.svelte ───
 // These functions accept individual state parameters and return state updates.
 // The main page applies returned updates to trigger Svelte reactivity.
-import { loadGenHistory as loadGenHistoryFromStorage, toast } from '$lib/stores/toast.svelte';
+import { toast } from "$lib/stores/toast.svelte";
 import type { Mode, AgentStep, Provider, Model, AIPrompt, GenHistoryItem, Message, ProgressStepDetail, AutoBuildPhase, ContextProject, ComparisonResult, SecurityScanResult } from './types';
-import { loadGenHistory as loadGenHistoryFromStorage, MODES } from './types';
-import { loadGenHistory as loadGenHistoryFromStorage, generateUUID, safeCopyText } from './utils';
-import { loadGenHistory as loadGenHistoryFromStorage, memoExtractFiles } from './markdown';
-import { loadGenHistory as loadGenHistoryFromStorage,
-  
-  loadProvidersFromBackend, saveModelSelectionToStorage, saveConfigToBackend,
+import { MODES } from "./types";
+import { generateUUID, safeCopyText } from "./utils";
+import { memoExtractFiles } from "./markdown";
+import { loadProvidersFromBackend, saveModelSelectionToStorage, saveConfigToBackend,
   refreshModelsFromBackend, saveModelMaxTokens, loadProviderConfig,
   saveProviderConfigToBackend, fetchCapability
 } from './provider';
-import { loadGenHistory as loadGenHistoryFromStorage, loadPrompts as loadPromptsFromBackend, savePromptToBackend, resetPromptToDefault } from './prompts';
-import { loadGenHistory as loadGenHistoryFromStorage, loadImportProjects as loadImportProjectsFromBackend, scanFiles, importFilesToProject } from './import-scan';
-import { loadGenHistory as loadGenHistoryFromStorage,
-  loadSessionsList, deleteSessionById, exportSessionById, renameSessionById,
+import { loadPrompts as loadPromptsFromBackend, savePromptToBackend, resetPromptToDefault } from './prompts';
+import { loadImportProjects as loadImportProjectsFromBackend, scanFiles, importFilesToProject } from './import-scan';
+import { loadGenHistory as loadGenHistoryFromStorage, loadSessionsList, deleteSessionById, exportSessionById, renameSessionById,
   fetchSessionMessages, exportConversationToFile, searchSessions,
   fetchProjectFiles, deployToAdb, fetchConversations, fetchConversation,
   deleteConversationById, saveConversationToBackend
 } from './history';
-import { loadGenHistory as loadGenHistoryFromStorage,
-  truncateForRegeneration, editMessageContent, deleteMessageAt
+import { truncateForRegeneration, editMessageContent, deleteMessageAt
 } from './messages';
-import { loadGenHistory as loadGenHistoryFromStorage, loadProjectFilesState, loadContextProjectListState } from './context';
-import { loadGenHistory as loadGenHistoryFromStorage, filterStepsByRound } from './rounds';
+import { loadProjectFilesState, loadContextProjectListState } from './context';
+import { filterStepsByRound } from './rounds';
 import type { Subtask } from '../components/TodoList.svelte';
 
 const modes = MODES;
