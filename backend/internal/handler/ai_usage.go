@@ -3,13 +3,9 @@ package handler
 import (
 	"database/sql"
 	"encoding/json"
-	"fmt"
 	"log/slog"
-	"strings"
-	"time"
 
 	"github.com/gofiber/fiber/v3"
-	"github.com/moduforge/backend/internal/config"
 	"github.com/moduforge/backend/internal/database"
 	"github.com/moduforge/backend/internal/llm"
 	"github.com/moduforge/backend/internal/service"

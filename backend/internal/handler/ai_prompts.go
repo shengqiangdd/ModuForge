@@ -4,7 +4,6 @@ import (
 	"log/slog"
 
 	"github.com/gofiber/fiber/v3"
-	"github.com/moduforge/backend/internal/service"
 )
 
 func (h *AIHandler) GetPrompts(c fiber.Ctx) error {

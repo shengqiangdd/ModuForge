@@ -5,7 +5,6 @@
   import Terminal from '$lib/components/Terminal.svelte';
   import UndoHistory from '$lib/components/UndoHistory.svelte';
   import FileComments from '$lib/components/FileComments.svelte';
-  import CollaborationCursors from '$lib/components/CollaborationCursors.svelte';
   import { toast } from '$lib/stores/toast.svelte';
   import { historyStore } from '$lib/stores/history';
   import { focusTrap } from '$lib/utils/focusTrap';
@@ -15,6 +14,18 @@
   import EditorToolbar from './EditorToolbar.svelte';
   import EditorTabs from './EditorTabs.svelte';
   import DiffView from './DiffView.svelte';
+  import {
+    buildTree,
+    folderFirstCompare,
+    detectLanguage,
+    getFileIcon,
+    getFileIconColor,
+    getSecurityIcon as getSecurityIconUtil,
+    getSecurityColor as getSecurityColorUtil,
+    getIssueIcon as getIssueIconUtil,
+    getIssueColor as getIssueColorUtil,
+    type TreeNode,
+  } from './editor-utils';
 
   let { projectId = '' }: { projectId?: string } = $props();
 
@@ -31,66 +42,8 @@
   let sidebarOpen = $state(true);
 
   // Tree view
-  interface TreeNode {
-    name: string;
-    path: string;
-    type: 'file' | 'directory';
-    size?: number;
-    children?: TreeNode[];
-  }
-
   let viewMode = $state<'flat' | 'tree'>('tree');
   let treeData = $state<TreeNode | null>(null);
-
-  function buildTree(fileList: { path: string; size?: number }[]): TreeNode {
-    const root: TreeNode = { name: '', path: '', type: 'directory', children: [] };
-    for (const file of fileList) {
-      const parts = file.path.split('/');
-      let current = root;
-      for (let i = 0; i < parts.length; i++) {
-        const part = parts[i];
-        const isFile = i === parts.length - 1;
-        const path = parts.slice(0, i + 1).join('/');
-        if (isFile) {
-          current.children?.push({ name: part, path, type: 'file', size: file.size });
-        } else {
-          let dir = current.children?.find(c => c.name === part && c.type === 'directory');
-          if (!dir) {
-            dir = { name: part, path, type: 'directory', children: [] };
-            current.children?.push(dir);
-          }
-          current = dir;
-        }
-      }
-    }
-    sortTreeNodes(root);
-    return root;
-  }
-
-  // Folder-first sorting: directories before files, each alphabetically.
-  function sortTreeNodes(node: TreeNode) {
-    if (!node.children || node.children.length === 0) return;
-    node.children.sort((a, b) => {
-      if (a.type !== b.type) return a.type === 'directory' ? -1 : 1;
-      return a.name.localeCompare(b.name);
-    });
-    for (const child of node.children) {
-      if (child.type === 'directory') sortTreeNodes(child);
-    }
-  }
-
-  // Flat view folder-first sort: files inside folders first (grouped by
-  // directory), root-level files last, each alphabetical.
-  function folderFirstCompare(a: { path: string }, b: { path: string }): number {
-    const aIdx = a.path.lastIndexOf('/');
-    const bIdx = b.path.lastIndexOf('/');
-    const aDir = aIdx === -1 ? '' : a.path.slice(0, aIdx);
-    const bDir = bIdx === -1 ? '' : b.path.slice(0, bIdx);
-    if (aDir && !bDir) return -1;
-    if (!aDir && bDir) return 1;
-    if (aDir !== bDir) return aDir.localeCompare(bDir);
-    return a.path.localeCompare(b.path);
-  }
 
   $effect(() => {
     if (viewMode === 'tree' && files.length > 0) {
@@ -128,20 +81,6 @@
 
   // Formatting
   let formatting = $state(false);
-
-  interface SecurityIssue {
-    severity: string;
-    file: string;
-    line: number;
-    rule: string;
-    message: string;
-  }
-  interface SecurityScanResult {
-    safe: boolean;
-    issues: SecurityIssue[];
-    score: number;
-    summary: string;
-  }
 
   async function formatCode() {
     if (!projectId) return;
@@ -187,18 +126,16 @@
   }
 
   function getSecurityIcon(): string {
-    if (!securityResult) return 'security';
-    return securityResult.safe ? 'verified' : 'warning';
+    return getSecurityIconUtil(securityResult);
   }
   function getSecurityColor(): string {
-    if (!securityResult) return 'var(--color-text-muted)';
-    return securityResult.safe ? '#22c55e' : '#ef4444';
+    return getSecurityColorUtil(securityResult);
   }
   function getIssueIcon(severity: string): string {
-    return severity === 'critical' ? 'error' : severity === 'warning' ? 'warning' : 'info';
+    return getIssueIconUtil(severity);
   }
   function getIssueColor(severity: string): string {
-    return severity === 'critical' ? '#ef4444' : severity === 'warning' ? '#f59e0b' : '#6b7280';
+    return getIssueColorUtil(severity);
   }
 
   // Terminal
@@ -439,52 +376,6 @@
       const fileData = await client.get<{ id?: number; path: string }[]>(`/projects/${projectId}/files`);
       files = (fileData || []).map(f => ({ ...f, path: f.path })).sort(folderFirstCompare);
     } catch {}
-  }
-
-  // File search — memoized icon lookup caches
-  const _iconCache = new Map<string, string>();
-  const _iconColorCache = new Map<string, string>();
-
-  function detectLanguage(path: string): string {
-    const ext = path.split('.').pop()?.toLowerCase() || '';
-    const map: Record<string, string> = {
-      js: 'javascript', jsx: 'javascript', ts: 'javascript', tsx: 'javascript',
-      py: 'python', html: 'html', htm: 'html', css: 'css', scss: 'css',
-      json: 'json', xml: 'xml', yaml: 'json', yml: 'json', sh: 'shell', bash: 'shell',
-    };
-    return map[ext] || 'javascript';
-  }
-
-  function getFileIcon(path: string): string {
-    const ext = path.split('.').pop()?.toLowerCase() || '';
-    if (_iconCache.has(ext)) return _iconCache.get(ext)!;
-    const iconMap: Record<string, string> = {
-      js: 'javascript', jsx: 'javascript', ts: 'javascript', tsx: 'javascript',
-      py: 'python', html: 'html', htm: 'html', css: 'css', scss: 'css',
-      json: 'data_object', xml: 'code', yaml: 'code', yml: 'code',
-      sh: 'terminal', bash: 'terminal',
-      md: 'description', txt: 'description', log: 'description',
-      png: 'image', jpg: 'image', jpeg: 'image', gif: 'image', svg: 'image',
-      zip: 'folder_zip', tar: 'folder_zip', gz: 'folder_zip',
-      prop: 'settings', mk: 'build',
-    };
-    const icon = iconMap[ext] || 'description';
-    _iconCache.set(ext, icon);
-    return icon;
-  }
-
-  function getFileIconColor(path: string): string {
-    const ext = path.split('.').pop()?.toLowerCase() || '';
-    if (_iconColorCache.has(ext)) return _iconColorCache.get(ext)!;
-    const colorMap: Record<string, string> = {
-      js: '#f7df1e', jsx: '#61dafb', ts: '#3178c6', tsx: '#61dafb',
-      py: '#3776ab', html: '#e34f26', css: '#1572b6',
-      json: '#292929', sh: '#4eaa25', bash: '#4eaa25',
-      md: '#ffffff', prop: '#8b5cf6',
-    };
-    const color = colorMap[ext] || 'var(--color-text-muted)';
-    _iconColorCache.set(ext, color);
-    return color;
   }
 
   function handleEditorChange(val: string) {
