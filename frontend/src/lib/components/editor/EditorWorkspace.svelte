@@ -491,20 +491,6 @@
     editorContent = val;
   }
 
-  // Diff view
-  function openDiffView(files: {path: string; current: string; incoming: string}[]) {
-    diffFiles = files;
-    selectedDiffFile = files.length > 0 ? files[0].path : null;
-    diffMode = true;
-    showDiffList = true;
-  }
-
-  function closeDiffView() {
-    diffMode = false;
-    showDiffList = false;
-    diffFiles = [];
-    selectedDiffFile = null;
-  }
 </script>
 
 <style>
