@@ -9,6 +9,15 @@ import (
 	"github.com/moduforge/backend/internal/config"
 )
 
+// expectedTables lists key tables that should exist after migration
+var expectedTables = []string{
+	"users",
+	"projects",
+	"market_modules",
+	"conversation_messages",
+	"ai_conversations",
+}
+
 func TestTableExists(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
