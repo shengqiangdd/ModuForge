@@ -443,20 +443,6 @@ func (db *DB) migrate() error {
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_dashboard_widgets_user ON dashboard_widgets(user_id)`,
-		`CREATE TABLE IF NOT EXISTS webhook_deliveries (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			hook_id INTEGER NOT NULL,
-			event TEXT NOT NULL,
-			payload TEXT NOT NULL,
-			response_status INTEGER DEFAULT 0,
-			response_body TEXT DEFAULT '',
-			success INTEGER DEFAULT 0,
-			duration_ms INTEGER DEFAULT 0,
-			error_message TEXT DEFAULT '',
-			delivered_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-			FOREIGN KEY (hook_id) REFERENCES plugin_hooks(id) ON DELETE CASCADE
-		)`,
-		`CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_hook ON webhook_deliveries(hook_id)`,
 		`CREATE TABLE IF NOT EXISTS backup_schedules (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			user_id TEXT NOT NULL,
@@ -605,21 +591,6 @@ func (db *DB) migrate() error {
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_module_vuln_scans_module ON module_vuln_scans(module_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_module_vuln_scans_project ON module_vuln_scans(project_id)`,
-		// Feature 3: Permission Audit
-		`CREATE TABLE IF NOT EXISTS permission_audits (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			module_id TEXT NOT NULL,
-			project_id TEXT NOT NULL,
-			total_permissions INTEGER DEFAULT 0,
-			dangerous_count INTEGER DEFAULT 0,
-			risk_score INTEGER DEFAULT 0,
-			results TEXT DEFAULT '[]',
-			audited_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-			FOREIGN KEY (module_id) REFERENCES market_modules(id) ON DELETE CASCADE
-		)`,
-		`CREATE INDEX IF NOT EXISTS idx_permission_audits_module ON permission_audits(module_id)`,
-		`CREATE INDEX IF NOT EXISTS idx_permission_audits_project ON permission_audits(project_id)`,
-
 		// ===== Batch 4: Collaboration + Git + Comments =====
 		// Feature 1: File Comments System
 		`CREATE TABLE IF NOT EXISTS file_comments (
@@ -721,6 +692,23 @@ func (db *DB) migrate() error {
 		}
 	}
 
+
+	// Cleanup orphan tables from removed features (plugins, permission audits, webhooks)
+	for _, drop := range []string{
+		"DROP TABLE IF EXISTS plugins",
+		"DROP TABLE IF EXISTS plugin_hooks",
+		"DROP TABLE IF EXISTS webhook_deliveries",
+		"DROP TABLE IF EXISTS permission_audits",
+	} {
+		db.Conn.Exec(drop)
+	}
+	for _, dropIdx := range []string{
+		"DROP INDEX IF EXISTS idx_webhook_deliveries_hook",
+		"DROP INDEX IF EXISTS idx_permission_audits_module",
+		"DROP INDEX IF EXISTS idx_permission_audits_project",
+	} {
+		db.Conn.Exec(dropIdx)
+	}
 	// Post-migration: add columns that may not exist in older schemas
 	addColumnIfMissing := []string{
 		"ALTER TABLE comments ADD COLUMN resolved INTEGER DEFAULT 0",

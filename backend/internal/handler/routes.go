@@ -628,9 +628,6 @@ func RegisterRoutes(api fiber.Router, db *database.DB, cfg *config.Config) {
 	collabWS := NewCollaborationWS(collabSvc)
 	r("GET", "/projects/:id/collab-status", collabWS.GetCollaborationStatus)
 
-	// Webhook (REMOVED - no longer needed)
-	// webhookH := NewWebhookHandler(cfg, buildSvc)
-	// r("POST", "/webhook/git", webhookH.HandleGitWebhook)
 	// AI rate-limited
 	rA("POST", "/ai/generate", aiH.GenerateModule)
 	rA("POST", "/ai/chat", aiH.Chat)
@@ -704,13 +701,6 @@ func RegisterRoutes(api fiber.Router, db *database.DB, cfg *config.Config) {
 	formatH.SetFileContentRepo(fileRepo)
 	r("POST", "/projects/:id/format", formatH.FormatProject)
 	r("POST", "/projects/:id/format/preview", formatH.PreviewFormat)
-
-	// Webhook deliveries (REMOVED - no longer needed)
-	// webhookH.SetDB(db.Conn)
-	// r("GET", "/webhooks/:hookId/deliveries", webhookH.ListDeliveries)
-	// r("POST", "/webhooks/:hookId/test", webhookH.TestWebhook)
-	// r("DELETE", "/webhooks/deliveries/:id", webhookH.DeleteDelivery)
-	// r("GET", "/webhooks/deliveries/stats", webhookH.DeliveryStats)
 
 	// Backup schedules
 	r("GET", "/backup/schedules", backupH.ListSchedules)
