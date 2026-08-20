@@ -551,19 +551,7 @@ func (db *DB) migrate() error {
 			FOREIGN KEY (template_id) REFERENCES module_templates(id) ON DELETE CASCADE
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_template_ratings_template ON template_ratings(template_id)`,
-		// Feature 3: Module Dependency Resolution
-		`CREATE TABLE IF NOT EXISTS module_dependencies (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			module_id TEXT NOT NULL,
-			dependency_id TEXT NOT NULL,
-			min_version TEXT DEFAULT '',
-			optional INTEGER DEFAULT 0,
-			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-			UNIQUE(module_id, dependency_id),
-			FOREIGN KEY (module_id) REFERENCES market_modules(id) ON DELETE CASCADE
-		)`,
-		`CREATE INDEX IF NOT EXISTS idx_module_dependencies_module ON module_dependencies(module_id)`,
-		`CREATE INDEX IF NOT EXISTS idx_module_dependencies_dep ON module_dependencies(dependency_id)`,
+		// NOTE: module_dependencies table removed — no handlers, no active code
 		// Batch 3: Security Enhancements
 		// Feature 1: Module Code Signing
 		`CREATE TABLE IF NOT EXISTS module_signatures (
@@ -611,33 +599,8 @@ func (db *DB) migrate() error {
 		`CREATE INDEX IF NOT EXISTS idx_file_comments_file ON file_comments(project_id, file_path)`,
 		`CREATE INDEX IF NOT EXISTS idx_file_comments_parent ON file_comments(parent_id)`,
 
-		// Feature 2: Git Branches (extends existing git history)
-		`CREATE TABLE IF NOT EXISTS git_branches (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			project_id TEXT NOT NULL,
-			name TEXT NOT NULL,
-			is_default INTEGER DEFAULT 0,
-			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-			UNIQUE(project_id, name),
-			FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
-		)`,
-		`CREATE INDEX IF NOT EXISTS idx_git_branches_project ON git_branches(project_id)`,
-
-		// Feature 3: Collaboration Sessions (real-time)
-		`CREATE TABLE IF NOT EXISTS collaboration_sessions (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			project_id TEXT NOT NULL,
-			user_id TEXT NOT NULL,
-			username TEXT DEFAULT '',
-			file_path TEXT DEFAULT '',
-			cursor_line INTEGER DEFAULT 0,
-			cursor_column INTEGER DEFAULT 0,
-			connected_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-			last_active DATETIME DEFAULT CURRENT_TIMESTAMP,
-			FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
-		)`,
-		`CREATE INDEX IF NOT EXISTS idx_collab_sessions_project ON collaboration_sessions(project_id)`,
-		`CREATE INDEX IF NOT EXISTS idx_collab_sessions_active ON collaboration_sessions(project_id, last_active)`,
+		// NOTE: git_branches table removed — no handlers, no active code
+		// NOTE: collaboration_sessions table removed — no handlers, no active code
 
 		// ===== AI Conversations persistence =====
 		`CREATE TABLE IF NOT EXISTS ai_conversations (
@@ -700,6 +663,9 @@ func (db *DB) migrate() error {
 		"DROP TABLE IF EXISTS plugin_hooks",
 		"DROP TABLE IF EXISTS webhook_deliveries",
 		"DROP TABLE IF EXISTS permission_audits",
+		"DROP TABLE IF EXISTS module_dependencies",
+		"DROP TABLE IF EXISTS git_branches",
+		"DROP TABLE IF EXISTS collaboration_sessions",
 	} {
 		db.Conn.Exec(drop)
 	}
@@ -738,17 +704,12 @@ func (db *DB) migrate() error {
 		"idx_module_templates_category",
 		"idx_module_templates_downloads",
 		"idx_template_ratings_template",
-		"idx_module_dependencies_module",
-		"idx_module_dependencies_dep",
 		"idx_module_signatures_module",
 		"idx_module_vuln_scans_module",
 		"idx_module_vuln_scans_project",
 		"idx_file_comments_project",
 		"idx_file_comments_file",
 		"idx_file_comments_parent",
-		"idx_git_branches_project",
-		"idx_collab_sessions_project",
-		"idx_collab_sessions_active",
 		"idx_skill_evolution_skill_id",
 		"idx_skill_evolution_user_id",
 		"idx_skill_evolution_skill_user",

@@ -255,7 +255,7 @@ func (s *ProjectService) DeleteWithRecycle(ctx context.Context, id string, userI
 	projectTables := []string{
 		"build_tasks", "project_files", "file_comments", "comments",
 		"collaborators", "edit_sessions", "team_members", "activities",
-		"vulnerability_scans", "project_versions", "git_branches",
+		"vulnerability_scans", "project_versions",
 	}
 	for _, table := range projectTables {
 		if !existingTables[table] {
