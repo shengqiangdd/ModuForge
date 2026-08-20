@@ -1,23 +1,11 @@
 package agent
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
-	"fmt"
 	"log"
-	"math"
-	"os"
-	"path/filepath"
-	"regexp"
-	"strings"
 	"sync"
 	"time"
 )
 
-// ===========================================================================
-// TokenOptimizer — 综合 Token 优化引擎
-//
 // 目标：省 Token + 提升缓存命中 + 高效编码
 //
 // 五个子模块：

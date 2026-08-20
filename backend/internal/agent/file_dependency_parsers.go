@@ -232,3 +232,16 @@ func (dg *FileDependencyGraph) parsePythonImports(text string) []string {
 }
 
 // resolveImport resolves an import path to a project-relative file path.
+
+// resolveImport resolves an import path relative to the importing file.
+func (dg *FileDependencyGraph) resolveImport(fromFile, importPath string) string {
+	// Handle relative imports
+	if strings.HasPrefix(importPath, "./") || strings.HasPrefix(importPath, "../") {
+		fromDir := filepath.Dir(fromFile)
+		resolved := filepath.Join(fromDir, importPath)
+		return filepath.Clean(resolved)
+	}
+	
+	// For external imports, return the import path as-is
+	return importPath
+}
