@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"log/slog"
 	"time"
 
@@ -129,6 +130,19 @@ func RegisterRoutes(api fiber.Router, db *database.DB, cfg *config.Config) {
 	api.Post("/auth/verify-email", authH.VerifyEmail)
 	api.Post("/auth/forgot-password", rateAuthStrict, authH.ForgotPassword)
 	api.Post("/auth/reset-password", rateAuthStrict, authH.ResetPassword)
+
+	// Feature flags
+	featureFlagSvc := service.NewFeatureFlagService(db.Conn)
+	featureFlagH := NewFeatureFlagHandler(featureFlagSvc)
+	go featureFlagSvc.Refresh(context.Background())
+	featureFlagMW := middleware.NewFeatureFlagChecker(featureFlagSvc.IsEnabled).Middleware()
+
+	// Apply feature flag middleware to the protected API group
+	api.Use(featureFlagMW)
+
+	// Admin feature flags
+	ctx.rAdmin("GET", "/admin/feature-flags", featureFlagH.List)
+	ctx.rAdmin("PUT", "/admin/feature-flags/:key", featureFlagH.Update)
 
 	// Sub-register
 	registerCoreRoutes(ctx, authH)
