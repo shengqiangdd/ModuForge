@@ -1,14 +1,14 @@
 package agent
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"log"
+	"os"
 	"sync"
 	"time"
 )
 
-// 目标：省 Token + 提升缓存命中 + 高效编码
-//
-// 五个子模块：
 //   1. TokenEstimator      — 字符级快速 token 估算（无需 tokenizer，100x faster）
 //   2. ToolResultPruner    — 旧工具结果压缩为摘要，保留关键信息
 //   3. DifferentialCache   — 文件未变时跳过重复 read_file 结果
