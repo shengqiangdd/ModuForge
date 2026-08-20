@@ -14,6 +14,7 @@
   import FileTree from './FileTree.svelte';
   import EditorToolbar from './EditorToolbar.svelte';
   import EditorTabs from './EditorTabs.svelte';
+  import DiffView from './DiffView.svelte';
 
   let { projectId = '' }: { projectId?: string } = $props();
 
@@ -504,18 +505,6 @@
     diffFiles = [];
     selectedDiffFile = null;
   }
-
-  function getCurrentDiffContent(): string {
-    if (!selectedDiffFile) return '';
-    const df = diffFiles.find(f => f.path === selectedDiffFile);
-    return df?.current || '';
-  }
-
-  function getIncomingDiffContent(): string {
-    if (!selectedDiffFile) return '';
-    const df = diffFiles.find(f => f.path === selectedDiffFile);
-    return df?.incoming || '';
-  }
 </script>
 
 <style>
@@ -632,16 +621,11 @@
 
         <!-- Diff Editor (side-by-side) -->
         {#if showDiffList && diffMode && selectedDiffFile}
-          <div class="flex-1 overflow-hidden">
-            <CodeEditor
-              value={getCurrentDiffContent()}
-              language={detectLanguage(selectedDiffFile)}
-              onChange={() => {}}
-              diffMode={true}
-              diffContent={getIncomingDiffContent()}
-              diffLabel={selectedDiffFile}
-            />
-          </div>
+          <DiffView
+            {selectedDiffFile}
+            {diffFiles}
+            {detectLanguage}
+          />
         {/if}
       </div>
     </div>
