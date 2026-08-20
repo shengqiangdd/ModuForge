@@ -114,15 +114,15 @@ func (h *SigningHandler) loadPublicKey() (*rsa.PublicKey, error) {
 }
 
 // computeModuleHash computes SHA-256 hash of all project files
-func (h *SigningHandler) computeModuleHash(projectID string) (string, error) {
+func (h *SigningHandler) computeModuleHash(ctx context.Context, projectID string) (string, error) {
 	h256 := sha256.New()
 	if h.fr != nil {
-		files, err := h.fr.ReadAll(context.Background(), projectID)
+		files, err := h.fr.ReadAll(ctx, projectID)
 		if err != nil {
 			return "", err
 		}
 		for _, f := range files {
-			content, err := h.fr.ReadOne(context.Background(), projectID, f.Path)
+			content, err := h.fr.ReadOne(ctx, projectID, f.Path)
 			if err != nil {
 				continue
 			}
@@ -165,7 +165,7 @@ func (h *SigningHandler) SignModule(c fiber.Ctx) error {
 	}
 
 	// Compute file hash
-	fileHash, err := h.computeModuleHash(projectID)
+	fileHash, err := h.computeModuleHash(c.Context(), projectID)
 	if err != nil {
 		return InternalError(c, "计算文件哈希失败: "+err.Error())
 	}
@@ -245,7 +245,7 @@ func (h *SigningHandler) VerifyModule(c fiber.Ctx) error {
 	}
 
 	// Recompute current file hash
-	currentHash, err := h.computeModuleHash(projectID)
+	currentHash, err := h.computeModuleHash(c.Context(), projectID)
 	if err != nil {
 		return InternalError(c, "计算文件哈希失败: "+err.Error())
 	}

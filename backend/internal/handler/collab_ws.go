@@ -176,6 +176,10 @@ func RegisterCollabWSRoute(app *fiber.App, jwtSecret string, collabSvc *service.
 			username = uname
 		}
 
+		// Derive a context cancelled when the WS connection closes.
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
 		client := &CollabClient{
 			Conn:      c,
 			UserID:    userID,
@@ -185,7 +189,7 @@ func RegisterCollabWSRoute(app *fiber.App, jwtSecret string, collabSvc *service.
 		defer hub.Unsubscribe(projectID, userID)
 
 		// Store session in DB
-		collabWS.db.UpsertEditSession(context.Background(), &service.EditSession{
+		collabWS.db.UpsertEditSession(ctx, &service.EditSession{
 			ID:         "collab_" + projectID + "_" + userID,
 			ProjectID:  projectID,
 			UserID:     userID,
@@ -193,7 +197,7 @@ func RegisterCollabWSRoute(app *fiber.App, jwtSecret string, collabSvc *service.
 			ConnectedAt: time.Now(),
 			LastActive:  time.Now(),
 		})
-		defer collabWS.db.RemoveEditSession(context.Background(), "collab_"+projectID+"_"+userID)
+		defer collabWS.db.RemoveEditSession(ctx, "collab_"+projectID+"_"+userID)
 
 		// Notify others that user joined
 		hub.BroadcastToProject(projectID, CollabOperation{
@@ -235,7 +239,7 @@ func RegisterCollabWSRoute(app *fiber.App, jwtSecret string, collabSvc *service.
 				// Update cursor position
 				hub.BroadcastToProject(projectID, op, userID)
 				// Update in DB
-				collabWS.db.UpsertEditSession(context.Background(), &service.EditSession{
+				collabWS.db.UpsertEditSession(ctx, &service.EditSession{
 					ID:           op.SessionID,
 					ProjectID:    projectID,
 					UserID:       userID,
@@ -280,7 +284,7 @@ func (h *CollaborationWS) GetCollaborationStatus(c fiber.Ctx) error {
 	onlineUsers := hub.GetOnlineUsers(projectID)
 
 	// Get active sessions from DB
-	sessions, err := h.db.ListEditSessions(context.Background(), projectID)
+	sessions, err := h.db.ListEditSessions(c.Context(), projectID)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}

@@ -112,7 +112,7 @@ func (h *SkillsHandler) ExecuteSkill(c fiber.Ctx) error {
 		})
 	}
 
-	result, err := skill.Execute(context.Background(), req.Input)
+	result, err := skill.Execute(c.Context(), req.Input)
 	if err != nil {
 		log.Printf("Failed to execute skill %s: %v", name, err)
 		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{

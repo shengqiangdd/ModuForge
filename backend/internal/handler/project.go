@@ -219,7 +219,7 @@ func (h *ProjectHandler) SaveFile(c fiber.Ctx) error {
 	// After saving a build config file, run integrity check
 	resp := fiber.Map{"file": file}
 	if isBuildConfig(path) {
-		if validation := h.validateProject(projectID); validation != nil {
+		if validation := h.validateProject(c.Context(), projectID); validation != nil {
 			resp["validation"] = validation
 		}
 	}
@@ -229,7 +229,7 @@ func (h *ProjectHandler) SaveFile(c fiber.Ctx) error {
 // ValidateProject runs project integrity checks and returns missing file warnings.
 func (h *ProjectHandler) ValidateProject(c fiber.Ctx) error {
 	projectID := c.Params("id")
-	validation := h.validateProject(projectID)
+	validation := h.validateProject(c.Context(), projectID)
 	if validation == nil {
 		return c.JSON(fiber.Map{"valid": true, "warnings": []interface{}{}, "errors": []interface{}{}})
 	}
@@ -238,8 +238,8 @@ func (h *ProjectHandler) ValidateProject(c fiber.Ctx) error {
 
 // validateProject collects all files from S3 (or DB fallback), writes them to
 // a temp dir, runs validation.
-func (h *ProjectHandler) validateProject(projectID string) *builder.ValidationResult {
-	tmpDir, err := h.svc.ExportToTempDir(context.Background(), projectID)
+func (h *ProjectHandler) validateProject(ctx context.Context, projectID string) *builder.ValidationResult {
+	tmpDir, err := h.svc.ExportToTempDir(ctx, projectID)
 	if err != nil {
 		return nil
 	}

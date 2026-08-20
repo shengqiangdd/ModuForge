@@ -72,7 +72,7 @@ func (h *AIHandler) SetFileContentRepo(fr *service.FileContentRepo) {
 }
 
 // autoLoadProjectContext loads all files from a project and returns them as context
-func (h *AIHandler) autoLoadProjectContext(projectID, uid string) string {
+func (h *AIHandler) autoLoadProjectContext(ctx context.Context, projectID, uid string) string {
 	if h.db == nil {
 		return ""
 	}
@@ -89,12 +89,12 @@ func (h *AIHandler) autoLoadProjectContext(projectID, uid string) string {
 	sb.WriteString(fmt.Sprintf("Project: %s\n", name))
 	fileCount := 0
 	if h.fr != nil {
-		files, err := h.fr.ReadAll(context.Background(), projectID)
+		files, err := h.fr.ReadAll(ctx, projectID)
 		if err != nil {
 			return ""
 		}
 		for _, f := range files {
-			content, err := h.fr.ReadOne(context.Background(), projectID, f.Path)
+			content, err := h.fr.ReadOne(ctx, projectID, f.Path)
 			if err != nil {
 				continue
 			}
@@ -175,7 +175,7 @@ func (h *AIHandler) GenerateModule(c fiber.Ctx) error {
 	if req.ProjectContext != "" {
 		description = fmt.Sprintf("%s\n\n## Project Context:\n%s", description, req.ProjectContext)
 	} else if req.ProjectID != "" && uid != "" && h.db != nil {
-		if ctx := h.autoLoadProjectContext(req.ProjectID, uid); ctx != "" {
+		if ctx := h.autoLoadProjectContext(c.Context(), req.ProjectID, uid); ctx != "" {
 			description = fmt.Sprintf("%s\n\n## Project Context:\n%s", description, ctx)
 		}
 	}
@@ -317,7 +317,7 @@ func (h *AIHandler) Chat(c fiber.Ctx) error {
 		contextInfo = req.ProjectContext
 	} else if req.ProjectID != "" && uid != "" && h.db != nil {
 		// Auto-load project files as context
-		contextInfo = h.autoLoadProjectContext(req.ProjectID, uid)
+		contextInfo = h.autoLoadProjectContext(c.Context(), req.ProjectID, uid)
 	}
 
 	// Resolve LLM provider from request or fallback to global config

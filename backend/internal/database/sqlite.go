@@ -709,6 +709,57 @@ func (db *DB) migrate() error {
 	} {
 		db.Conn.Exec(dropIdx)
 	}
+
+	// Cleanup indexes on empty/scaffold tables (no data, no queries)
+	for _, idx := range []string{
+		"idx_market_reviews_module",
+		"idx_comments_project",
+		"idx_edit_sessions_project",
+		"idx_collaborators_project",
+		"idx_collaborators_user",
+		"idx_module_versions_module",
+		"idx_team_members_project",
+		"idx_team_members_user",
+		"idx_audit_logs_project",
+		"idx_screenshots_module",
+		"idx_favorites_user",
+		"idx_user_badges_user",
+		"idx_changelogs_slug",
+		"idx_crash_logs_device",
+		"idx_crash_logs_module",
+		"idx_backup_schedules_user",
+		"idx_agent_memory_unique",
+		"idx_module_patterns_type",
+		"idx_agent_presets_user",
+		"idx_prompt_versions_skill",
+		"idx_shared_patterns_shared",
+		"idx_shared_patterns_type",
+		"idx_module_templates_category",
+		"idx_module_templates_downloads",
+		"idx_template_ratings_template",
+		"idx_module_dependencies_module",
+		"idx_module_dependencies_dep",
+		"idx_module_signatures_module",
+		"idx_module_vuln_scans_module",
+		"idx_module_vuln_scans_project",
+		"idx_file_comments_project",
+		"idx_file_comments_file",
+		"idx_file_comments_parent",
+		"idx_git_branches_project",
+		"idx_collab_sessions_project",
+		"idx_collab_sessions_active",
+		"idx_skill_evolution_skill_id",
+		"idx_skill_evolution_user_id",
+		"idx_skill_evolution_skill_user",
+		"idx_build_schedules_project",
+		"idx_build_schedules_next",
+		"idx_ss_user",
+		"idx_ss_project",
+		"idx_pk_proj",
+	} {
+		db.Conn.Exec("DROP INDEX IF EXISTS " + idx)
+	}
+
 	// Post-migration: add columns that may not exist in older schemas
 	addColumnIfMissing := []string{
 		"ALTER TABLE comments ADD COLUMN resolved INTEGER DEFAULT 0",
