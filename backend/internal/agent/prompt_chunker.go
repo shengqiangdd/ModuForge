@@ -34,17 +34,17 @@ import (
 //   - buildSystemPromptForMode: PromptChunker 按模式加载
 // ===========================================================================
 
-// ----- TokenEstimator -----
 
-// TokenEstimator provides fast character-based token estimation.
-// English: ~4 chars/token, Code: ~3 chars/token, Chinese: ~1.5 chars/token.
-// Accuracy: ±15% vs tiktoken, but 100x faster (no network/disk overhead).
-type TokenEstimator struct {
-	cache sync.Map // hash -> estimated tokens
+// ----- PromptChunker -----
+
+// PromptChunker loads only the necessary instruction modules per mode.
+type PromptChunker struct {
+	promptsDir string
+	cache      map[string]string // mode -> concatenated prompt
+	mu         sync.RWMutex
 }
 
-// EstimateTokens returns an estimated token count for the given text.
-
+// NewPromptChunker creates a chunker.
 func NewPromptChunker(promptsDir string) *PromptChunker {
 	return &PromptChunker{
 		promptsDir: promptsDir,
@@ -104,20 +104,3 @@ func (pc *PromptChunker) InvalidateCache() {
 	pc.cache = make(map[string]string)
 }
 
-// ----- ConversationOptimizer -----
-
-// ConversationOptimizer performs token-aware conversation pruning.
-type ConversationOptimizer struct {
-	estimator *TokenEstimator
-	pruner    *ToolResultPruner
-	diffCache *DifferentialCache
-
-	stats struct {
-		mu               sync.Mutex
-		tokensSaved      int64
-		resultsPruned    int64
-		differentialHits int64
-	}
-}
-
-// NewConversationOptimizer creates a new optimizer.

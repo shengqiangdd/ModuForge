@@ -34,17 +34,24 @@ import (
 //   - buildSystemPromptForMode: PromptChunker 按模式加载
 // ===========================================================================
 
-// ----- TokenEstimator -----
 
-// TokenEstimator provides fast character-based token estimation.
-// English: ~4 chars/token, Code: ~3 chars/token, Chinese: ~1.5 chars/token.
-// Accuracy: ±15% vs tiktoken, but 100x faster (no network/disk overhead).
-type TokenEstimator struct {
-	cache sync.Map // hash -> estimated tokens
+// ----- ConversationOptimizer -----
+
+// ConversationOptimizer performs token-aware conversation pruning.
+type ConversationOptimizer struct {
+	estimator *TokenEstimator
+	pruner    *ToolResultPruner
+	diffCache *DifferentialCache
+
+	stats struct {
+		mu               sync.Mutex
+		tokensSaved      int64
+		resultsPruned    int64
+		differentialHits int64
+	}
 }
 
-// EstimateTokens returns an estimated token count for the given text.
-
+// NewConversationOptimizer creates a new optimizer.
 func NewConversationOptimizer() *ConversationOptimizer {
 	return &ConversationOptimizer{
 		estimator: &TokenEstimator{},
@@ -187,6 +194,8 @@ func (co *ConversationOptimizer) GetStats() map[string]interface{} {
 }
 
 // extractToolNameFromContent attempts to extract the tool name from a result message.
+
+// extractToolNameFromContent attempts to extract the tool name from a result message.
 func extractToolNameFromContent(content string) string {
 	re := regexp.MustCompile(`Result of (\w+):`)
 	matches := re.FindStringSubmatch(content)
@@ -200,17 +209,3 @@ func extractToolNameFromContent(content string) string {
 	}
 	return "unknown"
 }
-
-// ----- TokenOptimizer (main entry point) -----
-
-// TokenOptimizer coordinates all sub-modules.
-type TokenOptimizer struct {
-	estimator     *TokenEstimator
-	pruner        *ToolResultPruner
-	diffCache     *DifferentialCache
-	promptChunker *PromptChunker
-	convoOpt      *ConversationOptimizer
-	prefixCache   *PrefixCache
-}
-
-// NewTokenOptimizer creates a fully-configured optimizer.

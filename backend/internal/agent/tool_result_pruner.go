@@ -34,17 +34,18 @@ import (
 //   - buildSystemPromptForMode: PromptChunker 按模式加载
 // ===========================================================================
 
-// ----- TokenEstimator -----
 
-// TokenEstimator provides fast character-based token estimation.
-// English: ~4 chars/token, Code: ~3 chars/token, Chinese: ~1.5 chars/token.
-// Accuracy: ±15% vs tiktoken, but 100x faster (no network/disk overhead).
-type TokenEstimator struct {
-	cache sync.Map // hash -> estimated tokens
+// ----- ToolResultPruner -----
+
+// ToolResultPruner compresses old tool results to save tokens while
+// preserving essential information (file paths, line counts, key content).
+type ToolResultPruner struct {
+	threshold      int  // Prune results > this many chars
+	keepHead       int  // Keep first N chars of file content
+	preserveWrites bool // Always keep write_file/edit_file results
 }
 
-// EstimateTokens returns an estimated token count for the given text.
-
+// NewToolResultPruner creates a pruner with sensible defaults.
 func NewToolResultPruner() *ToolResultPruner {
 	return &ToolResultPruner{
 		threshold:      2000, // Prune results > 2KB
@@ -144,20 +145,3 @@ func (tp *ToolResultPruner) pruneBashResult(content string) string {
 	return cmd + "\n... [output truncated] ...\n" + strings.Join(lastLines, "\n")
 }
 
-// ----- DifferentialCache -----
-
-// DifferentialCache caches file content hashes to skip redundant read_file calls.
-type DifferentialCache struct {
-	entries map[string]map[string]*diffCacheEntry // sessionID -> path -> entry
-	mu      sync.RWMutex
-	ttl     time.Duration
-}
-
-type diffCacheEntry struct {
-	hash      string
-	content   string
-	timestamp time.Time
-	fileSize  int64
-}
-
-// NewDifferentialCache creates a new differential cache.

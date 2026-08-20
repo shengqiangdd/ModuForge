@@ -34,17 +34,24 @@ import (
 //   - buildSystemPromptForMode: PromptChunker 按模式加载
 // ===========================================================================
 
-// ----- TokenEstimator -----
 
-// TokenEstimator provides fast character-based token estimation.
-// English: ~4 chars/token, Code: ~3 chars/token, Chinese: ~1.5 chars/token.
-// Accuracy: ±15% vs tiktoken, but 100x faster (no network/disk overhead).
-type TokenEstimator struct {
-	cache sync.Map // hash -> estimated tokens
+// ----- DifferentialCache -----
+
+// DifferentialCache caches file content hashes to skip redundant read_file calls.
+type DifferentialCache struct {
+	entries map[string]map[string]*diffCacheEntry // sessionID -> path -> entry
+	mu      sync.RWMutex
+	ttl     time.Duration
 }
 
-// EstimateTokens returns an estimated token count for the given text.
+type diffCacheEntry struct {
+	hash      string
+	content   string
+	timestamp time.Time
+	fileSize  int64
+}
 
+// NewDifferentialCache creates a new differential cache.
 func NewDifferentialCache(ttl time.Duration) *DifferentialCache {
 	if ttl <= 0 {
 		ttl = 2 * time.Minute
@@ -150,13 +157,3 @@ func (dc *DifferentialCache) Cleanup() {
 	}
 }
 
-// ----- PromptChunker -----
-
-// PromptChunker loads only the necessary instruction modules per mode.
-type PromptChunker struct {
-	promptsDir string
-	cache      map[string]string // mode -> concatenated prompt
-	mu         sync.RWMutex
-}
-
-// NewPromptChunker creates a chunker.

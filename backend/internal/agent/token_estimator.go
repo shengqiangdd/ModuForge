@@ -34,6 +34,7 @@ import (
 //   - buildSystemPromptForMode: PromptChunker 按模式加载
 // ===========================================================================
 
+
 // ----- TokenEstimator -----
 
 // TokenEstimator provides fast character-based token estimation.
@@ -44,7 +45,6 @@ type TokenEstimator struct {
 }
 
 // EstimateTokens returns an estimated token count for the given text.
-
 func (te *TokenEstimator) EstimateTokens(text string) int {
 	if text == "" {
 		return 0
@@ -100,14 +100,3 @@ func (te *TokenEstimator) EstimateConversationTokens(messages []map[string]inter
 	return total
 }
 
-// ----- ToolResultPruner -----
-
-// ToolResultPruner compresses old tool results to save tokens while
-// preserving essential information (file paths, line counts, key content).
-type ToolResultPruner struct {
-	threshold      int  // Prune results > this many chars
-	keepHead       int  // Keep first N chars of file content
-	preserveWrites bool // Always keep write_file/edit_file results
-}
-
-// NewToolResultPruner creates a pruner with sensible defaults.
