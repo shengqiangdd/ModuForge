@@ -167,7 +167,244 @@ func (dg *FileDependencyGraph) getOrCreateNode(path string) *FileDependencyNode 
 }
 
 // parseImports extracts import statements from a source file.
+func (dg *FileDependencyGraph) parseImports(relPath string) []string {
+	absPath := filepath.Join(dg.projectPath, relPath)
+	content, err := os.ReadFile(absPath)
+	if err != nil {
+		return nil
+	}
 
+	ext := filepath.Ext(relPath)
+	text := string(content)
+	imports := make([]string, 0)
+
+	switch ext {
+	case ".go":
+		imports = dg.parseGoImports(text)
+	case ".rs":
+		imports = dg.parseRustImports(text)
+	case ".js", ".mjs", ".ts", ".mts":
+		imports = dg.parseJSImports(text)
+	case ".py":
+		imports = dg.parsePythonImports(text)
+	}
+
+	// Resolve to project-relative paths
+	resolved := make([]string, 0, len(imports))
+	for _, imp := range imports {
+		if rel := dg.resolveImport(relPath, imp); rel != "" {
+			resolved = append(resolved, rel)
+		}
+	}
+
+	return resolved
+}
+
+// parseGoImports extracts Go import paths.
+func (dg *FileDependencyGraph) parseGoImports(text string) []string {
+	imports := make([]string, 0)
+	lines := strings.Split(text, "\n")
+	inImport := false
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "import (" {
+			inImport = true
+			continue
+		}
+		if inImport && trimmed == ")" {
+			inImport = false
+			continue
+		}
+
+		if inImport || strings.HasPrefix(trimmed, "import ") {
+			// Extract import path
+			start := strings.Index(trimmed, "\"")
+			end := strings.LastIndex(trimmed, "\"")
+			if start >= 0 && end > start {
+				impPath := trimmed[start+1 : end]
+				// Only track local imports (starting with . or ./ or ../)
+				if strings.HasPrefix(impPath, ".") {
+					imports = append(imports, impPath)
+				}
+			}
+		}
+	}
+	return imports
+}
+
+// parseRustImports extracts Rust use/mod statements.
+func (dg *FileDependencyGraph) parseRustImports(text string) []string {
+	imports := make([]string, 0)
+	lines := strings.Split(text, "\n")
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		// Skip comments
+		if strings.HasPrefix(trimmed, "//") {
+			continue
+		}
+
+		// mod statement: mod foo;
+		if strings.HasPrefix(trimmed, "mod ") && strings.HasSuffix(trimmed, ";") {
+			modName := strings.TrimPrefix(trimmed, "mod ")
+			modName = strings.TrimSuffix(modName, ";")
+			modName = strings.TrimSpace(modName)
+			imports = append(imports, modName+".rs")
+			continue
+		}
+
+		// use statement with self:: or super:: or crate::
+		if strings.HasPrefix(trimmed, "use ") {
+			parts := strings.Fields(trimmed)
+			if len(parts) >= 2 {
+				usePath := strings.TrimSuffix(parts[1], ";")
+				if strings.HasPrefix(usePath, "self::") || strings.HasPrefix(usePath, "super::") {
+					imports = append(imports, usePath)
+				}
+			}
+		}
+	}
+	return imports
+}
+
+// parseJSImports extracts JavaScript/TypeScript import statements.
+func (dg *FileDependencyGraph) parseJSImports(text string) []string {
+	imports := make([]string, 0)
+	lines := strings.Split(text, "\n")
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		// Skip comments
+		if strings.HasPrefix(trimmed, "//") || strings.HasPrefix(trimmed, "/*") {
+			continue
+		}
+
+		// import ... from 'path'
+		if strings.Contains(trimmed, "from ") {
+			start := strings.LastIndex(trimmed, "'")
+			if start < 0 {
+				start = strings.LastIndex(trimmed, "\"")
+			}
+			end := strings.LastIndex(trimmed, "'")
+			if end < 0 {
+				end = strings.LastIndex(trimmed, "\"")
+			}
+			if start >= 0 && end > start {
+				impPath := trimmed[start+1 : end]
+				if strings.HasPrefix(impPath, ".") {
+					imports = append(imports, impPath)
+				}
+			}
+		}
+
+		// require('path')
+		if strings.Contains(trimmed, "require(") {
+			start := strings.Index(trimmed, "require('")
+			if start < 0 {
+				start = strings.Index(trimmed, "require(\"")
+			}
+			if start >= 0 {
+				start = strings.Index(trimmed[start:], "'")
+				if start < 0 {
+					start = strings.Index(trimmed[start:], "\"")
+				}
+				end := strings.Index(trimmed[start+1:], "'")
+				if end < 0 {
+					end = strings.Index(trimmed[start+1:], "\"")
+				}
+				if start >= 0 && end >= 0 {
+					impPath := trimmed[start+1 : start+1+end]
+					if strings.HasPrefix(impPath, ".") {
+						imports = append(imports, impPath)
+					}
+				}
+			}
+		}
+
+		// import 'path' (side effect)
+		if strings.HasPrefix(trimmed, "import ") && !strings.Contains(trimmed, "from ") {
+			start := strings.Index(trimmed, "'")
+			if start < 0 {
+				start = strings.Index(trimmed, "\"")
+			}
+			end := strings.LastIndex(trimmed, "'")
+			if end < 0 {
+				end = strings.LastIndex(trimmed, "\"")
+			}
+			if start >= 0 && end > start {
+				impPath := trimmed[start+1 : end]
+				if strings.HasPrefix(impPath, ".") {
+					imports = append(imports, impPath)
+				}
+			}
+		}
+	}
+	return imports
+}
+
+// parsePythonImports extracts Python import statements.
+func (dg *FileDependencyGraph) parsePythonImports(text string) []string {
+	imports := make([]string, 0)
+	lines := strings.Split(text, "\n")
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		// Skip comments
+		if strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+
+		// from . import foo / from .. import bar
+		if strings.HasPrefix(trimmed, "from ") && strings.Contains(trimmed, " import ") {
+			parts := strings.SplitN(trimmed, " import ", 2)
+			if len(parts) == 2 {
+				modulePath := strings.TrimSpace(parts[0])
+				modulePath = strings.TrimPrefix(modulePath, "from ")
+				if strings.HasPrefix(modulePath, ".") {
+					imports = append(imports, modulePath)
+				}
+			}
+		}
+	}
+	return imports
+}
+
+// resolveImport resolves an import path to a project-relative file path.
+func (dg *FileDependencyGraph) resolveImport(fromFile, importPath string) string {
+	if !strings.HasPrefix(importPath, ".") {
+		return "" // external import
+	}
+
+	dir := filepath.Dir(fromFile)
+	resolved := filepath.Clean(filepath.Join(dir, importPath))
+
+	// Try exact path
+	for _, ext := range []string{".go", ".rs", ".js", ".ts", ".py", ".java", ".kt", ""} {
+		candidate := resolved + ext
+		if dg.fileIndex[candidate] {
+			return candidate
+		}
+		// Try index files
+		candidate = resolved + "/index" + ext
+		if dg.fileIndex[candidate] {
+			return candidate
+		}
+		// Try mod.rs for Rust
+		if ext == ".rs" {
+			candidate = resolved + "/mod.rs"
+			if dg.fileIndex[candidate] {
+				return candidate
+			}
+		}
+	}
+
+	return ""
+}
+
+// ══════════════════════════════════════════════════════════════════?// Query API ?Query the dependency graph
+// ══════════════════════════════════════════════════════════════════?
+// GetDependencies returns the files that a given file depends on.
 func (dg *FileDependencyGraph) GetDependencies(path string) []string {
 	dg.mu.RLock()
 	defer dg.mu.RUnlock()
