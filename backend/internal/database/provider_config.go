@@ -152,7 +152,10 @@ func (db *DB) UpsertProviderConfig(userID, providerID, endpoint, apiKey, modelsJ
 		 ON CONFLICT(id, user_id) DO UPDATE SET endpoint=?, api_key=?, models_json=?, updated_at=datetime('now')`,
 		providerID, userID, endpoint, apiKeyEnc, modelsJSON, endpoint, apiKeyEnc, modelsJSON,
 	)
-	return err
+	if err != nil {
+		return fmt.Errorf("save provider config: %w", err)
+	}
+	return nil
 }
 
 // DeleteProviderConfig deletes a provider config for a user (restores defaults).
@@ -161,7 +164,10 @@ func (db *DB) DeleteProviderConfig(userID, providerID string) error {
 		`DELETE FROM provider_configs WHERE user_id=? AND id=?`,
 		userID, providerID,
 	)
-	return err
+	if err != nil {
+		return fmt.Errorf("delete provider config: %w", err)
+	}
+	return nil
 }
 
 // GetCustomProviders returns all custom providers for a user.

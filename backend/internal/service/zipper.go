@@ -258,7 +258,7 @@ func (s *ZipperService) BuildModuleZip(_ context.Context, _ string, files []Modu
 func addMetaInf(zw *zip.Writer) error {
 	for _, dir := range []string{"META-INF/", "META-INF/com/", "META-INF/com/google/", "META-INF/com/google/android/"} {
 		if _, err := zw.Create(dir); err != nil {
-			return err
+			return fmt.Errorf("create META-INF dir %s: %w", dir, err)
 		}
 	}
 
@@ -271,7 +271,7 @@ func addMetaInf(zw *zip.Writer) error {
 
 	w, err := zw.CreateHeader(ubHeader)
 	if err != nil {
-		return err
+		return fmt.Errorf("create update-binary header: %w", err)
 	}
 
 	updateBinary := `#!/sbin/sh

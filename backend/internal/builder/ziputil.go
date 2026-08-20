@@ -324,13 +324,13 @@ func ZipDirExcludingWithProgress(sourceDir, outputZip string, excludePatterns []
 	currentFile := 0
 	return filepath.Walk(absSource, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
-			return err
+			return fmt.Errorf("create zip file: %w", err)
 		}
 
 		// Build the relative name inside the zip
 		relPath, err := filepath.Rel(absSource, path)
 		if err != nil {
-			return err
+			return fmt.Errorf("write zip: %w", err)
 		}
 		// Normalize to forward slashes for zip
 		relPath = filepath.ToSlash(relPath)
@@ -354,13 +354,13 @@ func ZipDirExcludingWithProgress(sourceDir, outputZip string, excludePatterns []
 		// Create zip entry
 		header, err := zip.FileInfoHeader(info)
 		if err != nil {
-			return err
+			return fmt.Errorf("close zip writer: %w", err)
 		}
 		header.Name = relPath
 
 		writer, err := w.CreateHeader(header)
 		if err != nil {
-			return err
+			return fmt.Errorf("open zip file: %w", err)
 		}
 
 		// Copy file content

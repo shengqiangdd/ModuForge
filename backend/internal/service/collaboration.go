@@ -92,7 +92,10 @@ func (s *CollaborationService) ListCollaborators(ctx context.Context, projectID 
 func (s *CollaborationService) RemoveCollaborator(ctx context.Context, projectID, userID string) error {
 	_, err := s.db.ExecContext(ctx,
 		`DELETE FROM collaborators WHERE project_id = ? AND user_id = ?`, projectID, userID)
-	return err
+	if err != nil {
+		return fmt.Errorf("remove collaborator: %w", err)
+	}
+	return nil
 }
 
 func (s *CollaborationService) AddComment(ctx context.Context, projectID, userID, username, filePath, content string, lineNumber int) (*Comment, error) {
@@ -101,7 +104,7 @@ func (s *CollaborationService) AddComment(ctx context.Context, projectID, userID
 		`INSERT INTO comments (id, project_id, user_id, username, file_path, line_number, content, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 		id, projectID, userID, username, filePath, lineNumber, content, time.Now())
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("add comment: %w", err)
 	}
 	return &Comment{ID: id, ProjectID: projectID, UserID: userID, Username: username, FilePath: filePath, LineNumber: lineNumber, Content: content, CreatedAt: time.Now()}, nil
 }
@@ -119,7 +122,7 @@ func (s *CollaborationService) ListComments(ctx context.Context, projectID, file
 			 FROM comments WHERE project_id = ? ORDER BY created_at DESC`, projectID)
 	}
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("list comments: %w", err)
 	}
 	defer rows.Close()
 
@@ -134,7 +137,10 @@ func (s *CollaborationService) ListComments(ctx context.Context, projectID, file
 
 func (s *CollaborationService) ResolveComment(ctx context.Context, commentID string) error {
 	_, err := s.db.ExecContext(ctx, `UPDATE comments SET resolved = 1 WHERE id = ?`, commentID)
-	return err
+	if err != nil {
+		return fmt.Errorf("resolve comment: %w", err)
+	}
+	return nil
 }
 
 func (s *CollaborationService) UpsertEditSession(ctx context.Context, session *EditSession) error {
@@ -147,7 +153,10 @@ func (s *CollaborationService) UpsertEditSession(ctx context.Context, session *E
 		session.ID, session.ProjectID, session.UserID, session.Username, session.FilePath,
 		session.CursorLine, session.CursorCol, session.SelectionStartLine, session.SelectionStartCol,
 		session.SelectionEndLine, session.SelectionEndCol, session.Color, session.ConnectedAt, time.Now())
-	return err
+	if err != nil {
+		return fmt.Errorf("upsert edit session: %w", err)
+	}
+	return nil
 }
 
 func (s *CollaborationService) ListEditSessions(ctx context.Context, projectID string) ([]EditSession, error) {
@@ -158,7 +167,7 @@ func (s *CollaborationService) ListEditSessions(ctx context.Context, projectID s
 		`SELECT id, project_id, user_id, username, file_path, cursor_line, cursor_col, selection_start_line, selection_start_col, selection_end_line, selection_end_col, color, connected_at, last_active
 		 FROM edit_sessions WHERE project_id = ?`, projectID)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("list edit sessions: %w", err)
 	}
 	defer rows.Close()
 
@@ -173,7 +182,10 @@ func (s *CollaborationService) ListEditSessions(ctx context.Context, projectID s
 
 func (s *CollaborationService) RemoveEditSession(ctx context.Context, sessionID string) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM edit_sessions WHERE id = ?`, sessionID)
-	return err
+	if err != nil {
+		return fmt.Errorf("remove edit session: %w", err)
+	}
+	return nil
 }
 
 // ===== Team Members =====
@@ -183,7 +195,7 @@ func (s *CollaborationService) AddTeamMember(ctx context.Context, projectID, use
 		`INSERT INTO team_members (project_id, user_id, role, invited_by) VALUES (?, ?, ?, ?)`,
 		projectID, userID, role, invitedBy)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("add team member: %w", err)
 	}
 	var m domain.TeamMember
 	err = s.db.QueryRowContext(ctx,
@@ -196,14 +208,17 @@ func (s *CollaborationService) AddTeamMember(ctx context.Context, projectID, use
 func (s *CollaborationService) RemoveTeamMember(ctx context.Context, projectID, userID string) error {
 	_, err := s.db.ExecContext(ctx,
 		`DELETE FROM team_members WHERE project_id = ? AND user_id = ?`, projectID, userID)
-	return err
+	if err != nil {
+		return fmt.Errorf("remove team member: %w", err)
+	}
+	return nil
 }
 
 func (s *CollaborationService) GetTeamMembers(ctx context.Context, projectID string) ([]domain.TeamMember, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT id, project_id, user_id, role, COALESCE(invited_by,''), created_at FROM team_members WHERE project_id=?`, projectID)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("get team members: %w", err)
 	}
 	defer rows.Close()
 	var result []domain.TeamMember
@@ -218,7 +233,10 @@ func (s *CollaborationService) GetTeamMembers(ctx context.Context, projectID str
 func (s *CollaborationService) UpdateMemberRole(ctx context.Context, projectID, userID, role string) error {
 	_, err := s.db.ExecContext(ctx,
 		`UPDATE team_members SET role=? WHERE project_id=? AND user_id=?`, role, projectID, userID)
-	return err
+	if err != nil {
+		return fmt.Errorf("update member role: %w", err)
+	}
+	return nil
 }
 
 // role hierarchy: owner > admin > member > viewer

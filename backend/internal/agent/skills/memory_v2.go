@@ -91,7 +91,7 @@ func (s *MemoryV2Skill) ensureTables() error {
 		)
 	`)
 	if err != nil {
-		return err
+		return fmt.Errorf("create memory_v2 table: %w", err)
 	}
 
 	// FTS5 index for full-text search
@@ -104,7 +104,7 @@ func (s *MemoryV2Skill) ensureTables() error {
 		)
 	`)
 	if err != nil {
-		return err
+		return fmt.Errorf("create memory_v2_fts table: %w", err)
 	}
 
 	// Create indexes for common queries
@@ -112,28 +112,28 @@ func (s *MemoryV2Skill) ensureTables() error {
 		CREATE INDEX IF NOT EXISTS idx_memory_v2_user ON memory_v2(user_id)
 	`)
 	if err != nil {
-		return err
+		return fmt.Errorf("create memory_v2 user index: %w", err)
 	}
 
 	_, err = s.db.Exec(`
 		CREATE INDEX IF NOT EXISTS idx_memory_v2_category ON memory_v2(category)
 	`)
 	if err != nil {
-		return err
+		return fmt.Errorf("create memory_v2 category index: %w", err)
 	}
 
 	_, err = s.db.Exec(`
 		CREATE INDEX IF NOT EXISTS idx_memory_v2_tier ON memory_v2(tier)
 	`)
 	if err != nil {
-		return err
+		return fmt.Errorf("create memory_v2 tier index: %w", err)
 	}
 
 	_, err = s.db.Exec(`
 		CREATE INDEX IF NOT EXISTS idx_memory_v2_importance ON memory_v2(importance DESC)
 	`)
 	if err != nil {
-		return err
+		return fmt.Errorf("create memory_v2 importance index: %w", err)
 	}
 
 	return nil

@@ -67,11 +67,11 @@ func loadBinaryCacheIndex(projectDir string) *BinaryCacheIndex {
 func saveBinaryCacheIndex(projectDir string, index *BinaryCacheIndex) error {
 	dir := getBinaryCacheDir(projectDir)
 	if err := os.MkdirAll(dir, 0755); err != nil {
-		return err
+		return fmt.Errorf("create cache directory: %w", err)
 	}
 	data, err := json.MarshalIndent(index, "", "  ")
 	if err != nil {
-		return err
+		return fmt.Errorf("marshal cache index: %w", err)
 	}
 	return os.WriteFile(getBinaryCacheIndexPath(projectDir), data, 0644)
 }

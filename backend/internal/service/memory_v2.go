@@ -69,7 +69,10 @@ func (s *MemoryV2Store) SaveSummary(userID, sessionID, projectID, summary string
 	decJSON, _ := json.Marshal(decisions)
 	filesJSON, _ := json.Marshal(files)
 	_, err := s.db.Exec(`INSERT INTO session_summaries (user_id, session_id, project_id, summary, key_decisions, files_changed) VALUES (?, ?, ?, ?, ?, ?)`, userID, sessionID, projectID, summary, string(decJSON), string(filesJSON))
-	return err
+	if err != nil {
+		return fmt.Errorf("save session summary: %w", err)
+	}
+	return nil
 }
 
 func (s *MemoryV2Store) GetProjectSummaries(userID, projectID string, limit int) ([]SessionSummary, error) {
@@ -121,7 +124,10 @@ func (s *MemoryV2Store) GetRecentUserSummaries(userID string, limit int) ([]Sess
 func (s *MemoryV2Store) SaveKnowledge(userID, projectID, category, key, value string) error {
 	now := time.Now().Format("2006-01-02 15:04:05")
 	_, err := s.db.Exec(`INSERT INTO project_knowledge (user_id, project_id, category, key, value, updated_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(user_id, project_id, category, key) DO UPDATE SET value=?, updated_at=?`, userID, projectID, category, key, value, now, value, now)
-	return err
+	if err != nil {
+		return fmt.Errorf("save knowledge: %w", err)
+	}
+	return nil
 }
 
 func (s *MemoryV2Store) GetKnowledge(userID, projectID, category, key string) (string, error) {
@@ -158,12 +164,18 @@ func (s *MemoryV2Store) ListKnowledge(userID, projectID, category string) ([]Kno
 
 func (s *MemoryV2Store) DeleteKnowledge(userID, projectID, category, key string) error {
 	_, err := s.db.Exec(`DELETE FROM project_knowledge WHERE user_id=? AND project_id=? AND category=? AND key=?`, userID, projectID, category, key)
-	return err
+	if err != nil {
+		return fmt.Errorf("delete knowledge: %w", err)
+	}
+	return nil
 }
 
 func (s *MemoryV2Store) DeleteProjectKnowledge(userID, projectID string) error {
 	_, err := s.db.Exec(`DELETE FROM project_knowledge WHERE user_id=? AND project_id=?`, userID, projectID)
-	return err
+	if err != nil {
+		return fmt.Errorf("delete project knowledge: %w", err)
+	}
+	return nil
 }
 
 func (s *MemoryV2Store) LoadProjectContextForAgent(userID, projectID string) string {

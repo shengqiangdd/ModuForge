@@ -223,7 +223,10 @@ func (s *ADBService) TapScreen(ctx context.Context, serial string, x, y int) err
 	if err != nil {
 		// Fallback to input tap (slower, ~700ms)
 		_, err = s.RunShell(ctx, serial, fmt.Sprintf("input tap %d %d", x, y))
-		return err
+		if err != nil {
+			return fmt.Errorf("adb fallback tap: %w", err)
+		}
+		return nil
 	}
 	// Use sendevent for fast tap (~50ms)
 	cmds := []string{
@@ -240,7 +243,10 @@ func (s *ADBService) TapScreen(ctx context.Context, serial string, x, y int) err
 	}
 	fullCmd := strings.Join(cmds, " && ")
 	_, err = s.RunShell(ctx, serial, fullCmd)
-	return err
+	if err != nil {
+		return fmt.Errorf("adb long press: %w", err)
+	}
+	return nil
 }
 
 // SwipeScreen sends a swipe/drag event.
@@ -249,7 +255,10 @@ func (s *ADBService) SwipeScreen(ctx context.Context, serial string, x1, y1, x2,
 		duration = 300
 	}
 	_, err := s.RunShell(ctx, serial, fmt.Sprintf("input swipe %d %d %d %d %d", x1, y1, x2, y2, duration))
-	return err
+	if err != nil {
+		return fmt.Errorf("adb swipe: %w", err)
+	}
+	return nil
 }
 
 // SendTap uses input tap for reliable touch response
@@ -260,7 +269,10 @@ func (s *ADBService) SendTap(ctx context.Context, serial string, x, y int) error
 		log.Printf("[ADB] input tap failed (%v), retrying with input touchscreen tap", err)
 		_, err = s.RunShell(ctx, serial, fmt.Sprintf("input touchscreen tap %d %d", x, y))
 	}
-	return err
+	if err != nil {
+		return fmt.Errorf("adb tap: %w", err)
+	}
+	return nil
 }
 
 // SendLongPress uses input swipe (same point) for long press
@@ -269,7 +281,10 @@ func (s *ADBService) SendLongPress(ctx context.Context, serial string, x, y, dur
 		durationMs = 800
 	}
 	_, err := s.RunShell(ctx, serial, fmt.Sprintf("input swipe %d %d %d %d %d", x, y, x, y, durationMs))
-	return err
+	if err != nil {
+		return fmt.Errorf("adb long press: %w", err)
+	}
+	return nil
 }
 
 // SendSwipe uses input swipe for smooth gesture
@@ -278,7 +293,10 @@ func (s *ADBService) SendSwipe(ctx context.Context, serial string, x1, y1, x2, y
 		durationMs = 300
 	}
 	_, err := s.RunShell(ctx, serial, fmt.Sprintf("input swipe %d %d %d %d %d", x1, y1, x2, y2, durationMs))
-	return err
+	if err != nil {
+		return fmt.Errorf("adb pinch: %w", err)
+	}
+	return nil
 }
 
 // SendPinch approximates pinch with two sequential swipes
@@ -292,11 +310,14 @@ func (s *ADBService) SendPinch(ctx context.Context, serial string, x1, y1, x2, y
 	// First swipe (finger 1)
 	_, err := s.RunShell(ctx, serial, fmt.Sprintf("input swipe %d %d %d %d %d", midX, midY, x1, y1, durationMs))
 	if err != nil {
-		return err
+		return fmt.Errorf("adb pinch swipe 1: %w", err)
 	}
 	// Second swipe (finger 2)
 	_, err = s.RunShell(ctx, serial, fmt.Sprintf("input swipe %d %d %d %d %d", midX, midY, x2, y2, durationMs))
-	return err
+	if err != nil {
+		return fmt.Errorf("adb pinch swipe 2: %w", err)
+	}
+	return nil
 }
 
 // InputText sends text input.
@@ -319,7 +340,10 @@ func (s *ADBService) InputText(ctx context.Context, serial, text string) error {
 	}
 	escaped := buf.String()
 	_, err := s.RunShell(ctx, serial, "input text '"+escaped+"'")
-	return err
+	if err != nil {
+		return fmt.Errorf("adb input text: %w", err)
+	}
+	return nil
 }
 
 // KeyEvent sends an Android key event.
@@ -329,7 +353,10 @@ func (s *ADBService) KeyEvent(ctx context.Context, serial, key string) error {
 		return fmt.Errorf("unknown key: %s", key)
 	}
 	_, err := s.RunShell(ctx, serial, "input keyevent "+code)
-	return err
+	if err != nil {
+		return fmt.Errorf("adb key event %s: %w", key, err)
+	}
+	return nil
 }
 
 func (s *ADBService) ScreenRecord(ctx context.Context, serial, localPath, duration string) (string, error) {
@@ -434,7 +461,10 @@ func (s *ADBService) RebootDevice(ctx context.Context, serial, mode string) erro
 		args = append(args, mode)
 	}
 	_, err := s.run(ctx, args...)
-	return err
+	if err != nil {
+		return fmt.Errorf("adb command: %w", err)
+	}
+	return nil
 }
 
 func (s *ADBService) GetProp(ctx context.Context, serial, prop string) (string, error) {

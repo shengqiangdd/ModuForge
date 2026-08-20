@@ -29,12 +29,13 @@ func (s *NotificationService) Create(userID string, notifType, title, message, l
 		"INSERT INTO notifications (user_id, type, title, message, link) VALUES (?, ?, ?, ?, ?)",
 		userID, notifType, title, message, link,
 	)
-	if err == nil {
-		NotifyUser(userID, "notification", map[string]interface{}{
-			"type": notifType, "title": title, "message": message, "link": link,
-		})
+	if err != nil {
+		return fmt.Errorf("create notification: %w", err)
 	}
-	return err
+	NotifyUser(userID, "notification", map[string]interface{}{
+		"type": notifType, "title": title, "message": message, "link": link,
+	})
+	return nil
 }
 
 func (s *NotificationService) List(userID string, limit, offset int) ([]Notification, error) {
@@ -71,15 +72,24 @@ func (s *NotificationService) UnreadCount(userID string) (int, error) {
 
 func (s *NotificationService) MarkRead(userID string, notifID int64) error {
 	_, err := s.db.Exec("UPDATE notifications SET is_read = 1 WHERE id = ? AND user_id = ?", notifID, userID)
-	return err
+	if err != nil {
+		return fmt.Errorf("mark notification read: %w", err)
+	}
+	return nil
 }
 
 func (s *NotificationService) MarkAllRead(userID string) error {
 	_, err := s.db.Exec("UPDATE notifications SET is_read = 1 WHERE user_id = ?", userID)
-	return err
+	if err != nil {
+		return fmt.Errorf("mark all notifications read: %w", err)
+	}
+	return nil
 }
 
 func (s *NotificationService) Delete(userID string, notifID int64) error {
 	_, err := s.db.Exec("DELETE FROM notifications WHERE id = ? AND user_id = ?", notifID, userID)
-	return err
+	if err != nil {
+		return fmt.Errorf("delete notification: %w", err)
+	}
+	return nil
 }

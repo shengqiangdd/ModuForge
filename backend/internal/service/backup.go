@@ -293,7 +293,10 @@ func (s *BackupService) ListSchedules(userID string) ([]BackupSchedule, error) {
 
 func (s *BackupService) DeleteSchedule(scheduleID int64) error {
 	_, err := s.db.Exec("DELETE FROM backup_schedules WHERE id = ?", scheduleID)
-	return err
+	if err != nil {
+		return fmt.Errorf("delete backup schedule: %w", err)
+	}
+	return nil
 }
 
 func (s *BackupService) DeleteScheduleByUser(scheduleID int64, userID string) error {
@@ -301,7 +304,10 @@ func (s *BackupService) DeleteScheduleByUser(scheduleID int64, userID string) er
 		return fmt.Errorf("user_id required")
 	}
 	_, err := s.db.Exec("DELETE FROM backup_schedules WHERE id = ? AND user_id = ?", scheduleID, userID)
-	return err
+	if err != nil {
+		return fmt.Errorf("delete backup schedule by user: %w", err)
+	}
+	return nil
 }
 
 func (s *BackupService) ToggleSchedule(scheduleID int64, active bool) error {
@@ -310,7 +316,10 @@ func (s *BackupService) ToggleSchedule(scheduleID int64, active bool) error {
 		v = 1
 	}
 	_, err := s.db.Exec("UPDATE backup_schedules SET is_active = ? WHERE id = ?", v, scheduleID)
-	return err
+	if err != nil {
+		return fmt.Errorf("toggle backup schedule: %w", err)
+	}
+	return nil
 }
 
 func (s *BackupService) ToggleScheduleByUser(scheduleID int64, userID string, active bool) error {
@@ -320,7 +329,10 @@ func (s *BackupService) ToggleScheduleByUser(scheduleID int64, userID string, ac
 	}
 	if userID != "" {
 		_, err := s.db.Exec("UPDATE backup_schedules SET is_active = ? WHERE id = ? AND user_id = ?", v, scheduleID, userID)
-		return err
+		if err != nil {
+			return fmt.Errorf("toggle backup schedule by user: %w", err)
+		}
+		return nil
 	}
 	return s.ToggleSchedule(scheduleID, active)
 }
@@ -331,7 +343,7 @@ func (s *BackupService) RunScheduledBackup(scheduleID int64) error {
 		return err
 	}
 	if _, err := s.ExportDatabase(context.Background()); err != nil {
-		return err
+		return fmt.Errorf("export database: %w", err)
 	}
 
 	now := time.Now()

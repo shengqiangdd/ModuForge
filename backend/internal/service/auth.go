@@ -201,7 +201,10 @@ func (s *AuthService) EnableTOTP(userID, code string) error {
 	}
 
 	_, err = s.db.Exec("UPDATE users SET totp_enabled = 1 WHERE id = ?", userID)
-	return err
+	if err != nil {
+		return fmt.Errorf("enable TOTP: %w", err)
+	}
+	return nil
 }
 
 func (s *AuthService) DisableTOTP(userID, code string) error {
@@ -219,7 +222,10 @@ func (s *AuthService) DisableTOTP(userID, code string) error {
 	}
 
 	_, err = s.db.Exec("UPDATE users SET totp_secret = '', totp_enabled = 0 WHERE id = ?", userID)
-	return err
+	if err != nil {
+		return fmt.Errorf("disable TOTP: %w", err)
+	}
+	return nil
 }
 
 func (s *AuthService) VerifyTOTP(userID, code string) error {
@@ -253,14 +259,14 @@ func (s *AuthService) GetUser(ctx context.Context, uid string) (*domain.User, er
 func (s *AuthService) SendVerificationEmail(userID, email string) error {
 	code, err := GenerateCode(6)
 	if err != nil {
-		return err
+		return fmt.Errorf("generate verification code: %w", err)
 	}
 	expires := time.Now().Add(10 * time.Minute)
 	_, err = s.db.Exec(
 		`UPDATE users SET verify_token = ?, verify_expires = ? WHERE id = ?`,
 		code, expires.Format("2006-01-02 15:04:05"), userID)
 	if err != nil {
-		return err
+		return fmt.Errorf("save verification token: %w", err)
 	}
 	emailSvc := NewEmailService(s.db)
 	return emailSvc.SendVerificationCode(email, code)
@@ -282,7 +288,10 @@ func (s *AuthService) VerifyEmail(token string) error {
 		}
 	}
 	_, err = s.db.Exec(`UPDATE users SET email_verified = 1, verify_token = '' WHERE id = ?`, userID)
-	return err
+	if err != nil {
+		return fmt.Errorf("verify email: %w", err)
+	}
+	return nil
 }
 
 func (s *AuthService) RequestPasswordReset(email string) error {
@@ -294,14 +303,14 @@ func (s *AuthService) RequestPasswordReset(email string) error {
 	}
 	code, err := GenerateCode(6)
 	if err != nil {
-		return err
+		return fmt.Errorf("generate reset code: %w", err)
 	}
 	expires := time.Now().Add(1 * time.Hour)
 	_, err = s.db.Exec(
 		`UPDATE users SET verify_token = ?, verify_expires = ? WHERE id = ?`,
 		code, expires.Format("2006-01-02 15:04:05"), userID)
 	if err != nil {
-		return err
+		return fmt.Errorf("save reset token: %w", err)
 	}
 	emailSvc := NewEmailService(s.db)
 	return emailSvc.SendPasswordReset(email, code)
@@ -324,10 +333,13 @@ func (s *AuthService) ResetPassword(token, newPassword string) error {
 	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
 	if err != nil {
-		return err
+		return fmt.Errorf("hash new password: %w", err)
 	}
 	_, err = s.db.Exec(`UPDATE users SET password_hash = ?, verify_token = '' WHERE id = ?`, string(hash), userID)
-	return err
+	if err != nil {
+		return fmt.Errorf("save new password: %w", err)
+	}
+	return nil
 }
 
 type UserProfile struct {
@@ -376,12 +388,18 @@ func (s *AuthService) UpdateProfile(userID string, updates map[string]string) er
 	args = append(args, userID)
 	query := fmt.Sprintf("UPDATE users SET %s WHERE id=?", strings.Join(setClauses, ", "))
 	_, err := s.db.Exec(query, args...)
-	return err
+	if err != nil {
+		return fmt.Errorf("update profile: %w", err)
+	}
+	return nil
 }
 
 func (s *AuthService) UploadAvatar(userID string, avatarPath string) error {
 	_, err := s.db.Exec(`UPDATE users SET avatar_url = ? WHERE id = ?`, avatarPath, userID)
-	return err
+	if err != nil {
+		return fmt.Errorf("upload avatar: %w", err)
+	}
+	return nil
 }
 
 // ChangePassword verifies old password and sets new one.
@@ -395,10 +413,13 @@ func (s *AuthService) ChangePassword(userID, oldPassword, newPassword string) er
 	}
 	newHash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
 	if err != nil {
-		return err
+		return fmt.Errorf("hash password: %w", err)
 	}
 	_, err = s.db.Exec(`UPDATE users SET password_hash = ?, password_changed_at = datetime('now') WHERE id = ?`, string(newHash), userID)
-	return err
+	if err != nil {
+		return fmt.Errorf("change password: %w", err)
+	}
+	return nil
 }
 
 // GetGitHubToken retrieves the user's stored GitHub token.
@@ -422,12 +443,15 @@ func (s *AuthService) SetGitHubToken(userID, token string) error {
 	if token != "" {
 		enc, err := s.encryptToken(token)
 		if err != nil {
-			return err
+			return fmt.Errorf("encrypt github token: %w", err)
 		}
 		stored = enc
 	}
 	_, err := s.db.Exec(`UPDATE users SET github_token = ? WHERE id = ?`, stored, userID)
-	return err
+	if err != nil {
+		return fmt.Errorf("save github token: %w", err)
+	}
+	return nil
 }
 
 // githubTokenKey derives a stable AES-256 key from JWT_SECRET so rotating the
@@ -447,11 +471,11 @@ func (s *AuthService) encryptToken(plain string) (string, error) {
 	}
 	block, err := aes.NewCipher(key)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("create AES cipher: %w", err)
 	}
 	gcm, err := cipher.NewGCM(block)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("create GCM: %w", err)
 	}
 	nonce := make([]byte, gcm.NonceSize())
 	if _, err := rand.Read(nonce); err != nil {
@@ -475,11 +499,11 @@ func (s *AuthService) decryptToken(stored string) (string, error) {
 	}
 	block, err := aes.NewCipher(key)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("github token: create AES cipher: %w", err)
 	}
 	gcm, err := cipher.NewGCM(block)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("github token: create GCM: %w", err)
 	}
 	if len(raw) < gcm.NonceSize() {
 		return "", fmt.Errorf("github token: malformed ciphertext")

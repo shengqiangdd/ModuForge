@@ -160,7 +160,10 @@ func (s *ProjectService) GetByUser(ctx context.Context, id string, userID string
 func (s *ProjectService) CheckOwnership(ctx context.Context, projectID, userID string) bool {
 	var ownerID string
 	err := s.db.QueryRowContext(ctx, `SELECT user_id FROM projects WHERE id=? AND deleted_at IS NULL`, projectID).Scan(&ownerID)
-	return err == nil && ownerID == userID
+	if err != nil {
+		return false
+	}
+	return ownerID == userID
 }
 
 func (s *ProjectService) Update(ctx context.Context, id string, req *domain.UpdateProjectInput) (*domain.Project, error) {
@@ -569,7 +572,7 @@ func (s *ProjectService) DeleteFile(ctx context.Context, projectID, path, userID
 	result, err := s.db.ExecContext(ctx,
 		`DELETE FROM project_files WHERE project_id=? AND path=?`, projectID, path)
 	if err != nil {
-		return err
+		return fmt.Errorf("delete project file: %w", err)
 	}
 	affected, _ := result.RowsAffected()
 	if affected == 0 {

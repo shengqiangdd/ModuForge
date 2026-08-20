@@ -73,7 +73,10 @@ func (s *AIService) saveProjectFile(ctx context.Context, projectID, path, conten
 			 VALUES (?, ?, NULL, datetime('now'), datetime('now'), ?, ?, ?)
 			 ON CONFLICT(project_id, path) DO UPDATE SET content=NULL, updated_at=datetime('now'), sha256=?, file_size=?, mtime=?`,
 			projectID, path, sha, size, now, sha, size, now)
-		return err
+		if err != nil {
+			return fmt.Errorf("save file metadata: %w", err)
+		}
+		return nil
 	}
 
 	_, err := s.db.ExecContext(ctx,
@@ -81,7 +84,10 @@ func (s *AIService) saveProjectFile(ctx context.Context, projectID, path, conten
 		 VALUES (?, ?, ?, datetime('now'), datetime('now'), ?, ?, ?)
 		 ON CONFLICT(project_id, path) DO UPDATE SET content=?, updated_at=datetime('now'), sha256=?, file_size=?, mtime=?`,
 		projectID, path, content, sha, size, now, content, sha, size, now)
-	return err
+	if err != nil {
+		return fmt.Errorf("save file: %w", err)
+	}
+	return nil
 }
 
 // ─── Utility Functions ───
@@ -157,7 +163,7 @@ func (s *AIService) ensurePromptsTable() error {
 		UNIQUE(mode, user_id)
 	)`)
 	if err != nil {
-		return err
+		return fmt.Errorf("unmarshal ai config: %w", err)
 	}
 	s.db.Exec(`INSERT OR IGNORE INTO ai_prompts (mode, content) VALUES ('generate', '')`)
 	s.db.Exec(`INSERT OR IGNORE INTO ai_prompts (mode, content) VALUES ('chat', '')`)
