@@ -1,7 +1,6 @@
 package service
 
 import (
-	"database/sql"
 	"encoding/base64"
 
 	"github.com/moduforge/backend/internal/llm"

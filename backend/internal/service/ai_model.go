@@ -10,7 +10,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/moduforge/backend/internal/llm"
 )
 
 // GenerateModule 用 LLM 生成模块代码
@@ -93,7 +92,7 @@ func (s *AIService) SuggestTitle(ctx context.Context, userID string, messages []
 		{"role": "system", "content": "你是会话标题生成器。根据用户第一条消息，生成一个简洁的中文标题，不超过12个字，不要标点、不要引号、不要'关于'等前缀。只输出标题本身。"},
 		{"role": "user", "content": firstUser},
 	}
-	body, _ := marshalJSON(map[string]interface{}{
+	body := marshalJSON(map[string]interface{}{
 		"model":      model,
 		"messages":   msgs,
 		"stream":     false,
@@ -300,7 +299,6 @@ module.prop, customize.sh, META-INF/(update-binary + updater-script含#MAGISK)
 
 	endpoint, apiKey, model, _, err := s.buildLLMRequest(ctx, systemPrompt, userPrompt, userID, sessionID, w, messages, func(data map[string]interface{}) { /* noop */ })
 
-", mustJSON(data)); w.Flush() })
 	if err != nil {
 		return err
 	}
