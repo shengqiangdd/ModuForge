@@ -506,6 +506,12 @@ func (h *AgentHandler) Run(c fiber.Ctx) error {
 					log.Printf("[Agent] PERSIST ERROR assistant: %v", err)
 				} else {
 					log.Printf("[Agent] PERSIST OK assistant round=%d len=%d", currentRound, len(capturedAnswer))
+					// Update ai_conversations.token_usage for unified session-level aggregation
+					if captureW.tokenUsageJSON != "" {
+						h.db.Conn.Exec(
+							"UPDATE ai_conversations SET token_usage = COALESCE(token_usage, 0) + (SELECT COALESCE(SUM(CAST(json_extract(token_usage, '$.total_tokens') AS INTEGER)), 0) FROM conversation_messages WHERE session_id = ? AND user_id = ? AND token_usage IS NOT NULL AND token_usage != '' ), updated_at = datetime('now') WHERE id = ? AND user_id = ?",
+							req.SessionID, uid, req.SessionID, uid)
+					}
 				}
 			} else {
 				log.Printf("[Agent] PERSIST WARN no capturedAnswer, skipping assistant save")
