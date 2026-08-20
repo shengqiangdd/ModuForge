@@ -1,24 +1,158 @@
 package agent
 
 import (
+	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
+	"net/http"
 	"strings"
+	"time"
 )
 
-// extractTextToolCalls attempts to parse tool calls from LLM text content.
-// Some models (especially free ones) output tool calls as text instead of
-// using the native function calling format. This function detects and extracts
-// them so they can be executed.
+// ═══════════════════════════════════════════════════════════════════
+// SSE Stream Processing
+// ═══════════════════════════════════════════════════════════════════
+
+func forEachSSEChunk(r io.Reader, bufSize int, fn func(data []byte) bool) error {
+	scanner := bufio.NewScanner(r)
+	scanner.Buffer(make([]byte, 0, bufSize), bufSize)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if !strings.HasPrefix(line, "data: ") {
+			continue
+		}
+		data := strings.TrimPrefix(line, "data: ")
+		if data == "[DONE]" {
+			break
+		}
+		if !fn([]byte(data)) {
+			break
+		}
+	}
+	return scanner.Err()
+}
+
+func (r *AgentRunner) parseStreamingResponse(ctx context.Context, resp *http.Response, w SSEWriter) (*LLMResponse, error) {
+	var fullContent strings.Builder
+	var toolCalls []LLMToolCall
+	toolCallMap := make(map[int]*LLMToolCall, 4)
+	var finishReason string
+	var usage *TokenUsage
+	keepAliveDone := make(chan struct{})
+	startKeepalive(ctx, w, keepAliveDone, 10*time.Second)
+	err := forEachSSEChunk(resp.Body, 256*1024, func(data []byte) bool {
+		if w.IsDisconnected() {
+			return false
+		}
+		var parsed streamChunk
+		if err := json.Unmarshal(data, &parsed); err != nil {
+			debugLog("stream parse failed (len=%d): %v", len(data), err)
+			return true
+		}
+		if parsed.Usage != nil && parsed.Usage.TotalTokens > 0 {
+			usage = parsed.Usage
+		}
+		if len(parsed.Choices) == 0 {
+			return true
+		}
+		delta := parsed.Choices[0].Delta
+		if parsed.Choices[0].FinishReason != "" {
+			finishReason = parsed.Choices[0].FinishReason
+		}
+		if delta.ReasoningContent != "" {
+			cleaned := sanitizeReasoning(delta.ReasoningContent)
+			if cleaned != "" {
+				w.WriteSSE(map[string]interface{}{"type": "reasoning", "content": cleaned})
+			}
+		}
+		if delta.Content != "" {
+			fullContent.WriteString(delta.Content)
+			w.WriteSSE(map[string]interface{}{"type": "stream_delta", "content": delta.Content})
+		}
+		for _, tc := range delta.ToolCalls {
+			accumulateStreamToolCall(tc, toolCallMap)
+		}
+		return true
+	})
+	close(keepAliveDone)
+	if err != nil {
+		log.Printf("[Agent] scanner error: %v", err)
+		if fullContent.Len() == 0 && len(toolCallMap) == 0 {
+			return nil, fmt.Errorf("LLM stream interrupted: %w", err)
+		}
+	}
+	toolCalls = mergeToolCalls(toolCallMap)
+	toolCalls = repairToolCalls(toolCalls)
+	if len(toolCalls) == 0 && fullContent.Len() > 0 {
+		toolCalls = extractTextToolCalls(fullContent.String())
+		if len(toolCalls) > 0 {
+			log.Printf("[Agent] extracted %d text-format tool calls from content", len(toolCalls))
+		}
+	}
+	return &LLMResponse{
+		Role:         "assistant",
+		Content:      fullContent.String(),
+		ToolCalls:    toolCalls,
+		FinishReason: finishReason,
+		TokenUsage:   usage,
+	}, nil
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Stream Tool Call Accumulation
+// ═══════════════════════════════════════════════════════════════════
+
+func accumulateStreamToolCall(tc streamToolCallDelta, toolCallMap map[int]*LLMToolCall) {
+	idx := tc.Index
+	if idx < 0 {
+		idx = 0
+	}
+	existing, ok := toolCallMap[idx]
+	if !ok {
+		toolCallMap[idx] = &LLMToolCall{
+			ID:   tc.ID,
+			Type: tc.Type,
+			Function: ToolCallFunction{
+				Name:      tc.Function.Name,
+				Arguments: tc.Function.Arguments,
+			},
+		}
+		return
+	}
+	if tc.ID != "" {
+		existing.ID = tc.ID
+	}
+	if tc.Function.Name != "" {
+		existing.Function.Name = tc.Function.Name
+	}
+	existing.Function.Arguments += tc.Function.Arguments
+}
+
+func mergeToolCalls(toolCallMap map[int]*LLMToolCall) []LLMToolCall {
+	if len(toolCallMap) == 0 {
+		return nil
+	}
+	toolCalls := make([]LLMToolCall, 0, len(toolCallMap))
+	for i := 0; i < len(toolCallMap); i++ {
+		if tc, ok := toolCallMap[i]; ok {
+			toolCalls = append(toolCalls, *tc)
+		}
+	}
+	return toolCalls
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Text Tool Call Extraction
+// ═══════════════════════════════════════════════════════════════════
+
 func extractTextToolCalls(content string) []LLMToolCall {
 	if content == "" {
 		return nil
 	}
-
 	var toolCalls []LLMToolCall
-
-	// Pattern 1: ```tool_call\n{...}\n``` or ```json\n{...}\n```
 	codeBlockRegex := []string{
 		"```tool_call\n",
 		"```tool_call\r\n",
@@ -27,28 +161,22 @@ func extractTextToolCalls(content string) []LLMToolCall {
 		"```\n{\"name\":",
 		"```\n{\"function\":",
 	}
-
 	for _, prefix := range codeBlockRegex {
 		idx := strings.Index(content, prefix)
 		if idx < 0 {
 			continue
 		}
 		start := idx + len(prefix)
-		// Find closing ```
 		endIdx := strings.Index(content[start:], "```")
 		if endIdx < 0 {
 			continue
 		}
 		jsonStr := strings.TrimSpace(content[start : start+endIdx])
-
-		// Try to parse as a tool call object
 		var tc LLMToolCall
 		if err := json.Unmarshal([]byte(jsonStr), &tc); err == nil && tc.Function.Name != "" {
 			toolCalls = append(toolCalls, tc)
 			continue
 		}
-
-		// Try as {"name": "...", "arguments": {...}} format
 		var named struct {
 			Name      string                 `json:"name"`
 			Arguments map[string]interface{} `json:"arguments"`
@@ -65,8 +193,6 @@ func extractTextToolCalls(content string) []LLMToolCall {
 			})
 			continue
 		}
-
-		// Try as array of tool calls
 		var arr []struct {
 			Name      string                 `json:"name"`
 			Arguments map[string]interface{} `json:"arguments"`
@@ -87,25 +213,16 @@ func extractTextToolCalls(content string) []LLMToolCall {
 			}
 		}
 	}
-
-	// Pattern 2: Inline text like "I'll call write_file(path=\"foo.rs\", content=\"...\")"
 	if len(toolCalls) == 0 {
 		toolCalls = extractInlineToolCalls(content)
 	}
-
 	return toolCalls
 }
 
-// extractInlineToolCalls tries to find tool calls in natural language text.
-// Detects patterns like: write_file(path="...", content="...")
 func extractInlineToolCalls(content string) []LLMToolCall {
 	var toolCalls []LLMToolCall
-
-	// Known tool names to look for
 	toolNames := []string{"write_file", "edit_file", "read_file", "bash", "build_module", "test_module", "grep_search", "glob_search"}
-
 	for _, name := range toolNames {
-		// Look for tool_name(...) pattern
 		searchStr := name + "("
 		idx := 0
 		for {
@@ -114,7 +231,6 @@ func extractInlineToolCalls(content string) []LLMToolCall {
 				break
 			}
 			start := idx + pos + len(searchStr)
-			// Find matching closing paren
 			depth := 1
 			end := start
 			for end < len(content) && depth > 0 {
@@ -129,11 +245,8 @@ func extractInlineToolCalls(content string) []LLMToolCall {
 				idx = start
 				continue
 			}
-
 			argsStr := content[start : end-1]
-			// Parse key=value pairs
 			args := make(map[string]interface{})
-			// Simple parsing: key="value" or key=value
 			parts := smartSplitArgs(argsStr)
 			for _, part := range parts {
 				eqIdx := strings.Index(part, "=")
@@ -142,14 +255,12 @@ func extractInlineToolCalls(content string) []LLMToolCall {
 				}
 				key := strings.TrimSpace(part[:eqIdx])
 				val := strings.TrimSpace(part[eqIdx+1:])
-				// Remove quotes
 				if (strings.HasPrefix(val, "\"") && strings.HasSuffix(val, "\"")) ||
 					(strings.HasPrefix(val, "'") && strings.HasSuffix(val, "'")) {
 					val = val[1 : len(val)-1]
 				}
 				args[key] = val
 			}
-
 			if len(args) > 0 {
 				argsBytes, _ := json.Marshal(args)
 				toolCalls = append(toolCalls, LLMToolCall{
@@ -161,21 +272,17 @@ func extractInlineToolCalls(content string) []LLMToolCall {
 					},
 				})
 			}
-
 			idx = end
 		}
 	}
-
 	return toolCalls
 }
 
-// smartSplitArgs splits a string like 'a="hello world", b=42' respecting quotes
 func smartSplitArgs(s string) []string {
 	var parts []string
 	var current strings.Builder
 	inQuote := false
 	quoteChar := byte(0)
-
 	for i := 0; i < len(s); i++ {
 		ch := s[i]
 		if inQuote {
@@ -202,72 +309,51 @@ func smartSplitArgs(s string) []string {
 	return parts
 }
 
-// repairToolCalls attempts to fix malformed tool call JSON from weak/free models.
-// Common issues: truncated JSON, missing quotes, unescaped characters.
+// ═══════════════════════════════════════════════════════════════════
+// Tool Call Repair
+// ═══════════════════════════════════════════════════════════════════
+
 func repairToolCalls(toolCalls []LLMToolCall) []LLMToolCall {
 	if len(toolCalls) == 0 {
 		return toolCalls
 	}
-
 	repaired := make([]LLMToolCall, 0, len(toolCalls))
 	for _, tc := range toolCalls {
 		if tc.Function.Name == "" {
 			log.Printf("[Agent] skipping tool call with empty name")
 			continue
 		}
-
 		args := tc.Function.Arguments
 		if args == "" {
-			// Some models send empty arguments for tools that don't need them
 			repaired = append(repaired, tc)
 			continue
 		}
-
-		// Try to parse as JSON
 		var parsed map[string]interface{}
 		if err := json.Unmarshal([]byte(args), &parsed); err != nil {
 			fixed, repairErr := repairJSONArguments(args)
 			if repairErr != nil {
 				log.Printf("[Agent] cannot repair tool call JSON for %s: %v (original: %s)", tc.Function.Name, repairErr, args[:min(len(args), 100)])
-				// Skip this tool call - it's unrecoverable
 				continue
 			}
 			tc.Function.Arguments = fixed
 		}
-
 		repaired = append(repaired, tc)
 	}
-
 	return repaired
 }
 
-// repairJSONArguments applies a chain of progressively more aggressive fixes to
-// malformed tool-call argument JSON. Returns the fixed JSON or an error if all
-// repair attempts fail.
 func repairJSONArguments(args string) (string, error) {
 	fixed := args
-
-	// Fix 1: Unescaped newlines in strings
 	fixed = strings.ReplaceAll(fixed, "\n", "\\n")
 	fixed = strings.ReplaceAll(fixed, "\r", "\\r")
 	fixed = strings.ReplaceAll(fixed, "\t", "\\t")
-
-	// Fix 2: Try to find JSON object boundaries
 	start := strings.Index(fixed, "{")
 	end := strings.LastIndex(fixed, "}")
 	if start >= 0 && end > start {
 		fixed = fixed[start : end+1]
 	}
-
-	// Fix 3: Try to fix trailing commas
 	fixed = strings.ReplaceAll(fixed, ",}", "}")
 	fixed = strings.ReplaceAll(fixed, ",]", "]")
-
-	// Fix 4: Fix unescaped quotes inside strings (common in code content)
-	// This is tricky - we need to be careful not to break valid JSON
-	// Only apply if the JSON still fails after other fixes
-
-	// Fix 5: Fix missing colons between key and value
 	fixed = strings.ReplaceAll(fixed, `"path" "`, `"path": "`)
 	fixed = strings.ReplaceAll(fixed, `"content" "`, `"content": "`)
 	fixed = strings.ReplaceAll(fixed, `"query" "`, `"query": "`)
@@ -276,8 +362,6 @@ func repairJSONArguments(args string) (string, error) {
 	fixed = strings.ReplaceAll(fixed, `"key" "`, `"key": "`)
 	fixed = strings.ReplaceAll(fixed, `"value" "`, `"value": "`)
 	fixed = strings.ReplaceAll(fixed, `"description" "`, `"description": "`)
-
-	// Fix 6: Fix single quotes instead of double quotes for keys
 	fixed = strings.ReplaceAll(fixed, "'path'", `"path"`)
 	fixed = strings.ReplaceAll(fixed, "'content'", `"content"`)
 	fixed = strings.ReplaceAll(fixed, "'query'", `"query"`)
@@ -285,15 +369,11 @@ func repairJSONArguments(args string) (string, error) {
 	fixed = strings.ReplaceAll(fixed, "'action'", `"action"`)
 	fixed = strings.ReplaceAll(fixed, "'key'", `"key"`)
 	fixed = strings.ReplaceAll(fixed, "'value'", `"value"`)
-
 	var parsed map[string]interface{}
 	if err := json.Unmarshal([]byte(fixed), &parsed); err != nil {
-		// Fix 7: Try to extract the first valid JSON object from the string
-		// Some models prefix with explanatory text
 		idx := strings.Index(fixed, "{")
 		if idx > 0 {
 			candidate := fixed[idx:]
-			// Find matching closing brace
 			depth := 0
 			endIdx := -1
 			for i, ch := range candidate {

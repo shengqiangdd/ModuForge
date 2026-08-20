@@ -1,15 +1,13 @@
 package agent
 
 import (
-	"bytes"
-	"context"
-	"encoding/json"
-	"fmt"
-	"log"
-	"net/http"
 	"strings"
-	"time"
+	"sync"
 )
+
+// ═══════════════════════════════════════════════════════════════════
+// LLM API — 共享类型和接口
+// ═══════════════════════════════════════════════════════════════════
 
 // LLMResponse represents the parsed response from an LLM API call.
 type LLMResponse struct {
@@ -33,187 +31,179 @@ type LLMToolCall struct {
 	Function ToolCallFunction `json:"function"`
 }
 
-func (r *AgentRunner) callLLMWithTools(ctx context.Context, messages []map[string]interface{}, tools []ToolDef, w SSEWriter, userID, reqProviderID, reqModel string, cfg RunConfig) (*LLMResponse, error) {
-	llmStart := time.Now()
-	// P0-Optimization: Use cached resolved config from RunConfig instead of re-querying DB.
-	// The config was resolved once at Run() entry and stored in cfg.resolved* fields.
-	endpoint := cfg.resolvedEndpoint
-	apiKey := cfg.resolvedAPIKey
-	model := cfg.resolvedModel
-	modelTier := cfg.modelTier
-
-	// Fallback: if resolved config is empty (shouldn't happen after Run() init), resolve now
-	if endpoint == "" {
-		endpoint, apiKey, model = r.resolveLLMConfig(userID, reqProviderID, reqModel, cfg)
-		modelTier = resolveModelTier(model)
-	}
-
-	if !strings.HasSuffix(endpoint, "/chat/completions") {
-		endpoint = endpoint + "/chat/completions"
-	}
-
-	// Optimization 35: Pre-warm HTTP connection (async, no-op after first call)
-	PrewarmConnection(endpoint)
-
-	// Circuit breaker: skip free model providers with consecutive failures
-	if modelTier == TierFree && reqProviderID != "" && globalCircuitBreaker.IsOpen(reqProviderID) {
-		log.Printf("[Agent] circuit breaker OPEN for provider %s, attempting fallback", reqProviderID)
-		// Optimization 21: Try fallback providers before giving up
-		if fallbackEndpoint, fallbackKey, fallbackModel, fallbackID := r.findFallbackProvider(userID, reqProviderID, model); fallbackID != "" {
-			log.Printf("[Agent] fallback provider found: %s (endpoint=%s model=%s)", fallbackID, fallbackEndpoint, fallbackModel)
-			endpoint = fallbackEndpoint
-			apiKey = fallbackKey
-			model = fallbackModel
-			reqProviderID = fallbackID
-		} else {
-			return nil, fmt.Errorf("provider %s temporarily unavailable (circuit breaker open), and no fallback providers found. Please try another model or wait %v", reqProviderID, circuitBreakerBaseCooldown)
-		}
-	}
-
-	// Configure and wait for rate limit slot
-	globalRateLimiter.ConfigureForModel(model)
-	if err := globalRateLimiter.WaitForSlot(ctx); err != nil {
-		return nil, fmt.Errorf("rate limit wait cancelled: %w", err)
-	}
-
-	bodyBytes, err := buildLLMRequestBody(messages, tools, cfg, model, modelTier)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	// Retry loop with exponential backoff for transient errors (429, 5xx, network)
-	var lastErr error
-	var retryable bool
-	for attempt := 0; attempt <= llmMaxRetries; attempt++ {
-		if attempt > 0 {
-			retryAfter := ""
-			if lastErr != nil {
-				// Try to extract Retry-After from error message
-				errStr := lastErr.Error()
-				if idx := strings.Index(errStr, "Retry-After:"); idx >= 0 {
-					rest := errStr[idx+len("Retry-After:"):]
-					if endIdx := strings.IndexAny(rest, "\n\r"); endIdx > 0 {
-						retryAfter = strings.TrimSpace(rest[:endIdx])
-					}
-				}
-			}
-			backoff := llmRetryBackoff(attempt, retryAfter)
-			log.Printf("[Agent] LLM retry %d/%d after %v: %v", attempt, llmMaxRetries, backoff, lastErr)
-			w.WriteSSE(map[string]interface{}{
-				"type":    "step",
-				"step":    "think",
-				"content": fmt.Sprintf("⚠️ LLM 请求失败 (%v)，%v 后重试 (%d/%d)...", lastErr, backoff, attempt, llmMaxRetries),
-			})
-			select {
-			case <-time.After(backoff):
-			case <-ctx.Done():
-				return nil, ctx.Err()
-			}
-		}
-
-		req, err := http.NewRequestWithContext(ctx, "POST", endpoint, bytes.NewReader(bodyBytes))
-		if err != nil {
-			return nil, err
-		}
-		req.Header.Set("Content-Type", "application/json")
-		if apiKey != "" {
-			req.Header.Set("Authorization", "Bearer "+apiKey)
-		}
-
-		debugLog("LLM request (attempt %d/%d): endpoint=%s model=%s apiKey_len=%d", attempt+1, llmMaxRetries+1, endpoint, model, len(apiKey))
-		resp, err := llmHTTPClient.Do(req)
-		if err != nil {
-			lastErr = fmt.Errorf("LLM request failed: %w", err)
-			continue // retry on network error
-		}
-
-		if resp.StatusCode >= 400 {
-			lastErr, retryable = handleLLMHTTPError(resp, modelTier, reqProviderID, model)
-			if !retryable {
-				r.perfMetrics.RecordError()
-				return nil, lastErr // permanent error, no retry
-			}
-			continue // retry on 429/5xx
-		}
-
-		// Success — record success for circuit breaker
-		if modelTier == TierFree && reqProviderID != "" {
-			globalCircuitBreaker.RecordSuccess(reqProviderID)
-		}
-
-		// Success — parse the streaming response
-		result, parseErr := r.parseStreamingResponse(ctx, resp, w)
-		resp.Body.Close()
-		if parseErr != nil {
-			lastErr = parseErr
-			// Only retry if we got no data at all (stream interrupted before any content)
-			if result == nil || (result.Content == "" && len(result.ToolCalls) == 0) {
-				continue
-			}
-		}
-		if result != nil && result.TokenUsage != nil && result.TokenUsage.TotalTokens > 0 {
-			// Record aggregated token usage and notify the frontend (per-message display).
-			r.perfMetrics.RecordTokenUsage(result.TokenUsage.TotalTokens)
-			w.WriteSSE(map[string]interface{}{
-				"type":  "usage",
-				"usage": result.TokenUsage,
-			})
-		}
-		r.perfMetrics.RecordLLMCall(time.Since(llmStart))
-		return result, nil
-	}
-
-	r.perfMetrics.RecordError()
-	return nil, fmt.Errorf("LLM failed after %d attempts: %w", llmMaxRetries+1, lastErr)
+// TokenUsage holds per-call token accounting from the LLM API.
+type TokenUsage struct {
+	PromptTokens     int `json:"prompt_tokens"`
+	CompletionTokens int `json:"completion_tokens"`
+	TotalTokens      int `json:"total_tokens"`
 }
 
-// buildLLMRequestBody constructs the chat/completions request body, applying
-// adaptive max_tokens based on the approximate context size.
-func buildLLMRequestBody(messages []map[string]interface{}, tools []ToolDef, cfg RunConfig, model string, modelTier ModelTier) ([]byte, error) {
-	body := map[string]interface{}{
-		"model":    model,
-		"messages": messages,
-		"stream":   true,
-	}
+// streamChunk is a single SSE "data:" payload from a chat-completions stream.
+type streamChunk struct {
+	Choices []struct {
+		Delta struct {
+			Role             string                `json:"role"`
+			Content          string                `json:"content"`
+			ReasoningContent string                `json:"reasoning_content"`
+			ToolCalls        []streamToolCallDelta `json:"tool_calls"`
+		} `json:"delta"`
+		FinishReason string `json:"finish_reason"`
+	} `json:"choices"`
+	// Usage is present on the final chunk of streaming responses (OpenAI-style).
+	// It is sent in a chunk with empty choices, which the old code skipped.
+	Usage *TokenUsage `json:"usage"`
+}
 
-	// Optimization 7: Adaptive max_tokens based on context size
-	// Calculate approximate context size to adjust output tokens
-	approxContextTokens := 0
-	for _, msg := range messages {
-		if c, ok := msg["content"].(string); ok {
-			approxContextTokens += len(c) / 4 // rough estimate: 4 chars per token
-		}
-	}
-	// Resolve max_output_tokens: RunConfig > model default
-	maxTokens := cfg.MaxOutputTokens
-	if maxTokens <= 0 {
-		maxTokens = resolveModelMaxTokens(model)
-	}
-	// Adaptive: if context is large, reduce max_tokens to leave room
-	if maxTokens > 0 && approxContextTokens > 0 {
-		// For free models with 16K context, be more aggressive
-		contextLimit := 16000
-		if modelTier == TierMid {
-			contextLimit = 32000
-		} else if modelTier == TierStrong {
-			contextLimit = 128000
-		}
-		remaining := contextLimit - approxContextTokens - 1000 // 1000 for system prompt overhead
-		if remaining < maxTokens {
-			maxTokens = remaining
-			if maxTokens < 1024 {
-				maxTokens = 1024 // minimum output
-			}
-			log.Printf("[Agent] adaptive max_tokens: context=%d, reduced max_tokens to %d", approxContextTokens, maxTokens)
-		}
-	}
-	if maxTokens > 0 {
-		body["max_tokens"] = maxTokens
-	}
-	if len(tools) > 0 {
-		body["tools"] = tools
-		body["tool_choice"] = "auto"
-	}
+// streamToolCallDelta is the tool_calls portion of a streaming SSE delta chunk.
+type streamToolCallDelta struct {
+	Index    int    `json:"index"`
+	ID       string `json:"id"`
+	Type     string `json:"type"`
+	Function struct {
+		Name      string `json:"name"`
+		Arguments string `json:"arguments"`
+	} `json:"function"`
+}
 
-	return json.Marshal(body)
+// ═══════════════════════════════════════════════════════════════════
+// Model Tier & Max Tokens
+// ═══════════════════════════════════════════════════════════════════
+
+// defaultModelMaxTokens maps known model name substrings to their default max output tokens.
+// Used when the user hasn't explicitly configured max_tokens for a model.
+var defaultModelMaxTokens = map[string]int{
+	// OpenAI
+	"o1":          32768,
+	"o3":          32768,
+	"o4-mini":     32768,
+	"gpt-4o":      16384,
+	"gpt-4-turbo": 4096,
+	"gpt-4":       8192,
+	"gpt-3.5":     4096,
+	// Anthropic
+	"claude-3.5-sonnet": 8192,
+	"claude-3-opus":     4096,
+	"claude-3-haiku":    8192,
+	"claude-4":          16384,
+	"claude":            8192,
+	// Google
+	"gemini-2.5-pro":   65536,
+	"gemini-2.5-flash": 65536,
+	"gemini-2.0":       8192,
+	"gemini-1.5-pro":   8192,
+	"gemini":           8192,
+	// DeepSeek
+	"deepseek-v3":    8192,
+	"deepseek-v2.5":  8192,
+	"deepseek-coder": 8192,
+	"deepseek":       8192,
+	// Qwen
+	"qwen-max":   8192,
+	"qwen-plus":  8192,
+	"qwen-turbo": 8192,
+	"qwen":       8192,
+	// Meta
+	"llama-3.1-405b": 4096,
+	"llama-3.1-70b":  4096,
+	"llama-3.1-8b":   4096,
+	"llama":          4096,
+	// Mistral
+	"mistral-large":  8192,
+	"mistral-medium": 8192,
+	"mistral":        8192,
+	// Default for unknown models
+	"_default": 8192,
+}
+
+// resolveModelMaxTokens returns the max output tokens for a model name.
+// It checks the model name against known patterns (case-insensitive substring match).
+func resolveModelMaxTokens(modelName string) int {
+	lower := strings.ToLower(modelName)
+	// Longest match first (more specific patterns)
+	bestLen := 0
+	bestVal := defaultModelMaxTokens["_default"]
+	for pattern, val := range defaultModelMaxTokens {
+		if pattern == "_default" {
+			continue
+		}
+		if strings.Contains(lower, pattern) && len(pattern) > bestLen {
+			bestLen = len(pattern)
+			bestVal = val
+		}
+	}
+	return bestVal
+}
+
+// ModelTier determines context handling aggressiveness.
+// Tier 0 (free/weak): small context, aggressive compaction, smart truncation
+// Tier 1 (mid): moderate context, standard compaction
+// Tier 2 (strong/paid): large context, lazy compaction, no truncation
+type ModelTier int
+
+const (
+	TierFree   ModelTier = 0 // free models, small context (deepseek-v4-flash-free, etc.)
+	TierMid    ModelTier = 1 // mid-tier models (deepseek-v3, qwen-turbo, etc.)
+	TierStrong ModelTier = 2 // strong paid models (gpt-4o, claude, gemini-pro, etc.)
+)
+
+// modelTierCache caches tier resolution results (model names don't change at runtime).
+var modelTierCache sync.Map
+
+func resolveModelTier(modelName string) ModelTier {
+	// Fast path: cached
+	if cached, ok := modelTierCache.Load(modelName); ok {
+		return cached.(ModelTier)
+	}
+	// Slow path: compute and cache
+	lower := strings.ToLower(modelName)
+	// Free/weak models — aggressive limits
+	freePatterns := []string{"free", "mini", "flash-free", "lite", "nano"}
+	for _, p := range freePatterns {
+		if strings.Contains(lower, p) {
+			modelTierCache.Store(modelName, TierFree)
+			return TierFree
+		}
+	}
+	// Strong models — generous limits
+	strongPatterns := []string{"gpt-4o", "gpt-4-turbo", "claude-3.5", "claude-4", "claude-3-opus",
+		"gemini-2.5-pro", "gemini-1.5-pro", "o1", "o3", "deepseek-r1", "qwen-max"}
+	for _, p := range strongPatterns {
+		if strings.Contains(lower, p) {
+			modelTierCache.Store(modelName, TierStrong)
+			return TierStrong
+		}
+	}
+	// Everything else is mid-tier
+	modelTierCache.Store(modelName, TierMid)
+	return TierMid
+}
+
+// compactionThresholdForTier returns the context compaction threshold for a model tier.
+// For free models with 16K context, we must be much more aggressive to leave room for
+// system prompt (~800) + tool definitions (~1840) + output (~4096) = ~6700 tokens overhead.
+func compactionThresholdForTier(tier ModelTier) int {
+	switch tier {
+	case TierFree:
+		return 8000 // very aggressive: 16K context - 6700 overhead = ~9K for conversation
+	case TierMid:
+		return 30000 // moderate
+	case TierStrong:
+		return 100000 // generous: let strong models use their full context
+	default:
+		return 30000
+	}
+}
+
+// maxResultLenForTier returns the tool result size limit for a model tier.
+func maxResultLenForTier(tier ModelTier) int {
+	switch tier {
+	case TierFree:
+		return 12000 // small: minimize context bloat
+	case TierMid:
+		return 24000 // moderate
+	case TierStrong:
+		return 48000 // generous: let strong models read large files
+	default:
+		return 24000
+	}
 }
