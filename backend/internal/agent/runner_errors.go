@@ -241,6 +241,8 @@ func GetRecoveryStrategy(category ErrorCategory, consecutiveFailures int) Recove
 }
 
 // GetRecoveryMessage returns a user-friendly message for the recovery strategy.
+// It includes the error category so operators and the LLM can understand WHY
+// the tool failed (not just that it failed).
 func GetRecoveryMessage(strategy RecoveryStrategy, toolName string) string {
 	switch strategy {
 	case RecoveryRetrySame:
@@ -259,6 +261,35 @@ func GetRecoveryMessage(strategy RecoveryStrategy, toolName string) string {
 		return "多次失败，终止执行"
 	default:
 		return fmt.Sprintf("工具 '%s' 执行异常", toolName)
+	}
+}
+
+// GetRecoveryMessageDetailed returns a recovery message that includes the actual
+// error reason. This gives the LLM actionable context for retrying differently.
+func GetRecoveryMessageDetailed(strategy RecoveryStrategy, toolName string, err error, category ErrorCategory) string {
+	if err == nil {
+		return GetRecoveryMessage(strategy, toolName)
+	}
+	reason := extractErrorReason(err.Error())
+	catName := errorCategoryName(category)
+
+	switch strategy {
+	case RecoveryRetrySame:
+		return fmt.Sprintf("工具 '%s' 执行失败 [%s/%s]，正在重试...", toolName, catName, reason)
+	case RecoverySimplifyInput:
+		return fmt.Sprintf("工具 '%s' 输入过复杂 [%s/%s]，正在简化...", toolName, catName, reason)
+	case RecoverySwitchModel:
+		return fmt.Sprintf("模型限流 [%s/%s]，正在切换备用模型...", catName, reason)
+	case RecoveryForceAnswer:
+		return fmt.Sprintf("多次重试失败 [%s/%s]，请基于已有信息给出答案", catName, reason)
+	case RecoverySkipTool:
+		return fmt.Sprintf("跳过工具 '%s' [%s/%s]，继续执行...", toolName, catName, reason)
+	case RecoveryCompactContext:
+		return fmt.Sprintf("上下文过长 [%s/%s]，正在压缩...", catName, reason)
+	case RecoveryAbort:
+		return fmt.Sprintf("多次失败 [%s/%s]，终止执行", catName, reason)
+	default:
+		return fmt.Sprintf("工具 '%s' 执行异常 [%s/%s]", toolName, catName, reason)
 	}
 }
 

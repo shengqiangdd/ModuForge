@@ -349,19 +349,24 @@ func (p *toolResultProcessor) process(iter int, conversation []map[string]interf
 			p.m.toolConsecutiveErrors[skillName]++
 			if p.m.toolConsecutiveErrors[skillName] >= 3 {
 				// Same tool failed 3 times in a row — inject reflection prompt
+				// Extract error category for structured logging
+				errCat := ClassifyError(res.result)
+				errReason := extractErrorReason(res.result)
 				diagnostic := fmt.Sprintf(
 					"⚠️ [Self-Reflection] The tool '%s' has failed %d times consecutively. "+
-						"Recent errors: %s. "+
+						"Error category: %s (%s). Recent errors: %s. "+
 						"STOP using this tool with the same approach. Instead: "+
 						"(1) Analyze WHY it's failing, (2) Try a completely different approach, "+
 						"(3) If stuck, use write_file to create the file directly.",
-					skillName, p.m.toolConsecutiveErrors[skillName], res.result)
-				log.Printf("[Agent] self-reflection triggered: %s failed %d times", skillName, p.m.toolConsecutiveErrors[skillName])
+					skillName, p.m.toolConsecutiveErrors[skillName],
+					errorCategoryName(errCat), errReason, res.result)
+				log.Printf("[Agent] self-reflection triggered: %s failed %d times, category=%s, reason=%s",
+					skillName, p.m.toolConsecutiveErrors[skillName], errorCategoryName(errCat), errReason)
 				conversation = appendRoleMessage(conversation, "system", diagnostic)
 				p.w.WriteSSE(map[string]interface{}{
 					"type":    "step",
 					"step":    "think",
-					"content": fmt.Sprintf("🔄 检测到 %s 连续失败 %d 次，已注入反思提示", skillName, p.m.toolConsecutiveErrors[skillName]),
+					"content": fmt.Sprintf("🔄 检测到 %s 连续失败 %d 次 [%s/%s]，已注入反思提示", skillName, p.m.toolConsecutiveErrors[skillName], errorCategoryName(errCat), errReason),
 				})
 				p.m.toolConsecutiveErrors[skillName] = 0 // reset after injection
 			}

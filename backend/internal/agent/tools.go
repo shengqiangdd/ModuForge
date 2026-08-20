@@ -344,18 +344,108 @@ func (r *AgentRunner) executeSkill(ctx context.Context, name string, input map[s
 	r.perfMetrics.RecordToolCall(dur)
 	if err != nil {
 		r.perfMetrics.RecordError()
-		slog.Error("MCP tool failed",
+		errMsg := err.Error()
+		category := ClassifyError(errMsg)
+		categoryName := errorCategoryName(category)
+
+		// Extract MCP server name for structured logging (e.g. "mcp__github__push_files" → "github")
+		mcpServer := ""
+		mcpTool := ""
+		if strings.HasPrefix(name, "mcp__") {
+			parts := strings.SplitN(name, "__", 3)
+			if len(parts) >= 3 {
+				mcpServer = parts[1]
+				mcpTool = parts[2]
+			}
+		}
+
+		// Extract human-readable reason from error message
+		reason := extractErrorReason(errMsg)
+
+		slog.Error("tool failed",
 			"tool", name,
+			"category", categoryName,
+			"category_id", int(category),
+			"reason", reason,
 			"duration_ms", dur.Milliseconds(),
-			"err", err.Error(),
-			"mcp", strings.HasPrefix(name, "mcp__"),
+			"err", errMsg,
+			"mcp", mcpServer != "",
+			"mcp_server", mcpServer,
+			"mcp_tool", mcpTool,
 			"decision", decision,
+			"ctx_err", ctx.Err() != nil,
 		)
 	}
 	if err != nil {
 		return "", err
 	}
 	return result, nil
+}
+
+// errorCategoryName returns a human-readable name for an ErrorCategory.
+func errorCategoryName(c ErrorCategory) string {
+	switch c {
+	case ErrorNetwork:
+		return "network"
+	case ErrorAuth:
+		return "auth"
+	case ErrorRateLimit:
+		return "rate_limit"
+	case ErrorContext:
+		return "context"
+	case ErrorToolNotFound:
+		return "tool_not_found"
+	case ErrorPermission:
+		return "permission"
+	case ErrorDiskSpace:
+		return "disk_full"
+	case ErrorSyntax:
+		return "syntax"
+	case ErrorBuild:
+		return "build"
+	default:
+		return "unknown"
+	}
+}
+
+// extractErrorReason pulls a short, human-readable reason from a raw error message.
+// Used for structured logs so operators can quickly identify failure modes.
+func extractErrorReason(errMsg string) string {
+	msg := strings.ToLower(errMsg)
+	switch {
+	case strings.Contains(msg, "timeout") || strings.Contains(msg, "deadline exceeded"):
+		return "timeout"
+	case strings.Contains(msg, "connection refused") || strings.Contains(msg, "dial tcp"):
+		return "connection_refused"
+	case strings.Contains(msg, "unauthorized") || strings.Contains(msg, "401"):
+		return "unauthorized"
+	case strings.Contains(msg, "429") || strings.Contains(msg, "rate limit") || strings.Contains(msg, "too many requests"):
+		return "rate_limited"
+	case strings.Contains(msg, "permission denied") || strings.Contains(msg, "access denied"):
+		return "permission_denied"
+	case strings.Contains(msg, "not initialized"):
+		return "not_initialized"
+	case strings.Contains(msg, "empty result") || strings.Contains(msg, "no text content"):
+		return "empty_response"
+	case strings.Contains(msg, "iserror") || strings.Contains(msg, "returned error"):
+		return "remote_error"
+	case strings.Contains(msg, "bad response") || strings.Contains(msg, "unmarshal"):
+		return "malformed_response"
+	case strings.Contains(msg, "context_length") || strings.Contains(msg, "max_tokens"):
+		return "context_too_long"
+	case strings.Contains(msg, "no space") || strings.Contains(msg, "disk full"):
+		return "disk_full"
+	case strings.Contains(msg, "用户拒绝"):
+		return "user_rejected"
+	case strings.Contains(msg, "多次执行失败"):
+		return "abort_consecutive_failures"
+	default:
+		// Return first 80 chars of original message as fallback reason
+		if len(errMsg) > 80 {
+			return errMsg[:80]
+		}
+		return errMsg
+	}
 }
 
 // mcpPermissionDecision returns the permission decision for an MCP tool call.

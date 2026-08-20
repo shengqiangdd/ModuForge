@@ -1810,9 +1810,10 @@ You are running WITHOUT a project context. This means:
 				errCategory := ClassifyError(err.Error())
 				m.toolConsecutiveErrors[st.skillName]++
 				recovery := GetRecoveryStrategy(errCategory, m.toolConsecutiveErrors[st.skillName])
-				recoveryMsg := GetRecoveryMessage(recovery, st.skillName)
-				log.Printf("[Agent] tool %s failed (attempt %d): %v, category=%d, recovery=%d",
-					st.skillName, m.toolConsecutiveErrors[st.skillName], err, errCategory, recovery)
+				recoveryMsg := GetRecoveryMessageDetailed(recovery, st.skillName, err, errCategory)
+				errReason := extractErrorReason(err.Error())
+				log.Printf("[Agent] tool %s failed (attempt %d): %v, category=%d(%s), reason=%s, recovery=%d",
+					st.skillName, m.toolConsecutiveErrors[st.skillName], err, errCategory, errorCategoryName(errCategory), errReason, recovery)
 
 				w.WriteSSE(map[string]interface{}{
 					"type":    "step",
@@ -1822,7 +1823,7 @@ You are running WITHOUT a project context. This means:
 
 				switch recovery {
 				case RecoveryRetrySame:
-					result = fmt.Sprintf("Error: %v. Please try again.", err)
+					result = fmt.Sprintf("Error [%s]: %v. Please try again.", errReason, err)
 				case RecoverySimplifyInput:
 					simplified := toolRetryFallback.SimplifyTaskInput(st.skillName, st.skillInput)
 					retryResult, retryErr := r.executeSkill(toolCtx, st.skillName, simplified, w)
@@ -1830,29 +1831,29 @@ You are running WITHOUT a project context. This means:
 						result = retryResult
 						m.toolConsecutiveErrors[st.skillName] = 0
 					} else {
-						result = fmt.Sprintf("Error: %v (simplified retry also failed: %v)", err, retryErr)
+						result = fmt.Sprintf("Error [%s]: %v (simplified retry also failed: %v)", errReason, err, retryErr)
 					}
 				case RecoverySwitchModel:
-					result = fmt.Sprintf("Error: %v. Model rate limited, please try a different approach.", err)
+					result = fmt.Sprintf("Error [%s]: %v. Model rate limited, please try a different approach.", errReason, err)
 				case RecoveryForceAnswer:
-					result = fmt.Sprintf("Error: %v. Please provide your best answer based on available information.", err)
+					result = fmt.Sprintf("Error [%s]: %v. Please provide your best answer based on available information.", errReason, err)
 					conversation = appendRoleMessage(conversation, "user",
 						"[System: Multiple tool failures. Please provide your final answer based on available information.]")
 					answerSent = true
 				case RecoverySkipTool:
-					result = fmt.Sprintf("Skipped tool '%s' due to error: %v", st.skillName, err)
+					result = fmt.Sprintf("Skipped tool '%s' [%s]: %v", st.skillName, errReason, err)
 				case RecoveryCompactContext:
-					result = fmt.Sprintf("Error: %v. Context will be compacted on next iteration.", err)
+					result = fmt.Sprintf("Error [%s]: %v. Context will be compacted on next iteration.", errReason, err)
 				case RecoveryAbort:
 					w.WriteSSE(map[string]interface{}{
 						"type":  "error",
-						"error": fmt.Sprintf("多次执行失败，已终止: %v", err),
+						"error": fmt.Sprintf("多次执行失败 [%s]，已终止: %v", errReason, err),
 					})
 					w.WriteSSEPlain("[DONE]")
 					iterCancel()
 					return err
 				default:
-					result = fmt.Sprintf("Error: %v", err)
+					result = fmt.Sprintf("Error [%s]: %v", errReason, err)
 				}
 			} else {
 				m.toolConsecutiveErrors[st.skillName] = 0 // reset on success
