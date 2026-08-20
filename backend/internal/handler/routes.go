@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"context"
 	"log/slog"
 	"time"
 
@@ -45,7 +44,7 @@ type routeContext struct {
 	db        *database.DB
 	cfg       *config.Config
 	fileRepo  *service.FileContentRepo
-	cache     *RateLimitCache
+	cache     *ResponseCache
 	rateRepo  fiber.Handler
 	authMW    fiber.Handler
 	jwtMW     fiber.Handler

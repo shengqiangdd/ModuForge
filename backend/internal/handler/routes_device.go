@@ -6,7 +6,6 @@ import (
 
 func registerDeviceRoutes(ctx *routeContext) {
 	db := ctx.db
-	cfg := ctx.cfg
 
 	adbSvc := service.NewADBService(db.Conn)
 	adbH := NewADBHandler(adbSvc)
