@@ -2,6 +2,9 @@
   import { onMount } from 'svelte';
   import { toast } from '$lib/stores/toast.svelte';
   import { getToken } from '$lib/api/client';
+  import ProviderCard from './ProviderCard.svelte';
+  import ModelListModal from './ModelListModal.svelte';
+  import ProviderStats from './ProviderStats.svelte';
 
   let { onConfigChange }: { onConfigChange?: () => void } = $props();
 
@@ -17,20 +20,12 @@
     api_key?: string;
   }
 
-  // Current provider
   let currentProvider = $state('opencode-zen');
   let currentModelId = $state('');
-
-  // Preset providers
   let presetProviders: Provider[] = $state([]);
-  let providerConfigs = $state<Record<string, {endpoint: string, api_key: string, models_json?: string}>>({});
-
-  // Custom providers
+  let providerConfigs = $state<Record<string, { endpoint: string; api_key: string; models_json?: string }>>({});
   let customProviders: Provider[] = $state([]);
-  let showCustomModal = $state(false);
-  let editingCustom: Provider | null = $state(null);
-  let customForm = $state({ name: '', endpoint: '', api_key: '', models: [] as {id: string; name: string; max_tokens: number}[] });
-  let deletingCustomId = $state('');
+  let userModelsMap = $state<Record<string, Array<{ id: string; name: string }>>>({});
 
   // Config modal
   let configModalProvider: { id: string; name: string; endpoint: string } | null = $state(null);
@@ -39,19 +34,52 @@
 
   // Models modal
   let showModelsModal = $state(false);
-  let modelsModalProvider: { id: string; name: string; models?: { id: string; name: string; max_tokens: number }[] } | null = $state(null);
-  let userModelsMap = $state<Record<string, Array<{id: string; name: string}>>>({});
-  let addingModelProviderId = $state('');
-  let newModelId = $state('');
-  let newModelName = $state('');
-  let savingModel = $state(false);
-  let removingModelKey = $state('');
+  let modelsModalProvider: Provider | null = $state(null);
+
+  // Custom provider modal
+  let showCustomModal = $state(false);
+  let editingCustom: Provider | null = $state(null);
+  let customForm = $state({ name: '', endpoint: '', api_key: '', models: [] as { id: string; name: string; max_tokens: number }[] });
+  let deletingCustomId = $state('');
 
   // All providers modal
   let showAllProvidersModal = $state(false);
 
   const FEATURED_IDS = ['opencode-zen', 'opencode-go', 'openai', 'anthropic', 'google', 'deepseek'];
   let featuredProviders = $derived(presetProviders.filter((p: Provider) => FEATURED_IDS.includes(p.id)));
+
+  function providerStatus(p: Provider) {
+    if (p.id === currentProvider) return 'current';
+    if (p.tier === 'free' || p.is_free) return 'free';
+    if (p.tier === 'subscription') return 'subscription';
+    const cfg = providerConfigs[p.id];
+    if (cfg?.api_key) return 'configured';
+    if (p.requires_key) return 'needs_key';
+    return 'ready';
+  }
+
+  function badgeClass(status: string) {
+    switch (status) {
+      case 'current': return 'bg-primary/20 text-primary';
+      case 'free': return 'bg-green-500/20 text-green-400';
+      case 'subscription': return 'bg-violet-500/20 text-violet-400';
+      case 'configured': return 'bg-green-500/20 text-green-400';
+      case 'needs_key': return 'bg-amber-500/20 text-amber-400';
+      default: return 'bg-zinc-500/20 text-zinc-400';
+    }
+  }
+
+  function badgeLabel(status: string) {
+    switch (status) {
+      case 'current': return '使用中';
+      case 'free': return '免费';
+      case 'subscription': return '订阅';
+      case 'configured': return '已配置';
+      case 'needs_key': return '需配置';
+      case 'ready': return '就绪';
+      default: return '-';
+    }
+  }
 
   async function loadProviders() {
     const token = getToken();
@@ -63,7 +91,6 @@
         currentModelId = cfg.model_id || '';
       }
     } catch {}
-
     try {
       const r = await fetch('/api/v1/llm/providers', { headers: { Authorization: `Bearer ${token}` } });
       if (r.ok) {
@@ -71,7 +98,6 @@
         presetProviders = data.providers || [];
       }
     } catch {}
-
     try {
       const r = await fetch('/api/v1/llm/provider-configs', { headers: { Authorization: `Bearer ${token}` } });
       if (r.ok) {
@@ -84,7 +110,6 @@
         }
       }
     } catch {}
-
     try {
       const r = await fetch('/api/v1/llm/custom-providers', { headers: { Authorization: `Bearer ${token}` } });
       if (r.ok) {
@@ -94,24 +119,10 @@
     } catch {}
   }
 
-  function openConfigModal(providerOrId: string | Provider) {
-    let provider: Provider | undefined;
-    if (typeof providerOrId === 'string') {
-      provider = presetProviders.find((p: Provider) => p.id === providerOrId);
-    } else {
-      provider = providerOrId;
-    }
-    if (!provider) return;
-    configModalProvider = { id: provider.id, name: provider.name, endpoint: provider.endpoint };
-    const existing = providerConfigs[provider.id];
-    configEndpoint = existing?.endpoint || provider.endpoint || '';
-    configApiKey = existing?.api_key || '';
-  }
-
-  function closeConfigModal() {
-    configModalProvider = null;
-    configEndpoint = '';
-    configApiKey = '';
+  function openConfigModal(p: Provider) {
+    configModalProvider = { id: p.id, name: p.name, endpoint: p.endpoint };
+    configEndpoint = providerConfigs[p.id]?.endpoint || p.endpoint || '';
+    configApiKey = providerConfigs[p.id]?.api_key || '';
   }
 
   async function saveProviderConfig() {
@@ -132,7 +143,7 @@
         providerConfigs[configModalProvider.id] = { endpoint: configEndpoint, api_key: configApiKey, models_json: providerConfigs[configModalProvider.id]?.models_json || '' };
         providerConfigs = { ...providerConfigs };
         toast('配置已保存', 'success');
-        closeConfigModal();
+        configModalProvider = null;
         onConfigChange?.();
       } else {
         toast((await r.json()).error || '保存失败', 'error');
@@ -157,120 +168,9 @@
     } catch { toast('重置失败', 'error'); }
   }
 
-  // Models modal
-  function openModelsModal(providerOrId: string | Provider) {
-    let provider: Provider | undefined;
-    if (typeof providerOrId === 'string') {
-      provider = presetProviders.find((p: Provider) => p.id === providerOrId);
-    } else {
-      provider = providerOrId;
-    }
-    if (!provider) return;
-    modelsModalProvider = provider;
+  function openModelsModal(p: Provider) {
+    modelsModalProvider = p;
     showModelsModal = true;
-  }
-
-  function closeModelsModal() {
-    showModelsModal = false;
-    modelsModalProvider = null;
-  }
-
-  function startAddModel(providerId: string) {
-    addingModelProviderId = providerId;
-    newModelId = '';
-    newModelName = '';
-  }
-
-  function cancelAddModel() {
-    addingModelProviderId = '';
-    newModelId = '';
-    newModelName = '';
-  }
-
-  async function saveAddModel() {
-    if (!newModelId.trim() || !newModelName.trim()) {
-      toast('请填写模型 ID 和名称', 'error');
-      return;
-    }
-    const providerId = addingModelProviderId;
-    const existing = userModelsMap[providerId] || [];
-    if (existing.some(m => m.id === newModelId.trim())) {
-      toast('该模型 ID 已存在', 'error');
-      return;
-    }
-    const updated = [...existing, { id: newModelId.trim(), name: newModelName.trim() }];
-    userModelsMap[providerId] = updated;
-    userModelsMap = { ...userModelsMap };
-    const token = getToken();
-    savingModel = true;
-    try {
-      const cfg = providerConfigs[providerId] || {};
-      const r = await fetch('/api/v1/llm/provider-config', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({
-          id: providerId,
-          endpoint: cfg.endpoint || '',
-          api_key: cfg.api_key || '',
-          models_json: JSON.stringify(updated),
-        }),
-      });
-      if (r.ok) {
-        providerConfigs[providerId] = { ...cfg, models_json: JSON.stringify(updated) };
-        providerConfigs = { ...providerConfigs };
-        toast('模型已添加', 'success');
-        addingModelProviderId = '';
-        newModelId = '';
-        newModelName = '';
-      } else {
-        userModelsMap[providerId] = existing;
-        userModelsMap = { ...userModelsMap };
-        toast((await r.json()).error || '添加失败', 'error');
-      }
-    } catch {
-      userModelsMap[providerId] = existing;
-      userModelsMap = { ...userModelsMap };
-      toast('添加失败', 'error');
-    } finally {
-      savingModel = false;
-    }
-  }
-
-  async function removeUserModel(providerId: string, modelId: string) {
-    const existing = userModelsMap[providerId] || [];
-    const updated = existing.filter(m => m.id !== modelId);
-    userModelsMap[providerId] = updated;
-    userModelsMap = { ...userModelsMap };
-    const token = getToken();
-    removingModelKey = `${providerId}:${modelId}`;
-    try {
-      const cfg = providerConfigs[providerId] || {};
-      const r = await fetch('/api/v1/llm/provider-config', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({
-          id: providerId,
-          endpoint: cfg.endpoint || '',
-          api_key: cfg.api_key || '',
-          models_json: updated.length > 0 ? JSON.stringify(updated) : '',
-        }),
-      });
-      if (r.ok) {
-        providerConfigs[providerId] = { ...cfg, models_json: updated.length > 0 ? JSON.stringify(updated) : '' };
-        providerConfigs = { ...providerConfigs };
-        toast('模型已移除', 'success');
-      } else {
-        userModelsMap[providerId] = existing;
-        userModelsMap = { ...userModelsMap };
-        toast('移除失败', 'error');
-      }
-    } catch {
-      userModelsMap[providerId] = existing;
-      userModelsMap = { ...userModelsMap };
-      toast('移除失败', 'error');
-    } finally {
-      removingModelKey = '';
-    }
   }
 
   // Custom provider CRUD
@@ -282,20 +182,10 @@
 
   function openEditCustomModal(p: Provider) {
     editingCustom = p;
-    let parsedModels: {id: string; name: string; max_tokens: number}[] = [];
+    let parsedModels: { id: string; name: string; max_tokens: number }[] = [];
     try { parsedModels = JSON.parse(p.models_json || '[]'); } catch {}
-    customForm = {
-      name: p.name,
-      endpoint: p.endpoint,
-      api_key: p.api_key || '',
-      models: parsedModels,
-    };
+    customForm = { name: p.name, endpoint: p.endpoint, api_key: p.api_key || '', models: parsedModels };
     showCustomModal = true;
-  }
-
-  function closeCustomModal() {
-    showCustomModal = false;
-    editingCustom = null;
   }
 
   function addCustomModel() {
@@ -325,7 +215,8 @@
         });
         if (r.ok) { toast('已添加', 'success'); } else { toast((await r.json()).error || '添加失败', 'error'); return; }
       }
-      closeCustomModal();
+      showCustomModal = false;
+      editingCustom = null;
       await loadProviders();
     } catch { toast('操作失败', 'error'); }
   }
@@ -348,56 +239,10 @@
     deletingCustomId = '';
   }
 
-  // Status helpers
-  function providerStatus(p: Provider) {
-    if (p.id === currentProvider) return 'current';
-    if (p.tier === 'free' || p.is_free) return 'free';
-    if (p.tier === 'subscription') return 'subscription';
-    const cfg = providerConfigs[p.id];
-    if (cfg?.api_key) return 'configured';
-    if (p.requires_key) return 'needs_key';
-    return 'ready';
-  }
-
-  function statusBadgeClass(status: string) {
-    switch (status) {
-      case 'current': return 'bg-primary/20 text-primary';
-      case 'free': return 'bg-green-500/20 text-green-400';
-      case 'subscription': return 'bg-violet-500/20 text-violet-400';
-      case 'configured': return 'bg-green-500/20 text-green-400';
-      case 'needs_key': return 'bg-amber-500/20 text-amber-400';
-      case 'ready': return 'bg-zinc-500/20 text-zinc-400';
-      default: return 'bg-zinc-500/20 text-zinc-400';
-    }
-  }
-
-  function statusLabel(status: string) {
-    switch (status) {
-      case 'current': return '使用中';
-      case 'free': return '免费';
-      case 'subscription': return '订阅';
-      case 'configured': return '已配置';
-      case 'needs_key': return '需配置';
-      case 'ready': return '就绪';
-      default: return '-';
-    }
-  }
-
   onMount(() => { loadProviders(); });
 </script>
 
-<!-- Current Provider Info -->
-<div class="current-provider">
-  <span class="material-symbols-outlined text-[var(--color-primary)] text-lg">check_circle</span>
-  <div class="flex-1 min-w-0">
-    <p class="text-sm font-medium text-[var(--color-text)] truncate">
-      当前: {presetProviders.find((p: Provider) => p.id === currentProvider)?.name || currentProvider}
-      {#if currentModelId}
-        <span class="text-[var(--color-text-muted)]">/ {currentModelId}</span>
-      {/if}
-    </p>
-  </div>
-</div>
+<ProviderStats {currentProvider} {currentModelId} {presetProviders} {customProviders} {userModelsMap} />
 
 <!-- Preset Providers Table -->
 <div class="providers-section">
@@ -405,7 +250,6 @@
     <h3>预设提供商</h3>
     <p class="text-xs text-[var(--color-text-muted)]">内置提供商，可自定义 Endpoint 和 API Key</p>
   </div>
-
   <div class="overflow-x-auto">
     <table class="provider-table w-full text-sm">
       <thead>
@@ -419,42 +263,16 @@
       </thead>
       <tbody>
         {#each featuredProviders as p}
-          {@const userModels = userModelsMap[p.id] || []}
-          {@const totalModels = (p.models?.length || 0) + userModels.length}
-          <tr class="border-t border-[var(--color-border)]">
-            <td class="py-3 pr-4">
-              <span class="font-medium text-[var(--color-text)]">{p.name}</span>
-            </td>
-            <td class="py-3 pr-4 text-[var(--color-text-secondary)]">
-              <button class="hover:text-[var(--color-primary)] transition-colors cursor-pointer" onclick={() => { modelsModalProvider = p; showModelsModal = true; }}>
-                {totalModels}
-                {#if userModels.length > 0}
-                  <span class="text-xs text-[var(--color-primary)]">(+{userModels.length})</span>
-                {/if}
-              </button>
-            </td>
-            <td class="py-3 pr-4">
-              <span class="badge text-xs {statusBadgeClass(providerStatus(p))}">
-                {statusLabel(providerStatus(p))}
-              </span>
-            </td>
-            <td class="py-3 pr-4 max-w-[200px] truncate text-[var(--color-text-muted)] text-xs" title={p.endpoint}>
-              {providerConfigs[p.id]?.endpoint || p.endpoint || '-'}
-            </td>
-            <td class="py-3 text-right">
-              <div class="flex items-center justify-end gap-1">
-                <button class="btn-ghost text-xs px-2.5 py-1.5 min-h-0" onclick={() => { modelsModalProvider = p; showModelsModal = true; }}>
-                  模型
-                </button>
-                <button class="btn-ghost text-xs px-2.5 py-1.5 min-h-0" onclick={() => { configModalProvider = { id: p.id, name: p.name, endpoint: p.endpoint }; configEndpoint = providerConfigs[p.id]?.endpoint || p.endpoint || ''; configApiKey = providerConfigs[p.id]?.api_key || ''; }}>配置</button>
-                {#if providerConfigs[p.id]}
-                  <button class="btn-ghost text-xs px-2.5 py-1.5 min-h-0 text-[var(--color-error)]" onclick={() => resetProviderConfig(p.id)}>
-                    重置
-                  </button>
-                {/if}
-              </div>
-            </td>
-          </tr>
+          <ProviderCard
+            provider={p}
+            isCurrent={p.id === currentProvider}
+            config={providerConfigs[p.id]}
+            userModels={userModelsMap[p.id] || []}
+            status={providerStatus(p)}
+            onOpenModels={() => openModelsModal(p)}
+            onOpenConfig={() => openConfigModal(p)}
+            onResetConfig={() => resetProviderConfig(p.id)}
+          />
         {/each}
         {#if presetProviders.length > FEATURED_IDS.length}
           <tr class="border-t border-[var(--color-border)]">
@@ -483,7 +301,6 @@
       添加
     </button>
   </div>
-
   {#if customProviders.length === 0}
     <p class="text-sm text-[var(--color-text-muted)] text-center py-6">暂无自定义提供商</p>
   {:else}
@@ -512,11 +329,11 @@
 
 <!-- Config Modal -->
 {#if configModalProvider}
-  <div class="fixed inset-0 flex items-center justify-center z-50 p-4 animate-[fadeIn_0.15s_ease-out]" style="background: rgba(0,0,0,0.6); backdrop-filter: blur(8px)" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) closeConfigModal(); }}>
+  <div class="fixed inset-0 flex items-center justify-center z-50 p-4 animate-[fadeIn_0.15s_ease-out]" style="background: rgba(0,0,0,0.6); backdrop-filter: blur(8px)" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) configModalProvider = null; }}>
     <div class="rounded-2xl max-w-md w-full border animate-[scaleIn_0.2s_ease-out]" style="background: var(--color-bg-elevated); border-color: var(--color-border); box-shadow: var(--shadow-xl)" role="dialog" aria-modal="true" tabindex="-1">
       <div class="p-5 border-b flex items-center justify-between" style="border-color: var(--color-border)">
         <h3 class="text-lg font-bold text-[var(--color-text)]">配置 {configModalProvider.name}</h3>
-        <button class="p-1 rounded hover:bg-[var(--color-surface)] transition-colors" onclick={closeConfigModal}>
+        <button class="p-1 rounded hover:bg-[var(--color-surface)] transition-colors" onclick={() => configModalProvider = null}>
           <span class="material-symbols-outlined text-[18px]">close</span>
         </button>
       </div>
@@ -531,96 +348,30 @@
         </div>
       </div>
       <div class="p-5 border-t flex justify-end gap-3" style="border-color: var(--color-border)">
-        <button class="btn-ghost text-sm" onclick={closeConfigModal}>取消</button>
+        <button class="btn-ghost text-sm" onclick={() => configModalProvider = null}>取消</button>
         <button class="btn-primary text-sm" onclick={saveProviderConfig}>保存</button>
       </div>
     </div>
   </div>
 {/if}
 
-<!-- Models Modal -->
-{#if showModelsModal && modelsModalProvider}
-  <div class="fixed inset-0 flex items-center justify-center z-50 p-4 animate-[fadeIn_0.15s_ease-out]" style="background: rgba(0,0,0,0.6); backdrop-filter: blur(8px)" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) closeModelsModal(); }}>
-    <div class="rounded-2xl max-w-lg w-full border animate-[scaleIn_0.2s_ease-out] max-h-[80vh] overflow-hidden flex flex-col" style="background: var(--color-bg-elevated); border-color: var(--color-border); box-shadow: var(--shadow-xl)" role="dialog" aria-modal="true" tabindex="-1">
-      <div class="p-5 border-b flex items-center justify-between" style="border-color: var(--color-border)">
-        <h3 class="text-lg font-bold text-[var(--color-text)]">{modelsModalProvider.name} — 模型管理</h3>
-        <button class="p-1 rounded hover:bg-[var(--color-surface)] transition-colors" onclick={closeModelsModal}>
-          <span class="material-symbols-outlined text-[18px]">close</span>
-        </button>
-      </div>
-      <div class="p-5 overflow-auto flex-1 space-y-3">
-        <!-- Built-in models -->
-        {#if (modelsModalProvider.models?.length ?? 0) > 0}
-          <div>
-            <p class="text-xs font-medium text-[var(--color-text-muted)] mb-2">内置模型</p>
-            {#each modelsModalProvider.models as model}
-              <div class="flex items-center justify-between py-2 border-b border-[var(--color-border)]">
-                <div>
-                  <span class="text-sm text-[var(--color-text)]">{model.name || model.id}</span>
-                  {#if model.name && model.id !== model.name}
-                    <span class="text-xs text-[var(--color-text-muted)] ml-1">({model.id})</span>
-                  {/if}
-                </div>
-                <span class="text-xs text-[var(--color-text-muted)]">{model.max_tokens ? `${Math.round(model.max_tokens / 1000)}k` : ''}</span>
-              </div>
-            {/each}
-          </div>
-        {/if}
-
-        <!-- User-added models -->
-        {#if (userModelsMap[modelsModalProvider.id] || []).length > 0}
-          <div>
-            <p class="text-xs font-medium text-[var(--color-text-muted)] mb-2">自定义模型</p>
-            {#each (userModelsMap[modelsModalProvider.id] || []) as model}
-              <div class="flex items-center justify-between py-2 border-b border-[var(--color-border)]">
-                <div>
-                  <span class="text-sm text-[var(--color-text)]">{model.name}</span>
-                  <span class="text-xs text-[var(--color-text-muted)] ml-1">({model.id})</span>
-                </div>
-                <button class="text-xs text-[var(--color-error)]" onclick={() => removeUserModel(modelsModalProvider!.id, model.id)} disabled={removingModelKey === `${modelsModalProvider!.id}:${model.id}`}>
-                  {removingModelKey === `${modelsModalProvider!.id}:${model.id}` ? '移除中...' : '移除'}
-                </button>
-              </div>
-            {/each}
-          </div>
-        {/if}
-
-        <!-- Add model form -->
-        {#if addingModelProviderId === modelsModalProvider.id}
-          <div class="p-3 rounded-xl" style="background: var(--color-surface); border: 1px solid var(--color-border)">
-            <p class="text-xs font-medium text-[var(--color-text-muted)] mb-2">添加自定义模型</p>
-            <div class="grid grid-cols-2 gap-2 mb-2">
-              <input type="text" class="input-field text-xs" placeholder="模型 ID (如 gpt-4-custom)" bind:value={newModelId} />
-              <input type="text" class="input-field text-xs" placeholder="模型名称" bind:value={newModelName} />
-            </div>
-            <div class="flex gap-2">
-              <button class="btn-primary text-xs" onclick={saveAddModel} disabled={savingModel || !newModelId.trim() || !newModelName.trim()}>
-                {savingModel ? '保存中...' : '保存'}
-              </button>
-              <button class="btn-ghost text-xs" onclick={cancelAddModel}>取消</button>
-            </div>
-          </div>
-        {:else}
-          <button class="btn-ghost text-xs w-full py-2" onclick={() => startAddModel(modelsModalProvider!.id)}>
-            <span class="material-symbols-outlined text-[14px]">add</span>
-            添加自定义模型
-          </button>
-        {/if}
-      </div>
-      <div class="p-4 border-t flex justify-end" style="border-color: var(--color-border)">
-        <button class="btn-ghost text-sm" onclick={closeModelsModal}>关闭</button>
-      </div>
-    </div>
-  </div>
-{/if}
+<!-- Models Modal (delegated) -->
+<ModelListModal
+  show={showModelsModal}
+  provider={modelsModalProvider}
+  {userModelsMap}
+  {providerConfigs}
+  onClose={() => { showModelsModal = false; modelsModalProvider = null; }}
+  onModelsChanged={() => { loadProviders(); }}
+/>
 
 <!-- Custom Provider Modal -->
 {#if showCustomModal}
-  <div class="fixed inset-0 flex items-center justify-center z-50 p-4 animate-[fadeIn_0.15s_ease-out]" style="background: rgba(0,0,0,0.6); backdrop-filter: blur(8px)" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) closeCustomModal(); }}>
+  <div class="fixed inset-0 flex items-center justify-center z-50 p-4 animate-[fadeIn_0.15s_ease-out]" style="background: rgba(0,0,0,0.6); backdrop-filter: blur(8px)" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) { showCustomModal = false; editingCustom = null; } }}>
     <div class="rounded-2xl max-w-md w-full border animate-[scaleIn_0.2s_ease-out]" style="background: var(--color-bg-elevated); border-color: var(--color-border); box-shadow: var(--shadow-xl)" role="dialog" aria-modal="true" tabindex="-1">
       <div class="p-5 border-b flex items-center justify-between" style="border-color: var(--color-border)">
         <h3 class="text-lg font-bold text-[var(--color-text)]">{editingCustom ? '编辑' : '添加'}自定义提供商</h3>
-        <button class="p-1 rounded hover:bg-[var(--color-surface)] transition-colors" onclick={closeCustomModal}>
+        <button class="p-1 rounded hover:bg-[var(--color-surface)] transition-colors" onclick={() => { showCustomModal = false; editingCustom = null; }}>
           <span class="material-symbols-outlined text-[18px]">close</span>
         </button>
       </div>
@@ -637,7 +388,6 @@
           <label for="custom-apikey" class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1">API Key</label>
           <input id="custom-apikey" type="password" class="input-field w-full" bind:value={customForm.api_key} placeholder="sk-..." />
         </div>
-        <!-- Custom models -->
         <div>
           <div class="flex items-center justify-between mb-2">
             <span class="text-sm font-medium text-[var(--color-text-secondary)]">模型列表</span>
@@ -653,7 +403,7 @@
         </div>
       </div>
       <div class="p-5 border-t flex justify-end gap-3" style="border-color: var(--color-border)">
-        <button class="btn-ghost text-sm" onclick={closeCustomModal}>取消</button>
+        <button class="btn-ghost text-sm" onclick={() => { showCustomModal = false; editingCustom = null; }}>取消</button>
         <button class="btn-primary text-sm" onclick={saveCustomProvider} disabled={!customForm.name || !customForm.endpoint}>保存</button>
       </div>
     </div>
@@ -677,7 +427,7 @@
               <p class="text-sm font-medium text-[var(--color-text)]">{p.name}</p>
               <p class="text-xs text-[var(--color-text-muted)] truncate">{p.endpoint}</p>
             </div>
-            <span class="badge text-xs {statusBadgeClass(providerStatus(p))}">{statusLabel(providerStatus(p))}</span>
+            <span class="badge text-xs {badgeClass(providerStatus(p))}">{badgeLabel(providerStatus(p))}</span>
           </div>
         {/each}
       </div>
@@ -689,63 +439,17 @@
 {/if}
 
 <style>
-  .current-provider {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    padding: 0.75rem 1rem;
-    border-radius: 0.75rem;
-    border: 1px solid var(--color-border);
-    background: var(--gradient-brand-subtle);
-    margin-bottom: 1.5rem;
-  }
-
-  .providers-section {
-    margin-bottom: 1.5rem;
-  }
-
+  .providers-section { margin-bottom: 1.5rem; }
   .section-header {
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
     margin-bottom: 1rem;
   }
-
   .section-header h3 {
     font-size: 1rem;
     font-weight: 600;
     color: var(--color-text);
     margin: 0;
   }
-
-  .btn-primary {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.25rem;
-    padding: 0.375rem 0.75rem;
-    background: var(--color-primary);
-    color: white;
-    border: none;
-    border-radius: 0.375rem;
-    font-size: 0.875rem;
-    font-weight: 500;
-    cursor: pointer;
-  }
-
-  .btn-primary:hover { opacity: 0.9; }
-  .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
-
-  .btn-ghost {
-    background: transparent;
-    color: var(--color-text-secondary);
-    border: 1px solid var(--color-border);
-    border-radius: 0.375rem;
-    padding: 0.25rem 0.625rem;
-    font-size: 0.75rem;
-    cursor: pointer;
-    transition: background 0.15s;
-  }
-
-  .btn-ghost:hover { background: var(--color-surface); }
-  .btn-ghost:disabled { opacity: 0.5; cursor: not-allowed; }
 </style>
