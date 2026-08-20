@@ -36,7 +36,7 @@
 
   {#if isAdmin}
     <EmailConfigSection />
-    <FeatureFlagsSection isAdmin={isAdmin} />
+    <FeatureFlagsSection />
   {/if}
 
   <AgentSettingsSection />

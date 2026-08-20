@@ -1,6 +1,6 @@
 module github.com/moduforge/backend
 
-go 1.25.0
+go 1.21
 
 require (
 	github.com/fasthttp/websocket v1.5.12

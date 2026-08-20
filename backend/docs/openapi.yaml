@@ -1305,6 +1305,82 @@ paths:
       responses:
         "200": { description: Log list }
 
+  # ─── Feature Flags ───
+  /admin/feature-flags:
+    get:
+      tags: [Admin]
+      summary: List all feature flags
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Map of feature flag keys to their enabled status
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: object
+                  properties:
+                    key: { type: string }
+                    enabled: { type: boolean }
+                    updated_at: { type: string, format: date-time }
+                    updated_by: { type: string }
+
+  /admin/feature-flags/{key}:
+    put:
+      tags: [Admin]
+      summary: Update a single feature flag
+      security:
+        - BearerAuth: []
+      parameters:
+        - { name: key, in: path, required: true, schema: { type: string }, description: "Feature flag key" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [enabled]
+              properties:
+                enabled: { type: boolean }
+      responses:
+        "200": { description: Feature flag updated }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /admin/feature-flags/batch:
+    post:
+      tags: [Admin]
+      summary: Batch update feature flags
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [flags]
+              properties:
+                flags:
+                  type: array
+                  items:
+                    type: object
+                    required: [key, enabled]
+                    properties:
+                      key: { type: string }
+                      enabled: { type: boolean }
+      responses:
+        "200":
+          description: Batch update result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  updated: { type: integer }
+                  status: { type: string }
+
 components:
   securitySchemes:
     BearerAuth:
@@ -1325,6 +1401,13 @@ components:
       type: object
       properties:
         error: { type: string }
+
+    FeatureFlag:
+      type: object
+      properties:
+        key: { type: string }
+        description: { type: string }
+        enabled: { type: boolean }
 
   responses:
     BadRequest:
