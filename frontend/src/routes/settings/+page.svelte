@@ -16,6 +16,7 @@
   import CustomSkillsSection from './components/CustomSkillsSection.svelte';
   import AboutSection from './components/AboutSection.svelte';
   import PwaInstallSection from './components/PwaInstallSection.svelte';
+  import FeatureFlagsSection from './components/FeatureFlagsSection.svelte';
 
   let themeMode = $state(getTheme());
   let isAdmin = $state(false);
@@ -35,6 +36,7 @@
 
   {#if isAdmin}
     <EmailConfigSection />
+    <FeatureFlagsSection isAdmin={isAdmin} />
   {/if}
 
   <AgentSettingsSection />
