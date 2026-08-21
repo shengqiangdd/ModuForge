@@ -193,4 +193,5 @@ func (s *AIService) sendSSE(w *bufio.Writer, data map[string]interface{}) error 
 		return err
 	}
 	return w.Flush()
+}
 
