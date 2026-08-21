@@ -92,32 +92,4 @@ func historyForLLM(history []Message, userPrompt string, budgetChars int) []Mess
 }
 
 
-// saveProviderConfig upserts a provider configuration for a user.
-func (s *AIService) saveProviderConfig(userID, providerID, endpoint, apiKey string) error {
-	if s.db == nil {
-		return nil
-	}
-	if userID == "" || providerID == "" {
-		return nil
-	}
-	encoded := base64.StdEncoding.EncodeToString([]byte(apiKey))
-	_, err := s.db.Exec(
-		`INSERT INTO provider_configs (user_id, id, endpoint, api_key, updated_at)
-		 VALUES (?, ?, ?, ?, datetime('now'))
-		 ON CONFLICT(user_id, id) DO UPDATE SET endpoint=?, api_key=?, updated_at=datetime('now')`,
-		userID, providerID, endpoint, encoded, endpoint, encoded,
-	)
-	return err
-}
 
-// deleteProviderConfig removes a provider configuration for a user.
-func (s *AIService) deleteProviderConfig(userID, providerID string) error {
-	if s.db == nil {
-		return nil
-	}
-	_, err := s.db.Exec(
-		`DELETE FROM provider_configs WHERE user_id=? AND id=?`,
-		userID, providerID,
-	)
-	return err
-}
