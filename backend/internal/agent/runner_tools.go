@@ -427,22 +427,3 @@ func (r *AgentRunner) autoTriggerBuildIfNeeded(
 	}
 }
 
-,
-) []map[string]interface{} {
-	projectPath := ""
-	if cfg.ProjectID != "" && r.db != nil {
-		var storagePath string
-		r.db.QueryRow(`SELECT COALESCE(storage_path,'') FROM projects WHERE id=?`, cfg.ProjectID).Scan(&storagePath)
-		projectPath = storagePath
-	}
-	if projectPath != "" {
-		healResult, shouldHeal := r.buildHealer.HandleBuildFailure(ctx, sessionID, result, projectPath, w)
-		if shouldHeal && healResult.ContextForLLM != "" {
-			conversation = appendRoleMessage(conversation, "system", healResult.ContextForLLM)
-			log.Printf("[Agent] build_healer: injected error context for %d diagnostics", len(healResult.Diagnostics))
-		} else if healResult.Strategy == HealForceAnswer || healResult.Strategy == HealAbort {
-			result = fmt.Sprintf("%s\n\n%s", result, healResult.UserMessage)
-		}
-	}
-	return conversation
-}

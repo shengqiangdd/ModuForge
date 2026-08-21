@@ -9,7 +9,6 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 )
@@ -194,36 +193,4 @@ func (s *AIService) sendSSE(w *bufio.Writer, data map[string]interface{}) error 
 		return err
 	}
 	return w.Flush()
-}
-
-
-	end := strings.LastIndex(text, "}")
-	if end == -1 || end <= start {
-		return ""
-	}
-	return text[start : end+1]
-}
-
-// ─── Language Detection ───
-
-
-	}
-
-	// 优先级：Go > Rust > C++ > C
-	if goCount > 0 {
-		return "go"
-	}
-	if rustCount > 0 {
-		return "rust"
-	}
-	if cppCount > 0 {
-		return "cpp"
-	}
-	if cCount > 0 {
-		return "c"
-	}
-
-	return ""
-}
-
 
