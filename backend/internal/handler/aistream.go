@@ -40,23 +40,132 @@ func isFreeModel(model string) bool {
 func getOptimizedSystemPrompt() string {
 	return `You are an expert Magisk module developer. Generate COMPLETE, COMPILABLE code.
 
-CRITICAL RULES (prevents code corruption):
-1. Shell: ALWAYS use ${VAR} syntax, NEVER $VAR
-   - CORRECT: ${MODPATH}, ${ARCH}, ${ZIPFILE}
-   - WRONG: $MODPATH, $ARCH, $ZIPFILE
-2. Shell: NEVER use $1, $2, $@. Use explicit names.
-3. Go: Use ONLY int, string, bool, float64, error
-   - NEVER use: float, int32, int64, uint
-4. Go: Initialize ALL variables at declaration
-5. Go: Each function max 15 lines
-6. C: Initialize ALL variables at declaration
-7. C: Each function max 10 lines
-8. All numeric constants must be 0-100
-9. Use ### filename for file headers
+## CRITICAL RULES (prevents code corruption):
 
-Generate files using this format:
-### filename.ext
-<code in appropriate language>`
+### Shell Script Rules (MUST FOLLOW):
+1. ALWAYS use ${VAR} syntax, NEVER $VAR alone
+   - CORRECT: ${MODPATH}, ${ARCH}, ${ZIPFILE}, ${TMPDIR}
+   - WRONG: $MODPATH, $ARCH, $ZIPFILE
+2. NEVER use $1, $2, $@. Use explicit parameter names.
+3. Each function max 20 lines
+4. Use if/then/else, avoid complex logic
+
+### Go Code Rules (MUST FOLLOW):
+1. Use ONLY these types: int, string, bool, float64, error
+   - NEVER use: float, int32, int64, uint, byte
+2. Initialize ALL variables when declaring:
+   - CORRECT: count := 0
+   - WRONG: var count int
+3. Each function max 15 lines
+4. Use fmt.Println, os.ReadFile, time.Sleep only
+5. NO cgo, NO syscall, NO unsafe packages
+
+### C Code Rules (MUST FOLLOW):
+1. Initialize ALL variables when declaring
+2. Each function max 10 lines
+3. Use printf, scanf, fopen only
+4. NO complex pointers, NO dynamic allocation
+
+### General Rules:
+1. All numeric constants must be 0-100
+2. Keep code SIMPLE and SHORT
+3. Use ### filename.ext for file headers
+4. Each file should be under 50 lines
+
+## Output Format:
+### module.prop
+id=modulename
+name=Module Name
+version=1.0
+versionCode=1
+author=Developer
+description=Module description
+
+### customize.sh
+#!/system/bin/sh
+# Install script
+SKIPUNZIP=1
+ui_print "- Installing module..."
+
+### service.sh
+#!/system/bin/sh
+# Service script
+MODDIR=${0%/*}
+# Start services
+
+### src/main.go (if needed)
+package main
+import "fmt"
+func main() {
+    fmt.Println("Hello")
+}
+
+Generate files one by one. Keep code short and simple.`
+}
+
+// getStructuredGenerationPrompt returns a prompt that guides the model
+// to generate code in smaller, more manageable chunks.
+func getStructuredGenerationPrompt(moduleType string) string {
+	base := getOptimizedSystemPrompt()
+	
+	switch moduleType {
+	case "shell-only":
+		return base + `
+
+IMPORTANT: Generate ONLY Shell scripts (module.prop, customize.sh, service.sh).
+Do NOT generate Go or C code. Keep each file under 30 lines.`
+	case "simple-go":
+		return base + `
+
+IMPORTANT: Generate a SIMPLE Go program.
+- Max 20 lines total
+- Use only fmt, os, time packages
+- No complex logic, just print and exit
+- Initialize all variables at declaration`
+	case "mixed":
+		return base + `
+
+IMPORTANT: Generate Shell scripts AND a simple Go program.
+- Shell scripts: module.prop, customize.sh, service.sh
+- Go program: src/main.go (max 20 lines)
+- Keep Go code extremely simple`
+	default:
+		return base
+	}
+}
+
+// detectModuleType analyzes the user prompt to determine the module type
+func detectModuleType(prompt string) string {
+	lower := strings.ToLower(prompt)
+	
+	// Check for shell-only indicators
+	shellOnly := strings.Contains(lower, "shell") || 
+		strings.Contains(lower, "bash") ||
+		strings.Contains(lower, "script") ||
+		(!strings.Contains(lower, "go") && !strings.Contains(lower, "golang") && 
+		 !strings.Contains(lower, "c ") && !strings.Contains(lower, "c++"))
+	
+	// Check for Go indicators
+	hasGo := strings.Contains(lower, "go ") || 
+		strings.Contains(lower, "golang") ||
+		strings.Contains(lower, ".go") ||
+		strings.Contains(lower, "go program")
+	
+	// Check for C indicators
+	hasC := strings.Contains(lower, " c ") || 
+		strings.Contains(lower, "c++") ||
+		strings.Contains(lower, ".c") ||
+		strings.Contains(lower, "c program")
+	
+	if shellOnly && !hasGo && !hasC {
+		return "shell-only"
+	} else if hasGo && !hasC {
+		return "simple-go"
+	} else if hasGo || hasC {
+		return "mixed"
+	}
+	
+	return "default"
 }
 
 func (h *AIStreamHandler) StreamChat(c fiber.Ctx) error {
@@ -78,7 +187,8 @@ func (h *AIStreamHandler) StreamChat(c fiber.Ctx) error {
 		
 		_, _, model, _ := h.aiService.ResolveLLMConfig("")
 		if isFreeModel(model) {
-			systemPrompt = getOptimizedSystemPrompt()
+			moduleType := detectModuleType(req.Prompt)
+			systemPrompt = getStructuredGenerationPrompt(moduleType)
 		}
 		
 		req.Messages = []map[string]string{
@@ -98,9 +208,18 @@ func (h *AIStreamHandler) StreamChat(c fiber.Ctx) error {
 		if !hasSystem {
 			_, _, model, _ := h.aiService.ResolveLLMConfig("")
 			if isFreeModel(model) {
+				// Detect module type from user message
+				userMsg := ""
+				for _, m := range req.Messages {
+					if m["role"] == "user" {
+						userMsg = m["content"]
+						break
+					}
+				}
+				moduleType := detectModuleType(userMsg)
 				optimized := map[string]string{
 					"role":    "system",
-					"content": getOptimizedSystemPrompt(),
+					"content": getStructuredGenerationPrompt(moduleType),
 				}
 				req.Messages = append([]map[string]string{optimized}, req.Messages...)
 			}

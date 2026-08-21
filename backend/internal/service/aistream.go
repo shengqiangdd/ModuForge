@@ -20,6 +20,18 @@ type AIStreamService struct {
 	client *http.Client
 }
 
+// isFreeModel checks if the model is a free model that needs optimization.
+func isFreeModel(model string) bool {
+	freeModels := []string{"laguna-s-2.1-free", "laguna", "free", "demo"}
+	lower := strings.ToLower(model)
+	for _, fm := range freeModels {
+		if strings.Contains(lower, fm) {
+			return true
+		}
+	}
+	return false
+}
+
 func NewAIStreamService() *AIStreamService {
 	return &AIStreamService{
 		client: &http.Client{Timeout: 120 * time.Second},
@@ -73,6 +85,15 @@ func (s *AIStreamService) streamWithProvider(ctx context.Context, messages []map
 		"messages": messages,
 		"stream":   true,
 	}
+	
+	// Add temperature control for free models
+	// Lower temperature = more deterministic output
+	if isFreeModel(model) {
+		body["temperature"] = 0.3  // More deterministic
+		body["top_p"] = 0.9       // Focus on high-probability tokens
+		body["max_tokens"] = 4096  // Limit output length
+	}
+	
 	bodyBytes, _ := json.Marshal(body)
 
 	req, err := http.NewRequestWithContext(ctx, "POST", endpoint+"/chat/completions", bytes.NewReader(bodyBytes))
