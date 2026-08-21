@@ -461,7 +461,13 @@ func extractJSONBlock(s string) string {
 
 	// 2. Try to find the largest valid {"files":[...]} block
 	best := ""
-	for i := strings.Index(s, `{"files"`); i >= 0; i = strings.Index(s[i+1:], `{"files"`) + i + 1 {
+	offset := 0
+	for {
+		idx := strings.Index(s[offset:], `{"files"`)
+		if idx < 0 {
+			break
+		}
+		i := offset + idx
 		end := strings.LastIndex(s[i:], "}")
 		if end > 0 {
 			candidate := s[i : i+end+1]
@@ -469,6 +475,7 @@ func extractJSONBlock(s string) string {
 				best = candidate
 			}
 		}
+		offset = i + 1
 	}
 	if best != "" {
 		return best
