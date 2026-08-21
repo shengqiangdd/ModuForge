@@ -38,6 +38,15 @@ type AIStreamEvent struct {
 	Content string `json:"content"`
 }
 
+// ResolveLLMConfig returns the current LLM configuration.
+// Used by handlers to determine the current model for prompt optimization.
+func (s *AIStreamService) ResolveLLMConfig(userID string) (endpoint, apiKey, model, providerID string) {
+	if s.cfg == nil {
+		return "", "", "", ""
+	}
+	return s.cfg.LLMEndpoint, s.cfg.EffectiveLLMKey(), s.cfg.LLMModel, s.cfg.LLMProvider
+}
+
 // StreamCompletion 流式调用 LLM 并返回事件 channel
 func (s *AIStreamService) StreamCompletion(ctx context.Context, messages []map[string]string) (<-chan AIStreamEvent, error) {
 	// 如果配置了多提供商，使用 Gateway 流式调用

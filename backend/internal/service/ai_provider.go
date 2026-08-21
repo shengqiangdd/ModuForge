@@ -46,6 +46,12 @@ func (s *AIService) resolveLLMConfig(userID string) (endpoint, apiKey, model, pr
 	return
 }
 
+// ResolveLLMConfig is a public wrapper for resolveLLMConfig.
+// Used by handlers to determine the current model for prompt optimization.
+func (s *AIService) ResolveLLMConfig(userID string) (endpoint, apiKey, model, providerID string) {
+	return s.resolveLLMConfig(userID)
+}
+
 // providerRequiresKey checks whether the given provider requires an API key.
 func providerRequiresKey(providerID string) bool {
 	if providerID == "" {

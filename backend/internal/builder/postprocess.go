@@ -53,7 +53,21 @@ func PostProcessSourceFiles(projectDir string, files []string, lang string, logF
 // 3. Empty array indices → [0]
 // 4. Incomplete expressions → complete them
 // 5. Missing imports → add them
+// 6. Remove unnecessary cgo blocks
 func PostProcessGoCode(code string) string {
+	// Remove unnecessary cgo blocks (free model sometimes generates these)
+	// Pattern: /* ... */ import "C"
+	if strings.Contains(code, `import "C"`) {
+		// Remove the cgo comment block and import
+		start := strings.Index(code, "/*")
+		end := strings.Index(code, "*/")
+		if start >= 0 && end > start {
+			code = code[:start] + code[end+2:]
+		}
+		code = strings.Replace(code, "\nimport \"C\"\n", "\n", 1)
+		code = strings.Replace(code, `import "C"`, "", 1)
+	}
+
 	lines := strings.Split(code, "\n")
 	var result []string
 
@@ -88,98 +102,130 @@ func fixLine(line string) string {
 	}
 
 	// Pattern 1: Empty assignment "variable = " at end of line
-	// Fix: add default value based on variable name
-	if strings.HasSuffix(codePart, "= ") || strings.HasSuffix(codePart, "=") {
-		if strings.Contains(line, "Interval") || strings.Contains(line, "interval") ||
-			strings.Contains(line, "Count") || strings.Contains(line, "count") ||
-			strings.Contains(line, "Max") || strings.Contains(line, "Timeout") ||
-			strings.Contains(line, "Temp") || strings.Contains(line, "Alert") {
-			// Integer default
+	// Also handle "variable = // comment" (empty value with comment)
+	// Also handle "variable = \n" (empty value at end)
+	if strings.HasSuffix(codePart, "= ") || strings.HasSuffix(codePart, "=") ||
+		(strings.Contains(codePart, "= ") && strings.HasSuffix(strings.TrimSpace(codePart), "//")) ||
+		codePart == strings.TrimRight(codePart, " ") + "=" {
+		
+		// Extract variable name for context
+		varName := ""
+		if idx := strings.Index(codePart, "="); idx > 0 {
+			varName = strings.TrimSpace(codePart[:idx])
+		}
+		
+		if strings.Contains(varName, "Interval") || strings.Contains(varName, "interval") ||
+			strings.Contains(varName, "Count") || strings.Contains(varName, "count") ||
+			strings.Contains(varName, "Max") || strings.Contains(varName, "Timeout") ||
+			strings.Contains(varName, "Temp") || strings.Contains(varName, "Alert") ||
+			strings.Contains(varName, "THRESHOLD") || strings.Contains(varName, "INTERVAL") ||
+			strings.Contains(varName, "check") || strings.Contains(varName, "normal") ||
+			strings.Contains(varName, "warning") || strings.Contains(varName, "limit") ||
+			strings.Contains(varName, "default") || strings.Contains(varName, "Thresh") {
 			return line + "0"
 		}
-		if strings.Contains(line, "Log") || strings.Contains(line, "log") ||
-			strings.Contains(line, "Path") || strings.Contains(line, "path") ||
-			strings.Contains(line, "File") || strings.Contains(line, "file") ||
-			strings.Contains(line, "Zone") || strings.Contains(line, "zone") {
-			// String default
+		if strings.Contains(varName, "Log") || strings.Contains(varName, "log") ||
+			strings.Contains(varName, "Path") || strings.Contains(varName, "path") ||
+			strings.Contains(varName, "File") || strings.Contains(varName, "file") ||
+			strings.Contains(varName, "Zone") || strings.Contains(varName, "zone") {
 			return line + `""`
 		}
-		// Boolean variables like "running" default to false
-		if strings.Contains(line, "running") || strings.Contains(line, "Running") ||
-			strings.Contains(line, "active") || strings.Contains(line, "Active") ||
-			strings.Contains(line, "enabled") || strings.Contains(line, "Enabled") {
+		if strings.Contains(varName, "running") || strings.Contains(varName, "Running") ||
+			strings.Contains(varName, "active") || strings.Contains(varName, "Active") ||
+			strings.Contains(varName, "enabled") || strings.Contains(varName, "Enabled") {
 			return line + " false"
 		}
-		// Generic default
 		return line + "0"
 	}
 
-	// Pattern 2: Empty comparison "variable <= " or "variable >= "
+	// Pattern 2: Empty comparison "variable <= " or "variable >= " or "variable > "
 	if strings.Contains(codePart, "<= ") && strings.HasSuffix(codePart, "<= ") {
 		return line + "0"
 	}
 	if strings.Contains(codePart, ">= ") && strings.HasSuffix(codePart, ">= ") {
 		return line + "0"
 	}
+	if strings.Contains(codePart, "> ") && strings.HasSuffix(codePart, "> ") {
+		return line + "0"
+	}
 	if strings.Contains(codePart, "== ") && strings.HasSuffix(codePart, "== ") {
 		return line + `""`
 	}
 
-	// Pattern 3: Empty return "return " at end of line
+	// Pattern 3: Empty return
 	if codePart == "return " || codePart == "return , " || codePart == "return ," {
-		// For multi-value returns (return , err), use 0 as default numeric value
 		if strings.Contains(codePart, ",") {
 			return strings.Replace(line, "return ,", "return 0,", 1)
 		}
 		return strings.Replace(line, "return ", "return nil", 1)
 	}
 
-	// Pattern 3b: "return , err" → "return 0, err"
-	if strings.Contains(codePart, "return ,") && strings.Contains(codePart, ", err") {
-		return strings.Replace(line, "return ,", "return 0,", 1)
+	// Pattern 4: Incomplete return "return " at end
+	if strings.HasSuffix(codePart, "return ") {
+		return line + "0"
 	}
 
-	// Pattern 4: Empty array index "parts[]" or "array[]"
+	// Pattern 5: Empty slice/array
 	re := regexp.MustCompile(`(\w+)\[\]`)
 	if re.MatchString(codePart) {
 		line = re.ReplaceAllString(line, "${1}[0]")
-		codePart = re.ReplaceAllString(codePart, "${1}[0]")
 	}
 
-	// Pattern 5: Incomplete slice "len(str)-" → "len(str)-1"
+	// Pattern 6: Incomplete slice "len(str)-"
 	if strings.Contains(codePart, "len(") && strings.Contains(codePart, ")-") {
 		line = strings.Replace(line, ")-", ")-1", 1)
 	}
 
-	// Pattern 6: Incomplete division "/ ." → "/ 1000.0"
+	// Pattern 7: Incomplete division "/ ." or "/ " or "/ ,"
 	if strings.Contains(codePart, "/ .") || strings.Contains(codePart, "/.") {
 		line = strings.Replace(line, "/ .", "/ 1000.0", 1)
 		line = strings.Replace(line, "/.", "/ 1000.0", 1)
 	}
+	// Handle "/ ," (incomplete divisor followed by comma)
+	if strings.Contains(codePart, "/ ,") {
+		line = strings.Replace(line, "/ ,", "/ 1000,", 1)
+	}
 
-	// Pattern 7: Missing closing brace in format string "%.f" → "%.1f"
+	// Pattern 8: Incomplete "return temp /" → "return temp / 1000"
+	if strings.HasSuffix(codePart, "/ ") && !strings.HasSuffix(codePart, "/ ") {
+		// This is a division without a divisor
+		line = line + "1000"
+	}
+
+	// Pattern 9: Missing closing brace in format string
 	if strings.Contains(line, "%.f") {
 		line = strings.ReplaceAll(line, "%.f", "%.1f")
 	}
 
-	// Pattern 8: Incomplete ParseFloat call
+	// Pattern 10: Incomplete ParseFloat call
 	if strings.Contains(codePart, "ParseFloat(") && strings.Contains(codePart, ", )") {
 		line = strings.Replace(line, ", )", ", 64)", 1)
 	}
 
-	// Pattern 9: Empty channel size "make(chan os.Signal, )" → "make(chan os.Signal, 1)"
+	// Pattern 11: Empty channel size
 	if strings.Contains(codePart, "make(chan") && strings.Contains(codePart, ", )") {
 		line = strings.Replace(line, ", )", ", 1)", 1)
 	}
 
-	// Pattern 10: Incomplete "return , err" → "return nil, err"
+	// Pattern 12: Incomplete "return ," → "return 0,"
 	if strings.Contains(codePart, "return ,") {
-		line = strings.Replace(line, "return ,", "return nil,", 1)
+		line = strings.Replace(line, "return ,", "return 0,", 1)
 	}
 
-	// Pattern 11: Incomplete "return ." → "return 0.0"
+	// Pattern 13: Incomplete "return ." → "return 0.0"
 	if strings.HasSuffix(codePart, "return .") {
 		line = line + "0"
+	}
+
+	// Pattern 14: Double slash in path "//" → "/"
+	if strings.Contains(line, `"/`) && strings.Contains(line, `//"`) {
+		line = strings.ReplaceAll(line, "//", "/")
+	}
+
+	// Pattern 15: Incomplete string assignment
+	if strings.HasSuffix(codePart, `"`) && strings.Contains(codePart, `= "`) {
+		// Unclosed string - close it
+		line = line + `"`
 	}
 
 	return line
