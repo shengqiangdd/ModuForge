@@ -3,7 +3,7 @@
    * MCP write-tool permission confirmation dialog.
    * Shows when AI requests to call a tool that may change remote state.
    */
-  import type { McpPermissionState } from '../lib/stores/conversations';
+  import type { McpPermissionState } from '../../../routes/ai/lib/stores/conversations';
 
   let {
     permission,

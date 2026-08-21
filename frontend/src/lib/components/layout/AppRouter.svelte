@@ -3,7 +3,7 @@
   import { t } from '$lib/i18n';
   import PageSkeleton from '$lib/components/ui/PageSkeleton.svelte';
 
-  type Route = 'auth' | 'projects' | 'editor' | 'builds' | 'tests' | 'settings' | 'market' | 'market-publish' | 'dashboard' | 'ai' | 'mcp' | 'devices' | 'crash' | 'glossary';
+  type Route = 'auth' | 'projects' | 'editor' | 'builds' | 'tests' | 'settings' | 'market' | 'market-publish' | 'dashboard' | 'ai' | 'mcp' | 'devices' | 'crash' | 'glossary' | 'notification' | 'activity' | 'search' | 'template' | 'module-version';
 
   interface Project { id: string; name: string; module_type: string; description: string; created_at: string; updated_at: string; }
 

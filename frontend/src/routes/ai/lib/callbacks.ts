@@ -20,7 +20,7 @@ import { loadGenHistory as loadGenHistoryFromStorage, loadSessionsList, deleteSe
 import { truncateForRegeneration, editMessageContent, deleteMessageAt
 } from './messages';
 import { loadProjectFilesState, loadContextProjectListState } from './context';
-import { filterStepsByRound } from './rounds';
+import { filterStepsByRound } from "./rounds";
 import type { Subtask } from '../components/TodoList.svelte';
 
 const modes = MODES;
@@ -308,3 +308,72 @@ export async function resolvePermissionAction(requestId: string, allow: boolean)
     throw new Error(data.error || '确认请求失败（可能已超时）');
   }
 }
+
+// ─── Re-exports from stores (for backward compatibility) ───
+import {
+  loadSessions as loadSessionsFromStore,
+  loadMoreSessions as loadMoreSessionsFromStore,
+  deleteSession as deleteSessionFromStore,
+  exportSession as exportSessionFromStore,
+  renameSession as renameSessionFromStore,
+  loadConversations as loadConversationsFromStore,
+  deleteConversation as deleteConversationFromStore,
+  loadGenHistory as loadGenHistoryFromStore,
+  loadSessionMessages as loadSessionMessagesFromStore,
+  loadEarlierMessages as loadEarlierMessagesFromStore,
+  saveConversation as saveConversationFromStore,
+  exportConversation as exportConversationFromStore,
+  deployAutoBuild as deployAutoBuildFromStore,
+  runComparison as runComparisonFromStore,
+  resolvePermission as resolvePermissionFromStore,
+  loadProjectFilesStateFn as loadProjectFilesStateFnFromStore,
+  loadContextProjectListStateFn as loadContextProjectListStateFnFromStore,
+} from './stores/conversations';
+
+
+// ─── Aliases for page compatibility ───
+export const loadGenHistory = loadGenHistoryFromStore;
+export const loadConversations = loadConversationsFromStore;
+export const loadSessions = loadSessionsFromStore;
+export const loadMoreSessions = loadMoreSessionsFromStore;
+export const loadSessionMessages = loadSessionMessagesFromStore;
+export const loadEarlierMessages = loadEarlierMessagesFromStore;
+export const loadProjectFiles = loadProjectFilesStateFnFromStore;
+export const loadContextProjectList = loadContextProjectListStateFnFromStore;
+export const deleteSession = deleteSessionFromStore;
+export const deleteConversation = deleteConversationFromStore;
+export const saveConversation = saveConversationFromStore;
+export const exportConversation = exportConversationFromStore;
+export const exportSession = exportSessionFromStore;
+export const renameSession = renameSessionFromStore;
+export const deployAutoBuild = deployAutoBuildFromStore;
+export const runComparison = runComparisonFromStore;
+export const resolvePermission = resolvePermissionFromStore;
+export const handleToggleAgentStep = filterStepsByRound;
+
+// ─── Simple wrapper functions ───
+export function switchMode(s: any, mode: Mode) { return resetModeState(mode); }
+export function switchToGenerateWithSpec(s: any) { return resetModeState('generate'); }
+export function addRepoReference(s: any, ref: string) { s.projectContext = (s.projectContext || '') + '\n' + ref; }
+export function openImportDialog(s: any) { s.showImportDialog = true; }
+export function openPreview(s: any, files: any[]) { s.previewFiles = files; s.showPreviewModal = true; }
+export function openPromptSettings(s: any) { s.showPromptSettings = true; }
+export function switchPromptTab(s: any, tab: Mode) { s.promptTab = tab; }
+export function handleClearGenHistory(s: any) { s.genHistory = []; }
+export function handleNewConversation(s: any) { Object.assign(s, newConversationState()); }
+export function handleRefreshSidebar(s: any, loadConvs: any, loadSess: any, loadGen: any) { loadConvs(); loadSess(); loadGen(); }
+export function handleTabChange(s: any, tab: string) { s.historyTab = tab; }
+export function handleSearchSessions(s: any, q: string) { searchSessionsData(q); }
+export function handleToggleReasoning(s: any, idx: number) {
+  const set = new Set(s.expandedReasoning);
+  if (set.has(idx)) set.delete(idx); else set.add(idx);
+  s.expandedReasoning = set;
+}
+export function editMessage(s: any, idx: number, text: string) { return editMessageContentAction(s.messages, idx, text); }
+export function confirmDeleteMessage(s: any, idx: number) { return deleteMessageAtAction(s.messages, idx); }
+export function replyToMessage(s: any, idx: number) { s.editingMessageIdx = idx; }
+export function deleteMessage(s: any, idx: number) { return deleteMessageAtAction(s.messages, idx); }
+export function loadCapability(s: any) { return loadCapabilityData(); }
+export function scanAndImport(s: any, project: string, files: any[]) { return scanAndImportFiles(project, files); }
+export function continueImportAfterWarning(s: any, project: string, files: any[]) { return doImportFiles(project, files); }
+export function proceedImport(s: any, project: string, files: any[]) { return doImportFiles(project, files); }

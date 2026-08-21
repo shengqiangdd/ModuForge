@@ -500,7 +500,7 @@
         {#if showDiffList && diffMode && selectedDiffFile}
           <DiffView
             {selectedDiffFile}
-            {diffFiles}
+            files={diffFiles}
             {detectLanguage}
           />
         {/if}

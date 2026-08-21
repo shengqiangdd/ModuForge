@@ -385,7 +385,7 @@ import * as cb from './lib/callbacks';
       {availableModels} {freeModels} {paidModels} {selectedModel}
       {mode} {streaming} {showComparison} {showProjectContext} {showRepoReference}
       {showHistorySidebar} {showCapability} {showMcpTools}
-      onProviderChange={(v) => { selectedProviderID = v; cb.onProviderChange(state as any, { availableModels, freeModels, paidModels, selectedModel } as any); }}
+      onProviderChange={(v) => { selectedProviderID = v; cb.applyProviderChange(v, availableModels); }}
       onModelSelect={(id) => { selectedModelID = id; showModelDropdown = false; cb.onModelSelect(state as any, id); }}
       onEditMaxTokens={(id, val) => { editingModelMaxTokens = id; editMaxTokensValue = val; }}
       onSaveMaxTokens={onSaveMaxTokens}
