@@ -120,10 +120,14 @@ func (b *Builder) BuildWithResultAndProgress(ctx context.Context, projectDir, ta
 	}
 
 	// Compile Go files with arch support + binary cache
+	// Post-process first to fix truncation issues from free models
 	goFiles := b.DetectGoFiles(projectDir)
 	if len(goFiles) > 0 {
 		logFn(fmt.Sprintf("  Detected %d Go file(s), cross-compiling for android/%s...\n", len(goFiles), arch))
 		emitProgress("compile", fmt.Sprintf("Go: %d files", len(goFiles)))
+
+		// Post-process Go files to fix truncation issues
+		PostProcessSourceFiles(projectDir, goFiles, "go", logFn)
 
 		goProgress := func(phase string, current, total int, detail string) {
 			emitProgress(phase, fmt.Sprintf("Go [%d/%d]: %s", current, total, detail))
@@ -178,11 +182,15 @@ func (b *Builder) BuildWithResultAndProgress(ctx context.Context, projectDir, ta
 	}
 
 	// Compile C/C++ files with NDK + arch support
-	// This also compiles Python-generated C files as separate binaries
+	// Post-process first to fix truncation issues from free models
 	cFiles := b.DetectCFiles(projectDir)
 	if len(cFiles) > 0 {
 		logFn(fmt.Sprintf("  Detected %d C/C++ file(s), cross-compiling with NDK...\n", len(cFiles)))
 		emitProgress("compile", fmt.Sprintf("C/C++: %d files", len(cFiles)))
+
+		// Post-process C/C++ files to fix truncation issues
+		PostProcessSourceFiles(projectDir, cFiles, "c", logFn)
+
 		cResult, err := b.CompileCFilesArch(ctx, projectDir, arch, incr, logFn)
 		if err != nil {
 			return nil, fmt.Errorf("C/C++ compilation failed: %w", err)
