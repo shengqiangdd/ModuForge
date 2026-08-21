@@ -1,0 +1,126 @@
+-- ModuForge initial schema rollback
+-- Drops all tables and indexes created by 000001_initial_schema.up.sql
+
+-- ============================================================
+-- Drop indexes (in reverse creation order)
+-- ============================================================
+
+DROP INDEX IF EXISTS idx_project_versions_project;
+DROP INDEX IF EXISTS idx_dashboard_widgets_user;
+DROP INDEX IF EXISTS idx_module_patterns_type;
+DROP INDEX IF EXISTS idx_crash_logs_module;
+DROP INDEX IF EXISTS idx_crash_logs_device;
+DROP INDEX IF EXISTS idx_app_logs_level_created;
+DROP INDEX IF EXISTS idx_app_logs_created;
+DROP INDEX IF EXISTS idx_app_logs_module;
+DROP INDEX IF EXISTS idx_app_logs_level;
+DROP INDEX IF EXISTS idx_audit_logs_project;
+DROP INDEX IF EXISTS idx_skill_evolution_skill_user;
+DROP INDEX IF EXISTS idx_skill_evolution_user_id;
+DROP INDEX IF EXISTS idx_skill_evolution_skill_id;
+DROP INDEX IF EXISTS idx_shared_patterns_type;
+DROP INDEX IF EXISTS idx_shared_patterns_shared;
+DROP INDEX IF EXISTS idx_recycle_bin_user;
+DROP INDEX IF EXISTS idx_backup_schedules_user;
+DROP INDEX IF EXISTS idx_user_badges_user;
+DROP INDEX IF EXISTS idx_favorites_user;
+DROP INDEX IF EXISTS idx_search_history_user;
+DROP INDEX IF EXISTS idx_activities_created;
+DROP INDEX IF EXISTS idx_activities_project;
+DROP INDEX IF EXISTS idx_activities_user;
+DROP INDEX IF EXISTS idx_notifications_unread;
+DROP INDEX IF EXISTS idx_notifications_user;
+DROP INDEX IF EXISTS idx_prompt_versions_skill;
+DROP INDEX IF EXISTS idx_agent_presets_user;
+DROP INDEX IF EXISTS idx_ai_prompts_user;
+DROP INDEX IF EXISTS idx_conv_msg_user;
+DROP INDEX IF EXISTS idx_conv_msg_session;
+DROP INDEX IF EXISTS idx_ai_conversations_user_updated;
+DROP INDEX IF EXISTS idx_ai_conversations_updated_at;
+DROP INDEX IF EXISTS idx_ai_conversations_user_id;
+DROP INDEX IF EXISTS idx_template_ratings_template;
+DROP INDEX IF EXISTS idx_module_templates_downloads;
+DROP INDEX IF EXISTS idx_module_templates_category;
+DROP INDEX IF EXISTS idx_module_vuln_scans_project;
+DROP INDEX IF EXISTS idx_module_vuln_scans_module;
+DROP INDEX IF EXISTS idx_module_signatures_module;
+DROP INDEX IF EXISTS idx_changelogs_slug;
+DROP INDEX IF EXISTS idx_screenshots_module;
+DROP INDEX IF EXISTS idx_module_versions_module;
+DROP INDEX IF EXISTS idx_market_modules_installs;
+DROP INDEX IF EXISTS idx_market_modules_stars;
+DROP INDEX IF EXISTS idx_market_modules_created;
+DROP INDEX IF EXISTS idx_market_reviews_module;
+DROP INDEX IF EXISTS idx_market_modules_slug;
+DROP INDEX IF EXISTS idx_market_modules_category;
+DROP INDEX IF EXISTS idx_file_comments_parent;
+DROP INDEX IF EXISTS idx_file_comments_file;
+DROP INDEX IF EXISTS idx_file_comments_project;
+DROP INDEX IF EXISTS idx_team_members_user;
+DROP INDEX IF EXISTS idx_team_members_project;
+DROP INDEX IF EXISTS idx_build_tasks_status;
+DROP INDEX IF EXISTS idx_build_tasks_project;
+DROP INDEX IF EXISTS idx_project_files_project;
+DROP INDEX IF EXISTS idx_projects_user_updated;
+DROP INDEX IF EXISTS idx_projects_updated_at;
+DROP INDEX IF EXISTS idx_projects_user_id;
+DROP INDEX IF EXISTS idx_projects_user;
+
+-- ============================================================
+-- Drop tables (in reverse dependency order)
+-- ============================================================
+
+DROP TABLE IF EXISTS project_versions;
+DROP TABLE IF EXISTS glossary;
+DROP TABLE IF EXISTS dashboard_widgets;
+DROP TABLE IF EXISTS vulnerability_scans;
+DROP TABLE IF EXISTS module_patterns;
+DROP TABLE IF EXISTS crash_logs;
+DROP TABLE IF EXISTS benchmark_results;
+DROP TABLE IF EXISTS app_logs;
+DROP TABLE IF EXISTS audit_logs;
+DROP TABLE IF EXISTS shared_patterns;
+DROP TABLE IF EXISTS recycle_bin;
+DROP TABLE IF EXISTS backup_schedules;
+DROP TABLE IF EXISTS user_badges;
+DROP TABLE IF EXISTS favorites;
+DROP TABLE IF EXISTS search_history;
+DROP TABLE IF EXISTS skill_evolution;
+DROP TABLE IF EXISTS custom_skills;
+DROP TABLE IF EXISTS api_keys;
+DROP TABLE IF EXISTS activities;
+DROP TABLE IF EXISTS notifications;
+DROP TABLE IF EXISTS email_config;
+DROP TABLE IF EXISTS mcp_tool_policies;
+DROP TABLE IF EXISTS mcp_servers;
+DROP TABLE IF EXISTS custom_providers;
+DROP TABLE IF EXISTS provider_configs;
+DROP TABLE IF EXISTS llm_config;
+DROP TABLE IF EXISTS prompt_versions;
+DROP TABLE IF EXISTS agent_presets;
+DROP TABLE IF EXISTS ai_usage_daily;
+DROP TABLE IF EXISTS ai_prompts;
+DROP TABLE IF EXISTS conversation_messages;
+DROP TABLE IF EXISTS ai_conversations;
+DROP TABLE IF EXISTS file_comments;
+DROP TABLE IF EXISTS template_ratings;
+DROP TABLE IF EXISTS module_templates;
+DROP TABLE IF EXISTS module_vuln_scans;
+DROP TABLE IF EXISTS module_signatures;
+DROP TABLE IF EXISTS module_changelogs;
+DROP TABLE IF EXISTS module_tag_relations;
+DROP TABLE IF EXISTS module_tags;
+DROP TABLE IF EXISTS module_screenshots;
+DROP TABLE IF EXISTS module_versions;
+DROP TABLE IF EXISTS market_reviews;
+DROP TABLE IF EXISTS market_modules;
+DROP TABLE IF EXISTS team_members;
+DROP TABLE IF EXISTS edit_sessions;
+DROP TABLE IF EXISTS comments;
+DROP TABLE IF EXISTS collaborators;
+DROP TABLE IF EXISTS build_schedules;
+DROP TABLE IF EXISTS build_tasks;
+DROP TABLE IF EXISTS project_files;
+DROP TABLE IF EXISTS projects;
+DROP TABLE IF EXISTS adb_saved_devices;
+DROP TABLE IF EXISTS users;

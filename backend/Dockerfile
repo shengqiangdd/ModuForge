@@ -81,6 +81,9 @@ COPY --from=backend-builder --chown=moduforge:moduforge /server /app/server
 # --- Copy backend docs (OpenAPI spec etc.) ---
 COPY --from=backend-builder --chown=moduforge:moduforge /app/docs /app/docs
 
+# --- Copy database migrations ---
+COPY --from=backend-builder --chown=moduforge:moduforge /app/migrations /app/migrations
+
 # --- Copy frontend dist ---
 COPY --from=frontend-builder --chown=moduforge:moduforge /app/dist /app/dist
 

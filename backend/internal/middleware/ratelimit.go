@@ -101,8 +101,8 @@ func RateLimit(rl *RateLimiter, capacity, rate float64) fiber.Handler {
 		b := rl.getBucket(ip, capacity, rate)
 		if !b.Allow() {
 			return c.Status(429).JSON(fiber.Map{
-				"error": "请求过于频繁，请稍后再试",
-				"code":  "RATE_LIMITED",
+				"error":       "请求过于频繁，请稍后再试",
+				"code":        "RATE_LIMITED",
 				"retry_after": "1s",
 			})
 		}
@@ -128,8 +128,8 @@ func RateLimitWithSkip(rl *RateLimiter, capacity, rate float64, skip ...string) 
 		b := rl.getBucket(ip, capacity, rate)
 		if !b.Allow() {
 			return c.Status(429).JSON(fiber.Map{
-				"error": "请求过于频繁，请稍后再试",
-				"code":  "RATE_LIMITED",
+				"error":       "请求过于频繁，请稍后再试",
+				"code":        "RATE_LIMITED",
 				"retry_after": "1s",
 			})
 		}

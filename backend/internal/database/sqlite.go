@@ -4,6 +4,8 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"os"
+	"path/filepath"
 
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -26,8 +28,19 @@ func NewSQLiteDB(dbPath string) (*DB, error) {
 
 	db := &DB{Conn: conn}
 	db.Conn.Exec("PRAGMA mmap_size = 268435456") // 256MB
-	if err := db.migrate(); err != nil {
-		return nil, fmt.Errorf("migrate: %w", err)
+
+	// Run database migrations: prefer golang-migrate if migration files exist,
+	// otherwise fall back to the inline schemaMigrations() approach.
+	migrationsDir := resolveMigrationsDir(dbPath)
+	if ok, err := RunMigrations(dbPath, migrationsDir); err != nil {
+		return nil, fmt.Errorf("golang-migrate: %w", err)
+	} else if ok {
+		log.Println("[DB] Golang-migrate applied successfully")
+	} else {
+		// Fallback: no migration files found, use inline schema
+		if err := db.migrate(); err != nil {
+			return nil, fmt.Errorf("migrate: %w", err)
+		}
 	}
 
 	return db, nil
@@ -82,4 +95,23 @@ func (db *DB) migrate() error {
 
 func (db *DB) Close() error {
 	return db.Conn.Close()
+}
+
+// resolveMigrationsDir determines the path to the migrations directory.
+// Priority: MIGRATIONS_DIR env var > migrations/ relative to dbPath's parent > ./migrations
+func resolveMigrationsDir(dbPath string) string {
+	if envDir := os.Getenv("MIGRATIONS_DIR"); envDir != "" {
+		return envDir
+	}
+	// Try migrations/ relative to the database file's directory
+	dbDir := filepath.Dir(dbPath)
+	candidate := filepath.Join(dbDir, "migrations")
+	if info, err := os.Stat(candidate); err == nil && info.IsDir() {
+		return candidate
+	}
+	// Try migrations/ relative to working directory
+	if info, err := os.Stat("migrations"); err == nil && info.IsDir() {
+		return "migrations"
+	}
+	return candidate
 }

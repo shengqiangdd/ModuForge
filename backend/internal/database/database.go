@@ -29,8 +29,15 @@ func Init(cfg *config.Config) (*sql.DB, error) {
 		}
 	}
 
-	if err := migrate(db); err != nil {
+	applied, err := RunMigrations(cfg.DatabasePath, cfg.MigrationsDir)
+	if err != nil {
 		return nil, fmt.Errorf("migrate: %w", err)
+	}
+	if !applied {
+		// No migration files — use inline SQL fallback
+		if err := migrate(db); err != nil {
+			return nil, fmt.Errorf("inline migrate: %w", err)
+		}
 	}
 
 	return db, nil
@@ -156,7 +163,6 @@ func migrate(db *sql.DB) error {
 			last_active DATETIME
 		)`,
 
-
 		// Market tables
 		`CREATE TABLE IF NOT EXISTS market_modules (
 			id TEXT PRIMARY KEY,
@@ -210,7 +216,7 @@ func migrate(db *sql.DB) error {
 		)`,
 
 		// AI Conversations persistence
-	`CREATE TABLE IF NOT EXISTS ai_conversations (
+		`CREATE TABLE IF NOT EXISTS ai_conversations (
 		id TEXT PRIMARY KEY,
 		user_id TEXT NOT NULL,
 		title TEXT DEFAULT '',
@@ -220,9 +226,9 @@ func migrate(db *sql.DB) error {
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	)`,
-	`CREATE INDEX IF NOT EXISTS idx_ai_conversations_user ON ai_conversations(user_id)`,
-	// Individual conversation messages for multi-turn persistence
-	`CREATE TABLE IF NOT EXISTS conversation_messages (
+		`CREATE INDEX IF NOT EXISTS idx_ai_conversations_user ON ai_conversations(user_id)`,
+		// Individual conversation messages for multi-turn persistence
+		`CREATE TABLE IF NOT EXISTS conversation_messages (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		session_id TEXT NOT NULL,
 		user_id TEXT NOT NULL,
@@ -230,9 +236,9 @@ func migrate(db *sql.DB) error {
 		content TEXT NOT NULL,
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	)`,
-	`CREATE INDEX IF NOT EXISTS idx_conv_msg_session ON conversation_messages(session_id)`,
-	`CREATE INDEX IF NOT EXISTS idx_conv_msg_user ON conversation_messages(user_id)`,
-}
+		`CREATE INDEX IF NOT EXISTS idx_conv_msg_session ON conversation_messages(session_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_conv_msg_user ON conversation_messages(user_id)`,
+	}
 
 	for _, m := range migrations {
 		if _, err := db.Exec(m); err != nil {

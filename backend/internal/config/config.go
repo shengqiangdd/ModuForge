@@ -9,14 +9,15 @@ import (
 type Config struct {
 	mu sync.RWMutex
 
-	Port         string // 监听端口
-	JWTSecret    string // JWT 签名密钥
-	DatabasePath string // SQLite 数据库路径
-	StoragePath  string // 文件存储路径
-	S3Endpoint   string // S3-compatible storage endpoint (e.g. "seaweedfs:8333")
-	S3AccessKey  string // S3 access key
-	S3SecretKey  string // S3 secret key
-	S3Bucket     string // S3 bucket name
+	Port          string // 监听端口
+	JWTSecret     string // JWT 签名密钥
+	DatabasePath  string // SQLite 数据库路径
+	MigrationsDir string // SQL 迁移文件目录（空则用内联 SQL）
+	StoragePath   string // 文件存储路径
+	S3Endpoint    string // S3-compatible storage endpoint (e.g. "seaweedfs:8333")
+	S3AccessKey   string // S3 access key
+	S3SecretKey   string // S3 secret key
+	S3Bucket      string // S3 bucket name
 	// Legacy single-provider config (backward compatible)
 	LLMApiKey   string // LLM API Key
 	LLMEndpoint string // LLM API 端点
@@ -55,6 +56,7 @@ func Load() *Config {
 		Port:             getEnv("PORT", ":8080"),
 		JWTSecret:        getEnv("JWT_SECRET", ""),
 		DatabasePath:     getEnv("DATABASE_PATH", "data/moduforge.db"),
+		MigrationsDir:    getEnv("MIGRATIONS_DIR", "migrations"),
 		StoragePath:      getEnv("STORAGE_PATH", "/data/storage"),
 		S3Endpoint:       getEnv("S3_ENDPOINT", ""),
 		S3AccessKey:      getEnv("S3_ACCESS_KEY", "minioadmin"),

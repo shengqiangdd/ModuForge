@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io/fs"
 	"log"
 	"log/slog"
@@ -20,6 +21,7 @@ import (
 	"github.com/gofiber/fiber/v3/middleware/logger"
 	"github.com/gofiber/fiber/v3/middleware/recover"
 
+	_ "github.com/moduforge/backend/internal/agent/skills"
 	"github.com/moduforge/backend/internal/builder"
 	"github.com/moduforge/backend/internal/config"
 	"github.com/moduforge/backend/internal/database"
@@ -27,13 +29,67 @@ import (
 	apipkg "github.com/moduforge/backend/internal/handler/api"
 	"github.com/moduforge/backend/internal/middleware"
 	"github.com/moduforge/backend/internal/service"
-	_ "github.com/moduforge/backend/internal/agent/skills"
 	// pprof is imported for side-effect: registers /debug/pprof handlers on default mux
 	_ "net/http/pprof"
 )
 
 func main() {
 	cfg := config.Load()
+
+	// Handle MIGRATE env var for CLI migration commands.
+	// Supported values: up, down, status
+	// When set, runs the migration and exits (does not start the server).
+	if migrateCmd := os.Getenv("MIGRATE"); migrateCmd != "" {
+		dbPath := cfg.DatabasePath
+		if dbPath == "" {
+			dbPath = "data/moduforge.db"
+		}
+		migrationsDir := filepath.Join(filepath.Dir(dbPath), "migrations")
+		if envDir := os.Getenv("MIGRATIONS_DIR"); envDir != "" {
+			migrationsDir = envDir
+		}
+
+		switch strings.ToLower(migrateCmd) {
+		case "up":
+			fmt.Println("[MIGRATE] Running migrations up...")
+			ok, err := database.RunMigrations(dbPath, migrationsDir)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "[MIGRATE] Error: %v\n", err)
+				os.Exit(1)
+			}
+			if ok {
+				fmt.Println("[MIGRATE] Migrations applied successfully")
+			} else {
+				fmt.Println("[MIGRATE] No migration files found, nothing to do")
+			}
+		case "down":
+			fmt.Println("[MIGRATE] Running migrations down...")
+			if err := database.RunMigrationsDown(dbPath, migrationsDir); err != nil {
+				fmt.Fprintf(os.Stderr, "[MIGRATE] Error: %v\n", err)
+				os.Exit(1)
+			}
+			fmt.Println("[MIGRATE] Migrations rolled back successfully")
+		case "status":
+			version, dirty, err := database.RunMigrationsStatus(dbPath, migrationsDir)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "[MIGRATE] Error: %v\n", err)
+				os.Exit(1)
+			}
+			if version == 0 {
+				fmt.Println("[MIGRATE] No migrations applied yet")
+			} else {
+				status := "clean"
+				if dirty {
+					status = "DIRTY"
+				}
+				fmt.Printf("[MIGRATE] Current version: %d (%s)\n", version, status)
+			}
+		default:
+			fmt.Fprintf(os.Stderr, "[MIGRATE] Unknown command: %q (supported: up, down, status)\n", migrateCmd)
+			os.Exit(1)
+		}
+		return
+	}
 
 	// Init SQLite DB (market tables)
 	dbPath := cfg.DatabasePath
@@ -63,7 +119,7 @@ func main() {
 
 	// Fiber app
 	app := fiber.New(fiber.Config{
-		BodyLimit:  32 * 1024 * 1024, // 32 MB — auto-build sends large JSON payloads
+		BodyLimit:    32 * 1024 * 1024, // 32 MB — auto-build sends large JSON payloads
 		WriteTimeout: 25 * time.Minute, // SSE streams + long LLM generation + compilation
 		ReadTimeout:  2 * time.Minute,
 		ErrorHandler: func(c fiber.Ctx, err error) error {
@@ -107,8 +163,9 @@ func main() {
 	app.Use(middleware.ContentTypeCheck())
 	app.Use(middleware.SecurityHeaders())
 	app.Use(recover.New())
+	app.Use(middleware.RequestLogger())
 	app.Use(logger.New(logger.Config{
-		Format: `{"time":"${time}","method":"${method}","path":"${path}","status":${status},"latency":"${latency}","ip":"${ip}","request_id":"${locals:request_id}"}` + "\n",
+		Format:     `{"time":"${time}","method":"${method}","path":"${path}","status":${status},"latency":"${latency}","ip":"${ip}","request_id":"${locals:request_id}"}` + "\n",
 		TimeFormat: time.RFC3339,
 	}))
 	app.Use(cors.New(cors.Config{
@@ -258,7 +315,7 @@ func main() {
 			}
 		}()
 	} else {
-		slog.Info("pprof disabled (set PPROF_ENABLED=1 to enable on port "+pprofPort+")")
+		slog.Info("pprof disabled (set PPROF_ENABLED=1 to enable on port " + pprofPort + ")")
 	}
 
 	// ADB auto-reconnect: the adb server loses all wireless connections whenever
@@ -296,21 +353,21 @@ func main() {
 func serveFrontend(app *fiber.App, fsys fs.FS) {
 	// Content type map
 	ctMap := map[string]string{
-		".js":   "application/javascript",
-		".mjs":  "application/javascript",
-		".css":  "text/css",
-		".html": "text/html; charset=utf-8",
-		".json": "application/json",
-		".svg":  "image/svg+xml",
-		".png":  "image/png",
-		".jpg":  "image/jpeg",
-		".jpeg": "image/jpeg",
-		".gif":  "image/gif",
-		".ico":  "image/x-icon",
-		".woff": "font/woff",
+		".js":    "application/javascript",
+		".mjs":   "application/javascript",
+		".css":   "text/css",
+		".html":  "text/html; charset=utf-8",
+		".json":  "application/json",
+		".svg":   "image/svg+xml",
+		".png":   "image/png",
+		".jpg":   "image/jpeg",
+		".jpeg":  "image/jpeg",
+		".gif":   "image/gif",
+		".ico":   "image/x-icon",
+		".woff":  "font/woff",
 		".woff2": "font/woff2",
-		".ttf":  "font/ttf",
-		".map":  "application/json",
+		".ttf":   "font/ttf",
+		".map":   "application/json",
 	}
 
 	app.Use(func(c fiber.Ctx) error {
