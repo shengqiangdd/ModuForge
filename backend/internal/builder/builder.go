@@ -134,7 +134,14 @@ func (b *Builder) BuildWithResultAndProgress(ctx context.Context, projectDir, ta
 		}
 		goResult, err := b.CompileGoFilesArchWithProgress(ctx, projectDir, arch, incr, logFn, goProgress)
 		if err != nil {
-			return nil, fmt.Errorf("go compilation failed: %w", err)
+			// Retry with enhanced post-processing
+			logFn(fmt.Sprintf("\n🔧 Go compilation failed, applying enhanced post-processing...\n"))
+			PostProcessSourceFiles(projectDir, goFiles, "go", logFn)
+			goResult, err = b.CompileGoFilesArchWithProgress(ctx, projectDir, arch, incr, logFn, goProgress)
+			if err != nil {
+				return nil, fmt.Errorf("go compilation failed: %w", err)
+			}
+			logFn("✅ Go compilation succeeded after enhanced post-processing!\n")
 		}
 		result.RecompiledFiles = append(result.RecompiledFiles, goResult.Recompiled...)
 		result.CacheHits += goResult.CacheHits
