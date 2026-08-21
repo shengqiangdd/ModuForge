@@ -21,7 +21,7 @@ func NewFeatureFlagChecker(isEnabled func(key string) bool) *FeatureFlagChecker 
 // More specific patterns come first to avoid false positives.
 var routeFeatureMap = []struct {
 	substring string
-	feature  string
+	feature   string
 }{
 	// Crash reporting — /crash/report, /crash/logs, /crash/stats
 	{"/crash/", "crash_reporting"},
