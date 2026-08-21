@@ -133,8 +133,19 @@ func (b *Builder) fixCodeWithLLM(
 	// Extract relevant code context (around errors)
 	contextLines := extractCodeContext(code, errors, 5)
 
-	// Build prompt
-	prompt := fmt.Sprintf(`Fix the following Go code that has compilation errors.
+	// Detect language from file extension or content
+	lang := "go" // default
+	if strings.Contains(code, "#include") || strings.Contains(code, "printf(") {
+		lang = "c"
+	} else if strings.Contains(code, "#!/system/bin/sh") || strings.Contains(code, "#!/bin/sh") {
+		lang = "sh"
+	}
+
+	// Build language-specific prompt
+	var prompt string
+	switch lang {
+	case "c":
+		prompt = fmt.Sprintf(`Fix the following C code that has compilation errors.
 
 ERRORS:
 %s
@@ -143,7 +154,33 @@ CODE WITH ERRORS (lines around errors):
 %s
 
 Please return the COMPLETE fixed code. Do not add comments about the fixes.
-Return only the fixed code, no explanations.`, errDesc.String(), contextLines)
+Return only the fixed code, no explanations.
+IMPORTANT: Initialize ALL variables, fix empty array sizes, remove dynamic allocation.`, errDesc.String(), contextLines)
+	case "sh":
+		prompt = fmt.Sprintf(`Fix the following Shell script that has errors.
+
+ERRORS:
+%s
+
+CODE WITH ERRORS (lines around errors):
+%s
+
+Please return the COMPLETE fixed script. Do not add comments about the fixes.
+Return only the fixed script, no explanations.
+IMPORTANT: Use ${VAR} syntax (never $VAR alone), fix incomplete sleep commands.`, errDesc.String(), contextLines)
+	default: // go
+		prompt = fmt.Sprintf(`Fix the following Go code that has compilation errors.
+
+ERRORS:
+%s
+
+CODE WITH ERRORS (lines around errors):
+%s
+
+Please return the COMPLETE fixed code. Do not add comments about the fixes.
+Return only the fixed code, no explanations.
+IMPORTANT: Use only basic types (int, string, bool, float64, error), initialize all variables, fix empty array sizes.`, errDesc.String(), contextLines)
+	}
 
 	// Call LLM
 	logFn("  📤 Sending errors to LLM for fix...\n")
@@ -273,16 +310,27 @@ func extractCodeFromResponse(response string) string {
 }
 
 // resolveLLMForFix resolves LLM configuration for auto-fix.
+// Uses the same LLM configuration as the main AI stream service.
 func resolveLLMForFix() (endpoint, apiKey, model string) {
+	// Try environment variables first (for backward compatibility)
 	endpoint = os.Getenv("LLM_ENDPOINT")
 	apiKey = os.Getenv("LLM_API_KEY")
 	model = os.Getenv("LLM_MODEL")
 
-	if endpoint == "" {
-		endpoint = "https://api.openai.com/v1"
-	}
-	if model == "" {
-		model = "gpt-3.5-turbo"
+	// If not configured, try to use the same config as the main AI service
+	// This ensures auto-fix uses the same free model as the main generation
+	if endpoint == "" || apiKey == "" || model == "" {
+		// Default to Command Code API (same as main AI service)
+		if endpoint == "" {
+			endpoint = "https://api.commandcode.ai/provider/v1"
+		}
+		if apiKey == "" {
+			apiKey = os.Getenv("COMMAND_CODE_API_KEY")
+		}
+		if model == "" {
+			// Use the free model for auto-fix
+			model = "poolside/laguna-s-2.1-free"
+		}
 	}
 
 	return
