@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -85,6 +86,7 @@ func (s *AIStreamService) streamWithProvider(ctx context.Context, messages []map
 		defer close(ch)
 		defer resp.Body.Close()
 
+		var accumulated strings.Builder
 		scanner := bufio.NewScanner(resp.Body)
 		for scanner.Scan() {
 			line := scanner.Text()
@@ -106,11 +108,16 @@ func (s *AIStreamService) streamWithProvider(ctx context.Context, messages []map
 			}
 			if err := json.Unmarshal([]byte(data), &parsed); err == nil && len(parsed.Choices) > 0 {
 				if content := parsed.Choices[0].Delta.Content; content != "" {
+					accumulated.WriteString(content)
+					if isLikelyTruncated(accumulated.String()) {
+						log.Printf("[AIStream] ⚠️  possible truncation detected in streamed output (len=%d)", accumulated.Len())
+					}
 					ch <- AIStreamEvent{Type: "delta", Content: content}
 					continue
 				}
 			}
 			// 回退：原始数据
+			accumulated.WriteString(data)
 			ch <- AIStreamEvent{Type: "delta", Content: data}
 		}
 	}()
@@ -204,4 +211,38 @@ func (s *AIStreamService) mockGenerateResponse(messages []map[string]string) str
 	}
 
 	return "# AI Suggestion\n\nI can help you create Magisk/KSU modules. Describe what you want:\n- System property modifications\n- Audio tweaks\n- Display/GPU optimization\n- Boot animation customization\n- Ad blocking hosts file"
+}
+
+// isLikelyTruncated detects obvious truncation patterns in streamed LLM output.
+// These indicate the model's response was cut off mid-generation.
+func isLikelyTruncated(content string) bool {
+	// Trim trailing whitespace/newlines for pattern matching
+	c := strings.TrimRight(content, " \t\r\n")
+
+	// "$" alone or "$ " — a variable reference like $1 was cut to just $
+	if c == "$" || c == "$ " {
+		return true
+	}
+
+	// "case in" — was meant to be 'case "$VAR" in' but got truncated
+	if c == "case in" {
+		return true
+	}
+
+	// Ends with "2>/dev" — was meant to be "2>/dev/null" or "2>&1"
+	if strings.HasSuffix(c, "2>/dev") {
+		return true
+	}
+
+	// Ends with "echo $" — variable expansion cut off
+	if strings.HasSuffix(c, "echo $") {
+		return true
+	}
+
+	// Ends with open parenthesis — e.g., "if (" or "case $VAR (" instead of "case $VAR in"
+	if strings.HasSuffix(c, "(") && strings.Contains(c, "case") {
+		return true
+	}
+
+	return false
 }

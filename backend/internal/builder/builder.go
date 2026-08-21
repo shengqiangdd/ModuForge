@@ -22,12 +22,12 @@ var targetToImage = map[string]string{
 
 // BuildResult holds the full result of a build operation.
 type BuildResult struct {
-	ArtifactPath   string               `json:"artifact_path"`
-	Incremental    *IncrementalResult   `json:"incremental,omitempty"`
-	RecompiledFiles []string             `json:"recompiled_files,omitempty"`
-	CacheHits      int                  `json:"cache_hits"`
-	CacheMisses    int                  `json:"cache_misses"`
-	Arch           string               `json:"arch"`
+	ArtifactPath    string             `json:"artifact_path"`
+	Incremental     *IncrementalResult `json:"incremental,omitempty"`
+	RecompiledFiles []string           `json:"recompiled_files,omitempty"`
+	CacheHits       int                `json:"cache_hits"`
+	CacheMisses     int                `json:"cache_misses"`
+	Arch            string             `json:"arch"`
 }
 
 type Builder struct {
@@ -192,6 +192,13 @@ func (b *Builder) BuildWithResultAndProgress(ctx context.Context, projectDir, ta
 
 	result.ArtifactPath = artifactPath
 	logFn(fmt.Sprintf("  📦 Cache stats: %d hits, %d misses\n", result.CacheHits, result.CacheMisses))
+
+	// Post-build validation: check binary name matches script references
+	emitProgress("validate", "checking build output")
+	validateBuildOutput(projectDir, logFn)
+
+	// Shell syntax validation on module scripts
+	ValidateShellScripts(projectDir, logFn)
 	emitProgress("done", fmt.Sprintf("artifact: %s", artifactPath))
 
 	return result, nil
@@ -316,11 +323,58 @@ func GetSupportedArchitectures() []ArchInfo {
 
 // CompileResult holds compilation statistics.
 type CompileResult struct {
-	Recompiled []string
-	CacheHits  int
+	Recompiled  []string
+	CacheHits   int
 	CacheMisses int
 }
 
 func logCompileSkip(logFn func(string), name, reason string) {
 	logFn(fmt.Sprintf("  ⏭️  %s: %s (using cached binary)\n", name, reason))
+}
+
+// validateBuildOutput checks that compiled binaries and script references are consistent.
+// Returns warnings for mismatches (e.g., script references wrong binary name).
+func validateBuildOutput(moduleDir string, logFn func(string)) []string {
+	var warnings []string
+
+	// Find compiled binary — builder always produces "androsmart"
+	var binaryFound bool
+	filepath.Walk(moduleDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() {
+			return nil
+		}
+		if info.Name() == "androsmart" {
+			binaryFound = true
+		}
+		return nil
+	})
+
+	if !binaryFound {
+		warnings = append(warnings, "⚠️  compiled binary 'androsmart' not found in module directory")
+	}
+
+	// Check scripts reference the correct binary name
+	scripts := []string{"customize.sh", "service.sh", "uninstall.sh"}
+	wrongNames := []string{"perf_tuner", "daemon", "tuner", "my_daemon", "moduforge"}
+	for _, script := range scripts {
+		content, err := os.ReadFile(filepath.Join(moduleDir, script))
+		if err != nil {
+			continue
+		}
+		contentStr := string(content)
+		for _, wrong := range wrongNames {
+			// Only warn if the wrong name appears and androsmart is NOT also referenced
+			if strings.Contains(contentStr, wrong) && !strings.Contains(contentStr, "androsmart") {
+				msg := fmt.Sprintf("⚠️  %s references '%s' but compiled binary is 'androsmart'", script, wrong)
+				warnings = append(warnings, msg)
+			}
+		}
+	}
+
+	if logFn != nil {
+		for _, w := range warnings {
+			logFn("  " + w + "\n")
+		}
+	}
+	return warnings
 }

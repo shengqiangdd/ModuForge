@@ -387,6 +387,11 @@ func IsExcluded(relPath string, excludePatterns []string) bool {
 	if excludePatterns == nil {
 		return false
 	}
+	// config/ directory contains runtime configuration files (*.py, *.md etc.)
+	// that must be included in the module ZIP — never exclude them.
+	if strings.HasPrefix(relPath, "config/") {
+		return false
+	}
 	lower := strings.ToLower(relPath)
 	// Extract base filename for filename-level pattern matching
 	base := strings.ToLower(filepath.Base(relPath))
