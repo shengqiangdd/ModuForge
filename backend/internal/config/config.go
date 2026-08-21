@@ -48,6 +48,26 @@ type Config struct {
 
 func (c *Config) Lock()    { c.mu.Lock() }
 func (c *Config) Unlock()  { c.mu.Unlock() }
+
+// SetLLMConfig applies LLM provider/model/endpoint/key to the in-memory config.
+// Called by database.LoadLLMConfig on startup to restore persisted settings.
+func (c *Config) SetLLMConfig(provider, modelID, endpoint, apiKey string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if provider != "" {
+		c.LLMProvider = provider
+	}
+	if modelID != "" {
+		c.LLMModelID = modelID
+		c.LLMModel = modelID // legacy compat
+	}
+	if endpoint != "" {
+		c.LLMEndpoint = endpoint
+	}
+	if apiKey != "" {
+		c.LLMApiKey = apiKey
+	}
+}
 func (c *Config) RLock()   { c.mu.RLock() }
 func (c *Config) RUnlock() { c.mu.RUnlock() }
 

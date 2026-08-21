@@ -241,3 +241,37 @@ func (db *DB) DeleteCustomProvider(userID, providerID string) error {
 	)
 	return err
 }
+
+
+// LoadLLMConfig loads the persisted LLM config from the database and applies
+// it to the in-memory config struct. This ensures provider/model selections
+// survive server restarts.
+func (db *DB) LoadLLMConfig(cfg interface{ SetLLMConfig(provider, modelID, endpoint, apiKey string) }) error {
+	var provider, modelID, endpoint string
+	err := db.Conn.QueryRow(
+		`SELECT provider, model_id, endpoint FROM llm_config WHERE id='default'`,
+	).Scan(&provider, &modelID, &endpoint)
+	if err != nil {
+		return fmt.Errorf("no llm_config row: %w", err)
+	}
+
+	// If the provider is a custom provider ID (UUID format), resolve the API key
+	var apiKey string
+	if provider != "" && len(provider) > 10 && provider[8] == '-' {
+		// Looks like a UUID — custom provider
+		var ak string
+		err2 := db.Conn.QueryRow(
+			`SELECT COALESCE(api_key,'') FROM custom_providers WHERE id=?`,
+			provider,
+		).Scan(&ak)
+		if err2 == nil {
+			apiKey = ak
+		}
+	}
+
+	cfg.SetLLMConfig(provider, modelID, endpoint, apiKey)
+	slog.Info("Loaded LLM config from database",
+		"provider", provider, "model_id", modelID, "endpoint", endpoint,
+		"has_custom_key", apiKey != "")
+	return nil
+}

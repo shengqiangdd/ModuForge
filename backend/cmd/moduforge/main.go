@@ -103,6 +103,11 @@ func main() {
 	}
 	defer db.Close()
 
+	// Load LLM config from database (persists provider/model across restarts)
+	if err := db.LoadLLMConfig(cfg); err != nil {
+		slog.Warn("Failed to load LLM config from database, using env defaults", "error", err)
+	}
+
 	// Seed data
 	if err := db.SeedAdminUser(); err != nil {
 		slog.Warn("Seed admin user failed", "error", err)
