@@ -160,6 +160,7 @@ func (s *AIService) buildLLMRequest(
 	w *bufio.Writer,
 	history []Message,
 	safeSSE func(data map[string]interface{}),
+	responseFormat string, // optional: "json_object" to force JSON output
 ) (endpoint, apiKey, model string, resp *llmResponse, err error) {
 	endpoint, apiKey, model, providerID := s.resolveLLMConfig(userID)
 
@@ -185,6 +186,11 @@ func (s *AIService) buildLLMRequest(
 		"model":    model,
 		"messages": msgList,
 		"stream":   true,
+	}
+
+	// Add optional response_format for JSON-forced outputs
+	if responseFormat != "" {
+		body["response_format"] = map[string]string{"type": responseFormat}
 	}
 
 	return endpoint, apiKey, model, &llmResponse{body: body}, nil
@@ -301,7 +307,7 @@ module.prop, customize.sh, META-INF/(update-binary + updater-script含#MAGISK)
 {"files":[{"path":"...","content":"..."}]}`, description)
 	}
 
-	endpoint, apiKey, _, resp, err := s.buildLLMRequest(ctx, systemPrompt, userPrompt, userID, sessionID, w, messages, func(data map[string]interface{}) { /* noop */ })
+	endpoint, apiKey, _, resp, err := s.buildLLMRequest(ctx, systemPrompt, userPrompt, userID, sessionID, w, messages, func(data map[string]interface{}) { /* noop */ }, "json_object")
 
 	if err != nil {
 		return err
@@ -437,24 +443,72 @@ module.prop, customize.sh, META-INF/(update-binary + updater-script含#MAGISK)
 }
 
 // extractJSONBlock extracts a JSON object from LLM output that may contain
-// markdown fences or surrounding text.
+// markdown fences, tool call artifacts, or surrounding text.
+// Handles: raw JSON, ```json blocks, ``` blocks, tool_call payloads, and
+// hybrid text+code outputs.
 func extractJSONBlock(s string) string {
-	// Try to find JSON block in markdown code fence
+	// 1. Try markdown code fence with json label
 	re := reJSONBlock
 	if re == nil {
 		re = regexp.MustCompile("(?s)```(?:json)?\\s*\\n?(\\{.*?\\})\\s*\\n?```")
 		reJSONBlock = re
 	}
 	if m := re.FindStringSubmatch(s); len(m) > 1 {
+		if isValidFilesJSON(m[1]) {
+			return m[1]
+		}
+	}
+
+	// 2. Try to find the largest valid {"files":[...]} block
+	best := ""
+	for i := strings.Index(s, `{"files"`); i >= 0; i = strings.Index(s[i+1:], `{"files"`) + i + 1 {
+		end := strings.LastIndex(s[i:], "}")
+		if end > 0 {
+			candidate := s[i : i+end+1]
+			if isValidFilesJSON(candidate) && len(candidate) > len(best) {
+				best = candidate
+			}
+		}
+	}
+	if best != "" {
+		return best
+	}
+
+	// 3. Try markdown fence with any content
+	re2 := regexp.MustCompile("(?s)```[a-z]*\\s*\\n?(\\{.*?\\})\\s*\\n?```")
+	if m := re2.FindStringSubmatch(s); len(m) > 1 {
 		return m[1]
 	}
-	// Try to find raw JSON object
+
+	// 4. Fallback: raw JSON object
 	start := strings.Index(s, "{")
 	end := strings.LastIndex(s, "}")
 	if start >= 0 && end > start {
-		return s[start : end+1]
+		candidate := s[start : end+1]
+		if isValidFilesJSON(candidate) {
+			return candidate
+		}
+		return candidate
 	}
 	return s
+}
+
+// isValidFilesJSON checks if a JSON string contains a valid "files" array.
+func isValidFilesJSON(s string) bool {
+	var v struct {
+		Files []struct {
+			Path    string `json:"path"`
+			Content string `json:"content"`
+		} `json:"files"`
+	}
+	if err := json.Unmarshal([]byte(s), &v); err == nil && len(v.Files) > 0 {
+		for _, f := range v.Files {
+			if f.Path != "" && f.Content != "" {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 var reJSONBlock *regexp.Regexp
