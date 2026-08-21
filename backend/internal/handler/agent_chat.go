@@ -3,6 +3,7 @@ package handler
 import (
 	"bufio"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"log"
 	"log/slog"
@@ -104,17 +105,17 @@ func (h *AgentHandler) Run(c fiber.Ctx) error {
 		// Not a preset provider — try custom_providers table first, then fall back to global config
 		runCfg.ProviderID = req.ProviderID
 		if h.db != nil {
-			var cpEndpoint, cpKey, cpModel string
+			var cpEndpoint, cpKey, cpModel, cpModelsJSON string
 			// Try by name first, then by UUID id
 			err := h.db.Conn.QueryRow(
-				"SELECT endpoint, api_key, COALESCE(model_id,'') FROM custom_providers WHERE name=? AND user_id=?",
+				"SELECT endpoint, api_key, COALESCE(model_id,''), COALESCE(models_json,'') FROM custom_providers WHERE name=? AND user_id=?",
 				req.ProviderID, uid,
-			).Scan(&cpEndpoint, &cpKey, &cpModel)
+			).Scan(&cpEndpoint, &cpKey, &cpModel, &cpModelsJSON)
 			if err != nil {
 				err = h.db.Conn.QueryRow(
-					"SELECT endpoint, api_key, COALESCE(model_id,'') FROM custom_providers WHERE id=? AND user_id=?",
+					"SELECT endpoint, api_key, COALESCE(model_id,''), COALESCE(models_json,'') FROM custom_providers WHERE id=? AND user_id=?",
 					req.ProviderID, uid,
-				).Scan(&cpEndpoint, &cpKey, &cpModel)
+				).Scan(&cpEndpoint, &cpKey, &cpModel, &cpModelsJSON)
 			}
 			if err == nil && cpEndpoint != "" {
 				runCfg.LLMEndpoint = cpEndpoint
@@ -129,8 +130,26 @@ func (h *AgentHandler) Run(c fiber.Ctx) error {
 						runCfg.LLMApiKey = string(decoded)
 					}
 				}
-				log.Printf("[Agent] resolved custom provider=%s endpoint=%s model=%s key_len=%d",
-					req.ProviderID, runCfg.LLMEndpoint, runCfg.LLMModel, len(runCfg.LLMApiKey))
+				// Parse models_json to get max_tokens for this model
+				if cpModelsJSON != "" && runCfg.LLMModel != "" {
+					var models []struct {
+						ID        string `json:"id"`
+						Name      string `json:"name"`
+						MaxTokens int    `json:"max_tokens"`
+					}
+					if err := json.Unmarshal([]byte(cpModelsJSON), &models); err == nil {
+						for _, m := range models {
+							if m.ID == runCfg.LLMModel || m.Name == runCfg.LLMModel {
+								if m.MaxTokens > 0 {
+									runCfg.MaxOutputTokens = m.MaxTokens
+								}
+								break
+							}
+						}
+					}
+				}
+				log.Printf("[Agent] resolved custom provider=%s endpoint=%s model=%s max_tokens=%d key_len=%d",
+					req.ProviderID, runCfg.LLMEndpoint, runCfg.LLMModel, runCfg.MaxOutputTokens, len(runCfg.LLMApiKey))
 			} else {
 				// Fallback: first try loading from llm_config DB, then in-memory config
 				resolved := false

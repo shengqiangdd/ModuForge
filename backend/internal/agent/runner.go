@@ -284,9 +284,9 @@ func (r *AgentRunner) Run(ctx context.Context, task string, userID string, messa
 				reqProviderID, cfg.resolvedEndpoint, cfg.resolvedModel, len(cfg.resolvedAPIKey))
 		}
 	}
-	cfg.modelTier = resolveModelTier(resolvedModel)
+	cfg.modelTier = resolveModelTierWithMaxTokens(resolvedModel, cfg.MaxOutputTokens)
 	modelTier := cfg.modelTier
-	compactionThreshold := compactionThresholdForTier(modelTier)
+	compactionThreshold := compactionThresholdForTier(modelTier, cfg.MaxOutputTokens)
 	if cfg.MaxResultLen == defaultMaxResultLen {
 		cfg.MaxResultLen = maxResultLenForTier(modelTier)
 	}

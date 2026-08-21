@@ -149,6 +149,23 @@ const (
 // modelTierCache caches tier resolution results (model names don't change at runtime).
 var modelTierCache sync.Map
 
+// resolveModelTierWithMaxTokens determines tier based on actual max_tokens when available,
+// falling back to name-based pattern matching.
+func resolveModelTierWithMaxTokens(modelName string, maxTokens int) ModelTier {
+	// If maxTokens is provided, use it to determine tier
+	if maxTokens > 0 {
+		if maxTokens >= 100000 {
+			return TierStrong
+		} else if maxTokens >= 32000 {
+			return TierMid
+		} else {
+			return TierFree
+		}
+	}
+	// Fallback to name-based resolution
+	return resolveModelTier(modelName)
+}
+
 func resolveModelTier(modelName string) ModelTier {
 	// Fast path: cached
 	if cached, ok := modelTierCache.Load(modelName); ok {
@@ -179,9 +196,21 @@ func resolveModelTier(modelName string) ModelTier {
 }
 
 // compactionThresholdForTier returns the context compaction threshold for a model tier.
+// When maxTokens is provided (from provider config), use it to calculate a dynamic threshold.
 // For free models with 16K context, we must be much more aggressive to leave room for
 // system prompt (~800) + tool definitions (~1840) + output (~4096) = ~6700 tokens overhead.
-func compactionThresholdForTier(tier ModelTier) int {
+func compactionThresholdForTier(tier ModelTier, maxTokens ...int) int {
+	// If maxTokens is provided, calculate threshold dynamically
+	if len(maxTokens) > 0 && maxTokens[0] > 0 {
+		// Reserve 20% for overhead (system prompt + tools + output)
+		threshold := maxTokens[0] * 80 / 100
+		// Minimum threshold to avoid too aggressive compaction
+		if threshold < 4096 {
+			threshold = 4096
+		}
+		return threshold
+	}
+	// Fallback to tier-based defaults
 	switch tier {
 	case TierFree:
 		return 8000 // very aggressive: 16K context - 6700 overhead = ~9K for conversation

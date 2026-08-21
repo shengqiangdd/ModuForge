@@ -256,7 +256,7 @@ func (r *AgentRunner) callLLMWithTools(ctx context.Context, messages []map[strin
 	modelTier := cfg.modelTier
 	if endpoint == "" {
 		endpoint, apiKey, model = r.resolveLLMConfig(userID, reqProviderID, reqModel, cfg)
-		modelTier = resolveModelTier(model)
+		modelTier = resolveModelTierWithMaxTokens(model, cfg.MaxOutputTokens)
 	}
 	if !strings.HasSuffix(endpoint, "/chat/completions") {
 		endpoint = endpoint + "/chat/completions"
@@ -372,20 +372,32 @@ func buildLLMRequestBody(messages []map[string]interface{}, tools []ToolDef, cfg
 	if maxTokens <= 0 {
 		maxTokens = resolveModelMaxTokens(model)
 	}
-	if maxTokens > 0 && approxContextTokens > 0 {
-		contextLimit := 16000
+	// Adaptive contextLimit: use model's actual max_tokens as the context window,
+	// not hardcoded tier limits. This allows models like laguna-s-2.1-free (256K)
+	// to use their full capability.
+	contextLimit := maxTokens
+	if contextLimit <= 0 {
+		// Fallback to tier-based limits only when no max_tokens is configured
+		contextLimit = 16000
 		if modelTier == TierMid {
 			contextLimit = 32000
 		} else if modelTier == TierStrong {
 			contextLimit = 128000
 		}
-		remaining := contextLimit - approxContextTokens - 1000
+	}
+	// Reserve space for system prompt + tools + output
+	reservedTokens := 8000
+	if modelTier == TierStrong {
+		reservedTokens = 4000
+	}
+	if maxTokens > 0 && approxContextTokens > 0 {
+		remaining := contextLimit - approxContextTokens - reservedTokens
 		if remaining < maxTokens {
 			maxTokens = remaining
 			if maxTokens < 1024 {
 				maxTokens = 1024
 			}
-			log.Printf("[Agent] adaptive max_tokens: context=%d, reduced max_tokens to %d", approxContextTokens, maxTokens)
+			log.Printf("[Agent] adaptive max_tokens: context=%d/%d, reduced max_tokens to %d (reserved=%d)", approxContextTokens, contextLimit, maxTokens, reservedTokens)
 		}
 	}
 	if maxTokens > 0 {
