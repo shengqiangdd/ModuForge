@@ -185,8 +185,9 @@ IMPORTANT: Use only basic types (int, string, bool, float64, error), initialize 
 	// Call LLM
 	logFn("  📤 Sending errors to LLM for fix...\n")
 
-	endpoint, apiKey, model := resolveLLMForFix()
+	endpoint, apiKey, model := b.resolveLLMForFix()
 	if endpoint == "" || apiKey == "" {
+		logFn(fmt.Sprintf("  ⚠️  No LLM configured for auto-fix (endpoint=%s, key=%s)\n", endpoint, maskKey(apiKey)))
 		return "", fmt.Errorf("no LLM configured for auto-fix")
 	}
 
@@ -311,27 +312,47 @@ func extractCodeFromResponse(response string) string {
 
 // resolveLLMForFix resolves LLM configuration for auto-fix.
 // Uses the same LLM configuration as the main AI stream service.
-func resolveLLMForFix() (endpoint, apiKey, model string) {
-	// Try environment variables first (for backward compatibility)
-	endpoint = os.Getenv("LLM_ENDPOINT")
-	apiKey = os.Getenv("LLM_API_KEY")
-	model = os.Getenv("LLM_MODEL")
-
-	// If not configured, try to use the same config as the main AI service
-	// This ensures auto-fix uses the same free model as the main generation
-	if endpoint == "" || apiKey == "" || model == "" {
-		// Default to Command Code API (same as main AI service)
-		if endpoint == "" {
-			endpoint = "https://api.commandcode.ai/provider/v1"
+func (b *Builder) resolveLLMForFix() (endpoint, apiKey, model string) {
+	// Priority 1: Use Config's effective settings (database-configured providers)
+	if b.cfg != nil {
+		// Get the active provider's endpoint and key
+		if b.cfg.LLMEndpoint != "" {
+			endpoint = b.cfg.LLMEndpoint
 		}
-		if apiKey == "" {
-			apiKey = os.Getenv("COMMAND_CODE_API_KEY")
+		if key := b.cfg.EffectiveLLMKey(); key != "" {
+			apiKey = key
 		}
-		if model == "" {
-			// Use the free model for auto-fix
-			model = "poolside/laguna-s-2.1-free"
+		if b.cfg.LLMModel != "" {
+			model = b.cfg.LLMModel
 		}
 	}
 
+	// Priority 2: Fall back to environment variables
+	if endpoint == "" {
+		endpoint = os.Getenv("LLM_ENDPOINT")
+	}
+	if apiKey == "" {
+		apiKey = os.Getenv("LLM_API_KEY")
+	}
+	if model == "" {
+		model = os.Getenv("LLM_MODEL")
+	}
+
+	// Priority 3: Defaults
+	if endpoint == "" {
+		endpoint = "https://api.commandcode.ai/provider/v1"
+	}
+	if model == "" {
+		model = "poolside/laguna-s-2.1-free"
+	}
+
 	return
+}
+
+// maskKey masks API key for logging.
+func maskKey(key string) string {
+	if len(key) <= 8 {
+		return "****"
+	}
+	return key[:4] + "****" + key[len(key)-4:]
 }
