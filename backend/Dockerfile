@@ -38,6 +38,13 @@ LABEL org.opencontainers.image.source="https://github.com/moduforge/ModuForge"
 RUN apk add --no-cache wget ca-certificates tzdata openssl curl bash xz zip unzip cmake make gcompat gcc musl-dev android-tools \
     && addgroup -S moduforge && adduser -S moduforge -G moduforge -u 1000
 
+# --- Go toolchain (for cross-compiling Go source to Android binaries) ---
+ENV GOPATH=/usr/local/go PATH=$PATH:/usr/local/go/bin
+RUN wget -q https://go.dev/dl/go1.24.5.linux-amd64.tar.gz -O /tmp/go.tar.gz \
+    && tar -C /usr/local -xzf /tmp/go.tar.gz \
+    && rm /tmp/go.tar.gz \
+    && /usr/local/go/bin/go version
+
 # --- Rust toolchain ---
 ENV CARGO_HOME=/usr/local/cargo RUSTUP_HOME=/usr/local/rustup
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
