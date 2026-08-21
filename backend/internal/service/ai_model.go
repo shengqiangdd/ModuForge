@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -381,7 +382,9 @@ module.prop, customize.sh, META-INF/(update-binary + updater-script含#MAGISK)
 
 	// --- Phase 2: Parse JSON response and extract files ---
 	content := fullContent.String()
+	log.Printf("[AutoBuild] Raw LLM output length: %d, first 200: %s", len(content), truncateStr(content, 200))
 	content = extractJSONBlock(content)
+	log.Printf("[AutoBuild] After extractJSONBlock length: %d, first 200: %s", len(content), truncateStr(content, 200))
 
 	var result struct {
 		Files   []struct {
@@ -391,6 +394,7 @@ module.prop, customize.sh, META-INF/(update-binary + updater-script含#MAGISK)
 		Changes string `json:"changes"`
 	}
 	if err := json.Unmarshal([]byte(content), &result); err != nil || len(result.Files) == 0 {
+		log.Printf("[AutoBuild] JSON parse failed: err=%v, files=%d, content_len=%d", err, len(result.Files), len(content))
 		safeSSE(map[string]interface{}{"type": "phase", "phase": "error", "message": "AI 输出格式无法解析，请重试"})
 		return nil
 	}
@@ -519,6 +523,14 @@ func isValidFilesJSON(s string) bool {
 }
 
 var reJSONBlock *regexp.Regexp
+
+// truncateStr truncates a string to maxLen characters for logging.
+func truncateStr(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
+}
 
 // streamBuildLog streams build log output via SSE events.
 func (s *AIService) streamBuildLog(ctx context.Context, buildID string, w *bufio.Writer, mu *sync.Mutex) {
