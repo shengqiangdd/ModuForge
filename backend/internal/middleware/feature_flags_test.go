@@ -73,20 +73,20 @@ func TestFeatureFlagMiddleware_CollaborationRoute(t *testing.T) {
 	}
 }
 
-func TestFeatureFlagMiddleware_BadgesRoute(t *testing.T) {
+func TestFeatureFlagMiddleware_FavoritesRoute(t *testing.T) {
 	app := fiber.New()
 	checker := NewFeatureFlagChecker(func(key string) bool {
-		return key != "badges"
+		return key != "favorites"
 	})
 	app.Use(checker.Middleware())
-	app.Get("/api/v1/badges/list", func(c fiber.Ctx) error {
+	app.Get("/api/v1/favorites", func(c fiber.Ctx) error {
 		return c.SendString("ok")
 	})
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/badges/list", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/favorites", nil)
 	resp, _ := app.Test(req)
 	if resp.StatusCode != 501 {
-		t.Errorf("expected 501 for disabled badges, got %d", resp.StatusCode)
+		t.Errorf("expected 501 for disabled favorites, got %d", resp.StatusCode)
 	}
 }
 

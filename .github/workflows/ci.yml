@@ -46,14 +46,13 @@ jobs:
           go install honnef.co/go/tools/cmd/staticcheck@latest
           staticcheck ./...
 
-      # Tests have pre-existing failures since feat(agent): smart max_tokens
       - name: Test (with race detector)
         working-directory: backend
-        run: go test -v -race -count=1 ./internal/... || echo "::warning::Go tests found issues (pre-existing, not blocking CI)"
+        run: go test -v -race -count=1 ./internal/...
 
       - name: Benchmark validation
         working-directory: backend
-        run: go test -C internal/service -bench=. -list=".*" -timeout 30s || echo "::warning::Benchmark validation found issues (advisory)"
+        run: go test -C internal/service -bench=. -list=".*" -timeout 30s
 
       - name: Build
         working-directory: backend
