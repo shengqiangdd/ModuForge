@@ -77,7 +77,7 @@
     activities.filter(a => !filterType || a.type === filterType)
   );
 
-  const stats = $derived(() => {
+  const stats = $derived.by(() => {
     const s = { build: 0, deploy: 0, collab: 0, security: 0 };
     for (const a of activities) {
       if (a.type in s) s[a.type as keyof typeof s]++;
@@ -118,7 +118,7 @@
     {#each [{ key: 'build', label: '构建', icon: 'build' }, { key: 'deploy', label: '部署', icon: 'rocket_launch' }, { key: 'collab', label: '协作', icon: 'group' }, { key: 'security', label: '安全', icon: 'shield' }] as s}
       <div class="card p-3 text-center">
         <span class="material-symbols-outlined text-[20px]" style="color: {typeColor(s.key)}">{s.icon}</span>
-        <p class="text-lg font-bold text-[var(--color-text)]">{stats()[s.key as keyof typeof stats()]}</p>
+        <p class="text-lg font-bold text-[var(--color-text)]">{stats[s.key as keyof typeof stats()]}</p>
         <p class="text-xs" style="color: var(--color-text-muted)">{s.label}</p>
       </div>
     {/each}

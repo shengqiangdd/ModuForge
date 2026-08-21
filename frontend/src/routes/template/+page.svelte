@@ -145,7 +145,7 @@
 
   {#if showModal}
     <div class="overlay" onclick={() => showModal = false}>
-      <div class="modal" onclick|stopPropagation>
+      <div class="modal" onclick:stopPropagation>
         <h2>{editing ? '编辑模板' : '新建模板'}</h2>
         <label>
           名称
