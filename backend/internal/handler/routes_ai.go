@@ -10,7 +10,7 @@ func registerAIRoutes(ctx *routeContext) {
 	fileRepo := ctx.fileRepo
 
 	aiSvc := service.NewAIServiceWithDB(cfg, db.Conn)
-	aiStreamSvc := service.NewAIStreamService()
+	aiStreamSvc := service.NewAIStreamServiceWithConfig(cfg)
 
 	aiH := NewAIHandler(aiSvc, cfg, db)
 	aiH.SetMemoryStore(service.NewMemoryStore(db.Conn))

@@ -158,6 +158,7 @@ func (h *AIHandler) UpdateLLMConfig(c fiber.Ctx) error {
 
 	uid, _ := c.Locals("uid").(string)
 	provider := llm.FindProvider(req.Provider)
+	var customAPIKey string // track custom provider's API key separately
 
 	// If not found in presets, check custom providers
 	if provider == nil && uid != "" && h.db != nil {
@@ -167,6 +168,7 @@ func (h *AIHandler) UpdateLLMConfig(c fiber.Ctx) error {
 			if cp.ModelsJSON != "" {
 				_ = json.Unmarshal([]byte(cp.ModelsJSON), &models)
 			}
+			customAPIKey = cp.APIKey
 			provider = &llm.Provider{
 				Name:        cp.Name,
 				ID:          cp.ID,
@@ -207,7 +209,12 @@ func (h *AIHandler) UpdateLLMConfig(c fiber.Ctx) error {
 	// Also update legacy fields for backward compatibility
 	h.cfg.LLMEndpoint = provider.Endpoint
 	h.cfg.LLMModel = req.ModelID
-	h.cfg.LLMApiKey = h.cfg.EffectiveLLMKey()
+	// Use custom provider's API key directly; EffectiveLLMKey() only knows built-in providers
+	if customAPIKey != "" {
+		h.cfg.LLMApiKey = customAPIKey
+	} else {
+		h.cfg.LLMApiKey = h.cfg.EffectiveLLMKey()
+	}
 	h.cfg.Unlock()
 
 	// Persist to database so selection survives server restarts
