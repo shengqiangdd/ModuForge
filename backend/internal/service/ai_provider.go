@@ -91,39 +91,6 @@ func historyForLLM(history []Message, userPrompt string, budgetChars int) []Mess
 	return keep
 }
 
-// queryProviderConfigs returns all provider configurations for a user.
-func (s *AIService) queryProviderConfigs(userID string) ([]map[string]string, error) {
-	if s.db == nil || userID == "" {
-		return nil, nil
-	}
-	rows, err := s.db.Query(
-		`SELECT id, endpoint, COALESCE(api_key,'') FROM provider_configs WHERE user_id=?`,
-		userID,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var configs []map[string]string
-	for rows.Next() {
-		var id, endpoint, apiKey string
-		if err := rows.Scan(&id, &endpoint, &apiKey); err != nil {
-			continue
-		}
-		if apiKey != "" {
-			if b, err := base64.StdEncoding.DecodeString(apiKey); err == nil {
-				apiKey = string(b)
-			}
-		}
-		configs = append(configs, map[string]string{
-			"id":       id,
-			"endpoint": endpoint,
-			"api_key":  apiKey,
-		})
-	}
-	return configs, nil
-}
 
 // saveProviderConfig upserts a provider configuration for a user.
 func (s *AIService) saveProviderConfig(userID, providerID, endpoint, apiKey string) error {

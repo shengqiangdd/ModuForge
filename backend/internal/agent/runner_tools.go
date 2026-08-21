@@ -427,16 +427,7 @@ func (r *AgentRunner) autoTriggerBuildIfNeeded(
 	}
 }
 
-// handleBuildModuleError processes build_module failures and optionally
-// triggers the build healer to inject error context for the LLM.
-func (r *AgentRunner) handleBuildModuleError(
-	ctx context.Context,
-	w SSEWriter,
-	sessionID string,
-	cfg RunConfig,
-	result string,
-	err error,
-	conversation []map[string]interface{},
+,
 ) []map[string]interface{} {
 	projectPath := ""
 	if cfg.ProjectID != "" && r.db != nil {

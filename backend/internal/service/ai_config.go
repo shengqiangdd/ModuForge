@@ -53,48 +53,10 @@ func (s *AIService) SetS3(adapter *storage.S3Adapter) {
 
 // ─── Project File Persistence ───
 
-// saveProjectFile persists a generated file: S3 (authoritative) + DB metadata.
-// When S3 is not configured, falls back to the legacy DB content column.
-func (s *AIService) saveProjectFile(ctx context.Context, projectID, path, content string) error {
-	if s.db == nil {
-		return nil
-	}
-	now := time.Now().UTC().Format(time.RFC3339)
-	sha := storage.ComputeSHA256([]byte(content))
-	size := int64(len(content))
-
-	if s.s3 != nil {
-		key := projectID + "/" + strings.TrimPrefix(path, "/")
-		if err := s.s3.Write(ctx, key, []byte(content)); err != nil {
-			return fmt.Errorf("s3 write failed: %w", err)
-		}
-		_, err := s.db.ExecContext(ctx,
-			`INSERT INTO project_files (project_id, path, content, created_at, updated_at, sha256, file_size, mtime)
-			 VALUES (?, ?, NULL, datetime('now'), datetime('now'), ?, ?, ?)
-			 ON CONFLICT(project_id, path) DO UPDATE SET content=NULL, updated_at=datetime('now'), sha256=?, file_size=?, mtime=?`,
-			projectID, path, sha, size, now, sha, size, now)
-		if err != nil {
-			return fmt.Errorf("save file metadata: %w", err)
-		}
-		return nil
-	}
-
-	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO project_files (project_id, path, content, created_at, updated_at, sha256, file_size, mtime)
-		 VALUES (?, ?, ?, datetime('now'), datetime('now'), ?, ?, ?)
-		 ON CONFLICT(project_id, path) DO UPDATE SET content=?, updated_at=datetime('now'), sha256=?, file_size=?, mtime=?`,
-		projectID, path, content, sha, size, now, content, sha, size, now)
-	if err != nil {
-		return fmt.Errorf("save file: %w", err)
-	}
-	return nil
 }
 
 // ─── Utility Functions ───
 
-func generateID() string {
-	return fmt.Sprintf("%d-%d", time.Now().UnixNano(), time.Now().UnixNano()%10000)
-}
 
 // ensureChatCompletionsURL ensures the endpoint ends with /chat/completions.
 func ensureChatCompletionsURL(endpoint string) string {

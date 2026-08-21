@@ -335,7 +335,7 @@ func (r *AgentRunner) executeSkill(ctx context.Context, name string, input map[s
 				return "", aerr
 			}
 			if !approved {
-				return "", errors.New(fmt.Sprintf("用户拒绝了 MCP 工具 %s 的调用", name))
+				return "", fmt.Errorf("用户拒绝了 MCP 工具 %s 的调用", name)
 			}
 		}
 	}

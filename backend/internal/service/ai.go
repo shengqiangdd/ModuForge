@@ -196,12 +196,7 @@ func (s *AIService) sendSSE(w *bufio.Writer, data map[string]interface{}) error 
 	return w.Flush()
 }
 
-// extractJSON 从文本中提取JSON
-func extractJSON(text string) string {
-	start := strings.Index(text, "{")
-	if start == -1 {
-		return ""
-	}
+
 	end := strings.LastIndex(text, "}")
 	if end == -1 || end <= start {
 		return ""
@@ -211,27 +206,7 @@ func extractJSON(text string) string {
 
 // ─── Language Detection ───
 
-// detectLanguage 根据文件扩展名检测项目语言
-func detectLanguage(files []struct {
-	Path    string `json:"path"`
-	Content string `json:"content"`
-}) string {
-	goCount := 0
-	rustCount := 0
-	cCount := 0
-	cppCount := 0
 
-	for _, f := range files {
-		switch {
-		case strings.HasSuffix(f.Path, ".go"):
-			goCount++
-		case strings.HasSuffix(f.Path, ".rs"):
-			rustCount++
-		case strings.HasSuffix(f.Path, ".c"):
-			cCount++
-		case strings.HasSuffix(f.Path, ".cpp"):
-			cppCount++
-		}
 	}
 
 	// 优先级：Go > Rust > C++ > C
@@ -251,7 +226,4 @@ func detectLanguage(files []struct {
 	return ""
 }
 
-func dirExists(path string) bool {
-	info, err := os.Stat(path)
-	return err == nil && info.IsDir()
-}
+
