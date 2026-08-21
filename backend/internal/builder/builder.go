@@ -142,22 +142,22 @@ func (b *Builder) BuildWithResultAndProgress(ctx context.Context, projectDir, ta
 				// Multi-pass auto-fix with LLM (up to 3 attempts)
 				for attempt := 1; attempt <= 3; attempt++ {
 					logFn(fmt.Sprintf("\n🤖 Auto-fix attempt %d/3: Attempting LLM-based code repair...\n", attempt))
-					if b.AutoFixCompileErrors(ctx, projectDir, err, logFn) {
+					if b.AutoFixCompileErrorsV2(ctx, projectDir, err, logFn) {
 						// Retry compilation after auto-fix
 						PostProcessSourceFiles(projectDir, goFiles, "go", logFn)
 						goResult, err = b.CompileGoFilesArchWithProgress(ctx, projectDir, arch, incr, logFn, goProgress)
 						if err == nil {
-							logFn(fmt.Sprintf("✅ Go compilation succeeded after auto-fix attempt %d!\n", attempt))
+							logFn(fmt.Sprintf("✅ Go compilation succeeded after auto-fix v2 attempt %d!\n", attempt))
 							break
 						}
 						logFn(fmt.Sprintf("  ⚠️  Auto-fix attempt %d failed, trying again...\n", attempt))
 					} else {
-						logFn("  ⚠️  Auto-fix could not parse errors\n")
+						logFn("  ⚠️  Auto-fix v2 could not parse/fix errors\n")
 						break
 					}
 				}
 				if err != nil {
-					return nil, fmt.Errorf("go compilation failed after 3 auto-fix attempts: %w", err)
+					return nil, fmt.Errorf("go compilation failed after 3 auto-fix v2 attempts: %w", err)
 				}
 			} else {
 				logFn("✅ Go compilation succeeded after enhanced post-processing!\n")
@@ -223,22 +223,22 @@ func (b *Builder) BuildWithResultAndProgress(ctx context.Context, projectDir, ta
 			// Multi-pass auto-fix with LLM (up to 3 attempts)
 			for attempt := 1; attempt <= 3; attempt++ {
 				logFn(fmt.Sprintf("\n🤖 Auto-fix attempt %d/3: Attempting LLM-based C code repair...\n", attempt))
-				if b.AutoFixCompileErrors(ctx, projectDir, err, logFn) {
+				if b.AutoFixCompileErrorsV2(ctx, projectDir, err, logFn) {
 					// Retry compilation after auto-fix
 					PostProcessSourceFiles(projectDir, cFiles, "c", logFn)
 					cResult, err = b.CompileCFilesArch(ctx, projectDir, arch, incr, logFn)
 					if err == nil {
-						logFn(fmt.Sprintf("✅ C/C++ compilation succeeded after auto-fix attempt %d!\n", attempt))
+						logFn(fmt.Sprintf("✅ C/C++ compilation succeeded after auto-fix v2 attempt %d!\n", attempt))
 						break
 					}
 					logFn(fmt.Sprintf("  ⚠️  Auto-fix attempt %d failed, trying again...\n", attempt))
 				} else {
-					logFn("  ⚠️  Auto-fix could not parse errors\n")
+					logFn("  ⚠️  Auto-fix v2 could not parse/fix errors\n")
 					break
 				}
 			}
 			if err != nil {
-				return nil, fmt.Errorf("C/C++ compilation failed after 3 auto-fix attempts: %w", err)
+				return nil, fmt.Errorf("C/C++ compilation failed after 3 auto-fix v2 attempts: %w", err)
 			}
 		}
 		result.RecompiledFiles = append(result.RecompiledFiles, cResult.Recompiled...)
