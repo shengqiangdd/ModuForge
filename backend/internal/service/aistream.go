@@ -145,10 +145,16 @@ func (s *AIStreamService) streamWithProvider(ctx context.Context, messages []map
 					ch <- AIStreamEvent{Type: "delta", Content: content}
 					continue
 				}
+				// Skip chunks with empty content (role-only or stop chunks)
+				continue
 			}
-			// 回退：原始数据
-			accumulated.WriteString(data)
-			ch <- AIStreamEvent{Type: "delta", Content: data}
+			// If data looks like a JSON error, emit as error event
+			if strings.Contains(data, `"error"`) {
+				ch <- AIStreamEvent{Type: "error", Content: data}
+				continue
+			}
+			// Skip non-content chunks (usage summaries, etc.)
+			continue
 		}
 	}()
 
