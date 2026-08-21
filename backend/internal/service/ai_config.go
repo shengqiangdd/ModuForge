@@ -51,10 +51,6 @@ func (s *AIService) SetS3(adapter *storage.S3Adapter) {
 	s.s3 = adapter
 }
 
-// ─── Project File Persistence ───
-
-}
-
 // ─── Utility Functions ───
 
 
