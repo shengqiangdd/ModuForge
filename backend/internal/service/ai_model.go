@@ -401,7 +401,7 @@ module.prop, customize.sh, META-INF/(update-binary + updater-script含#MAGISK)
 
 	safeSSE(map[string]interface{}{"type": "phase", "phase": "saving", "message": fmt.Sprintf("保存 %d 个文件...", len(result.Files))})
 
-	// --- Phase 3: Save files to project ---
+	// --- Phase 3: Save files to project (disk + DB) ---
 	projectDir := filepath.Join(s.cfg.StoragePath, "projects", projectID)
 	os.MkdirAll(projectDir, 0755)
 
@@ -409,12 +409,17 @@ module.prop, customize.sh, META-INF/(update-binary + updater-script含#MAGISK)
 		if f.Path == "" || f.Content == "" {
 			continue
 		}
+		// Save to disk
 		absPath := filepath.Join(projectDir, f.Path)
 		os.MkdirAll(filepath.Dir(absPath), 0755)
 		if err := os.WriteFile(absPath, []byte(f.Content), 0644); err != nil {
 			safeSSE(map[string]interface{}{"type": "phase", "phase": "error", "message": fmt.Sprintf("保存文件失败: %s", f.Path)})
 			return nil
 		}
+		// Save to DB (project_files table) so BuildService can find them
+		s.db.ExecContext(ctx,
+			`INSERT OR REPLACE INTO project_files (project_id, path, content, updated_at) VALUES (?,?,?,datetime('now'))`,
+			projectID, f.Path, f.Content)
 		safeSSE(map[string]interface{}{"type": "file_saved", "path": f.Path})
 	}
 
