@@ -4,12 +4,16 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"os"
+	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
-
 )
 
 // GenerateModule 用 LLM 生成模块代码
@@ -297,19 +301,190 @@ module.prop, customize.sh, META-INF/(update-binary + updater-script含#MAGISK)
 {"files":[{"path":"...","content":"..."}]}`, description)
 	}
 
-	endpoint, apiKey, model, _, err := s.buildLLMRequest(ctx, systemPrompt, userPrompt, userID, sessionID, w, messages, func(data map[string]interface{}) { /* noop */ })
+	endpoint, apiKey, _, resp, err := s.buildLLMRequest(ctx, systemPrompt, userPrompt, userID, sessionID, w, messages, func(data map[string]interface{}) { /* noop */ })
 
 	if err != nil {
 		return err
 	}
 
-	_ = endpoint // used via buildLLMRequest
-	_ = apiKey
-	_ = model
+	// --- Phase 1: Call LLM and stream response ---
+	bodyBytes, _ := json.Marshal(resp.body)
 
-	// TODO: The rest of AutoBuild logic needs to be refactored to use the new
-	// helper functions. For now, keep the original implementation inline.
-	// This will be completed in a follow-up refactoring pass.
+	chatURL := ensureChatCompletionsURL(endpoint)
+	req, err := http.NewRequestWithContext(ctx, "POST", chatURL, bytes.NewReader(bodyBytes))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+	}
+
+	httpResp, err := httpClient.Do(req)
+	if err != nil {
+		safeSSE(map[string]interface{}{"type": "phase", "phase": "error", "message": err.Error()})
+		return nil
+	}
+	defer httpResp.Body.Close()
+
+	if httpResp.StatusCode >= 400 {
+		bodyBytes, _ := io.ReadAll(httpResp.Body)
+		errMsg := fmt.Sprintf("LLM error (HTTP %d)", httpResp.StatusCode)
+		var errBody struct {
+			Error struct{ Message string `json:"message"` } `json:"error"`
+		}
+		if json.Unmarshal(bodyBytes, &errBody) == nil && errBody.Error.Message != "" {
+			errMsg = errBody.Error.Message
+		}
+		safeSSE(map[string]interface{}{"type": "phase", "phase": "error", "message": errMsg})
+		return nil
+	}
+
+	safeSSE(map[string]interface{}{"type": "phase", "phase": "generating", "message": "AI 正在生成代码..."})
+
+	var fullContent strings.Builder
+	scanner := bufio.NewScanner(httpResp.Body)
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		if !strings.HasPrefix(line, "data: ") {
+			continue
+		}
+		data := strings.TrimPrefix(line, "data: ")
+		if data == "[DONE]" {
+			break
+		}
+		var chunk struct {
+			Choices []struct {
+				Delta struct {
+					Content string `json:"content"`
+				} `json:"delta"`
+			} `json:"choices"`
+		}
+		if json.Unmarshal([]byte(data), &chunk) == nil && len(chunk.Choices) > 0 {
+			text := chunk.Choices[0].Delta.Content
+			if text != "" {
+				fullContent.WriteString(text)
+				safeSSE(map[string]interface{}{"type": "content", "content": text})
+			}
+		}
+	}
+
+	safeSSE(map[string]interface{}{"type": "phase", "phase": "parsing", "message": "解析生成结果..."})
+
+	// --- Phase 2: Parse JSON response and extract files ---
+	content := fullContent.String()
+	content = extractJSONBlock(content)
+
+	var result struct {
+		Files   []struct {
+			Path    string `json:"path"`
+			Content string `json:"content"`
+		} `json:"files"`
+		Changes string `json:"changes"`
+	}
+	if err := json.Unmarshal([]byte(content), &result); err != nil || len(result.Files) == 0 {
+		safeSSE(map[string]interface{}{"type": "phase", "phase": "error", "message": "AI 输出格式无法解析，请重试"})
+		return nil
+	}
+
+	safeSSE(map[string]interface{}{"type": "phase", "phase": "saving", "message": fmt.Sprintf("保存 %d 个文件...", len(result.Files))})
+
+	// --- Phase 3: Save files to project ---
+	projectDir := filepath.Join(s.cfg.StoragePath, "projects", projectID)
+	os.MkdirAll(projectDir, 0755)
+
+	for _, f := range result.Files {
+		if f.Path == "" || f.Content == "" {
+			continue
+		}
+		absPath := filepath.Join(projectDir, f.Path)
+		os.MkdirAll(filepath.Dir(absPath), 0755)
+		if err := os.WriteFile(absPath, []byte(f.Content), 0644); err != nil {
+			safeSSE(map[string]interface{}{"type": "phase", "phase": "error", "message": fmt.Sprintf("保存文件失败: %s", f.Path)})
+			return nil
+		}
+		safeSSE(map[string]interface{}{"type": "file_saved", "path": f.Path})
+	}
+
+	safeSSE(map[string]interface{}{"type": "phase", "phase": "building", "message": "开始编译..."})
+
+	// --- Phase 4: Trigger build ---
+	buildSvc := NewBuildService(s.db, s.cfg)
+	build, _, err := buildSvc.Create(ctx, projectID, "auto")
+	if err != nil {
+		safeSSE(map[string]interface{}{"type": "phase", "phase": "error", "message": fmt.Sprintf("创建构建失败: %v", err)})
+		return nil
+	}
+
+	safeSSE(map[string]interface{}{
+		"type":       "build_started",
+		"build_id":   build.ID,
+		"project_id": projectID,
+	})
+
+	// Stream build output
+	go func() {
+		// Wait for build to start
+		time.Sleep(2 * time.Second)
+		s.streamBuildLog(ctx, build.ID, w, &sseMu)
+	}()
+
+	// Token usage is tracked by the streaming response parser
 
 	return nil
+}
+
+// extractJSONBlock extracts a JSON object from LLM output that may contain
+// markdown fences or surrounding text.
+func extractJSONBlock(s string) string {
+	// Try to find JSON block in markdown code fence
+	re := reJSONBlock
+	if re == nil {
+		re = regexp.MustCompile("(?s)```(?:json)?\\s*\\n?(\\{.*?\\})\\s*\\n?```")
+		reJSONBlock = re
+	}
+	if m := re.FindStringSubmatch(s); len(m) > 1 {
+		return m[1]
+	}
+	// Try to find raw JSON object
+	start := strings.Index(s, "{")
+	end := strings.LastIndex(s, "}")
+	if start >= 0 && end > start {
+		return s[start : end+1]
+	}
+	return s
+}
+
+var reJSONBlock *regexp.Regexp
+
+// streamBuildLog streams build log output via SSE events.
+func (s *AIService) streamBuildLog(ctx context.Context, buildID string, w *bufio.Writer, mu *sync.Mutex) {
+	ticker := time.NewTicker(3 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			var status string
+			err := s.db.QueryRow("SELECT status FROM builds WHERE id = ?", buildID).Scan(&status)
+			if err != nil {
+				return
+			}
+			mu.Lock()
+			s.sendSSE(w, map[string]interface{}{
+				"type":      "build_status",
+				"build_id":  buildID,
+				"status":    status,
+			})
+			mu.Unlock()
+
+			if status == "success" || status == "failed" || status == "error" {
+				return
+			}
+		}
+	}
 }

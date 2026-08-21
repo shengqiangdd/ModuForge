@@ -13,8 +13,6 @@ func registerMarketRoutes(ctx *routeContext) {
 	analyticsSvc := service.NewAnalyticsService(db.Conn)
 	analyticsH := NewAnalyticsHandler(analyticsSvc)
 	tagsH := NewTagsHandler(db.Conn)
-	badgeSvc := service.NewBadgeService(db.Conn)
-	badgeH := NewBadgeHandler(badgeSvc)
 	dashboardH := NewDashboardHandler(db.Conn)
 	healthH := NewHealthHandler(db.Conn)
 	healthH.SetLLMURL(cfg.LLMEndpoint)
@@ -40,10 +38,6 @@ func registerMarketRoutes(ctx *routeContext) {
 	ctx.api.Get("/analytics/module-stats", analyticsH.ModuleStats)
 	ctx.api.Get("/tags", tagsH.List)
 
-	// Badges (public)
-	ctx.api.Get("/badges/definitions", badgeH.Definitions)
-	ctx.api.Get("/badges/user/:id", badgeH.UserBadges)
-
 	// Dashboard
 	ctx.api.Get("/dashboard/widget-types", dashboardH.GetWidgetTypes)
 
@@ -56,7 +50,6 @@ func registerMarketRoutes(ctx *routeContext) {
 	ctx.r("POST", "/market/batch/update", marketH.BatchUpdate)
 	ctx.r("POST", "/market/module/:slug/version", marketH.UpdateModuleVersion)
 	ctx.r("GET", "/market/module/:slug/versions", marketH.GetModuleVersions)
-	ctx.r("GET", "/badges/my", badgeH.MyBadges)
 
 	// ── Admin ──
 	ctx.rAdmin("POST", "/admin/tags", tagsH.Create)

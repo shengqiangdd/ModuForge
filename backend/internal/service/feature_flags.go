@@ -41,7 +41,6 @@ var defaultFlags = []FeatureFlag{
 	// Security scanning
 	{Key: "security_scanning", Description: "安全扫描与漏洞历史", Enabled: true},
 	// Badges & gamification
-	{Key: "badges", Description: "用户徽章与成就系统", Enabled: true},
 	// Module marketplace
 	{Key: "module_marketplace", Description: "模块市场（发布/安装/评论）", Enabled: true},
 	// Template marketplace

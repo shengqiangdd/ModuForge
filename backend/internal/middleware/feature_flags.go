@@ -55,7 +55,7 @@ var routeFeatureMap = []struct {
 	{"/signature", "module_signing"},
 
 	// Badges
-	{"/badges/", "badges"},
+	
 
 	// Marketplace — /market/, /templates/market
 	{"/market/", "module_marketplace"},
