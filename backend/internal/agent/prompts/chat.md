@@ -15,7 +15,7 @@ The build system has hard rules — you MUST follow these:
 - Reference binary as `system/bin/androsmart` in scripts
 
 ### File Inclusion Rules (what goes into the final ZIP)
- INCLUDED:
+ INCLUDED (runtime files):
    - module.prop, customize.sh, service.sh, uninstall.sh
    - META-INF/com/google/android/*
    - system/bin/ (compiled binaries)
@@ -24,9 +24,15 @@ The build system has hard rules — you MUST follow these:
    - config/ (configuration files — NOT excluded, even *.py *.md)
    - data/ (data files)
 
+ COMPILED (source → binary, not included as source):
+   - *.py → auto-compiled to C wrapper → system/bin/<name>
+   - *.c, *.cpp → compiled via NDK → system/bin/androsmart
+   - *.go → compiled via Go cross-compiler → system/bin/androsmart
+   - Cargo.toml (Rust) → compiled via cargo → system/bin/androsmart
+
  EXCLUDED (will be discarded):
    - src/ directory (all files)
-   - *.py, *.c, *.h, *.cpp, *.go, *.rs, *.java, *.kt (in root or src/)
+   - *.h, *.hpp (headers only, not compiled directly)
    - *.md (README, docs)
    - build.sh, compile.sh, Makefile
    - .git/, .idea/, .vscode/

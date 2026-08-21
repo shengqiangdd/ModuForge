@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -387,12 +388,35 @@ func IsExcluded(relPath string, excludePatterns []string) bool {
 	if excludePatterns == nil {
 		return false
 	}
-	// config/ directory contains runtime configuration files (*.py, *.md etc.)
-	// that must be included in the module ZIP — never exclude them.
-	if strings.HasPrefix(relPath, "config/") {
+	lower := strings.ToLower(relPath)
+	ext := strings.ToLower(filepath.Ext(relPath))
+
+	// Source code files are ALWAYS excluded (compiled to binaries)
+	sourceExts := map[string]bool{
+		".py": true, ".c": true, ".cpp": true, ".go": true,
+		".rs": true, ".java": true, ".kt": true, ".h": true, ".hpp": true,
+	}
+	if sourceExts[ext] {
+		// DEBUG: log why .py files are excluded
+		if ext == ".py" {
+			log.Printf("[IsExcluded] EXCLUDING %s (source code)", relPath)
+		}
+		return true
+	}
+
+	// config/ directory: include runtime config files, exclude source code
+	if strings.HasPrefix(lower, "config/") {
+		allowedConfigExts := map[string]bool{
+			".json": true, ".conf": true, ".yaml": true, ".yml": true,
+			".toml": true, ".ini": true, ".txt": true, ".sh": true,
+			".md": true, ".xml": true, ".properties": true,
+		}
+		if allowedConfigExts[ext] {
+			return false // Include config files
+		}
+		// Other files in config/ — include by default
 		return false
 	}
-	lower := strings.ToLower(relPath)
 	// Extract base filename for filename-level pattern matching
 	base := strings.ToLower(filepath.Base(relPath))
 	for _, pat := range excludePatterns {

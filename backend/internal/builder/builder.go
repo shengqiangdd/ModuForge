@@ -156,7 +156,29 @@ func (b *Builder) BuildWithResultAndProgress(ctx context.Context, projectDir, ta
 		}
 	}
 
+	// Compile Python scripts to native binaries via C wrapper + NDK
+	// IMPORTANT: Python compilation MUST happen before C compilation
+	// because it generates C files that need to be compiled as separate binaries
+	pyFiles := DetectPythonFiles(projectDir)
+	if len(pyFiles) > 0 {
+		logFn(fmt.Sprintf("  Detected %d Python file(s), compiling to native binaries...\n", len(pyFiles)))
+		emitProgress("compile", fmt.Sprintf("Python: %d files", len(pyFiles)))
+		for _, pyFile := range pyFiles {
+			pyResult, err := CompilePythonToBinary(ctx, projectDir, pyFile, arch, logFn, incr)
+			if err != nil {
+				logFn(fmt.Sprintf("  ⚠️  Python compilation failed for %s: %v\n", pyFile, err))
+				continue
+			}
+			result.RecompiledFiles = append(result.RecompiledFiles, pyResult.Recompiled...)
+			result.CacheHits += pyResult.CacheHits
+			result.CacheMisses += pyResult.CacheMisses
+		}
+		// Python-generated C files are now in python_binaries/ directory
+		// They will be compiled as separate binaries in CompileCFilesArch
+	}
+
 	// Compile C/C++ files with NDK + arch support
+	// This also compiles Python-generated C files as separate binaries
 	cFiles := b.DetectCFiles(projectDir)
 	if len(cFiles) > 0 {
 		logFn(fmt.Sprintf("  Detected %d C/C++ file(s), cross-compiling with NDK...\n", len(cFiles)))

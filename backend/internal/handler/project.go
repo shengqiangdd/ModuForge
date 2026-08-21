@@ -279,9 +279,30 @@ func (h *ProjectHandler) UploadFiles(c fiber.Ctx) error {
 	if len(files) == 0 {
 		return BadRequest(c, "no files provided")
 	}
+
+	// paths field: optional comma-separated list of full paths matching each file.
+	// When provided, these paths are used instead of the multipart filename,
+	// preserving subdirectory structure (e.g., "config/tool.py").
+	pathsField := form.Value["paths"]
+	var overridePaths []string
+	if len(pathsField) > 0 {
+		overridePaths = strings.Split(pathsField[0], ",")
+	}
+
 	var results []string
-	for _, f := range files {
-		path := strings.TrimLeft(f.Filename, "/")
+	for i, f := range files {
+		// Determine the file path: prefer explicit paths field, fall back to filename
+		var path string
+		if i < len(overridePaths) && overridePaths[i] != "" {
+			path = strings.TrimSpace(overridePaths[i])
+			path = strings.TrimLeft(path, "/")
+		} else {
+			path = strings.TrimLeft(f.Filename, "/")
+			// Some HTTP clients strip directory from filename —
+			// if the name has no slash but the content looks like
+			// it belongs in a subdirectory, leave it at root.
+		}
+
 		src, err := f.Open()
 		if err != nil {
 			results = append(results, fmt.Sprintf("%s: open error", f.Filename))
@@ -295,7 +316,7 @@ func (h *ProjectHandler) UploadFiles(c fiber.Ctx) error {
 			results = append(results, fmt.Sprintf("%s: save error", f.Filename))
 			continue
 		}
-		results = append(results, fmt.Sprintf("%s: ok", f.Filename))
+		results = append(results, fmt.Sprintf("%s: ok", path))
 	}
 	return c.JSON(fiber.Map{"results": results})
 }

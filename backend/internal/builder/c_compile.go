@@ -94,6 +94,26 @@ func (b *Builder) DetectCFiles(projectDir string) []string {
 	return cFiles
 }
 
+// DetectCFilesInDir finds C/C++ source files in a specific directory (non-recursive).
+func (b *Builder) DetectCFilesInDir(dir string) []string {
+	var cFiles []string
+	allowedExts := map[string]bool{".c": true, ".cpp": true, ".cc": true, ".cxx": true}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		ext := strings.ToLower(filepath.Ext(entry.Name()))
+		if allowedExts[ext] {
+			cFiles = append(cFiles, entry.Name())
+		}
+	}
+	return cFiles
+}
+
 // DetectProjectBinaryName looks for a primary source file to derive the output binary name.
 // Priority: main.c/main.cpp > top-level .c/.cpp in system/bin/ or daemon/src/ > directory name.
 func DetectProjectBinaryName(projectDir string, srcFiles []string) string {
@@ -273,11 +293,24 @@ func (b *Builder) CompileCFilesArch(ctx context.Context, projectDir string, arch
 	binaryName := "androsmart"
 	binPath := filepath.Join(binDir, binaryName)
 
+	// Separate Python-generated C files from main C source files
+	// Python-generated files are in python_binaries/ directory and need separate compilation
+	pythonBinDir := filepath.Join(projectDir, "python_binaries")
+	var mainSrcFiles []string
+	var pythonCFiles []string
+	for _, f := range srcFiles {
+		if strings.HasPrefix(f, pythonBinDir+string(os.PathSeparator)) || strings.HasPrefix(f, pythonBinDir+"/") {
+			pythonCFiles = append(pythonCFiles, f)
+		} else {
+			mainSrcFiles = append(mainSrcFiles, f)
+		}
+	}
+
 	// Check incremental: skip if no source files changed
 	if incr != nil && !incr.NeedsRebuild {
 		changed := false
 		for _, cf := range incr.ChangedFiles {
-			for _, sf := range srcFiles {
+			for _, sf := range mainSrcFiles {
 				if strings.HasPrefix(cf, sf) || cf == sf {
 					changed = true
 					break
@@ -355,8 +388,8 @@ func (b *Builder) CompileCFilesArch(ctx context.Context, projectDir string, arch
 		}
 	}
 
-	// Add ALL source files (single compilation unit)
-	args = append(args, srcFiles...)
+	// Add main source files (Python-generated files compiled separately)
+	args = append(args, mainSrcFiles...)
 
 	compileCtx, compileCancel := context.WithTimeout(ctx, 120*time.Second)
 	cmd := exec.CommandContext(compileCtx, clangBin, args...)
@@ -387,6 +420,43 @@ func (b *Builder) CompileCFilesArch(ctx context.Context, projectDir string, arch
 
 	result.Recompiled = append(result.Recompiled, "system/bin/"+binaryName)
 	result.CacheMisses++
+
+	// Compile Python-generated C files as separate binaries
+	for _, pyCFile := range pythonCFiles {
+		pyBinName := strings.TrimSuffix(filepath.Base(pyCFile), ".c")
+		pyBinName = strings.TrimSuffix(pyBinName, ".cpp")
+		pyBinPath := filepath.Join(binDir, pyBinName)
+
+		logFn(fmt.Sprintf("  🔨 Compiling Python binary: %s → system/bin/%s\n", filepath.Base(pyCFile), pyBinName))
+
+		pyArgs := []string{
+			"--target=" + targetTriple + clangAPILevel,
+			"--sysroot=" + ndkSysroot,
+			"-static",
+			"-O2",
+			"-Wall",
+			"-o", pyBinPath,
+			pyCFile,
+		}
+
+		pyCtx, pyCancel := context.WithTimeout(ctx, 60*time.Second)
+		pyCmd := exec.CommandContext(pyCtx, clangBin, pyArgs...)
+		pyCmd.Dir = projectDir
+		pyOut, pyErr := pyCmd.CombinedOutput()
+		pyCancel()
+
+		if pyErr != nil {
+			logFn(fmt.Sprintf("  ⚠️  Python binary compilation failed: %s\n", string(pyOut)))
+			continue
+		}
+
+		if info, statErr := os.Stat(pyBinPath); statErr == nil && info.Size() > 0 {
+			sizeKB := fileSizeKB(pyBinPath)
+			logFn(fmt.Sprintf("  ✅ system/bin/%s (%d KB) — Python → native binary\n", pyBinName, sizeKB))
+			result.Recompiled = append(result.Recompiled, "system/bin/"+pyBinName)
+			result.CacheMisses++
+		}
+	}
 
 	return result, nil
 }
