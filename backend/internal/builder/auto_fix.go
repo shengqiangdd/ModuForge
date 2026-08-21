@@ -240,7 +240,12 @@ func extractCodeContext(code string, errors []CompileError, contextRange int) st
 
 // callLLMForFix calls LLM to fix code.
 func callLLMForFix(ctx context.Context, endpoint, apiKey, model, prompt string) (string, error) {
-	url := endpoint + "/chat/completions"
+	// Ensure endpoint doesn't already end with /chat/completions
+	apiURL := strings.TrimRight(endpoint, "/")
+	if !strings.HasSuffix(apiURL, "/chat/completions") {
+		apiURL += "/chat/completions"
+	}
+	url := apiURL
 
 	body := map[string]interface{}{
 		"model": model,

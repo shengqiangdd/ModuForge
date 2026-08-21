@@ -96,7 +96,12 @@ func (s *AIStreamService) streamWithProvider(ctx context.Context, messages []map
 	
 	bodyBytes, _ := json.Marshal(body)
 
-	req, err := http.NewRequestWithContext(ctx, "POST", endpoint+"/chat/completions", bytes.NewReader(bodyBytes))
+	// Ensure endpoint doesn't already end with /chat/completions
+	apiURL := strings.TrimRight(endpoint, "/")
+	if !strings.HasSuffix(apiURL, "/chat/completions") {
+		apiURL += "/chat/completions"
+	}
+	req, err := http.NewRequestWithContext(ctx, "POST", apiURL, bytes.NewReader(bodyBytes))
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}
