@@ -2,12 +2,18 @@ package builder
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 )
 
 // Multi-stage generation engine for free models.
-// Core insight: split one 30K-token generation into 3-4 focused stages,
-// each generating 1-2 files (~5K tokens), staying within free model limits.
+// Architecture:
+//   Stage 0: Architecture Planning (unchanged)
+//   Stage 1.5: Technical Research (NEW — gather best practices, API patterns)
+//   Stage 1: Shell Generation (unchanged, 95%+ success rate)
+//   Stage 2: Intent Generation → Code Synthesis (REPLACED — model outputs intent JSON, synthesizer generates code)
+//   Stage 3: Build System Generation (unchanged)
+//   Stage 4: Compilation + AutoFix (unchanged)
 
 // StagePlan holds the architecture plan determined in Stage 0.
 type StagePlan struct {
@@ -122,6 +128,192 @@ func ShellStagePrompt(planJSON, description string) string {
 {"files":[{"path":"module.prop","content":"..."},{"path":"customize.sh","content":"..."}]}
 
 Return ONLY valid JSON. Full file contents with \\n for newlines in content field.`
+}
+
+// ═══════════════════════════════════════════════════════
+// STAGE 1.5: Technical Research Prompt
+// ═══════════════════════════════════════════════════════
+
+// ResearchStagePrompt generates the research prompt for Stage 1.5.
+// The LLM analyzes the requirement and produces best practices + API patterns.
+func ResearchStagePrompt(planJSON, description string) string {
+	return `You are a senior Android/Go/C engineer. Before writing code, RESEARCH the best approach.
+
+## Module Requirement
+` + description + `
+
+## Architecture Plan
+` + planJSON + `
+
+## Task
+Analyze this requirement and output a JSON object with your technical research:
+
+{
+  "best_practices": [
+    "Go daemon should use signal.NotifyContext for graceful shutdown (Go 1.16+)",
+    "Use log/slog for structured logging (Go 1.21+ stdlib, no third-party needed)",
+    "Read sysfs values with os.ReadFile + strconv.Atoi, no cgo needed",
+    "All Magisk module config in /data/adb/modules/<id>/",
+    "Cross-compile: GOOS=android GOARCH=arm64 CGO_ENABLED=0"
+  ],
+  "api_patterns": [
+    {
+      "name": "read thermal zone temperature",
+      "api": "os.ReadFile('/sys/class/thermal/thermal_zone0/temp')",
+      "description": "Read temperature from sysfs, value is millidegrees Celsius",
+      "go_snippet": "data, err := os.ReadFile(\"/sys/class/thermal/thermal_zone0/temp\")\nif err != nil { return err }\ntemp, _ := strconv.Atoi(strings.TrimSpace(string(data)))\ntempC := float64(temp) / 1000.0"
+    }
+  ],
+  "anti_patterns": [
+    "DO NOT use cgo — NDK cross-compilation is complex",
+    "DO NOT use os/exec — use Go stdlib directly",
+    "DO NOT use third-party libraries — keep binary small"
+  ],
+  "design_patterns": [
+    {
+      "name": "periodic check with graceful exit",
+      "description": "Use time.Ticker + signal.NotifyContext for clean daemon loop"
+    }
+  ],
+  "dependencies": [
+    {"name": "stdlib only", "reason": "Minimal binary for Magisk modules"}
+  ]
+}
+
+## RULES
+- Be specific to THIS requirement (not generic advice)
+- Reference actual sysfs paths when reading system values
+- Use Go 1.21+ features (slog, signal.NotifyContext)
+- Output ONLY valid JSON, nothing else.`
+}
+
+// ═══════════════════════════════════════════════════════
+// STAGE 2: Intent Generation Prompt (REPLACES direct code gen)
+// ═══════════════════════════════════════════════════════
+
+// GoIntentPrompt generates the intent prompt for Go files (Stage 2).
+// Instead of generating code, the model describes WHAT the code should do.
+func GoIntentPrompt(planJSON, shellFilesJSON, description string, fileInfo StageFileInfo, researchStr string) string {
+	return fmt.Sprintf(`You are a code architect. Convert this requirement into a STRUCTURED INTENT description.
+
+DO NOT write actual source code. Describe WHAT the code should do in structured JSON.
+
+## Architecture Plan
+%s
+
+## Existing Shell Files (context only)
+%s
+
+## Requirement
+%s
+
+## File to generate
+Path: %s
+Purpose: %s
+
+%s
+
+## OUTPUT FORMAT (valid JSON only)
+{
+  "functions": [
+    {
+      "name": "module_daemon",
+      "description": "what this does",
+      "type": "daemon",
+      "output_path": "%s",
+      "config": {
+        "config_path": "/data/adb/modules/<id>/config.json",
+        "check_interval": "300"
+      },
+      "data_structures": [
+        {
+          "name": "ModuleConfig",
+          "fields": [
+            {"name": "CheckInterval", "type": "int"},
+            {"name": "Threshold", "type": "float64"}
+          ]
+        }
+      ],
+      "logic": {
+        "init_steps": ["Load config", "Validate thresholds"],
+        "main_loop": "Read sensor, compare thresholds, trigger actions",
+        "triggers": [
+          {"condition": "temperature > threshold", "action": "log warning and take protective action"},
+          {"condition": "value normal", "action": "reset counters"}
+        ],
+        "cleanup_steps": ["Log shutdown", "Release resources"]
+      }
+    }
+  ]
+}
+
+## RULES
+- Describe logic in PLAIN ENGLISH, not code
+- Config values as strings (synthesizer handles types)
+- Data structures use Go types (int, float64, string, bool)
+- Triggers: clear condition-action pairs
+- Follow the best practices from research
+- Output ONLY valid JSON, nothing else.`,
+		planJSON, shellFilesJSON, description,
+		fileInfo.Path, fileInfo.Description, researchStr,
+		fileInfo.Path,
+	)
+}
+
+// CIntentPrompt generates the intent prompt for C files (Stage 2).
+func CIntentPrompt(planJSON, shellFilesJSON, description string, fileInfo StageFileInfo, researchStr string) string {
+	return fmt.Sprintf(`You are a code architect. Convert this requirement into a STRUCTURED INTENT description.
+
+DO NOT write actual source code. Describe WHAT the code should do in structured JSON.
+
+## Architecture Plan
+%s
+
+## Existing Shell Files (context only)
+%s
+
+## Requirement
+%s
+
+## File to generate
+Path: %s
+Purpose: %s
+
+%s
+
+## OUTPUT FORMAT (valid JSON only)
+{
+  "functions": [
+    {
+      "name": "system_watchdog",
+      "description": "what this does",
+      "type": "watchdog",
+      "output_path": "%s",
+      "config": {
+        "interval_seconds": "30"
+      },
+      "data_structures": [],
+      "logic": {
+        "init_steps": ["Set up signal handlers"],
+        "main_loop": "Check system condition, take action if needed",
+        "triggers": [
+          {"condition": "condition detected", "action": "perform system action"}
+        ],
+        "cleanup_steps": ["Log shutdown"]
+      }
+    }
+  ]
+}
+
+## RULES
+- Describe logic in PLAIN ENGLISH
+- Use POSIX API (no Android-specific headers)
+- C89 style: declare variables before use
+- Output ONLY valid JSON, nothing else.`,
+		planJSON, shellFilesJSON, description,
+		fileInfo.Path, fileInfo.Description, researchStr,
+		fileInfo.Path,
+	)
 }
 
 // GoStagePrompt generates a Go source file (Stage 2).

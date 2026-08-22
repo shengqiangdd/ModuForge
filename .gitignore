@@ -101,3 +101,11 @@ backend/replace_free_prompt*.ps1
 # 敏感配置备份(含 token), 严禁进仓库
 *.bak-*
 .env.bak-*
+
+# Test & debug directories
+go_shell_test_*/
+medium_test_*/
+module_test_*/
+module_final*/
+module_freemodel*/
+laguna_structured.md
