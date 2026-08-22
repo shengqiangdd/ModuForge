@@ -108,4 +108,26 @@ medium_test_*/
 module_test_*/
 module_final*/
 module_freemodel*/
+optimized_test_*/
+shell_only_test_*/
+simple_test*/
 laguna_structured.md
+
+# ============ 清理遗留文件（2026-08-22） ============
+# 根目录空 go.mod（实际 go.mod 在 backend/）
+/go.mod
+# 运行时数据库（不应进 git）
+backend/forge.db
+backend/binary/
+# 补丁/调试目录
+_patch/
+.mimicode/
+# 一次性 zip 包
+SystemPerformanceTuner*.zip
+# 临时/调试 markdown
+AGENT_SELF_REPAIR_REPORT.md
+DESIGN_DOC.md
+IMPLEMENTATION_SUMMARY.md
+API_REFERENCE.md
+QUICK_REFERENCE.md
+PROMPTS_README.md
