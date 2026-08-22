@@ -541,19 +541,18 @@ module.prop, customize.sh, META-INF/(update-binary + updater-script含#MAGISK)
 // Handles: raw JSON, ```json blocks, ``` blocks, tool_call payloads, and
 // hybrid text+code outputs.
 func extractJSONBlock(s string) string {
-	// 1. Try markdown code fence with json label
-	re := reJSONBlock
-	if re == nil {
-		re = regexp.MustCompile("(?s)```(?:json)?\\s*\\n?(\\{.*?\\})\\s*\\n?```")
-		reJSONBlock = re
-	}
-	if m := re.FindStringSubmatch(s); len(m) > 1 {
-		if isValidFilesJSON(m[1]) {
-			return m[1]
+	// 0. Strip markdown code fences first (even truncated ones)
+	// Handle: ```json\n{...``` and ```json\n{...(no closing fence)
+	fenceRe := regexp.MustCompile(`(?s)^\s*` + "```" + `(?:json)?\s*\n?(.*)`)
+	if m := fenceRe.FindStringSubmatch(s); len(m) > 1 {
+		s = strings.TrimSpace(m[1])
+		// Remove trailing ``` if present
+		if idx := strings.LastIndex(s, "```"); idx >= 0 {
+			s = strings.TrimSpace(s[:idx])
 		}
 	}
 
-	// 2. Try to find the largest valid {"files":[...]} block
+	// 1. Try to find the largest valid {"files":[...]} block
 	best := ""
 	offset := 0
 	for {
@@ -575,13 +574,7 @@ func extractJSONBlock(s string) string {
 		return best
 	}
 
-	// 3. Try markdown fence with any content
-	re2 := regexp.MustCompile("(?s)```[a-z]*\\s*\\n?(\\{.*?\\})\\s*\\n?```")
-	if m := re2.FindStringSubmatch(s); len(m) > 1 {
-		return m[1]
-	}
-
-	// 4. Fallback: raw JSON object
+	// 2. Fallback: raw JSON object
 	start := strings.Index(s, "{")
 	end := strings.LastIndex(s, "}")
 	if start >= 0 && end > start {
