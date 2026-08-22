@@ -241,6 +241,21 @@ func (s *AIService) MultiStageBuild(
 		}
 	}
 
+	// ===== Post-process: fix common free-model code issues =====
+	for path, content := range allFiles {
+		if path == "go.mod" {
+			allFiles[path] = cleanGoMod(content)
+			log.Printf("[MultiStage] Cleaned go.mod: removed stdlib requires")
+		}
+		if strings.HasSuffix(path, ".go") {
+			fixed := fixGoSyntax(content)
+			if fixed != content {
+				allFiles[path] = fixed
+				log.Printf("[MultiStage] Fixed Go syntax in %s", path)
+			}
+		}
+	}
+
 	// ===== Save all files to project =====
 	safeSSE(map[string]interface{}{
 		"type":    "phase",
@@ -305,6 +320,36 @@ func (s *AIService) MultiStageBuild(
 			}
 
 			if status == "failed" {
+				// Auto-Fix: try to fix Go compilation errors before falling back
+				fixApplied := s.autoFixGoCompilation(ctx, projectID, description, endpoint, apiKey, model)
+				if fixApplied {
+					log.Printf("[MultiStage] Auto-Fix applied, retrying build...")
+					safeSSE(map[string]interface{}{
+						"type":    "phase",
+						"phase":   "autofix",
+						"message": "自动修复代码错误，重新编译...",
+					})
+					// Retry build
+					build2, _, err2 := buildSvc.Create(ctx, projectID, "auto-multistage-autofix")
+					if err2 == nil {
+						safeSSE(map[string]interface{}{"type": "build_started", "build_id": build2.ID, "project_id": projectID})
+						// Wait for retry build
+						time.Sleep(5 * time.Second)
+						for retry := 0; retry < 40; retry++ {
+							var retryStatus string
+							s.db.QueryRow("SELECT status FROM build_tasks WHERE id = ?", build2.ID).Scan(&retryStatus)
+							s.sendSSE(w, map[string]interface{}{"type": "build_status", "build_id": build2.ID, "status": retryStatus})
+							if retryStatus == "success" || retryStatus == "error" {
+								if retryStatus == "success" {
+									log.Printf("[MultiStage] Auto-Fix retry build succeeded")
+									return nil
+								}
+								break
+							}
+							time.Sleep(5 * time.Second)
+						}
+					}
+				}
 				// Model fallback: if free model failed, retry with paid
 				_, _, currentModel, _ := s.resolveLLMConfig(userID)
 				if isFreeModel(currentModel) {
@@ -643,6 +688,10 @@ func (s *AIService) getPaidModelConfig(userID string) (endpoint, apiKey, model, 
 		for rows.Next() {
 			var pid, url, key, mid string
 			if rows.Scan(&pid, &url, &key, &mid) == nil && key != "" && !isFreeModel(mid) {
+				// Strip provider prefix if present (e.g. "command-code/xiaomi/mimo-v2.5" → "xiaomi/mimo-v2.5")
+				if idx := strings.Index(mid, "/"); idx > 0 {
+					mid = mid[idx+1:]
+				}
 				return url, key, mid, pid
 			}
 		}
@@ -669,4 +718,160 @@ func truncate(s string, maxLen int) string {
 		return s
 	}
 	return s[:maxLen] + "..."
+}
+
+// autoFixGoCompilation reads Go source files from DB, asks LLM to fix compilation errors, saves back.
+func (s *AIService) autoFixGoCompilation(ctx context.Context, projectID, description, endpoint, apiKey, model string) bool {
+	// Read build error from most recent failed build
+	var buildErr string
+	s.db.QueryRow(`SELECT COALESCE(error,'') FROM build_tasks WHERE project_id=? AND status='error' ORDER BY created_at DESC LIMIT 1`, projectID).Scan(&buildErr)
+	if buildErr == "" {
+		return false
+	}
+	log.Printf("[autoFix] Build error: %s", truncate(buildErr, 500))
+
+	// Read all Go files from project
+	rows, err := s.db.Query(`SELECT path, content FROM project_files WHERE project_id=? AND path LIKE '%.go'`, projectID)
+	if err != nil {
+		return false
+	}
+	defer rows.Close()
+
+	files := map[string]string{}
+	for rows.Next() {
+		var p, c string
+		if rows.Scan(&p, &c) == nil {
+			files[p] = c
+		}
+	}
+	if len(files) == 0 {
+		return false
+	}
+
+	// Build fix prompt
+	filesInfo := ""
+	for p, c := range files {
+		filesInfo += fmt.Sprintf("### %s\n```go\n%s\n```\n\n", p, c)
+	}
+	fixPrompt := fmt.Sprintf(`Fix ALL Go compilation errors in these files. The module uses Go 1.21 stdlib only (no external dependencies).
+Do NOT add external packages. Only fix syntax errors, missing "func" keywords, type mismatches, and undefined references.
+
+## Module Description
+%s
+
+## Build Error
+%s
+
+## Current Files
+%s
+
+Return the fixed files as JSON:
+{"files":[{"path":"<relative_path>","content":"<full_fixed_content>"}]}
+Return ONLY valid JSON.`, description, truncate(buildErr, 500), filesInfo)
+
+	fixJSON, err := s.callLLMForJSON(ctx, endpoint, apiKey, model, fixPrompt)
+	if err != nil {
+		log.Printf("[autoFix] LLM fix request failed: %v", err)
+		return false
+	}
+
+	fixedFiles := parseFilesJSON(fixJSON)
+	if len(fixedFiles) == 0 {
+		log.Printf("[autoFix] No files returned from fix LLM")
+		return false
+	}
+
+	// Save fixed files back to DB and filesystem
+	projectDir := filepath.Join("/data/storage/projects", projectID)
+	for path, content := range fixedFiles {
+		absPath := filepath.Join(projectDir, path)
+		os.MkdirAll(filepath.Dir(absPath), 0755)
+		os.WriteFile(absPath, []byte(content), 0644)
+		s.db.ExecContext(ctx,
+			`INSERT OR REPLACE INTO project_files (project_id, path, content, updated_at) VALUES (?,?,?,datetime('now'))`,
+			projectID, path, content)
+	}
+	log.Printf("[autoFix] Fixed %d files", len(fixedFiles))
+	return true
+}
+
+// cleanGoMod removes invalid stdlib requires from go.mod.
+// Free models often add "log/slog v0.0.0" or "fmt v0.0.0" as dependencies.
+func cleanGoMod(content string) string {
+	stdlibPkgs := []string{
+		"log/slog", "fmt", "os", "io", "net", "time", "strings",
+		"strconv", "encoding/json", "encoding/hex", "math", "regexp",
+		"runtime", "path/filepath", "syscall", "os/signal", "context",
+		"sort", "bytes", "sync", "crypto", "log", "errors", "unsafe",
+	}
+	lines := strings.Split(content, "\n")
+	var result []string
+	inRequire := false
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "require") && !strings.Contains(trimmed, "(") {
+			// Single-line require, skip if stdlib
+			skip := false
+			for _, pkg := range stdlibPkgs {
+				if strings.Contains(trimmed, pkg) {
+					skip = true
+					break
+				}
+			}
+			if !skip {
+				result = append(result, line)
+			}
+			continue
+		}
+		if trimmed == "require (" {
+			inRequire = true
+			result = append(result, line)
+			continue
+		}
+		if inRequire && trimmed == ")" {
+			inRequire = false
+			result = append(result, line)
+			continue
+		}
+		if inRequire {
+			skip := false
+			for _, pkg := range stdlibPkgs {
+				if strings.Contains(trimmed, pkg) {
+					skip = true
+					break
+				}
+			}
+			if !skip {
+				result = append(result, line)
+			}
+			continue
+		}
+		result = append(result, line)
+	}
+	return strings.Join(result, "\n")
+}
+
+// fixGoSyntax fixes common Go syntax errors from free models.
+// Known issue: "cleanup() {" instead of "func cleanup() {"
+func fixGoSyntax(content string) string {
+	lines := strings.Split(content, "\n")
+	go stdlibFuncs = []string{
+		"cleanup", "main", "init", "start", "stop", "run", "setup",
+		"readBatteryInfo", "logBatteryInfo", "writeConfig", "loadConfig",
+		"handleSignal", "getTemperature", "getBattery", "sendNotification",
+	}
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		for _, fn := range stdlibFuncs {
+			if trimmed == fn+"() {" || trimmed == fn+"(int) {" || trimmed == fn+"(string) {" {
+				lines[i] = strings.Replace(line, trimmed, "func "+trimmed, 1)
+			}
+		}
+		// Fix struct fields with tabs outside struct block (common error)
+		// Pattern: "\ttype X struct {" with wrong indentation
+		if strings.HasPrefix(trimmed, "type ") && strings.HasSuffix(trimmed, "struct {") {
+			// This is fine, skip
+		}
+	}
+	return strings.Join(lines, "\n")
 }
