@@ -15,8 +15,8 @@ import (
 	"sync"
 	"time"
 
-	"moduforge/internal/builder"
-	"moduforge/internal/domain"
+	"github.com/moduforge/backend/internal/builder"
+	"github.com/moduforge/backend/internal/domain"
 )
 
 // MultiStageBuild is the enhanced build pipeline for free models.
