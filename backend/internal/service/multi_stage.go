@@ -45,6 +45,7 @@ func (s *AIService) MultiStageBuild(
 
 	// Resolve LLM config
 	endpoint, apiKey, model, _ := s.resolveLLMConfig(userID)
+	freeModelExhausted := false
 
 	// ===== Stage 0: Architecture Planning =====
 	safeSSE(map[string]interface{}{
@@ -57,8 +58,14 @@ func (s *AIService) MultiStageBuild(
 	planJSON, err := s.callLLMForJSON(ctx, endpoint, apiKey, model, planPrompt)
 	var plan builder.StagePlan
 	if err != nil {
-		log.Printf("[MultiStage] Stage 0 plan failed: %v, using fallback", err)
-		plan = fallbackPlan(description)
+		if strings.Contains(err.Error(), "FREE_QUOTA_EXHAUSTED") {
+			log.Printf("[MultiStage] Free model quota exhausted, falling back to paid model")
+			freeModelExhausted = true
+			// Fall through — will retry all stages with paid model below
+		} else {
+			log.Printf("[MultiStage] Stage 0 plan failed: %v, using fallback", err)
+			plan = fallbackPlan(description)
+		}
 	} else {
 		if err := json.Unmarshal([]byte(planJSON), &plan); err != nil {
 			log.Printf("[MultiStage] Stage 0 plan parse failed: %v, planJSON=%s", err, truncate(planJSON, 500))
@@ -66,6 +73,29 @@ func (s *AIService) MultiStageBuild(
 		} else {
 			log.Printf("[MultiStage] Stage 0 plan OK: %s (%d shell, %d go, %d c files)",
 				plan.Name, len(plan.ShellFiles), len(plan.GoFiles), len(plan.CFiles))
+		}
+	}
+
+	// If free model quota exhausted, switch to paid model and retry everything
+	if freeModelExhausted {
+		paidEndpoint, paidKey, paidModel, _ := s.getPaidModelConfig(userID)
+		if paidModel != "" {
+			safeSSE(map[string]interface{}{
+				"type":    "phase",
+				"phase":   "fallback",
+				"message": fmt.Sprintf("免费模型配额耗尽，切换到付费模型 %s 重试...", paidModel),
+			})
+			endpoint, apiKey, model = paidEndpoint, paidKey, paidModel
+			freeModelExhausted = false
+
+			// Retry Stage 0 with paid model
+			planJSON, err = s.callLLMForJSON(ctx, endpoint, apiKey, model, planPrompt)
+			if err != nil {
+				log.Printf("[MultiStage] Paid model plan failed: %v, using fallback", err)
+				plan = fallbackPlan(description)
+			} else if err := json.Unmarshal([]byte(planJSON), &plan); err != nil {
+				plan = fallbackPlan(description)
+			}
 		}
 	}
 
@@ -299,6 +329,7 @@ func (s *AIService) callLLMForJSON(
 	maxRetries := 3
 	for attempt := 0; attempt <= maxRetries; attempt++ {
 		if attempt > 0 {
+			// Don't retry FreeUsageLimitError — quota exhausted, not transient
 			backoff := time.Duration(1<<uint(attempt-1)) * 15 * time.Second // 15s, 30s, 60s
 			log.Printf("[callLLMForJSON] Retry %d/%d after %v backoff", attempt, maxRetries, backoff)
 			select {
@@ -310,6 +341,9 @@ func (s *AIService) callLLMForJSON(
 
 		content, err := s.doLLMRequest(ctx, endpoint, apiKey, model, prompt)
 		if err != nil && strings.Contains(err.Error(), "429") {
+			if strings.Contains(err.Error(), "FreeUsageLimit") {
+				return "", fmt.Errorf("FREE_QUOTA_EXHAUSTED: %w", err)
+			}
 			log.Printf("[callLLMForJSON] Rate limited (429), will retry: %v", err)
 			continue
 		}
@@ -498,6 +532,35 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// getPaidModelConfig returns the paid model config when free model is exhausted.
+// Looks for a paid provider in the DB, falls back to hardcoded defaults.
+func (s *AIService) getPaidModelConfig(userID string) (endpoint, apiKey, model, providerID string) {
+	// Try DB: look for a non-free provider config
+	rows, err := s.db.Query(`
+		SELECT provider_id, base_url, api_key, model_id
+		FROM llm_configs WHERE user_id = '' OR user_id IS NULL
+		UNION ALL
+		SELECT provider_id, base_url, api_key, model_id
+		FROM llm_configs WHERE user_id = ?
+		ORDER BY user_id DESC
+	`, userID)
+	if err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var pid, url, key, mid string
+			if rows.Scan(&pid, &url, &key, &mid) == nil && !isFreeModel(mid) && key != "" {
+				return url, key, mid, pid
+			}
+		}
+	}
+
+	// Hardcoded fallback: opencode-zen paid model
+	return "https://opencode.ai/zen/v1/chat/completions",
+		s.cfg.EffectiveLLMKey(),
+		"deepseek-v4-flash",
+		"opencode-zen-paid"
 }
 
 func truncate(s string, maxLen int) string {
