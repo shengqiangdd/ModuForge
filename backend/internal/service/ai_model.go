@@ -421,6 +421,36 @@ module.prop, customize.sh, META-INF/(update-binary + updater-script含#MAGISK)
 
 	safeSSE(map[string]interface{}{"type": "phase", "phase": "saving", "message": fmt.Sprintf("保存 %d 个文件...", len(result.Files))})
 
+	// --- Phase 3.5: Ensure project exists BEFORE saving files ---
+	// AutoBuild may receive a temporary projectID that doesn't exist in projects table.
+	// We must create the project first so BuildService can find the files.
+	var exists int
+	err = s.db.QueryRowContext(ctx, `SELECT 1 FROM projects WHERE id=? AND deleted_at IS NULL`, projectID).Scan(&exists)
+	if err != nil {
+		projectSvc := NewProjectService(s.db, s.cfg.StoragePath)
+		name := description
+		if len(name) > 50 {
+			name = name[:50]
+		}
+		proj, projErr := projectSvc.Create(ctx, userID, &domain.CreateProjectInput{
+			Name:        name,
+			Description: description,
+		})
+		if projErr != nil {
+			log.Printf("[AutoBuild] Failed to auto-create project: %v", projErr)
+			safeSSE(map[string]interface{}{"type": "phase", "phase": "error", "message": fmt.Sprintf("创建项目失败: %v", projErr)})
+			return nil
+		}
+		log.Printf("[AutoBuild] Auto-created project: %s (was temp: %s)", proj.ID, projectID)
+		// Remove temp project dir if it exists
+		tempDir := filepath.Join(s.cfg.StoragePath, "projects", projectID)
+		if tempDir != filepath.Join(s.cfg.StoragePath, "projects", proj.ID) {
+			os.RemoveAll(tempDir)
+		}
+		// Use the new project's ID for everything
+		projectID = proj.ID
+	}
+
 	// --- Phase 3: Save files to project (disk + DB) ---
 	projectDir := filepath.Join(s.cfg.StoragePath, "projects", projectID)
 	os.MkdirAll(projectDir, 0755)
@@ -445,48 +475,7 @@ module.prop, customize.sh, META-INF/(update-binary + updater-script含#MAGISK)
 
 	safeSSE(map[string]interface{}{"type": "phase", "phase": "building", "message": "开始编译..."})
 
-	// --- Phase 4: Ensure project exists, then trigger build ---
-	// AutoBuild may receive a temporary projectID that doesn't exist in projects table.
-	// We need to create the project first so BuildService can find it.
-	var exists int
-	err = s.db.QueryRowContext(ctx, `SELECT 1 FROM projects WHERE id=? AND deleted_at IS NULL`, projectID).Scan(&exists)
-	if err != nil {
-		// Project doesn't exist — create it
-		projectSvc := NewProjectService(s.db, s.cfg.StoragePath)
-		name := description
-		if len(name) > 50 {
-			name = name[:50]
-		}
-		proj, err := projectSvc.Create(ctx, userID, &domain.CreateProjectInput{
-			Name:        name,
-			Description: description,
-		})
-		if err != nil {
-			log.Printf("[AutoBuild] Failed to auto-create project %s: %v", projectID, err)
-			safeSSE(map[string]interface{}{"type": "phase", "phase": "error", "message": fmt.Sprintf("创建项目失败: %v", err)})
-			return nil
-		}
-		// Update projectID to the newly created project's ID
-		// Also move files from temp dir to the real project dir
-		oldDir := projectDir
-		projectID = proj.ID
-		projectDir = filepath.Join(s.cfg.StoragePath, "projects", projectID)
-		if oldDir != projectDir {
-			os.MkdirAll(projectDir, 0755)
-			// Move files and update DB references
-			entries, _ := os.ReadDir(oldDir)
-			for _, e := range entries {
-				oldPath := filepath.Join(oldDir, e.Name())
-				newPath := filepath.Join(projectDir, e.Name())
-				os.Rename(oldPath, newPath)
-			}
-			// Update project_files table with new projectID
-			s.db.ExecContext(ctx,
-				`UPDATE project_files SET project_id=? WHERE project_id=?`,
-				projectID, proj.ID)
-		}
-		log.Printf("[AutoBuild] Auto-created project %s → %s", projectID, proj.ID)
-	}
+	// --- Phase 4: Trigger build ---
 
 	buildSvc := NewBuildService(s.db, s.cfg)
 	build, _, err := buildSvc.Create(ctx, projectID, "auto")
