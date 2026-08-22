@@ -397,12 +397,20 @@ module.prop, customize.sh, META-INF/(update-binary + updater-script含#MAGISK)
 	}
 	if err := json.Unmarshal([]byte(content), &result); err != nil || len(result.Files) == 0 {
 		log.Printf("[AutoBuild] JSON parse failed: err=%v, files=%d, content_len=%d", err, len(result.Files), len(content))
-		// Try to fix truncated JSON by adding missing closing braces
+		// Strategy 1: Fix truncated JSON by closing open structures
 		fixed := fixTruncatedJSON(content)
 		if fixed != content {
 			if err2 := json.Unmarshal([]byte(fixed), &result); err2 == nil && len(result.Files) > 0 {
-				log.Printf("[AutoBuild] Truncated JSON fixed, files=%d", len(result.Files))
+				log.Printf("[AutoBuild] Truncated JSON fixed (close brackets), files=%d", len(result.Files))
 				content = fixed
+			}
+		}
+		// Strategy 2: Extract individual file objects from truncated JSON
+		if len(result.Files) == 0 {
+			extracted := extractFilesFromTruncatedJSON(content)
+			if len(extracted) > 0 {
+				result.Files = extracted
+				log.Printf("[AutoBuild] Extracted %d files from truncated JSON", len(extracted))
 			}
 		}
 		if len(result.Files) == 0 {
@@ -646,6 +654,44 @@ func fixTruncatedJSON(s string) string {
 	}
 
 	return result
+}
+
+// extractFilesFromTruncatedJSON tries to extract individual file objects
+// from truncated JSON by finding {"path":...,"content":...} pairs.
+// This handles cases where the JSON is cut off mid-file.
+func extractFilesFromTruncatedJSON(s string) []struct {
+	Path    string `json:"path"`
+	Content string `json:"content"`
+} {
+	var files []struct {
+		Path    string `json:"path"`
+		Content string `json:"content"`
+	}
+
+	// Find all {"path":"...","content":"..."} pairs
+	// Use regex to match individual file objects
+	re := regexp.MustCompile(`\{"path"\s*:\s*"([^"]*)"\s*,\s*"content"\s*:\s*"((?:[^"\\]|\\.)*)"\s*\}`)
+	matches := re.FindAllStringSubmatch(s, -1)
+
+	for _, m := range matches {
+		if len(m) >= 3 {
+			path := m[1]
+			content := m[2]
+			// Unescape JSON string escapes
+			content = strings.ReplaceAll(content, `\\n`, "\n")
+			content = strings.ReplaceAll(content, `\\t`, "\t")
+			content = strings.ReplaceAll(content, `\\"`, `"`)
+			content = strings.ReplaceAll(content, `\\\\`, "\\")
+			if path != "" && content != "" {
+				files = append(files, struct {
+					Path    string `json:"path"`
+					Content string `json:"content"`
+				}{Path: path, Content: content})
+			}
+		}
+	}
+
+	return files
 }
 
 // streamBuildLog streams build log output via SSE events.
