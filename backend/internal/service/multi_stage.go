@@ -671,10 +671,41 @@ func min(a, b int) int {
 	return b
 }
 
-// getPaidModelConfig returns available paid/free models in priority order.
-// Tries DB configs first, then hardcoded fallbacks.
+// findPaidModelForEndpoint returns the best paid model for a given endpoint URL.
+func findPaidModelForEndpoint(endpoint string) string {
+	if strings.Contains(endpoint, "commandcode") {
+		return "xiaomi/mimo-v2.5"
+	}
+	if strings.Contains(endpoint, "opencode") {
+		return "deepseek-v4-flash"
+	}
+	// Generic: try common paid models
+	return "xiaomi/mimo-v2.5"
+}
+
+// getPaidModelConfig returns available paid models.
+// Priority: current active provider's paid model > DB configs > hardcoded fallback.
 func (s *AIService) getPaidModelConfig(userID string) (endpoint, apiKey, model, providerID string) {
-	// Try DB: look for any provider config with an API key
+	// First: try current active provider's paid model (most reliable)
+	currentEndpoint, currentKey, currentModel, currentPID := s.resolveLLMConfig(userID)
+	if currentEndpoint != "" && currentKey != "" {
+		// If current model is free, find a paid alternative on the same endpoint
+		if isFreeModel(currentModel) {
+			paidModel := findPaidModelForEndpoint(currentEndpoint)
+			if paidModel != "" {
+				return currentEndpoint, currentKey, paidModel, currentPID
+			}
+		} else {
+			// Current model is already paid
+			mid := currentModel
+			if idx := strings.Index(mid, "/"); idx > 0 {
+				mid = mid[idx+1:]
+			}
+			return currentEndpoint, currentKey, mid, currentPID
+		}
+	}
+
+	// Second: try DB configs
 	rows, err := s.db.Query(`
 		SELECT provider_id, base_url, api_key, model_id
 		FROM llm_configs WHERE user_id = '' OR user_id IS NULL
@@ -688,7 +719,6 @@ func (s *AIService) getPaidModelConfig(userID string) (endpoint, apiKey, model, 
 		for rows.Next() {
 			var pid, url, key, mid string
 			if rows.Scan(&pid, &url, &key, &mid) == nil && key != "" && !isFreeModel(mid) {
-				// Strip provider prefix if present (e.g. "command-code/xiaomi/mimo-v2.5" → "xiaomi/mimo-v2.5")
 				if idx := strings.Index(mid, "/"); idx > 0 {
 					mid = mid[idx+1:]
 				}
