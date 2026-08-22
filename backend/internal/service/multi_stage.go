@@ -90,8 +90,11 @@ func (s *AIService) MultiStageBuild(
 	safeSSE(map[string]interface{}{
 		"type":    "phase",
 		"phase":   "shell",
-		"message": "阶段1: 生成 Shell 脚本层（module.prop, customize.sh, META-INF）...",
+		"message": "阶段1: 生成 Shell 脚本层...",
 	})
+
+	// Delay between stages to respect free model rate limits
+	time.Sleep(5 * time.Second)
 
 	shellPrompt := builder.ShellStagePrompt(string(planJSONCompact), description)
 	shellJSON, err := s.callLLMForJSON(ctx, endpoint, apiKey, model, shellPrompt)
@@ -123,6 +126,11 @@ func (s *AIService) MultiStageBuild(
 		shellFilesCompact := filesMapToJSON(allFiles)
 
 		for i, fileInfo := range coreFiles {
+			// Delay between file generations to respect rate limits
+			if i > 0 {
+				time.Sleep(10 * time.Second)
+			}
+
 			safeSSE(map[string]interface{}{
 				"type":    "phase",
 				"phase":   "core",
@@ -161,6 +169,8 @@ func (s *AIService) MultiStageBuild(
 		"phase":   "build_system",
 		"message": "阶段3: 生成构建系统...",
 	})
+
+	time.Sleep(10 * time.Second)
 
 	sourceFilesJSON := filesMapToJSON(allFiles)
 	buildPrompt := builder.BuildSystemPrompt(string(planJSONCompact), sourceFilesJSON, description)
@@ -281,7 +291,35 @@ func (s *AIService) MultiStageBuild(
 
 // callLLMForJSON calls the LLM and extracts a JSON response.
 // Handles streaming, extracts the largest JSON block, validates.
+// Retries on 429 (rate limit) with exponential backoff up to 3 times.
 func (s *AIService) callLLMForJSON(
+	ctx context.Context,
+	endpoint, apiKey, model, prompt string,
+) (string, error) {
+	maxRetries := 3
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		if attempt > 0 {
+			backoff := time.Duration(1<<uint(attempt-1)) * 15 * time.Second // 15s, 30s, 60s
+			log.Printf("[callLLMForJSON] Retry %d/%d after %v backoff", attempt, maxRetries, backoff)
+			select {
+			case <-ctx.Done():
+				return "", ctx.Err()
+			case <-time.After(backoff):
+			}
+		}
+
+		content, err := s.doLLMRequest(ctx, endpoint, apiKey, model, prompt)
+		if err != nil && strings.Contains(err.Error(), "429") {
+			log.Printf("[callLLMForJSON] Rate limited (429), will retry: %v", err)
+			continue
+		}
+		return content, err
+	}
+	return "", fmt.Errorf("LLM request failed after %d retries", maxRetries)
+}
+
+// doLLMRequest performs a single LLM request (no retry).
+func (s *AIService) doLLMRequest(
 	ctx context.Context,
 	endpoint, apiKey, model, prompt string,
 ) (string, error) {
