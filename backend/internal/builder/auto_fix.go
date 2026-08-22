@@ -361,3 +361,16 @@ func maskKey(key string) string {
 	}
 	return key[:4] + "****" + key[len(key)-4:]
 }
+
+// ResolveLLMForFix is the exported wrapper for resolveLLMForFix.
+// Used by the agent/team package for multi-agent collaboration.
+func ResolveLLMForFix() (endpoint, apiKey, model string) {
+	b := &Builder{}
+	return b.resolveLLMForFix()
+}
+
+// CallLLMForFix is the exported wrapper for callLLMForFix.
+// Used by the agent/team package for multi-agent collaboration.
+func CallLLMForFix(ctx context.Context, endpoint, apiKey, model, prompt string) (string, error) {
+	return callLLMForFix(ctx, endpoint, apiKey, model, prompt)
+}
