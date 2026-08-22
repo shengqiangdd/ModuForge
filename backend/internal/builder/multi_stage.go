@@ -1,5 +1,10 @@
 package builder
 
+import (
+	"encoding/json"
+	"strings"
+)
+
 // Multi-stage generation engine for free models.
 // Core insight: split one 30K-token generation into 3-4 focused stages,
 // each generating 1-2 files (~5K tokens), staying within free model limits.
@@ -186,6 +191,46 @@ Return ONLY valid JSON. Full C source code in content field with \\n for newline
 
 // BuildSystemPrompt generates build scripts (Stage 3).
 func BuildSystemPrompt(planJSON, sourceFilesJSON, description string) string {
+	// Parse plan to determine which build files are needed
+	var plan struct {
+		GoFiles    int `json:"go_files"`
+		CFiles     int `json:"c_files"`
+		ShellFiles int `json:"shell_files"`
+	}
+	json.Unmarshal([]byte(planJSON), &plan)
+
+	filesToGenerate := []string{"build.sh"}
+
+	requirement := `## Requirement
+` + description + `
+`
+	if plan.GoFiles > 0 {
+		filesToGenerate = append(filesToGenerate, "go.mod")
+		requirement += `
+## Go Compilation
+- Module path: github.com/moduforge/module
+- Go version: go 1.21
+- NO external dependencies — stdlib only
+- GOOS=android GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w"
+`
+	}
+	if plan.CFiles > 0 {
+		filesToGenerate = append(filesToGenerate, "Makefile")
+		requirement += `
+## C Compilation
+- Cross-compiler: aarch64-linux-android-gcc or clang
+- Target: arm64-v8a, Flags: -static -O2 -Wall
+`
+	}
+	if plan.ShellFiles == 0 && plan.GoFiles == 0 && plan.CFiles == 0 {
+		// All shell, no compilation needed
+		filesToGenerate = []string{"build.sh"}
+		requirement += `
+## Shell-Only Module
+No Go or C source files needed. build.sh should only package the shell scripts into the module zip.
+`
+	}
+
 	return `Generate build scripts and config files for this Android Magisk module.
 
 ## Architecture Plan
@@ -194,26 +239,16 @@ func BuildSystemPrompt(planJSON, sourceFilesJSON, description string) string {
 ## Generated Source Files (for reference — DO NOT regenerate)
 ` + sourceFilesJSON + `
 
-## Requirement
-` + description + `
-
+` + requirement + `
 ## Files to generate:
-1. go.mod (if Go source exists):
-   - Module path: github.com/moduforge/module/<id>
-   - Go version: go 1.21
-   - NO external dependencies — stdlib only
-2. build.sh:
+` + strings.Join(filesToGenerate, "\n") + `
+1. build.sh:
    - #!/bin/sh
-   - Set up NDK/Go cross-compilation environment
-   - Compile each source file to binary in ./bin/
-   - Go: GOOS=android GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o ./bin/<name> ./src/
-   - C: $CC -static -o ./bin/<name> src/main.c (use NDK compiler)
-   - Make ./bin/ directory if needed
+   - Create ./bin/ directory
+   - For Go: GOOS=android GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o ./bin/<name> ./src/
+   - For C: $CC -static -o ./bin/<name> src/main.c
+   - For Shell-only: just echo "Shell-only module, no compilation needed"
    - NO mv/cp commands — just compile to ./bin/
-3. Makefile (if C source exists):
-   - Cross-compiler: aarch64-linux-android-gcc or clang
-   - Target: arm64-v8a
-   - Flags: -static -O2 -Wall
 
 ## OUTPUT FORMAT
 {"files":[{"path":"build.sh","content":"..."},{"path":"go.mod","content":"..."}]}
