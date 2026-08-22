@@ -481,34 +481,83 @@ func (s *AIService) ensureProject(
 }
 
 // parseFilesJSON extracts {path: content} map from {"files":[...]} JSON.
+// Handles multiple output formats from different LLM models:
+// 1. Standard: {"files":[{"path":"a","content":"1"},{"path":"b","content":"2"}]}
+// 2. Flat keys: {"files":[{"path":"a","content":"1","path":"b","content":"2"}]}
+// 3. Truncated/malformed JSON with regex fallback
 func parseFilesJSON(jsonStr string) map[string]string {
+	// First, try standard JSON parse
 	var result struct {
 		Files []struct {
 			Path    string `json:"path"`
 			Content string `json:"content"`
 		} `json:"files"`
 	}
-	if err := json.Unmarshal([]byte(jsonStr), &result); err != nil {
-		// Fallback: try regex extraction for malformed/truncated JSON
-		log.Printf("[parseFilesJSON] Standard parse failed: %v, trying regex fallback", err)
-		fileEntries := extractFilesFromTruncatedJSON(jsonStr)
-		if len(fileEntries) > 0 {
-			files := make(map[string]string)
-			for _, f := range fileEntries {
+	if err := json.Unmarshal([]byte(jsonStr), &result); err == nil && len(result.Files) > 0 {
+		files := make(map[string]string)
+		for _, f := range result.Files {
+			if f.Path != "" && f.Content != "" {
 				files[f.Path] = f.Content
 			}
-			log.Printf("[parseFilesJSON] Regex fallback recovered %d files", len(files))
+		}
+		if len(files) > 0 {
 			return files
 		}
-		return nil
 	}
+
+	// Fallback: extract file entries via regex
+	// Handles both flat-key objects and truncated JSON
+	files := extractFilesByPattern(jsonStr)
+	if len(files) > 0 {
+		log.Printf("[parseFilesJSON] Regex pattern recovered %d files", len(files))
+		return files
+	}
+	return nil
+}
+
+// extractFilesByPattern extracts path/content pairs from various malformed JSON formats.
+// Uses sequential scanning rather than JSON parsing to handle:
+// - Duplicate keys in single objects
+// - Truncated JSON
+// - Missing commas between entries
+func extractFilesByPattern(s string) map[string]string {
 	files := make(map[string]string)
-	for _, f := range result.Files {
-		if f.Path != "" && f.Content != "" {
-			files[f.Path] = f.Content
+
+	// Strategy 1: Find all "path":"..." and "content":"..." pairs sequentially
+	// Use a state machine to pair them up
+	pathRe := regexp.MustCompile(`"path"\s*:\s*"((?:[^"\\]|\\.)*)"`)
+	contentRe := regexp.MustCompile(`"content"\s*:\s*"((?:[^"\\]|\\.)*)"`)
+
+	paths := pathRe.FindAllStringSubmatch(s, -1)
+	contents := contentRe.FindAllStringSubmatch(s, -1)
+
+	if len(paths) > 0 && len(contents) > 0 {
+		// Pair them by index (path[0] with content[0], etc.)
+		count := len(paths)
+		if len(contents) < count {
+			count = len(contents)
+		}
+		for i := 0; i < count; i++ {
+			path := unescapeJSONString(paths[i][1])
+			content := unescapeJSONString(contents[i][1])
+			if path != "" && content != "" {
+				files[path] = content
+			}
 		}
 	}
 	return files
+}
+
+// unescapeJSONString unescapes common JSON string escapes.
+func unescapeJSONString(s string) string {
+	s = strings.ReplaceAll(s, `\\n`, "\n")
+	s = strings.ReplaceAll(s, `\\t`, "\t")
+	s = strings.ReplaceAll(s, `\\"`, `"`)
+	s = strings.ReplaceAll(s, `\\\\`, "\\")
+	s = strings.ReplaceAll(s, `\n`, "\n")
+	s = strings.ReplaceAll(s, `\t`, "\t")
+	s = strings.ReplaceAll(s, `\"`, `"`)
+	return s
 }
 
 // filesMapToJSON converts {path: content} to a compact JSON string for LLM context.
