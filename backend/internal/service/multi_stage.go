@@ -720,31 +720,49 @@ func truncate(s string, maxLen int) string {
 	return s[:maxLen] + "..."
 }
 
-// autoFixGoCompilation reads Go source files from DB, asks LLM to fix compilation errors, saves back.
+// autoFixGoCompilation reads Go source files from project directory, asks PAID LLM to fix compilation errors, saves back.
 func (s *AIService) autoFixGoCompilation(ctx context.Context, projectID, description, endpoint, apiKey, model string) bool {
 	// Read build error from most recent failed build (stored in 'log' column)
 	var buildErr string
-	s.db.QueryRow(`SELECT COALESCE(log,'') FROM build_tasks WHERE project_id=? AND status='error' ORDER BY created_at DESC LIMIT 1`, projectID).Scan(&buildErr)
+	s.db.QueryRow(`SELECT COALESCE(log,'') FROM build_tasks WHERE project_id=? AND status IN ('error','failed') ORDER BY created_at DESC LIMIT 1`, projectID).Scan(&buildErr)
 	if buildErr == "" {
+		log.Printf("[autoFix] No build error found for project %s", projectID)
 		return false
 	}
-	log.Printf("[autoFix] Build error: %s", truncate(buildErr, 500))
+	log.Printf("[autoFix] Build error found (%d chars), attempting fix...", len(buildErr))
 
-	// Read all Go files from project
-	rows, err := s.db.Query(`SELECT path, content FROM project_files WHERE project_id=? AND path LIKE '%.go'`, projectID)
-	if err != nil {
+	// Use PAID model for fixing — the free model can't fix its own truncation errors
+	paidEndpoint, paidKey, paidModel, _ := s.getPaidModelConfig("")
+	if paidEndpoint == "" || paidKey == "" {
+		log.Printf("[autoFix] No paid model available, skipping fix")
 		return false
 	}
-	defer rows.Close()
+	log.Printf("[autoFix] Using paid model %s for fixing", paidModel)
 
+	// Read Go files from PROJECT DIRECTORY (not DB — build system may have modified them)
+	projectDir := filepath.Join("/data/storage/projects", projectID)
 	files := map[string]string{}
-	for rows.Next() {
-		var p, c string
-		if rows.Scan(&p, &c) == nil {
-			files[p] = c
+	// Also try reading from build temp directory (latest attempt)
+	buildFiles := map[string]string{}
+	filepath.Walk(projectDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() {
+			return nil
 		}
+		if strings.HasSuffix(path, ".go") {
+			relPath, _ := filepath.Rel(projectDir, path)
+			content, readErr := os.ReadFile(path)
+			if readErr == nil {
+				buildFiles[relPath] = string(content)
+			}
+		}
+		return nil
+	})
+	for p, c := range buildFiles {
+		files[p] = c
 	}
+
 	if len(files) == 0 {
+		log.Printf("[autoFix] No Go files found in project directory")
 		return false
 	}
 
@@ -769,7 +787,7 @@ Return the fixed files as JSON:
 {"files":[{"path":"<relative_path>","content":"<full_fixed_content>"}]}
 Return ONLY valid JSON.`, description, truncate(buildErr, 500), filesInfo)
 
-	fixJSON, err := s.callLLMForJSON(ctx, endpoint, apiKey, model, fixPrompt)
+	fixJSON, err := s.callLLMForJSON(ctx, paidEndpoint, paidKey, paidModel, fixPrompt)
 	if err != nil {
 		log.Printf("[autoFix] LLM fix request failed: %v", err)
 		return false
@@ -782,7 +800,6 @@ Return ONLY valid JSON.`, description, truncate(buildErr, 500), filesInfo)
 	}
 
 	// Save fixed files back to DB and filesystem
-	projectDir := filepath.Join("/data/storage/projects", projectID)
 	for path, content := range fixedFiles {
 		absPath := filepath.Join(projectDir, path)
 		os.MkdirAll(filepath.Dir(absPath), 0755)
