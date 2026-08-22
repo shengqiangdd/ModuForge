@@ -349,6 +349,10 @@ func (s *AIService) callLLMForJSON(
 			log.Printf("[callLLMForJSON] Rate limited (429), will retry: %v", err)
 			continue
 		}
+		if err != nil && (strings.Contains(err.Error(), "503") || strings.Contains(err.Error(), "502")) {
+			log.Printf("[callLLMForJSON] Model overloaded (5xx), will retry: %v", err)
+			continue
+		}
 		if err != nil && strings.Contains(err.Error(), "401") {
 			return "", fmt.Errorf("CREDITS_EXHAUSTED: %w", err)
 		}
