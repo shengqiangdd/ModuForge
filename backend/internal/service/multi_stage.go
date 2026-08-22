@@ -722,9 +722,9 @@ func truncate(s string, maxLen int) string {
 
 // autoFixGoCompilation reads Go source files from DB, asks LLM to fix compilation errors, saves back.
 func (s *AIService) autoFixGoCompilation(ctx context.Context, projectID, description, endpoint, apiKey, model string) bool {
-	// Read build error from most recent failed build
+	// Read build error from most recent failed build (stored in 'log' column)
 	var buildErr string
-	s.db.QueryRow(`SELECT COALESCE(error,'') FROM build_tasks WHERE project_id=? AND status='error' ORDER BY created_at DESC LIMIT 1`, projectID).Scan(&buildErr)
+	s.db.QueryRow(`SELECT COALESCE(log,'') FROM build_tasks WHERE project_id=? AND status='error' ORDER BY created_at DESC LIMIT 1`, projectID).Scan(&buildErr)
 	if buildErr == "" {
 		return false
 	}
@@ -852,7 +852,7 @@ func cleanGoMod(content string) string {
 }
 
 // fixGoSyntax fixes common Go syntax errors from free models.
-// Known issue: "cleanup() {" instead of "func cleanup() {"
+// Known issues: missing "func" keyword, unterminated strings, truncated files.
 func fixGoSyntax(content string) string {
 	lines := strings.Split(content, "\n")
 	stdlibFuncs := []string{
@@ -860,18 +860,63 @@ func fixGoSyntax(content string) string {
 		"readBatteryInfo", "logBatteryInfo", "writeConfig", "loadConfig",
 		"handleSignal", "getTemperature", "getBattery", "sendNotification",
 	}
+
+	// Ensure file starts with "package main"
+	if len(lines) > 0 && !strings.HasPrefix(strings.TrimSpace(lines[0]), "package ") {
+		lines = append([]string{"package main", ""}, lines...)
+	}
+
+	result := []string{}
 	for i, line := range lines {
 		trimmed := strings.TrimSpace(line)
+
+		// Fix missing "func" keyword
+		fixed := false
 		for _, fn := range stdlibFuncs {
-			if trimmed == fn+"() {" || trimmed == fn+"(int) {" || trimmed == fn+"(string) {" {
+			if trimmed == fn+"() {" || trimmed == fn+"(int) {" || trimmed == fn+"(string) {" ||
+				trimmed == fn+"(string, string) {" || trimmed == fn+"(error) {" {
 				lines[i] = strings.Replace(line, trimmed, "func "+trimmed, 1)
+				fixed = true
+				break
 			}
 		}
-		// Fix struct fields with tabs outside struct block (common error)
-		// Pattern: "\ttype X struct {" with wrong indentation
-		if strings.HasPrefix(trimmed, "type ") && strings.HasSuffix(trimmed, "struct {") {
-			// This is fine, skip
+
+		// Fix unterminated string literals (truncation at end of file)
+		// If the last non-empty line has an odd number of unescaped quotes, close it
+		if i == len(lines)-1 || (i == len(lines)-2 && strings.TrimSpace(lines[len(lines)-1]) == "") {
+			// Count unescaped quotes
+			quoteCount := 0
+			inBacktick := false
+			for _, ch := range trimmed {
+				if ch == '`' {
+					inBacktick = !inBacktick
+				} else if ch == '"' && !inBacktick {
+					quoteCount++
+				}
+			}
+			if !inBacktick && quoteCount%2 == 1 && quoteCount > 0 {
+				// Unterminated string — close it and add closing brace
+				lines[i] = line + `"`
+				// Add closing braces if needed
+				openBraces := 0
+				for _, l := range lines {
+					for _, ch := range l {
+						if ch == '{' {
+							openBraces++
+						} else if ch == '}' {
+							openBraces--
+						}
+					}
+				}
+				for openBraces > 0 {
+					lines = append(lines, "}")
+					openBraces--
+				}
+			}
 		}
+
+		_ = fixed
+		result = append(result, lines[i])
 	}
-	return strings.Join(lines, "\n")
+	return strings.Join(result, "\n")
 }

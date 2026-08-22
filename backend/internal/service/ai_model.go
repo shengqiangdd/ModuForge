@@ -981,21 +981,23 @@ func (s *AIService) findPaidModel(currentModel string) (endpoint, apiKey, model 
 
 	// If current model is already paid, return it
 	if !isFreeModel(model) {
+		// Strip provider prefix if present (e.g. "command-code/xiaomi/mimo-v2.5" → "xiaomi/mimo-v2.5")
+		if idx := strings.Index(model, "/"); idx > 0 {
+			model = model[idx+1:]
+		}
 		return
 	}
 
 	// Try common paid models from the same provider
-	// These are known good models that should work
+	// Strip provider prefix for models that have it
 	paidModels := []string{
-		"command-code/xiaomi/mimo-v2.5",
-		"deepseek/deepseek-v4-flash",
-		"qwen/qwen3.8-max",
+		"xiaomi/mimo-v2.5",
+		"deepseek-v4-flash",
+		"qwen3.8-max",
 	}
 
 	for _, candidate := range paidModels {
 		if !isFreeModel(candidate) {
-			// Verify the model is available by trying a minimal request
-			// But for speed, just return the first non-free candidate
 			return endpoint, apiKey, candidate
 		}
 	}

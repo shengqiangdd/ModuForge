@@ -125,8 +125,8 @@ func categorizeErrors(errMsg string) *ErrorCategories {
 func parseLineErrors(line string) []CompileError {
 	var errors []CompileError
 
-	// Go: ./file.go:line:col: message
-	goRe := regexp.MustCompile(`\./([^:]+):(\d+):(\d+):\s*(.+)`)
+	// Go: ./file.go:line:col: message OR file.go:line:col: message
+	goRe := regexp.MustCompile(`(?:\.\/)?([^:]+\.go):(\d+):(\d+):\s*(.+)`)
 	for _, m := range goRe.FindAllStringSubmatch(line, -1) {
 		var l, c int
 		fmt.Sscanf(m[2], "%d", &l)

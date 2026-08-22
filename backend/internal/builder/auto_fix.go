@@ -78,8 +78,8 @@ type CompileError struct {
 func parseCompileErrors(errMsg string) []CompileError {
 	var errors []CompileError
 
-	// Go error pattern: ./file.go:line:col: message
-	goPattern := regexp.MustCompile(`\./([^:]+):(\d+):(\d+):\s*(.+)`)
+	// Go error pattern: ./file.go:line:col: message OR file.go:line:col: message
+	goPattern := regexp.MustCompile(`(?:\.\/)?([^:]+\.go):(\d+):(\d+):\s*(.+)`)
 	for _, match := range goPattern.FindAllStringSubmatch(errMsg, -1) {
 		line := 0
 		fmt.Sscanf(match[2], "%d", &line)
