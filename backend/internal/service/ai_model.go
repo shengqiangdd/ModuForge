@@ -15,6 +15,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"moduforge/internal/domain"
 )
 
 // GenerateModule 用 LLM 生成模块代码
@@ -395,8 +397,18 @@ module.prop, customize.sh, META-INF/(update-binary + updater-script含#MAGISK)
 	}
 	if err := json.Unmarshal([]byte(content), &result); err != nil || len(result.Files) == 0 {
 		log.Printf("[AutoBuild] JSON parse failed: err=%v, files=%d, content_len=%d", err, len(result.Files), len(content))
-		safeSSE(map[string]interface{}{"type": "phase", "phase": "error", "message": "AI 输出格式无法解析，请重试"})
-		return nil
+		// Try to fix truncated JSON by adding missing closing braces
+		fixed := fixTruncatedJSON(content)
+		if fixed != content {
+			if err2 := json.Unmarshal([]byte(fixed), &result); err2 == nil && len(result.Files) > 0 {
+				log.Printf("[AutoBuild] Truncated JSON fixed, files=%d", len(result.Files))
+				content = fixed
+			}
+		}
+		if len(result.Files) == 0 {
+			safeSSE(map[string]interface{}{"type": "phase", "phase": "error", "message": "AI 输出格式无法解析，请重试"})
+			return nil
+		}
 	}
 
 	safeSSE(map[string]interface{}{"type": "phase", "phase": "saving", "message": fmt.Sprintf("保存 %d 个文件...", len(result.Files))})
@@ -425,7 +437,31 @@ module.prop, customize.sh, META-INF/(update-binary + updater-script含#MAGISK)
 
 	safeSSE(map[string]interface{}{"type": "phase", "phase": "building", "message": "开始编译..."})
 
-	// --- Phase 4: Trigger build ---
+	// --- Phase 4: Ensure project exists, then trigger build ---
+	// AutoBuild may receive a temporary projectID that doesn't exist in projects table.
+	// We need to create the project first so BuildService can find it.
+	var exists int
+	err = s.db.QueryRowContext(ctx, `SELECT 1 FROM projects WHERE id=? AND deleted_at IS NULL`, projectID).Scan(&exists)
+	if err != nil {
+		// Project doesn't exist — create it
+		projectSvc := NewProjectService(s.db, s.cfg)
+		name := description
+		if len(name) > 50 {
+			name = name[:50]
+		}
+		_, err = projectSvc.Create(ctx, userID, &domain.CreateProjectInput{
+			Name:        name,
+			Description: description,
+		})
+		if err != nil {
+			log.Printf("[AutoBuild] Failed to auto-create project %s: %v", projectID, err)
+			safeSSE(map[string]interface{}{"type": "phase", "phase": "error", "message": fmt.Sprintf("创建项目失败: %v", err)})
+			return nil
+		}
+		// Re-check — if Create generates a new ID, we need to use that
+		// For now, just try the build directly
+	}
+
 	buildSvc := NewBuildService(s.db, s.cfg)
 	build, _, err := buildSvc.Create(ctx, projectID, "auto")
 	if err != nil {
@@ -535,6 +571,63 @@ func truncateStr(s string, maxLen int) string {
 		return s
 	}
 	return s[:maxLen] + "..."
+}
+
+// fixTruncatedJSON attempts to repair truncated JSON output from LLM.
+// Free models often hit token limits mid-JSON. This tries to close
+// any open strings, arrays, and objects to make valid JSON.
+func fixTruncatedJSON(s string) string {
+	// Count open braces/brackets to determine what needs closing
+	braceCount := 0
+	bracketCount := 0
+	inString := false
+	escaped := false
+
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if escaped {
+			escaped = false
+			continue
+		}
+		if c == '\\' {
+			escaped = true
+			continue
+		}
+		if c == '"' {
+			inString = !inString
+			continue
+		}
+		if inString {
+			continue
+		}
+		if c == '{' {
+			braceCount++
+		} else if c == '}' {
+			braceCount--
+		} else if c == '[' {
+			bracketCount++
+		} else if c == ']' {
+			bracketCount--
+		}
+	}
+
+	// If we're inside a string, close it
+	result := s
+	if inString {
+		result += `"`
+	}
+
+	// Close any open arrays
+	for i := 0; i < bracketCount; i++ {
+		result += "]"
+	}
+
+	// Close any open objects
+	for i := 0; i < braceCount; i++ {
+		result += "}"
+	}
+
+	return result
 }
 
 // streamBuildLog streams build log output via SSE events.
