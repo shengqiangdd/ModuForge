@@ -138,7 +138,6 @@ func (s *AIService) MultiStageBuild(
 			"message": fmt.Sprintf("Shell 生成失败: %v，继续后续阶段...", err),
 		})
 	} else {
-		log.Printf("[MultiStage] Stage 1 raw JSON (%d chars): %s", len(shellJSON), truncate(shellJSON, 1000))
 		shellFiles := parseFilesJSON(shellJSON)
 		log.Printf("[MultiStage] Stage 1: Shell LLM returned %d chars, parsed %d files", len(shellJSON), len(shellFiles))
 		for path, content := range shellFiles {
@@ -384,7 +383,6 @@ func (s *AIService) doLLMRequest(
 
 	bodyBytes, _ := json.Marshal(reqBody)
 	chatURL := ensureChatCompletionsURL(endpoint)
-	log.Printf("[doLLMRequest] endpoint=%s apiKeyLen=%d model=%s keyPrefix=%s", chatURL, len(apiKey), model, apiKey[:min(20, len(apiKey))])
 	req, err := http.NewRequestWithContext(ctx, "POST", chatURL, bytes.NewReader(bodyBytes))
 	if err != nil {
 		return "", err
@@ -393,7 +391,6 @@ func (s *AIService) doLLMRequest(
 	if apiKey != "" {
 		req.Header.Set("Authorization", "Bearer "+apiKey)
 	}
-	log.Printf("[doLLMRequest] headers=%v", req.Header)
 
 	httpResp, err := httpClient.Do(req)
 	if err != nil {
