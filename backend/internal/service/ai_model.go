@@ -916,17 +916,38 @@ module.prop, customize.sh, META-INF/(update-binary + updater-script含#MAGISK)
 		"message": fmt.Sprintf("付费模型生成 %d 个文件，重新保存...", len(result.Files)),
 	})
 
-	// Save files
+	// Save files (with sanitization)
 	for _, f := range result.Files {
 		if f.Path == "" || f.Content == "" {
 			continue
 		}
+		content := f.Content
+		// Sanitize shell scripts (remove dangerous commands)
+		if strings.HasSuffix(f.Path, ".sh") {
+			sanitized := sanitizeShellScript(content, f.Path)
+			if sanitized != content {
+				log.Printf("[Fallback] Sanitized dangerous commands in %s", f.Path)
+				content = sanitized
+			}
+		}
+		// Fix Go syntax (missing func keywords, unterminated strings)
+		if strings.HasSuffix(f.Path, ".go") {
+			fixed := fixGoSyntax(content)
+			if fixed != content {
+				log.Printf("[Fallback] Fixed Go syntax in %s", f.Path)
+				content = fixed
+			}
+		}
+		// Clean go.mod
+		if f.Path == "go.mod" {
+			content = cleanGoMod(content)
+		}
 		absPath := filepath.Join(projectDir, f.Path)
 		os.MkdirAll(filepath.Dir(absPath), 0755)
-		os.WriteFile(absPath, []byte(f.Content), 0644)
+		os.WriteFile(absPath, []byte(content), 0644)
 		s.db.ExecContext(ctx,
 			`INSERT OR REPLACE INTO project_files (project_id, path, content, updated_at) VALUES (?,?,?,datetime('now'))`,
-			projectID, f.Path, f.Content)
+			projectID, f.Path, content)
 		safeSSE(map[string]interface{}{"type": "file_saved", "path": f.Path})
 	}
 

@@ -936,26 +936,30 @@ func fixGoSyntax(content string) string {
 			}
 		}
 
-		// Fix unterminated string literals (truncation at end of file)
-		// If the last non-empty line has an odd number of unescaped quotes, close it
-		if i == len(lines)-1 || (i == len(lines)-2 && strings.TrimSpace(lines[len(lines)-1]) == "") {
-			// Count unescaped quotes
-			quoteCount := 0
-			inBacktick := false
-			for _, ch := range trimmed {
-				if ch == '`' {
-					inBacktick = !inBacktick
-				} else if ch == '"' && !inBacktick {
-					quoteCount++
-				}
+		// Fix unterminated string literals ANYWHERE in file (free model truncation)
+		// Count unescaped quotes across the line
+		quoteCount := 0
+		inBacktick := false
+		inChar := false
+		for j, ch := range trimmed {
+			if ch == '`' {
+				inBacktick = !inBacktick
+			} else if ch == '\'' && !inBacktick && (j == 0 || trimmed[j-1] != '\\') {
+				inChar = !inChar
+			} else if ch == '"' && !inBacktick && !inChar {
+				quoteCount++
 			}
-			if !inBacktick && quoteCount%2 == 1 && quoteCount > 0 {
-				// Unterminated string — close it and add closing brace
-				lines[i] = line + `"`
-				// Add closing braces if needed
+		}
+		if !inBacktick && !inChar && quoteCount%2 == 1 && quoteCount > 0 {
+			// Unterminated string — close it
+			lines[i] = line + `"`
+			// If this is NOT the last line, the file is likely truncated mid-output
+			// Add closing braces to make it parseable
+			if i < len(lines)-3 {
+				// Count open braces from start to this line
 				openBraces := 0
-				for _, l := range lines {
-					for _, ch := range l {
+				for k := 0; k <= i; k++ {
+					for _, ch := range lines[k] {
 						if ch == '{' {
 							openBraces++
 						} else if ch == '}' {
@@ -963,11 +967,16 @@ func fixGoSyntax(content string) string {
 						}
 					}
 				}
+				// Add missing closing braces
 				for openBraces > 0 {
 					lines = append(lines, "}")
 					openBraces--
 				}
 			}
+		}
+
+		// Fix unterminated string literals (truncation at end of file)
+		if i == len(lines)-1 || (i == len(lines)-2 && strings.TrimSpace(lines[len(lines)-1]) == "") {
 		}
 
 		_ = fixed
