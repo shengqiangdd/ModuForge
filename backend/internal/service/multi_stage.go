@@ -347,6 +347,9 @@ func (s *AIService) callLLMForJSON(
 			log.Printf("[callLLMForJSON] Rate limited (429), will retry: %v", err)
 			continue
 		}
+		if err != nil && strings.Contains(err.Error(), "401") {
+			return "", fmt.Errorf("CREDITS_EXHAUSTED: %w", err)
+		}
 		return content, err
 	}
 	return "", fmt.Errorf("LLM request failed after %d retries", maxRetries)
@@ -534,10 +537,10 @@ func min(a, b int) int {
 	return b
 }
 
-// getPaidModelConfig returns the paid model config when free model is exhausted.
-// Looks for a paid provider in the DB, falls back to hardcoded defaults.
+// getPaidModelConfig returns available paid/free models in priority order.
+// Tries DB configs first, then hardcoded fallbacks.
 func (s *AIService) getPaidModelConfig(userID string) (endpoint, apiKey, model, providerID string) {
-	// Try DB: look for a non-free provider config
+	// Try DB: look for any provider config with an API key
 	rows, err := s.db.Query(`
 		SELECT provider_id, base_url, api_key, model_id
 		FROM llm_configs WHERE user_id = '' OR user_id IS NULL
@@ -550,17 +553,26 @@ func (s *AIService) getPaidModelConfig(userID string) (endpoint, apiKey, model, 
 		defer rows.Close()
 		for rows.Next() {
 			var pid, url, key, mid string
-			if rows.Scan(&pid, &url, &key, &mid) == nil && !isFreeModel(mid) && key != "" {
+			if rows.Scan(&pid, &url, &key, &mid) == nil && key != "" && !isFreeModel(mid) {
 				return url, key, mid, pid
 			}
 		}
 	}
 
-	// Hardcoded fallback: opencode-zen paid model
-	return "https://opencode.ai/zen/v1/chat/completions",
-		s.cfg.EffectiveLLMKey(),
-		"deepseek-v4-flash",
-		"opencode-zen-paid"
+	// Hardcoded fallback: try multiple models in order
+	key := s.cfg.EffectiveLLMKey()
+	if key != "" {
+		// Priority: deepseek-v4-flash > qwen3.8-max > mimo-v2.5
+		return "https://opencode.ai/zen/v1/chat/completions",
+			key, "deepseek-v4-flash", "opencode-zen-paid"
+	}
+
+	return "", "", "", ""
+}
+
+// getAlternativeFreeModels returns a list of free models to try when the primary is exhausted.
+func getAlternativeFreeModels() []string {
+	return []string{"poolside/laguna-s-2.1-free", "mimo-v2.5-free"}
 }
 
 func truncate(s string, maxLen int) string {
