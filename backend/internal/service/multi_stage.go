@@ -286,7 +286,7 @@ func (s *AIService) MultiStageBuild(
 			return nil
 		case <-ticker.C:
 			var status string
-			s.db.QueryRow("SELECT status FROM builds WHERE id = ?", build.ID).Scan(&status)
+			s.db.QueryRow("SELECT status FROM build_tasks WHERE id = ?", build.ID).Scan(&status)
 			mu.Lock()
 			s.sendSSE(w, map[string]interface{}{
 				"type":     "build_status",
