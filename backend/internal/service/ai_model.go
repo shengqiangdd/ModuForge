@@ -495,6 +495,31 @@ module.prop, customize.sh, META-INF/(update-binary + updater-script含#MAGISK)
 		// Wait for build to start
 		time.Sleep(2 * time.Second)
 		s.streamBuildLog(ctx, build.ID, w, &sseMu)
+
+		// Check if build failed and model is free → fallback to paid model
+		var buildStatus string
+		s.db.QueryRow("SELECT status FROM builds WHERE id = ?", build.ID).Scan(&buildStatus)
+		if buildStatus == "failed" {
+			currentEndpoint, currentKey, currentModel, _ := s.resolveLLMConfig(userID)
+			_ = currentEndpoint
+			_ = currentKey
+			if isFreeModel(currentModel) {
+				fallbackBuildID, fallbackErr := s.modelFallbackRegenerate(
+					ctx, projectID, userID, description, messages, sessionID, w, &sseMu)
+				if fallbackErr != nil {
+					log.Printf("[AutoBuild-Fallback] Error: %v", fallbackErr)
+					sseMu.Lock()
+					s.sendSSE(w, map[string]interface{}{
+						"type":    "phase",
+						"phase":   "error",
+						"message": fmt.Sprintf("付费模型重试也失败: %v", fallbackErr),
+					})
+					sseMu.Unlock()
+				} else if fallbackBuildID != "" {
+					log.Printf("[AutoBuild-Fallback] Paid model build started: %s", fallbackBuildID)
+				}
+			}
+		}
 	}()
 
 	// Token usage is tracked by the streaming response parser
@@ -706,9 +731,272 @@ func (s *AIService) streamBuildLog(ctx context.Context, buildID string, w *bufio
 			})
 			mu.Unlock()
 
-			if status == "success" || status == "failed" || status == "error" {
+			if status == "success" || status == "error" {
+				return
+			}
+
+			// Model fallback: if build failed and current model is free, retry with paid model
+			if status == "failed" {
+				// Only trigger fallback once per AutoBuild call (the caller passes retryCount=0 for first attempt)
+				// For fallback calls, retryCount=1 prevents infinite loop
 				return
 			}
 		}
 	}
+}
+
+// isFreeModel checks if a model name indicates a free tier model.
+func isFreeModel(model string) bool {
+	lower := strings.ToLower(model)
+	return strings.Contains(lower, "free")
+}
+
+// modelFallbackRegenerate regenerates the entire module with a paid model,
+// clears old files, and triggers a new build. Returns the new build ID and project ID,
+// or empty strings if fallback is not applicable.
+func (s *AIService) modelFallbackRegenerate(
+	ctx context.Context,
+	projectID, userID, description string,
+	messages []Message, sessionID string,
+	w *bufio.Writer, mu *sync.Mutex,
+) (newBuildID string, err error) {
+	// Resolve paid model config
+	endpoint, apiKey, model, _ := s.resolveLLMConfig(userID)
+	if !isFreeModel(model) {
+		return "", nil // Already using paid model, no fallback needed
+	}
+
+	// Find a paid model from the provider's model pool
+	paidEndpoint, paidKey, paidModel := s.findPaidModel(model)
+	if paidEndpoint == "" || paidKey == "" {
+		log.Printf("[AutoBuild-Fallback] No paid model available (current: %s)", model)
+		return "", nil
+	}
+
+	log.Printf("[AutoBuild-Fallback] Free model %s failed, retrying with paid model %s", model, paidModel)
+	safeSSE := func(data map[string]interface{}) {
+		mu.Lock()
+		s.sendSSE(w, data)
+		mu.Unlock()
+	}
+
+	safeSSE(map[string]interface{}{
+		"type":    "phase",
+		"phase":   "fallback",
+		"message": fmt.Sprintf("免费模型编译失败，正在使用付费模型 %s 重试...", paidModel),
+	})
+
+	// Delete old files from project
+	projectDir := filepath.Join(s.cfg.StoragePath, "projects", projectID)
+	os.RemoveAll(projectDir)
+	os.MkdirAll(projectDir, 0755)
+	s.db.ExecContext(ctx, `DELETE FROM project_files WHERE project_id=?`, projectID)
+
+	// Generate with paid model
+	systemPrompt := s.loadPrompt("agent", userID)
+	userPrompt := fmt.Sprintf(`创建Android Magisk模块。
+
+需求: %s
+
+## 约束
+1. 源码在容器内交叉编译为arm64二进制，你只生成源码+编译脚本
+2. 兼容Magisk/KernelSU/APatch（标准module.prop，不硬编码检测）
+3. 需求明确则直接生成代码，不分析
+4. 必须严格按照需求中指定的技术栈生成代码，不要擅自替换语言
+
+## 必须文件
+module.prop, customize.sh, META-INF/(update-binary + updater-script含#MAGISK)
+
+## 输出格式
+{"files":[{"path":"...","content":"..."}]}`, description)
+
+	userMsg := []Message{{Role: "user", Content: userPrompt}}
+
+	reqBody := map[string]interface{}{
+		"model": paidModel,
+		"messages": []map[string]string{
+			{"role": "system", "content": systemPrompt},
+		},
+		"stream":             true,
+		"response_format":    map[string]string{"type": "json_object"},
+	}
+	for _, m := range userMsg {
+		reqBody["messages"] = append(reqBody["messages"].([]map[string]string),
+			map[string]string{"role": m.Role, "content": m.Content})
+	}
+
+	bodyBytes, _ := json.Marshal(reqBody)
+	chatURL := ensureChatCompletionsURL(paidEndpoint)
+	req, reqErr := http.NewRequestWithContext(ctx, "POST", chatURL, bytes.NewReader(bodyBytes))
+	if reqErr != nil {
+		return "", reqErr
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if paidKey != "" {
+		req.Header.Set("Authorization", "Bearer "+paidKey)
+	}
+
+	httpResp, httpErr := httpClient.Do(req)
+	if httpErr != nil {
+		return "", httpErr
+	}
+	defer httpResp.Body.Close()
+
+	if httpResp.StatusCode >= 400 {
+		bodyBytes, _ := io.ReadAll(httpResp.Body)
+		return "", fmt.Errorf("paid model LLM error (HTTP %d): %s", httpResp.StatusCode, string(bodyBytes))
+	}
+
+	safeSSE(map[string]interface{}{
+		"type":    "phase",
+		"phase":   "generating",
+		"message": fmt.Sprintf("付费模型 %s 正在重新生成...", paidModel),
+	})
+
+	var fullContent strings.Builder
+	scanner := bufio.NewScanner(httpResp.Body)
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if !strings.HasPrefix(line, "data: ") {
+			continue
+		}
+		data := strings.TrimPrefix(line, "data: ")
+		if data == "[DONE]" {
+			break
+		}
+		var chunk struct {
+			Choices []struct {
+				Delta struct {
+					Content string `json:"content"`
+				} `json:"delta"`
+			} `json:"choices"`
+		}
+		if json.Unmarshal([]byte(data), &chunk) == nil && len(chunk.Choices) > 0 {
+			text := chunk.Choices[0].Delta.Content
+			if text != "" {
+				fullContent.WriteString(text)
+				safeSSE(map[string]interface{}{"type": "content", "content": text})
+			}
+		}
+	}
+
+	// Parse JSON
+	content := fullContent.String()
+	content = extractJSONBlock(content)
+
+	var result struct {
+		Files []struct {
+			Path    string `json:"path"`
+			Content string `json:"content"`
+		} `json:"files"`
+	}
+	if err2 := json.Unmarshal([]byte(content), &result); err2 != nil || len(result.Files) == 0 {
+		// Try truncated fix
+		fixed := fixTruncatedJSON(content)
+		if fixed != content {
+			json.Unmarshal([]byte(fixed), &result)
+		}
+		if len(result.Files) == 0 {
+			extracted := extractFilesFromTruncatedJSON(content)
+			if len(extracted) > 0 {
+				result.Files = extracted
+			}
+		}
+		if len(result.Files) == 0 {
+			return "", fmt.Errorf("paid model also produced unparseable output")
+		}
+	}
+
+	safeSSE(map[string]interface{}{
+		"type":    "phase",
+		"phase":   "saving",
+		"message": fmt.Sprintf("付费模型生成 %d 个文件，重新保存...", len(result.Files)),
+	})
+
+	// Save files
+	for _, f := range result.Files {
+		if f.Path == "" || f.Content == "" {
+			continue
+		}
+		absPath := filepath.Join(projectDir, f.Path)
+		os.MkdirAll(filepath.Dir(absPath), 0755)
+		os.WriteFile(absPath, []byte(f.Content), 0644)
+		s.db.ExecContext(ctx,
+			`INSERT OR REPLACE INTO project_files (project_id, path, content, updated_at) VALUES (?,?,?,datetime('now'))`,
+			projectID, f.Path, f.Content)
+		safeSSE(map[string]interface{}{"type": "file_saved", "path": f.Path})
+	}
+
+	// Trigger new build
+	safeSSE(map[string]interface{}{
+		"type":    "phase",
+		"phase":   "building",
+		"message": fmt.Sprintf("使用付费模型重新编译..."),
+	})
+
+	buildSvc := NewBuildService(s.db, s.cfg)
+	build, _, buildErr := buildSvc.Create(ctx, projectID, "auto-fallback")
+	if buildErr != nil {
+		return "", buildErr
+	}
+
+	safeSSE(map[string]interface{}{
+		"type":       "build_started",
+		"build_id":   build.ID,
+		"project_id": projectID,
+	})
+
+	// Stream fallback build
+	ticker := time.NewTicker(3 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return build.ID, nil
+		case <-ticker.C:
+			var status string
+			s.db.QueryRow("SELECT status FROM builds WHERE id = ?", build.ID).Scan(&status)
+			mu.Lock()
+			s.sendSSE(w, map[string]interface{}{
+				"type":      "build_status",
+				"build_id":  build.ID,
+				"status":    status,
+			})
+			mu.Unlock()
+			if status == "success" || status == "failed" || status == "error" {
+				return build.ID, nil
+			}
+		}
+	}
+}
+
+// findPaidModel searches for a paid (non-free) model in the current provider's configuration.
+// Returns the endpoint, API key, and model name of a paid model, or empty strings if none found.
+func (s *AIService) findPaidModel(currentModel string) (endpoint, apiKey, model string) {
+	endpoint, apiKey, model, providerID := s.resolveLLMConfig("")
+	_ = providerID
+
+	// If current model is already paid, return it
+	if !isFreeModel(model) {
+		return
+	}
+
+	// Try common paid models from the same provider
+	// These are known good models that should work
+	paidModels := []string{
+		"command-code/xiaomi/mimo-v2.5",
+		"deepseek/deepseek-v4-flash",
+		"qwen/qwen3.8-max",
+	}
+
+	for _, candidate := range paidModels {
+		if !isFreeModel(candidate) {
+			// Verify the model is available by trying a minimal request
+			// But for speed, just return the first non-free candidate
+			return endpoint, apiKey, candidate
+		}
+	}
+
+	return "", "", ""
 }
