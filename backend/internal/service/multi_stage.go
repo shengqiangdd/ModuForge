@@ -55,6 +55,7 @@ func (s *AIService) MultiStageBuild(
 
 	planPrompt := builder.MultiStageBuildPrompt(description)
 	planJSON, err := s.callLLMForJSON(ctx, endpoint, apiKey, model, planPrompt)
+	var plan builder.StagePlan
 	if err != nil {
 		log.Printf("[MultiStage] Stage 0 plan failed: %v, using fallback", err)
 		plan = fallbackPlan(description)
