@@ -760,8 +760,8 @@ func (s *AIService) modelFallbackRegenerate(
 	messages []Message, sessionID string,
 	w *bufio.Writer, mu *sync.Mutex,
 ) (newBuildID string, err error) {
-	// Resolve paid model config
-	endpoint, apiKey, model, _ := s.resolveLLMConfig(userID)
+	// Check if current model is free
+	_, _, model, _ := s.resolveLLMConfig(userID)
 	if !isFreeModel(model) {
 		return "", nil // Already using paid model, no fallback needed
 	}
