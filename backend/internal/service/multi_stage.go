@@ -45,6 +45,7 @@ func (s *AIService) MultiStageBuild(
 
 	// Resolve LLM config
 	endpoint, apiKey, model, _ := s.resolveLLMConfig(userID)
+	log.Printf("[MultiStage] LLM config: endpoint=%s model=%s apiKeyLen=%d", endpoint, model, len(apiKey))
 	freeModelExhausted := false
 
 	// ===== Stage 0: Architecture Planning =====
@@ -372,6 +373,7 @@ func (s *AIService) doLLMRequest(
 
 	bodyBytes, _ := json.Marshal(reqBody)
 	chatURL := ensureChatCompletionsURL(endpoint)
+	log.Printf("[doLLMRequest] endpoint=%s apiKeyLen=%d model=%s", chatURL, len(apiKey), model)
 	req, err := http.NewRequestWithContext(ctx, "POST", chatURL, bytes.NewReader(bodyBytes))
 	if err != nil {
 		return "", err
