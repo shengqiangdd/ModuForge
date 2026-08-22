@@ -855,7 +855,7 @@ func cleanGoMod(content string) string {
 // Known issue: "cleanup() {" instead of "func cleanup() {"
 func fixGoSyntax(content string) string {
 	lines := strings.Split(content, "\n")
-	go stdlibFuncs = []string{
+	stdlibFuncs := []string{
 		"cleanup", "main", "init", "start", "stop", "run", "setup",
 		"readBatteryInfo", "logBatteryInfo", "writeConfig", "loadConfig",
 		"handleSignal", "getTemperature", "getBattery", "sendNotification",
