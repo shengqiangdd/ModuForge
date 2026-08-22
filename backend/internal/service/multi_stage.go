@@ -56,13 +56,16 @@ func (s *AIService) MultiStageBuild(
 	planPrompt := builder.MultiStageBuildPrompt(description)
 	planJSON, err := s.callLLMForJSON(ctx, endpoint, apiKey, model, planPrompt)
 	if err != nil {
-		return fmt.Errorf("architecture planning failed: %w", err)
-	}
-
-	var plan builder.StagePlan
-	if err := json.Unmarshal([]byte(planJSON), &plan); err != nil {
-		log.Printf("[MultiStage] Plan parse failed, using fallback: %v", err)
+		log.Printf("[MultiStage] Stage 0 plan failed: %v, using fallback", err)
 		plan = fallbackPlan(description)
+	} else {
+		if err := json.Unmarshal([]byte(planJSON), &plan); err != nil {
+			log.Printf("[MultiStage] Stage 0 plan parse failed: %v, planJSON=%s", err, truncate(planJSON, 500))
+			plan = fallbackPlan(description)
+		} else {
+			log.Printf("[MultiStage] Stage 0 plan OK: %s (%d shell, %d go, %d c files)",
+				plan.Name, len(plan.ShellFiles), len(plan.GoFiles), len(plan.CFiles))
+		}
 	}
 
 	safeSSE(map[string]interface{}{
@@ -92,6 +95,7 @@ func (s *AIService) MultiStageBuild(
 	shellPrompt := builder.ShellStagePrompt(string(planJSONCompact), description)
 	shellJSON, err := s.callLLMForJSON(ctx, endpoint, apiKey, model, shellPrompt)
 	if err != nil {
+		log.Printf("[MultiStage] Stage 1 shell failed: %v", err)
 		safeSSE(map[string]interface{}{
 			"type":    "phase",
 			"phase":   "warning",
@@ -99,11 +103,11 @@ func (s *AIService) MultiStageBuild(
 		})
 	} else {
 		shellFiles := parseFilesJSON(shellJSON)
+		log.Printf("[MultiStage] Stage 1: Shell LLM returned %d chars, parsed %d files", len(shellJSON), len(shellFiles))
 		for path, content := range shellFiles {
 			allFiles[path] = content
 			safeSSE(map[string]interface{}{"type": "file_saved", "path": path, "stage": "shell"})
 		}
-		log.Printf("[MultiStage] Stage 1: %d Shell files generated", len(shellFiles))
 	}
 
 	// ===== Stage 2: Core Logic (one file at a time) =====
@@ -455,4 +459,11 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func truncate(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
 }
