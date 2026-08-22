@@ -339,11 +339,12 @@ func (s *AIService) MultiStageBuild(
 							var retryStatus string
 							s.db.QueryRow("SELECT status FROM build_tasks WHERE id = ?", build2.ID).Scan(&retryStatus)
 							s.sendSSE(w, map[string]interface{}{"type": "build_status", "build_id": build2.ID, "status": retryStatus})
-							if retryStatus == "success" || retryStatus == "error" {
-								if retryStatus == "success" {
-									log.Printf("[MultiStage] Auto-Fix retry build succeeded")
-									return nil
-								}
+							if retryStatus == "success" {
+								log.Printf("[MultiStage] Auto-Fix retry build succeeded")
+								return nil
+							}
+							if retryStatus != "" && retryStatus != "running" && retryStatus != "pending" {
+								log.Printf("[MultiStage] Auto-Fix retry build final status: %s", retryStatus)
 								break
 							}
 							time.Sleep(5 * time.Second)

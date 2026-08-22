@@ -108,6 +108,16 @@ func ShellStagePrompt(planJSON, description string) string {
 5. service.sh (if needed — runs on boot)
 6. uninstall.sh (if needed — cleanup)
 
+## SECURITY RULES for uninstall.sh:
+- NEVER use "rm -rf /" or "rm -rf /*" — this is EXTREMELY DANGEROUS and will fail security scan
+- Only remove files YOUR module created (in /data/adb/modules/<module_id>/)
+- Use specific paths: rm -rf /data/adb/modules/$MODPATH
+- Safe uninstall template:
+  #!/system/bin/sh
+  MODDIR=\${0%/*}
+  # Remove module data
+  rm -rf /data/adb/modules/\$(basename \$MODDIR)
+
 ## OUTPUT FORMAT
 {"files":[{"path":"module.prop","content":"..."},{"path":"customize.sh","content":"..."}]}
 
