@@ -449,7 +449,7 @@ module.prop, customize.sh, META-INF/(update-binary + updater-script含#MAGISK)
 		if len(name) > 50 {
 			name = name[:50]
 		}
-		_, err = projectSvc.Create(ctx, userID, &domain.CreateProjectInput{
+		proj, err := projectSvc.Create(ctx, userID, &domain.CreateProjectInput{
 			Name:        name,
 			Description: description,
 		})
@@ -458,8 +458,26 @@ module.prop, customize.sh, META-INF/(update-binary + updater-script含#MAGISK)
 			safeSSE(map[string]interface{}{"type": "phase", "phase": "error", "message": fmt.Sprintf("创建项目失败: %v", err)})
 			return nil
 		}
-		// Re-check — if Create generates a new ID, we need to use that
-		// For now, just try the build directly
+		// Update projectID to the newly created project's ID
+		// Also move files from temp dir to the real project dir
+		oldDir := projectDir
+		projectID = proj.ID
+		projectDir = filepath.Join(s.cfg.StoragePath, "projects", projectID)
+		if oldDir != projectDir {
+			os.MkdirAll(projectDir, 0755)
+			// Move files and update DB references
+			entries, _ := os.ReadDir(oldDir)
+			for _, e := range entries {
+				oldPath := filepath.Join(oldDir, e.Name())
+				newPath := filepath.Join(projectDir, e.Name())
+				os.Rename(oldPath, newPath)
+			}
+			// Update project_files table with new projectID
+			s.db.ExecContext(ctx,
+				`UPDATE project_files SET project_id=? WHERE project_id=?`,
+				projectID, proj.ID)
+		}
+		log.Printf("[AutoBuild] Auto-created project %s → %s", projectID, proj.ID)
 	}
 
 	buildSvc := NewBuildService(s.db, s.cfg)
