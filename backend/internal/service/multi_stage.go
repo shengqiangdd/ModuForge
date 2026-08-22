@@ -373,7 +373,7 @@ func (s *AIService) doLLMRequest(
 
 	bodyBytes, _ := json.Marshal(reqBody)
 	chatURL := ensureChatCompletionsURL(endpoint)
-	log.Printf("[doLLMRequest] endpoint=%s apiKeyLen=%d model=%s", chatURL, len(apiKey), model)
+	log.Printf("[doLLMRequest] endpoint=%s apiKeyLen=%d model=%s keyPrefix=%s", chatURL, len(apiKey), model, apiKey[:min(20, len(apiKey))])
 	req, err := http.NewRequestWithContext(ctx, "POST", chatURL, bytes.NewReader(bodyBytes))
 	if err != nil {
 		return "", err
@@ -382,6 +382,7 @@ func (s *AIService) doLLMRequest(
 	if apiKey != "" {
 		req.Header.Set("Authorization", "Bearer "+apiKey)
 	}
+	log.Printf("[doLLMRequest] headers=%v", req.Header)
 
 	httpResp, err := httpClient.Do(req)
 	if err != nil {
