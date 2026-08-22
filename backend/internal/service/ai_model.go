@@ -16,7 +16,7 @@ import (
 	"sync"
 	"time"
 
-	"moduforge/internal/domain"
+	"github.com/moduforge/backend/internal/domain"
 )
 
 // GenerateModule 用 LLM 生成模块代码
