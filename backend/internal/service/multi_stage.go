@@ -266,10 +266,15 @@ func (s *AIService) MultiStageBuild(
 	})
 
 	buildSvc := NewBuildService(s.db, s.cfg)
-	build, _, err := buildSvc.Create(ctx, projectID, "auto-multistage")
+	build, cacheResp, err := buildSvc.Create(ctx, projectID, "auto-multistage")
 	if err != nil {
+		log.Printf("[MultiStage] build creation failed: %v", err)
 		return fmt.Errorf("build creation failed: %w", err)
 	}
+	if cacheResp != nil && cacheResp.Cached {
+		log.Printf("[MultiStage] Build cache hit, taskID=%s", cacheResp.TaskID)
+	}
+	log.Printf("[MultiStage] Build task created: id=%s status=%s project=%s", build.ID, build.Status, projectID)
 
 	safeSSE(map[string]interface{}{
 		"type":       "build_started",
