@@ -442,6 +442,24 @@ func (s *AIService) doLLMRequest(
 				return fixed, nil
 			}
 		}
+		// Last resort: extract files via regex pattern matching
+		// This handles cases where the LLM outputs JSON with unescaped
+		// shell characters ($, }, etc.) that break strict JSON parsing
+		files := extractFilesByPattern(content)
+		if len(files) > 0 {
+			// Rebuild a valid JSON from extracted files
+			type fileEntry struct {
+				Path    string `json:"path"`
+				Content string `json:"content"`
+			}
+			var entries []fileEntry
+			for p, c := range files {
+				entries = append(entries, fileEntry{Path: p, Content: c})
+			}
+			rebuilt, _ := json.Marshal(map[string]interface{}{"files": entries})
+			log.Printf("[doLLMRequest] Regex extracted %d files from malformed JSON", len(files))
+			return string(rebuilt), nil
+		}
 		return "", fmt.Errorf("JSON parse failed after %d chars: %w", len(content), err)
 	}
 
