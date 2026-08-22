@@ -444,7 +444,7 @@ module.prop, customize.sh, META-INF/(update-binary + updater-script含#MAGISK)
 	err = s.db.QueryRowContext(ctx, `SELECT 1 FROM projects WHERE id=? AND deleted_at IS NULL`, projectID).Scan(&exists)
 	if err != nil {
 		// Project doesn't exist — create it
-		projectSvc := NewProjectService(s.db, s.cfg)
+		projectSvc := NewProjectService(s.db, s.cfg.StoragePath)
 		name := description
 		if len(name) > 50 {
 			name = name[:50]
