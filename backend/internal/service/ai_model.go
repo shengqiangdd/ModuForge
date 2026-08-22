@@ -499,11 +499,12 @@ module.prop, customize.sh, META-INF/(update-binary + updater-script含#MAGISK)
 		// Check if build failed and model is free → fallback to paid model
 		var buildStatus string
 		s.db.QueryRow("SELECT status FROM builds WHERE id = ?", build.ID).Scan(&buildStatus)
+		log.Printf("[AutoBuild-Fallback] Build %s status: %s", build.ID, buildStatus)
 		if buildStatus == "failed" {
-			currentEndpoint, currentKey, currentModel, _ := s.resolveLLMConfig(userID)
-			_ = currentEndpoint
-			_ = currentKey
+			_, _, currentModel, _ := s.resolveLLMConfig(userID)
+			log.Printf("[AutoBuild-Fallback] Current model: %s, isFree: %v", currentModel, isFreeModel(currentModel))
 			if isFreeModel(currentModel) {
+				log.Printf("[AutoBuild-Fallback] Triggering paid model fallback...")
 				fallbackBuildID, fallbackErr := s.modelFallbackRegenerate(
 					ctx, projectID, userID, description, messages, sessionID, w, &sseMu)
 				if fallbackErr != nil {
