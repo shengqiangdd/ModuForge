@@ -254,6 +254,13 @@ func (s *AIService) MultiStageBuild(
 				log.Printf("[MultiStage] Fixed Go syntax in %s", path)
 			}
 		}
+		if strings.HasSuffix(path, ".sh") {
+			sanitized := sanitizeShellScript(content, path)
+			if sanitized != content {
+				allFiles[path] = sanitized
+				log.Printf("[MultiStage] Sanitized dangerous commands in %s", path)
+			}
+		}
 	}
 
 	// ===== Save all files to project =====
@@ -965,6 +972,33 @@ func fixGoSyntax(content string) string {
 
 		_ = fixed
 		result = append(result, lines[i])
+	}
+	return strings.Join(result, "\n")
+}
+
+// sanitizeShellScript removes dangerous commands that trigger security scans.
+func sanitizeShellScript(content string, path string) string {
+	lines := strings.Split(content, "\n")
+	var result []string
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		// Remove dangerous rm -rf / commands
+		if strings.Contains(trimmed, "rm -rf /") || strings.Contains(trimmed, "rm -rf /*") {
+			// In uninstall.sh, replace with safe module removal
+			if strings.HasSuffix(path, "uninstall.sh") {
+				result = append(result, "#!/system/bin/sh")
+				result = append(result, "# Safe uninstall - only remove module files")
+				result = append(result, "MODDIR=${0%/*}")
+				result = append(result, "rm -rf $MODDIR")
+				result = append(result, "rm -rf /data/adb/modules/$(basename $MODDIR)")
+				return strings.Join(result, "\n")
+			}
+			// In other scripts, comment out the dangerous line
+			result = append(result, "# [SAFETY] Removed dangerous command: "+trimmed)
+			log.Printf("[MultiStage] Sanitized dangerous command in %s: %s", path, trimmed)
+			continue
+		}
+		result = append(result, line)
 	}
 	return strings.Join(result, "\n")
 }
