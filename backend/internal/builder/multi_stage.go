@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+
+	"github.com/moduforge/backend/internal/rag"
 )
 
 // Multi-stage generation engine for free models.
@@ -17,15 +19,15 @@ import (
 
 // StagePlan holds the architecture plan determined in Stage 0.
 type StagePlan struct {
-	ID          string            `json:"id"`          // e.g. "battery-monitor"
-	Name        string            `json:"name"`        // Human-readable name
-	ModuleType  string            `json:"module_type"` // service, tool, tweak
-	Languages   []string          `json:"languages"`   // ["shell"], ["go","shell"], etc.
-	ShellFiles  []StageFileInfo   `json:"shell_files"` // module.prop, customize.sh, etc.
-	GoFiles     []StageFileInfo   `json:"go_files"`    // src/main.go, etc.
-	CFiles      []StageFileInfo   `json:"c_files"`     // src/main.c, etc.
-	BuildFiles  []StageFileInfo   `json:"build_files"` // build.sh, go.mod, etc.
-	ExtraFiles  []StageFileInfo   `json:"extra_files"` // service.sh, uninstall.sh, config, etc.
+	ID         string          `json:"id"`          // e.g. "battery-monitor"
+	Name       string          `json:"name"`        // Human-readable name
+	ModuleType string          `json:"module_type"` // service, tool, tweak
+	Languages  []string        `json:"languages"`   // ["shell"], ["go","shell"], etc.
+	ShellFiles []StageFileInfo `json:"shell_files"` // module.prop, customize.sh, etc.
+	GoFiles    []StageFileInfo `json:"go_files"`    // src/main.go, etc.
+	CFiles     []StageFileInfo `json:"c_files"`     // src/main.c, etc.
+	BuildFiles []StageFileInfo `json:"build_files"` // build.sh, go.mod, etc.
+	ExtraFiles []StageFileInfo `json:"extra_files"` // service.sh, uninstall.sh, config, etc.
 }
 
 type StageFileInfo struct {
@@ -78,7 +80,7 @@ func MultiStageBuildPrompt(description string) string {
 // ShellStagePrompt generates Shell files (Stage 1).
 // Shell has ~100% success rate with free models.
 func ShellStagePrompt(planJSON, description string) string {
-	return `Generate Shell scripts for this Android Magisk module.
+	prompt := `Generate Shell scripts for this Android Magisk module.
 
 ## Architecture Plan
 ` + planJSON + `
@@ -128,6 +130,7 @@ func ShellStagePrompt(planJSON, description string) string {
 {"files":[{"path":"module.prop","content":"..."},{"path":"customize.sh","content":"..."}]}
 
 Return ONLY valid JSON. Full file contents with \\n for newlines in content field.`
+	return InjectRAGContext(prompt, description, 2)
 }
 
 // ═══════════════════════════════════════════════════════
@@ -319,7 +322,7 @@ Purpose: %s
 // GoStagePrompt generates a Go source file (Stage 2).
 // One file at a time with full project context to avoid truncation.
 func GoStagePrompt(planJSON, shellFilesJSON, description string, fileInfo StageFileInfo) string {
-	return `Generate a complete Go source file for an Android Magisk module.
+	prompt := `Generate a complete Go source file for an Android Magisk module.
 
 ## Architecture Plan
 ` + planJSON + `
@@ -352,11 +355,12 @@ Purpose: ` + fileInfo.Description + `
 {"files":[{"path":"` + fileInfo.Path + `","content":"..."}]}
 
 Return ONLY valid JSON. Full Go source code in content field with \\n for newlines.`
+	return InjectRAGContext(prompt, description, 2)
 }
 
 // CStagePrompt generates a C source file (Stage 2).
 func CStagePrompt(planJSON, shellFilesJSON, description string, fileInfo StageFileInfo) string {
-	return `Generate a complete C source file for an Android Magisk module.
+	prompt := `Generate a complete C source file for an Android Magisk module.
 
 ## Architecture Plan
 ` + planJSON + `
@@ -389,6 +393,7 @@ Purpose: ` + fileInfo.Description + `
 {"files":[{"path":"` + fileInfo.Path + `","content":"..."}]}
 
 Return ONLY valid JSON. Full C source code in content field with \\n for newlines.`
+	return InjectRAGContext(prompt, description, 2)
 }
 
 // BuildSystemPrompt generates build scripts (Stage 3).
@@ -456,4 +461,34 @@ No Go or C source files needed. build.sh should only package the shell scripts i
 {"files":[{"path":"build.sh","content":"..."},{"path":"go.mod","content":"..."}]}
 
 Return ONLY valid JSON. Full file contents with \\n for newlines.`
+	return InjectRAGContext(prompt, description, 2)
+}
+
+// InjectRAGContext retrieves relevant code examples from the knowledge base
+// and appends them to a prompt as few-shot examples.
+// If the RAG system is not initialized or no relevant chunks are found,
+// the original prompt is returned unchanged.
+func InjectRAGContext(prompt string, description string, topK int) string {
+	chunks, err := rag.SearchRelevant(description, topK)
+	if err != nil || len(chunks) == 0 {
+		return prompt
+	}
+
+	var sb strings.Builder
+	sb.WriteString(prompt)
+	sb.WriteString("\n\n## Relevant examples from knowledge base\n")
+	sb.WriteString("Use these as reference patterns, but adapt them to the specific requirement:\n\n")
+
+	for i, chunk := range chunks {
+		source := chunk.Source
+		if meta, ok := chunk.Metadata["file"]; ok && meta != "" {
+			source = meta
+		}
+		sb.WriteString(fmt.Sprintf("### Example %d (from %s)\n", i+1, source))
+		sb.WriteString("```\n")
+		sb.WriteString(chunk.Content)
+		sb.WriteString("\n```\n\n")
+	}
+
+	return sb.String()
 }
