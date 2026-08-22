@@ -137,6 +137,7 @@ func (s *AIService) MultiStageBuild(
 			"message": fmt.Sprintf("Shell 生成失败: %v，继续后续阶段...", err),
 		})
 	} else {
+		log.Printf("[MultiStage] Stage 1 raw JSON (%d chars): %s", len(shellJSON), truncate(shellJSON, 1000))
 		shellFiles := parseFilesJSON(shellJSON)
 		log.Printf("[MultiStage] Stage 1: Shell LLM returned %d chars, parsed %d files", len(shellJSON), len(shellFiles))
 		for path, content := range shellFiles {
