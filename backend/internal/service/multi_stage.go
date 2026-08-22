@@ -489,6 +489,17 @@ func parseFilesJSON(jsonStr string) map[string]string {
 		} `json:"files"`
 	}
 	if err := json.Unmarshal([]byte(jsonStr), &result); err != nil {
+		// Fallback: try regex extraction for malformed/truncated JSON
+		log.Printf("[parseFilesJSON] Standard parse failed: %v, trying regex fallback", err)
+		fileEntries := extractFilesFromTruncatedJSON(jsonStr)
+		if len(fileEntries) > 0 {
+			files := make(map[string]string)
+			for _, f := range fileEntries {
+				files[f.Path] = f.Content
+			}
+			log.Printf("[parseFilesJSON] Regex fallback recovered %d files", len(files))
+			return files
+		}
 		return nil
 	}
 	files := make(map[string]string)
