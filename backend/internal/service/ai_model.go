@@ -206,6 +206,14 @@ type llmResponse struct {
 
 // AutoBuild 自动构建 - 带phase事件的完整实现
 func (s *AIService) AutoBuild(ctx context.Context, description, projectID, userID string, messages []Message, sessionID string, w *bufio.Writer) error {
+	// 检测是否为免费模型 → 使用多阶段生成引擎
+	_, _, currentModel, _ := s.resolveLLMConfig(userID)
+	if isFreeModel(currentModel) {
+		log.Printf("[AutoBuild] Free model detected (%s), using multi-stage pipeline", currentModel)
+		return s.MultiStageBuild(ctx, description, projectID, userID, messages, sessionID, w)
+	}
+
+	// 付费模型 → 使用原有的单阶段生成（更大上下文窗口）
 	// 全局 SSE 写锁 + keepalive，覆盖整个 AutoBuild 生命周期（LLM 等待 + 编译）
 	var sseMu sync.Mutex
 	safeSSE := func(data map[string]interface{}) {
