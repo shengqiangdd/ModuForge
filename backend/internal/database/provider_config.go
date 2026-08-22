@@ -266,7 +266,12 @@ func (db *DB) LoadLLMConfig(cfg interface{ SetLLMConfig(provider, modelID, endpo
 			provider,
 		).Scan(&ak)
 		if err2 == nil {
-			apiKey = ak
+			// API keys may be base64-encoded in the database
+			if b, err := base64.StdEncoding.DecodeString(ak); err == nil {
+				apiKey = string(b)
+			} else {
+				apiKey = ak
+			}
 		}
 	}
 
