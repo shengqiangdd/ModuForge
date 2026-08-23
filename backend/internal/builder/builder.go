@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/moduforge/backend/internal/config"
 )
@@ -25,6 +26,7 @@ type BuildResult struct {
 	Success         bool               `json:"success"`
 	Stdout          string             `json:"stdout,omitempty"`
 	Stderr          string             `json:"stderr,omitempty"`
+	Duration        time.Duration      `json:"duration,omitempty"`
 	ArtifactPath    string             `json:"artifact_path"`
 	Incremental     *IncrementalResult `json:"incremental,omitempty"`
 	RecompiledFiles []string           `json:"recompiled_files,omitempty"`

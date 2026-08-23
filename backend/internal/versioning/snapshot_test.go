@@ -217,7 +217,7 @@ func TestSnapshotManager_EmptyProject(t *testing.T) {
 	projectDir := t.TempDir()
 	sm := NewSnapshotManager(projectDir)
 
-	id, err := sm.TakeSnapshot(projectDir, "empty")
+	_, err := sm.TakeSnapshot(projectDir, "empty")
 	if err != nil {
 		t.Fatalf("TakeSnapshot failed: %v", err)
 	}

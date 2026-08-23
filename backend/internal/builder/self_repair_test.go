@@ -53,11 +53,6 @@ func TestWriteGeneratedFiles_Plaintext(t *testing.T) {
 }
 
 func TestParseJSONArray(t *testing.T) {
-	type entry struct {
-		Path    string `json:"path"`
-		Content string `json:"content"`
-	}
-
 	tests := []struct {
 		name    string
 		input   string
@@ -88,7 +83,10 @@ func TestParseJSONArray(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var files []entry
+			var files []struct {
+				Path    string `json:"path"`
+				Content string `json:"content"`
+			}
 			err := parseJSONArray(tt.input, &files)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("parseJSONArray() error = %v, wantErr %v", err, tt.wantErr)
