@@ -112,6 +112,13 @@
 
   <!-- Bottom section -->
   <div class="p-3 border-t" style="border-color: var(--color-border)">
+    <!-- Notifications -->
+    <div class="flex items-center {collapsed ? 'justify-center' : 'gap-0'} mb-1">
+      <NotificationBell />
+      {#if !collapsed}
+        <span class="text-[14px] font-medium" style="color: var(--color-text-secondary)">通知</span>
+      {/if}
+    </div>
     <!-- Theme toggle -->
     <button
       class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-150 text-[14px] font-medium min-h-[44px] hover:bg-[var(--color-surface)]"
@@ -124,9 +131,6 @@
         <span>{themeMode === 'dark' ? '浅色模式' : themeMode === 'light' ? '深色模式' : '跟随系统'}</span>
       {/if}
     </button>
-    <div class="flex items-center justify-center {collapsed ? '' : 'px-3'} py-1">
-      <NotificationBell />
-    </div>
     <button
       class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-150 text-[14px] font-medium min-h-[44px] hover:bg-[var(--color-surface)]"
       style="color: var(--color-text-secondary)"

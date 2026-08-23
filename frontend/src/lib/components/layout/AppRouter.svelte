@@ -177,7 +177,7 @@
     {/if}
   {:else}
     <!-- Lazy-loaded route component -->
-    <div class="flex-1 overflow-y-auto flex flex-col min-h-0 min-w-0 {current === 'ai' ? '' : 'page-enter'}">
+    <div class="flex-1 {current === 'ai' ? '' : 'overflow-y-auto'} flex flex-col min-h-0 min-w-0 {current === 'ai' ? '' : 'page-enter'}">
       {#if routeLoading}
         <PageSkeleton variant={current === 'editor' ? 'editor' : current === 'market' ? 'market' : current === 'market-publish' ? 'market' : 'list'} />
       {:else if routeComponent}
