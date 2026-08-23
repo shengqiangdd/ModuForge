@@ -236,8 +236,12 @@ func main() {
 	apiGroup := app.Group("/api/v1")
 	handler.RegisterRoutes(apiGroup, db, cfg)
 
-	// Docs
-	handler.RegisterDocs(apiGroup, cfg.StoragePath+"/../docs")
+	// Docs – try multiple candidate paths for openapi.yaml
+	docsDir := cfg.StoragePath + "/../docs"
+	if _, err := os.Stat(filepath.Join(docsDir, "openapi.yaml")); err != nil {
+		docsDir = "/app/docs"
+	}
+	handler.RegisterDocs(apiGroup, docsDir)
 	app.Get("/docs", handler.DocsRedirect)
 
 	// Static uploads (screenshots, etc.)
