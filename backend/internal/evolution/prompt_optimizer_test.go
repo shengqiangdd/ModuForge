@@ -133,7 +133,7 @@ func TestGetPendingSuggestions_WithApplied(t *testing.T) {
 	}
 }
 
-func TestGetAll(t *testing.T) {
+func TestGetAllPrompts(t *testing.T) {
 	po := NewPromptOptimizer(t.TempDir())
 
 	po.SaveSuggestion(PromptSuggestion{OriginalPrompt: "p1", SuggestedChange: "s1"})

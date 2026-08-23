@@ -114,7 +114,7 @@ Analyze this requirement and produce a detailed, structured specification.
   ],
   "boundary_conditions": [
     "Must handle missing /sys file gracefully",
-    "Must not consume more than 5% CPU",
+    "Must not consume more than 5%% CPU",
     "Must work on Android 8.0+ (API 26+)"
   ],
   "test_cases": [

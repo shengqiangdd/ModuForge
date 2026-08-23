@@ -112,7 +112,7 @@ func TestGetWeeklySummary(t *testing.T) {
 	}
 }
 
-func TestGetAll(t *testing.T) {
+func TestGetAllReviews(t *testing.T) {
 	s := NewReviewStore(t.TempDir())
 
 	s.SaveReview(s.GenerateReview("t1", "r1", true, 5*time.Second, 100, nil))

@@ -301,11 +301,10 @@ func (h *SigningHandler) GetSignatureInfo(c fiber.Ctx) error {
 		return BadRequest(c, "项目 ID 不能为空")
 	}
 
-	var id int64
 	var moduleID, pubKey, sig, fileHash, signedAt string
 	err := h.db.QueryRow(
 		"SELECT id, module_id, public_key, signature, file_hash, signed_at FROM module_signatures WHERE module_id=?",
-		projectID).Scan(&id, &moduleID, &pubKey, &sig, &fileHash, &signedAt)
+		projectID).Scan(new(int64), &moduleID, &pubKey, &sig, &fileHash, &signedAt)
 	if err == sql.ErrNoRows {
 		return c.JSON(fiber.Map{
 			"signed": false,

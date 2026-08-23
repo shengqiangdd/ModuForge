@@ -302,3 +302,54 @@ func split(s, sep string) []string {
 func trimSpace(s string) string {
 	return strings.TrimSpace(s)
 }
+
+// BuildCacheJSON is a JSON-based build cache tracking file hashes and build metadata.
+type BuildCacheJSON struct {
+	Files       map[string]FileMtimeRecord `json:"files"`
+	BuildTime   string                     `json:"build_time"`
+	Arch        string                     `json:"arch"`
+	Target      string                     `json:"target"`
+	FullRebuild bool                       `json:"full_rebuild"`
+}
+
+// FileMtimeRecord stores metadata for a cached file.
+type FileMtimeRecord struct {
+	Path  string `json:"path"`
+	Hash  string `json:"hash"`
+	Size  int64  `json:"size"`
+}
+
+const buildCacheFile = ".moduforge_build_cache.json"
+
+// loadBuildCache loads the build cache from the given directory.
+func loadBuildCache(dir string) *BuildCacheJSON {
+	path := filepath.Join(dir, buildCacheFile)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return &BuildCacheJSON{
+			Files: make(map[string]FileMtimeRecord),
+		}
+	}
+	var cache BuildCacheJSON
+	if err := json.Unmarshal(data, &cache); err != nil {
+		return &BuildCacheJSON{
+			Files: make(map[string]FileMtimeRecord),
+		}
+	}
+	if cache.Files == nil {
+		cache.Files = make(map[string]FileMtimeRecord)
+	}
+	return &cache
+}
+
+// saveBuildCache saves the build cache to the given directory.
+func saveBuildCache(dir string, cache *BuildCacheJSON) error {
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(cache, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(dir, buildCacheFile), data, 0644)
+}

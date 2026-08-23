@@ -272,7 +272,6 @@ func ruleGoErrorHandling(path, content string) []LintIssue {
 	lines := strings.Split(content, "\n")
 
 	// Pattern: funcCall() without error check
-	errReturnRe := regexp.MustCompile(`(\w+)\s*\(`)
 	errorFuncs := []string{"os.ReadFile", "os.WriteFile", "os.MkdirAll", "exec.Command"}
 
 	for i, line := range lines {
