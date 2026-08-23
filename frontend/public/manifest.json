@@ -1,17 +1,31 @@
 {
-  "name": "ModuForge",
-  "short_name": "ModuForge",
-  "description": "Android Module Development Platform",
-  "start_url": "/",
-  "display": "standalone",
-  "background_color": "#0f172a",
-  "theme_color": "#8b5cf6",
-  "icons": [
-    {
-      "src": "/icon.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
-      "purpose": "any"
-    }
-  ]
+	"name": "ModuForge - AI Magisk Module Builder",
+	"short_name": "ModuForge",
+	"description": "AI-powered Magisk module development platform",
+	"start_url": "/",
+	"display": "standalone",
+	"theme_color": "#0d1117",
+	"background_color": "#0d1117",
+	"orientation": "any",
+	"scope": "/",
+	"lang": "en",
+	"categories": ["developer", "utilities"],
+	"icons": [
+		{
+			"src": "/icons/icon-192.png",
+			"sizes": "192x192",
+			"type": "image/png"
+		},
+		{
+			"src": "/icons/icon-512.png",
+			"sizes": "512x512",
+			"type": "image/png"
+		},
+		{
+			"src": "/icons/icon-maskable.png",
+			"sizes": "512x512",
+			"type": "image/png",
+			"purpose": "maskable"
+		}
+	]
 }
