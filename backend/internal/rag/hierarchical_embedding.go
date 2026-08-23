@@ -178,7 +178,7 @@ func (he *HierarchicalEmbedder) SearchHierarchical(
 	// Sort by score descending
 	for i := 0; i < len(results); i++ {
 		for j := i + 1; j < len(results); j++ {
-			if results[j].score > results[i].score {
+			if results[j].Score > results[i].Score {
 				results[i], results[j] = results[j], results[i]
 			}
 		}
