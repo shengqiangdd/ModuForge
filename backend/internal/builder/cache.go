@@ -12,14 +12,6 @@ import (
 	"time"
 )
 
-// BuildResult holds the outcome of a build operation.
-type BuildResult struct {
-	Success  bool          `json:"success"`
-	Stdout   string        `json:"stdout,omitempty"`
-	Stderr   string        `json:"stderr,omitempty"`
-	Duration time.Duration `json:"duration"`
-}
-
 // CacheEntry stores a cached build result.
 type CacheEntry struct {
 	Key         string        `json:"key"`
@@ -245,15 +237,6 @@ func HashFiles(paths []string) (string, error) {
 	}
 
 	return fmt.Sprintf("%x", h.Sum(nil)), nil
-}
-
-// relativePath computes relative path from base.
-func relativePath(path, base string) string {
-	rel, err := filepath.Rel(base, path)
-	if err != nil {
-		return path
-	}
-	return filepath.ToSlash(rel)
 }
 
 // fileExists checks if a file exists.

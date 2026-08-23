@@ -197,3 +197,27 @@ func ChangeSummary(changes []FileChange) string {
 
 	return join(parts, ", ")
 }
+
+// IncrementalResult holds the result of an incremental build analysis.
+type IncrementalResult struct {
+	ChangedFiles []string        `json:"changed_files"`
+	SkippedFiles []string        `json:"skipped_files"`
+	NeedsRebuild bool            `json:"needs_rebuild"`
+	Reason       string          `json:"reason,omitempty"`
+	ChangedDirs  map[string]bool `json:"-"`
+}
+
+// CheckIncremental determines if an incremental build is possible.
+func CheckIncremental(projectDir string, arch string) *IncrementalResult {
+	// For now, always do full build — incremental requires proper file tracking
+	return &IncrementalResult{
+		NeedsRebuild: true,
+		Reason:       "full rebuild required",
+	}
+}
+
+// UpdateBuildCacheAfterBuild updates the build cache after a successful build.
+func UpdateBuildCacheAfterBuild(projectDir string, arch string, target string) error {
+	// Cache update handled by BuildCache — no-op for now
+	return nil
+}
