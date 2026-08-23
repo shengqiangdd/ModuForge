@@ -165,6 +165,7 @@ var (
 	goFuncRe      = regexp.MustCompile(`^func\s+(?:\(\s*\w+\s+\S+\s*\)\s+)?(\w+)\s*\(`)
 	goImportRe    = regexp.MustCompile(`^import\s+"([^"]+)"`)
 	goImportBlock = regexp.MustCompile(`^import\s+\(`)
+	goImportLine  = regexp.MustCompile(`^"([^"]+)"`)
 	goCallRe      = regexp.MustCompile(`(\w+)\s*\(`)
 	goAPIRe       = regexp.MustCompile(`(os\.ReadFile|os\.WriteFile|exec\.Command|fmt\.Print|http\.Get|http\.Post)`)
 )
@@ -193,7 +194,7 @@ func extractGo(filePath, content string) ([]Entity, []Relation) {
 				inImportBlock = false
 				continue
 			}
-			if m := goImportRe.FindStringSubmatch(trimmed); m != nil {
+			if m := goImportLine.FindStringSubmatch(trimmed); m != nil {
 				eid := "pkg_" + strings.ReplaceAll(m[1], "/", "_")
 				entities = append(entities, Entity{
 					ID:     eid,

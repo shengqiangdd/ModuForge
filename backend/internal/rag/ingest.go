@@ -181,6 +181,7 @@ func tokenize(text string) []string {
 		"to": true, "of": true, "in": true, "for": true, "on": true,
 		"with": true, "as": true, "by": true, "at": true, "and": true,
 		"or": true, "if": true, "not": true, "no": true, "do": true,
+		"this": true, "that": true, "be": true, "has": true, "had": true,
 	}
 
 	for _, t := range raw {

@@ -79,7 +79,7 @@ func TestBuildCodePrompt_Go(t *testing.T) {
 	if !strings.Contains(prompt, "Go source file") {
 		t.Error("prompt missing Go language hint")
 	}
-	if !strings.Contains(prompt, "package main") {
+	if !strings.Contains(prompt, "Package main") {
 		t.Error("prompt missing package main rule")
 	}
 	if !strings.Contains(prompt, "src/main.go") {

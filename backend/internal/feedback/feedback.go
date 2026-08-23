@@ -92,6 +92,9 @@ func (s *Store) AnalyzePatterns() (string, error) {
 	defer s.mu.RUnlock()
 
 	if err := s.load(); err != nil {
+		if os.IsNotExist(err) {
+			return "No feedback data available.", nil
+		}
 		return "", fmt.Errorf("load feedback: %w", err)
 	}
 

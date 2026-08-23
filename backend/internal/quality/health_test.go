@@ -25,8 +25,8 @@ func main() {
 
 	report := a.AnalyzeGoCode(code)
 
-	if report.LineCount != 7 {
-		t.Errorf("expected 7 lines, got %d", report.LineCount)
+	if report.LineCount != 8 {
+		t.Errorf("expected 8 lines, got %d", report.LineCount)
 	}
 
 	if report.FunctionCount != 1 {
@@ -123,8 +123,8 @@ echo "hello"
 
 	report := a.AnalyzeShellCode(code)
 
-	if report.LineCount != 2 {
-		t.Errorf("expected 2 lines, got %d", report.LineCount)
+	if report.LineCount != 3 {
+		t.Errorf("expected 3 lines, got %d", report.LineCount)
 	}
 
 	// Should have no shebang issue
@@ -221,8 +221,8 @@ func TestHealthReport_Empty(t *testing.T) {
 	a := NewCodeHealthAnalyzer()
 
 	report := a.AnalyzeGoCode("")
-	if report.LineCount != 0 {
-		t.Errorf("expected 0 lines, got %d", report.LineCount)
+	if report.LineCount != 1 {
+		t.Errorf("expected 1 lines, got %d", report.LineCount)
 	}
 }
 

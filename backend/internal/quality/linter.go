@@ -284,7 +284,11 @@ func ruleGoErrorHandling(path, content string) []LintIssue {
 			if strings.Contains(trimmed, fn+"(") {
 				// Check if error is handled (next lines contain if err != nil)
 				if i+1 < len(lines) {
-					nextLines := strings.Join(lines[i:i+3], "\n")
+					end := i + 3
+					if end > len(lines) {
+						end = len(lines)
+					}
+					nextLines := strings.Join(lines[i:end], "\n")
 					if !strings.Contains(nextLines, "err") {
 						issues = append(issues, LintIssue{
 							File:     path,

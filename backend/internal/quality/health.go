@@ -106,7 +106,7 @@ func (a *CodeHealthAnalyzer) AnalyzeShellCode(code string) HealthReport {
 // Go analysis helpers
 // ═══════════════════════════════════════════════════════
 
-var goFuncRe = regexp.MustCompile(`^func\s+(?:\(\s*\w+\s+\S+\s*\)\s+)?(\w+)`)
+var goFuncRe = regexp.MustCompile(`(?m)^func\s+(?:\(\s*\w+\s+\S+\s*\)\s+)?(\w+)`)
 
 func countGoFunctions(code string) int {
 	return len(goFuncRe.FindAllString(code, -1))
@@ -178,7 +178,7 @@ func (a *CodeHealthAnalyzer) checkGoStyle(code string, lines []string) []HealthI
 // Shell analysis helpers
 // ═══════════════════════════════════════════════════════
 
-var shellFuncRe = regexp.MustCompile(`^\w+\s*\(\)\s*\{`)
+var shellFuncRe = regexp.MustCompile(`(?m)^\w+\s*\(\)\s*\{`)
 
 func countShellFunctions(code string) int {
 	return len(shellFuncRe.FindAllString(code, -1))

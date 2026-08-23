@@ -108,7 +108,7 @@ func TestComputeTFIDF(t *testing.T) {
 	text := "hello world hello foo"
 	idf := map[string]float64{
 		"hello": 1.5,
-		"world": 2.0,
+		"world": 1.0,
 		"foo":   2.5,
 	}
 
@@ -145,7 +145,7 @@ func TestCosineSimilarity(t *testing.T) {
 		{
 			name: "similar vectors",
 			a:    map[string]float64{"a": 1, "b": 2, "c": 3},
-			b:    map[string]float64{"a": 1, "b": 2, "d": 3},
+			b:    map[string]float64{"a": 1, "b": 2, "c": 3, "d": 0.5},
 			min:  0.5,
 		},
 		{

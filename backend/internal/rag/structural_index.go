@@ -118,11 +118,12 @@ func (si *StructuralIndex) QueryBySymbol(name string) []CodeElement {
 // ═══════════════════════════════════════════════════════
 
 var (
-	goFuncRe      = regexp.MustCompile(`^func\s+(?:\(\s*\w+\s+\S+\s*\)\s+)?(\w+)\s*\(`)
+	goFuncRe      = regexp.MustCompile(`(?m)^func\s+(?:\(\s*\w+\s+\S+\s*\)\s+)?(\w+)\s*\(`)
 	goVarRe       = regexp.MustCompile(`^var\s+(\w+)`)
 	goStructRe    = regexp.MustCompile(`^type\s+(\w+)\s+struct`)
 	goImportRe    = regexp.MustCompile(`^import\s+"([^"]+)"`)
 	goImportBlock = regexp.MustCompile(`^import\s+\(`)
+	goImportLine  = regexp.MustCompile(`^"([^"]+)"`)
 	goCallRe      = regexp.MustCompile(`(\w+)\s*\(`)
 )
 
@@ -162,7 +163,7 @@ func (si *StructuralIndex) parseGo(filePath string, lines []string) {
 				inImportBlock = false
 				continue
 			}
-			if m := goImportRe.FindStringSubmatch(trimmed); m != nil {
+			if m := goImportLine.FindStringSubmatch(trimmed); m != nil {
 				si.elements = append(si.elements, CodeElement{
 					Name: m[1], Type: ElementImport, FilePath: filePath,
 					Line: lineNum, EndLine: lineNum,
@@ -186,6 +187,12 @@ func (si *StructuralIndex) parseGo(filePath string, lines []string) {
 			funcName = m[1]
 			funcStart = lineNum
 			braceDepth = 0
+			// Add the function element immediately so calls can be tracked
+			si.elements = append(si.elements, CodeElement{
+				Name: funcName, Type: ElementFunction, FilePath: filePath,
+				Line: funcStart, EndLine: lineNum,
+				Signature: "func " + funcName + "()",
+			})
 			continue
 		}
 
@@ -224,13 +231,14 @@ func (si *StructuralIndex) parseGo(filePath string, lines []string) {
 				}
 			}
 			if braceDepth <= 0 && strings.Contains(trimmed, "}") {
-				// End of function
+				// End of function - update EndLine
 				if funcName != "" {
-					si.elements = append(si.elements, CodeElement{
-						Name: funcName, Type: ElementFunction, FilePath: filePath,
-						Line: funcStart, EndLine: lineNum,
-						Signature: "func " + funcName + "()",
-					})
+					for idx := len(si.elements) - 1; idx >= 0; idx-- {
+						if si.elements[idx].Name == funcName && si.elements[idx].Type == ElementFunction {
+							si.elements[idx].EndLine = lineNum
+							break
+						}
+					}
 				}
 				inFunc = false
 				funcName = ""

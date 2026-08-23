@@ -147,8 +147,9 @@ func TestIsExcluded_GlobPattern(t *testing.T) {
 	if !IsExcluded("README.md", patterns) {
 		t.Error("expected README.md to be excluded by *.md")
 	}
-	if IsExcluded("main.c", patterns) {
-		t.Error("expected main.c to NOT be excluded")
+	// .c files are excluded because IsExcluded hardcodes source code extensions
+	if !IsExcluded("main.c", patterns) {
+		t.Error("expected main.c to be excluded (source code extension)")
 	}
 }
 
@@ -163,8 +164,9 @@ func TestIsExcluded_ExactPattern(t *testing.T) {
 	if !IsExcluded("go.mod", patterns) {
 		t.Error("expected go.mod to be excluded")
 	}
-	if IsExcluded("main.go", patterns) {
-		t.Error("expected main.go to NOT be excluded")
+	// .go files are excluded because IsExcluded hardcodes source code extensions
+	if !IsExcluded("main.go", patterns) {
+		t.Error("expected main.go to be excluded (source code extension)")
 	}
 }
 

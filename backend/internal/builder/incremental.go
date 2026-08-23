@@ -106,7 +106,7 @@ func (ib *IncrementalBuilder) BuildIncremental(
 	builderFn func(files map[string]string) (BuildResult, error),
 ) (BuildResult, error) {
 	if len(changes) == 0 {
-		return BuildResult{}, nil
+		return BuildResult{Success: true}, nil
 	}
 
 	// Build file set from changes (only additions and modifications)
