@@ -266,7 +266,7 @@ import * as cb from './lib/callbacks';
     handler = createStreamHandler(state as any, null, loadProjectFiles, loadConversations, () => cb.loadGenHistory(state as any));
     // Re-wire chatMessages ref for scrollToBottom
     (handler as any)._chatMessages = () => chatMessages;
-    setupOnInit(state as any, handler, chatMessages as any);
+    setupOnInit(handler);
     await loadInitialData(state as any, handler, loadProjectFiles, loadSessionMessages);
   });
 
