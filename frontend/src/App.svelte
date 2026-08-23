@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import type { Component } from 'svelte';
   import { client, getToken, setToken, clearToken, AuthError, hasValidToken, tryRefreshToken } from '$lib/api/client';
   import { globalLoading } from '$lib/stores/loading.svelte';
@@ -30,13 +30,14 @@
     'tests': () => import('./routes/projects/[id]/tests/+page.svelte'),
     'settings': () => import('./routes/settings/+page.svelte'),
     'ai': () => import('./routes/ai/+page.svelte'),
+    'analytics': () => import('./routes/analytics/+page.svelte'),
     'mcp': () => import('./routes/mcp/+page.svelte'),
     'devices': () => import('./routes/devices/+page.svelte'),
     'glossary': () => import('./routes/glossary/+page.svelte'),
     'crash': () => import('./routes/crash/+page.svelte'),
   };
 
-  type Route = 'auth' | 'projects' | 'editor' | 'builds' | 'tests' | 'settings' | 'market' | 'market-publish' | 'dashboard' | 'ai' | 'mcp' | 'devices' | 'crash' | 'glossary';
+  type Route = 'auth' | 'projects' | 'editor' | 'builds' | 'tests' | 'settings' | 'market' | 'market-publish' | 'dashboard' | 'ai' | 'analytics' | 'mcp' | 'devices' | 'crash' | 'glossary';
   interface Project { id: string; name: string; module_type: string; description: string; created_at: string; updated_at: string; }
 
   // ─── Global state ───
@@ -103,8 +104,8 @@
     loadRoute(route);
     const paths: Record<string, string> = {
       'market': '/market', 'market-publish': '/market/publish', 'dashboard': '/dashboard',
-      'projects': '/projects', 'settings': '/settings', 'ai': '/ai', 'mcp': '/mcp',
-      'devices': '/devices', 'glossary': '/glossary',
+      'projects': '/projects', 'settings': '/settings', 'ai': '/ai', 'analytics': '/analytics',
+      'mcp': '/mcp', 'devices': '/devices', 'glossary': '/glossary',
     };
     if (paths[route]) history.pushState(null, '', paths[route]);
     else if (route === 'editor' && id) history.pushState(null, '', `/projects/${id}`);
@@ -187,6 +188,10 @@
     ws.disconnect();
     toast('已退出登录', 'info');
   }
+
+  onDestroy(() => {
+    if (refreshTimer) clearTimeout(refreshTimer);
+  });
 
   // ─── Projects ───
   async function loadProjects() {
@@ -300,8 +305,8 @@
       const path = window.location.pathname;
       const routeMap: Record<string, Route> = {
         '/market/publish': 'market-publish', '/market': 'market', '/dashboard': 'dashboard',
-        '/settings': 'settings', '/ai': 'ai', '/mcp': 'mcp', '/devices': 'devices',
-        '/glossary': 'glossary', '/crash': 'crash',
+        '/settings': 'settings', '/ai': 'ai', '/analytics': 'analytics', '/mcp': 'mcp',
+        '/devices': 'devices', '/glossary': 'glossary', '/crash': 'crash',
       };
       if (routeMap[path]) { current = routeMap[path]; loadRoute(routeMap[path]); }
       else if (path === '/projects') { current = 'projects'; routeComponent = null; routeKey = 'projects'; }

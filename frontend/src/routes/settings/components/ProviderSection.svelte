@@ -90,14 +90,14 @@
         currentProvider = cfg.provider || 'opencode-zen';
         currentModelId = cfg.model_id || '';
       }
-    } catch {}
+    } catch (e) { console.error('Failed to load LLM config:', e); }
     try {
       const r = await fetch('/api/v1/llm/providers', { headers: { Authorization: `Bearer ${token}` } });
       if (r.ok) {
         const data = await r.json();
         presetProviders = data.providers || [];
       }
-    } catch {}
+    } catch (e) { console.error('Failed to load LLM providers:', e); }
     try {
       const r = await fetch('/api/v1/llm/provider-configs', { headers: { Authorization: `Bearer ${token}` } });
       if (r.ok) {
@@ -105,18 +105,18 @@
         for (const c of data.configs || []) {
           providerConfigs[c.id] = { endpoint: c.endpoint, api_key: c.api_key, models_json: c.models_json };
           if (c.models_json) {
-            try { userModelsMap[c.id] = JSON.parse(c.models_json); } catch {}
+            try { userModelsMap[c.id] = JSON.parse(c.models_json); } catch (e) { console.warn('Failed to parse models_json:', e); }
           }
         }
       }
-    } catch {}
+    } catch (e) { console.error('Failed to load provider configs:', e); }
     try {
       const r = await fetch('/api/v1/llm/custom-providers', { headers: { Authorization: `Bearer ${token}` } });
       if (r.ok) {
         const data = await r.json();
         customProviders = data.providers || [];
       }
-    } catch {}
+    } catch (e) { console.error('Failed to load custom providers:', e); }
   }
 
   function openConfigModal(p: Provider) {
@@ -183,7 +183,7 @@
   function openEditCustomModal(p: Provider) {
     editingCustom = p;
     let parsedModels: { id: string; name: string; max_tokens: number }[] = [];
-    try { parsedModels = JSON.parse(p.models_json || '[]'); } catch {}
+    try { parsedModels = JSON.parse(p.models_json || '[]'); } catch (e) { console.warn('Failed to parse custom provider models:', e); }
     customForm = { name: p.name, endpoint: p.endpoint, api_key: p.api_key || '', models: parsedModels };
     showCustomModal = true;
   }

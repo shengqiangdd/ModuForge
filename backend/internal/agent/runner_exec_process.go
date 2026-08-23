@@ -57,6 +57,14 @@ func (p *toolResultProcessor) process(iter int, conversation []map[string]interf
 			break
 		}
 
+		// Record tool result for differential caching
+		if p.r.tokenOptimizer != nil {
+			var toolArgs map[string]interface{}
+			if err := json.Unmarshal([]byte(res.tc.Function.Arguments), &toolArgs); err == nil {
+				p.r.tokenOptimizer.RecordToolResult(p.sessionID, res.tc.Function.Name, res.result, toolArgs)
+			}
+		}
+
 		// Track write_file calls
 		if res.tc.Function.Name == "write_file" {
 			anyWriteCalled = true

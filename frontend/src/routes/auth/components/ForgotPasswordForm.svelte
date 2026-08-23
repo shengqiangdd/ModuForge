@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onDestroy } from 'svelte';
   import { client } from '../../../lib/api/client';
   import { toast } from '$lib/stores/toast.svelte';
   import './auth-styles.css';
@@ -30,6 +31,10 @@
       }
     }, 1000);
   }
+
+  onDestroy(() => {
+    if (cooldownInterval) clearInterval(cooldownInterval);
+  });
 
   async function requestForgotCode() {
     if (!forgotEmail.trim()) { error = '请输入邮箱'; return; }

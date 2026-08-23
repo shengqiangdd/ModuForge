@@ -18,6 +18,7 @@
   let onlineUsers = $state<CollabUser[]>([]);
   let wsConnected = $state(false);
   let ws: WebSocket | null = null;
+  let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
   const USER_COLORS: Record<string, string> = {};
   const COLOR_PALETTE = ['#e53935', '#1e88e5', '#43a047', '#fb8c00', '#8e24aa', '#00acc1', '#6d4c41', '#546e7a'];
@@ -35,6 +36,7 @@
   });
 
   onDestroy(() => {
+    if (reconnectTimer) clearTimeout(reconnectTimer);
     if (ws) ws.close();
   });
 
@@ -60,7 +62,8 @@
     ws.onclose = () => {
       wsConnected = false;
       // Reconnect after 3 seconds
-      setTimeout(() => {
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null;
         if (projectId) connectWs();
       }, 3000);
     };

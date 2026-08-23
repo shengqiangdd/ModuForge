@@ -80,7 +80,7 @@ export function extractRecommendedFiles(content: string): RecommendedFile[] | nu
       }
       return fullParse.recommended_files;
     }
-  } catch {}
+  } catch { /* JSON.parse 失败时继续下方字符串匹配 */ }
   return null;
 }
 
@@ -94,7 +94,7 @@ export function extractFiles(content: string): { path: string; content: string }
         }
         return parsed.files;
       }
-    } catch {}
+    } catch { /* JSON.parse 失败时继续下方字符串匹配 */ }
     return null;
   }
   const result = tryParse(content);
@@ -173,7 +173,7 @@ export function parseErrorDetail(content: string): ErrorDetail | null {
     if (parsed.error) {
       return { message: parsed.error, suggestion: '' };
     }
-  } catch {}
+  } catch { /* JSON.parse 失败时继续下方字符串匹配 */ }
   if (content.includes('AI service unavailable') || content.includes('LLM not configured')) {
     return {
       message: 'AI 服务不可用或未配置 API 密钥',
@@ -206,7 +206,7 @@ export async function safeCopyText(text: string): Promise<boolean> {
       await navigator.clipboard.writeText(text);
       return true;
     }
-  } catch {}
+  } catch { /* JSON.parse 失败时继续下方字符串匹配 */ }
   return fallbackCopy(text);
 }
 

@@ -26,7 +26,7 @@ function toCustomProvider(cp: CustomProviderPayload): Provider {
         }))
         .filter(m => m.id);
     }
-  } catch {}
+  } catch (e) { console.warn('Failed to parse custom provider models:', e); }
   return {
     id: cp.id || '',
     name: cp.name || cp.id || '',
@@ -81,7 +81,7 @@ export async function loadProvidersFromBackend(): Promise<{
         savedProvider = cfg.provider || '';
         savedModel = cfg.model_id || '';
       }
-    } catch {}
+    } catch (e) { console.error('Failed to load LLM config:', e); }
     if (!savedProvider) {
       savedProvider = localStorage.getItem('moduforge_ai_provider') || '';
       savedModel = localStorage.getItem('moduforge_ai_model') || '';

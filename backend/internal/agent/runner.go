@@ -178,6 +178,9 @@ type AgentRunner struct {
 
 	// DifferentialCache for file content change detection (cleaned up periodically)
 	diffCache *DifferentialCache
+
+	// TokenOptimizer for token-aware conversation pruning and tool result caching
+	tokenOptimizer *TokenOptimizer
 }
 
 func NewAgentRunner(registry *SkillRegistry, apiKey, endpoint, model string, db *sql.DB) *AgentRunner {
@@ -205,6 +208,7 @@ func NewAgentRunner(registry *SkillRegistry, apiKey, endpoint, model string, db 
 		contextCondenser: NewContextCondenser(30, 6, 1),
 		sessionLearner:   NewSessionLearner(100),
 		diffCache:        NewDifferentialCache(2 * time.Minute),
+		tokenOptimizer:   NewTokenOptimizer(""),
 	}
 	go r.startSessionCacheCleanup()
 	return r
@@ -588,6 +592,12 @@ You are running WITHOUT a project context. This means:
 		startKeepalive(iterCtx, w, llmDone, 10*time.Second)
 
 		prefiltered := prefilterConversation(conversation)
+
+		// Token optimization: prune old tool results to reduce token usage
+		if r.tokenOptimizer != nil && len(prefiltered) > 0 {
+			maxConvTokens := 100000
+			prefiltered = r.tokenOptimizer.OptimizeConversation(prefiltered, maxConvTokens)
+		}
 		llmStartTime := time.Now()
 		llmResp, err := r.callLLMWithTools(iterCtx, prefiltered, toolDefs, w, cfg.UserID, reqProviderID, reqModel, cfg)
 		llmDuration := time.Since(llmStartTime)

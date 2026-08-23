@@ -71,7 +71,7 @@
       const map: Record<string, string> = {};
       for (const p of data.policies || []) map[`${p.server}/${p.tool}`] = p.mode || (p.allow_auto ? 'allow' : 'deny');
       policies = map;
-    } catch { /* 静默 */ }
+    } catch (e) { console.warn('Failed to load MCP policies:', e); }
   }
 
   // ---- Server management ----

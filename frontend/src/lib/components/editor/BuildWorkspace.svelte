@@ -69,7 +69,7 @@
         headers: { 'Authorization': `Bearer ${localStorage.getItem('moduforge_token') || ''}` },
       });
       if (res.ok) buildHistory = await res.json();
-    } catch {}
+    } catch (e) { console.error('Failed to load build history:', e); }
   }
 
   async function loadCacheStatus() {
@@ -79,7 +79,7 @@
         headers: { 'Authorization': `Bearer ${localStorage.getItem('moduforge_token') || ''}` },
       });
       if (res.ok) cacheStatus = await res.json();
-    } catch {}
+    } catch (e) { console.error('Failed to load cache status:', e); }
   }
 
   async function loadBuildSchedules() {
@@ -92,7 +92,7 @@
         const data = await res.json();
         buildSchedules = data.schedules || [];
       }
-    } catch {}
+    } catch (e) { console.error('Failed to load build schedules:', e); }
   }
 
   async function saveGitConfig() {
@@ -140,7 +140,7 @@
         body: JSON.stringify({ active }),
       });
       loadBuildSchedules();
-    } catch {}
+    } catch (e) { console.error('Failed to toggle schedule:', e); }
   }
 
   async function deleteSchedule(id: string) {
@@ -152,7 +152,7 @@
       });
       buildSchedules = buildSchedules.filter(s => s.id !== id);
       toast('已删除', 'info', 3000);
-    } catch {}
+    } catch (e) { console.error('Failed to delete schedule:', e); }
   }
 
   onMount(() => {
@@ -169,7 +169,7 @@
           gitConfig.author = project.git_author || '';
           gitConfig.commitMsg = project.git_commit_msg || '';
         }
-      } catch {}
+      } catch (e) { console.error('Failed to load project:', e); }
       loadBuildHistory();
       loadCacheStatus();
       loadBuildSchedules();
@@ -307,7 +307,7 @@
         status = 'cancelled';
         toast('构建已取消', 'info', 4000);
       }
-    } catch {}
+    } catch (e) { console.error('Failed to cancel build:', e); }
     if (pollTimer) clearInterval(pollTimer);
     pollTimer = null;
     building = false;

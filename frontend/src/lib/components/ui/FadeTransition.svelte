@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
 
   let { show = false, duration = 200, direction = 'up' }: {
     show?: boolean;
@@ -9,12 +9,17 @@
 
   let visible = $state(false);
   let animating = $state(false);
+  let exitTimer: ReturnType<typeof setTimeout> | null = null;
 
   onMount(() => {
     if (show) {
       visible = true;
       animating = true;
     }
+  });
+
+  onDestroy(() => {
+    if (exitTimer) clearTimeout(exitTimer);
   });
 
   $effect(() => {
@@ -25,8 +30,9 @@
       });
     } else {
       animating = false;
-      setTimeout(() => {
+      exitTimer = setTimeout(() => {
         visible = false;
+        exitTimer = null;
       }, duration);
     }
   });
