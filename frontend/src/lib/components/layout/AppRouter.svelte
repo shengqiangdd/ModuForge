@@ -65,7 +65,7 @@
 </script>
 
 <!-- ═══ Main Content ═══ -->
-<main class="flex-1 flex flex-col overflow-hidden {current === 'ai' ? '' : 'pb-16 md:pb-0'}" style="background: var(--color-bg)">
+<main class="flex-1 flex flex-col min-h-0 {current === 'ai' ? '' : 'pb-16 md:pb-0'}" style="background: var(--color-bg)">
   <!-- Page Content -->
   {#if current === 'projects'}
     <div class="flex-1 overflow-y-auto page-enter min-w-0">
@@ -177,7 +177,7 @@
     {/if}
   {:else}
     <!-- Lazy-loaded route component -->
-    <div class="flex-1 overflow-y-auto overflow-x-hidden flex flex-col min-h-0 min-w-0 {current === 'ai' ? '' : 'page-enter'}">
+    <div class="flex-1 overflow-y-auto flex flex-col min-h-0 min-w-0 {current === 'ai' ? '' : 'page-enter'}">
       {#if routeLoading}
         <PageSkeleton variant={current === 'editor' ? 'editor' : current === 'market' ? 'market' : current === 'market-publish' ? 'market' : 'list'} />
       {:else if routeComponent}
