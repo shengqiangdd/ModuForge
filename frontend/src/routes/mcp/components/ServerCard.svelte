@@ -82,7 +82,7 @@
 <div class="rounded-2xl border overflow-hidden transition-all" style="background: var(--color-bg-elevated); border-color: var(--color-border)">
   <!-- Server header -->
   <div
-    class="w-full flex items-center gap-3 p-4 text-left"
+    class="w-full flex items-center gap-3 p-4 text-left overflow-hidden"
     role="button"
     tabindex="0"
     onclick={() => onToggle(server.name)}
@@ -96,8 +96,8 @@
         {server.ready ? 'check_circle' : 'error'}
       </span>
     </div>
-    <div class="flex-1 min-w-0">
-      <div class="flex items-center gap-2 flex-wrap">
+    <div class="flex-1 min-w-0 overflow-hidden">
+      <div class="flex items-center gap-2 flex-wrap min-w-0">
         <span class="font-semibold" style="color: var(--color-text)">{server.name}</span>
         {#if !server.managed}
           <span class="badge text-[10px]" style="background: color-mix(in srgb, var(--color-text-muted) 12%, transparent); color: var(--color-text-muted)">环境变量</span>

@@ -33,12 +33,13 @@
     </div>
   </div>
   <div class="relative">
-    <span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-[18px]" style="color: var(--color-text-muted)">search</span>
+    <span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-[18px] pointer-events-none" style="color: var(--color-text-muted)">search</span>
     <input
       value={search}
       oninput={(e) => onSearch((e.target as HTMLInputElement).value)}
       placeholder="搜索工具..."
-      class="input-field pl-10 py-2.5 text-sm w-full md:w-72"
+      class="input-field py-2.5 text-sm w-full md:w-72"
+      style="padding-left: 2.5rem"
     />
   </div>
 </div>
