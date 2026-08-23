@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"log/slog"
 	"strings"
 
 	"github.com/gofiber/fiber/v3"
@@ -8,8 +9,7 @@ import (
 )
 
 func AuthMiddleware(jwtSecret string) fiber.Handler {
-	return func(c fiber.Ctx) error {
-		// Support Authorization header or query param ?token=
+	return func(c *fiber.Ctx) error {
 		token := ""
 		if authHeader := c.Get("Authorization"); authHeader != "" {
 			parts := strings.SplitN(authHeader, " ", 2)
@@ -17,8 +17,12 @@ func AuthMiddleware(jwtSecret string) fiber.Handler {
 				token = parts[1]
 			}
 		}
+		// DEPRECATED: query param fallback exists only for legacy WebSocket/SSE clients
+		// that cannot set custom headers. New clients MUST use Authorization header.
 		if token == "" {
 			if t := c.Query("token"); t != "" {
+				slog.Warn("JWT passed via query param (deprecated, will be removed)",
+					"path", c.Path(), "remote", c.IP())
 				token = t
 			}
 		}

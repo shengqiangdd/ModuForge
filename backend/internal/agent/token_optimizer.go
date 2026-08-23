@@ -40,8 +40,12 @@ import (
 // English: ~4 chars/token, Code: ~3 chars/token, Chinese: ~1.5 chars/token.
 // Accuracy: ±15% vs tiktoken, but 100x faster (no network/disk overhead).
 type TokenEstimator struct {
-	cache sync.Map // hash -> estimated tokens
+	cache     sync.Map // hash -> estimated tokens
+	cacheSize int64    // approximate cache size for eviction
 }
+
+// maxCacheEntries limits cache growth (each entry ~48 bytes key + 8 bytes value = ~56 bytes)
+const maxCacheEntries = 5000 // ~280KB
 
 // EstimateTokens returns an estimated token count for the given text.
 func (te *TokenEstimator) EstimateTokens(text string) int {
@@ -78,9 +82,18 @@ func (te *TokenEstimator) EstimateTokens(text string) int {
 	tokens := float64(chinese)/1.5 + float64(ascii)/4.0 + float64(code)/3.0 + float64(whitespace)/4.0
 	result := int(math.Round(tokens))
 
-	// Cache (limit size by only caching if under 100KB text)
+	// Cache with size limit
 	if len(text) < 100000 {
 		te.cache.Store(key, result)
+		size := te.cacheSize
+		te.cacheSize++
+		// Evict when over limit: clear entire cache (simple strategy, avoids full scan)
+		if size >= maxCacheEntries {
+			te.cache = sync.Map{}
+			te.cacheSize = 0
+			te.cache.Store(key, result)
+			te.cacheSize = 1
+		}
 	}
 
 	return result

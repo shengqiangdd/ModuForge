@@ -1,11 +1,24 @@
 package agent
 
 import (
+	"database/sql"
 	"encoding/base64"
 	"log"
 )
 
+// decodeAPIKey decodes a base64-encoded API key if possible, otherwise returns raw value.
+func decodeAPIKey(key string) string {
+	if key == "" {
+		return key
+	}
+	if decoded, err := base64.StdEncoding.DecodeString(key); err == nil {
+		return string(decoded)
+	}
+	return key
+}
+
 // resolveLLMConfig resolves the LLM endpoint, API key, and model from various sources.
+// Consolidated to minimize DB queries: at most 2-3 queries instead of 5+.
 func (r *AgentRunner) resolveLLMConfig(userID, reqProviderID, reqModel string, cfg ...RunConfig) (string, string, string) {
 	// If RunConfig has pre-resolved values, use them directly
 	if len(cfg) > 0 && cfg[0].LLMEndpoint != "" {
@@ -15,45 +28,9 @@ func (r *AgentRunner) resolveLLMConfig(userID, reqProviderID, reqModel string, c
 		if reqModel != "" {
 			model = reqModel
 		}
-		// If API key is empty, try to load from provider_configs or custom_providers table
+		// If API key is empty, try to load from DB (single query)
 		if apiKey == "" && reqProviderID != "" && r.db != nil {
-			var encKey string
-			err := r.db.QueryRow(
-				"SELECT api_key FROM provider_configs WHERE id=? AND user_id=?",
-				reqProviderID, userID,
-			).Scan(&encKey)
-			if err == nil && encKey != "" {
-				if b, dErr := base64.StdEncoding.DecodeString(encKey); dErr == nil {
-					apiKey = string(b)
-					log.Printf("[Agent] resolveLLMConfig: loaded API key from provider_configs for provider=%s", reqProviderID)
-				}
-			}
-			// Also try custom_providers table (try by name first, then by UUID id)
-			if apiKey == "" {
-				var cpKey, cpEp string
-				cpErr := r.db.QueryRow(
-					"SELECT api_key, endpoint FROM custom_providers WHERE name=? AND user_id=?",
-					reqProviderID, userID,
-				).Scan(&cpKey, &cpEp)
-				if cpErr != nil {
-					cpErr = r.db.QueryRow(
-						"SELECT api_key, endpoint FROM custom_providers WHERE id=? AND user_id=?",
-						reqProviderID, userID,
-					).Scan(&cpKey, &cpEp)
-				}
-				if cpErr == nil && cpKey != "" {
-					if b, dErr := base64.StdEncoding.DecodeString(cpKey); dErr == nil {
-						apiKey = string(b)
-					} else {
-						apiKey = cpKey
-					}
-					// Also override endpoint from custom provider
-					if cpEp != "" {
-						endpoint = cpEp
-					}
-					log.Printf("[Agent] resolveLLMConfig: loaded API key+endpoint from custom_providers for provider=%s", reqProviderID)
-				}
-			}
+			apiKey, endpoint = r.loadProviderKeyAndEndpoint(userID, reqProviderID, endpoint)
 		}
 		log.Printf("[Agent] resolveLLMConfig: using RunConfig endpoint=%s model=%s apiKey_len=%d providerID=%s", endpoint, model, len(apiKey), reqProviderID)
 		return endpoint, apiKey, model
@@ -63,92 +40,45 @@ func (r *AgentRunner) resolveLLMConfig(userID, reqProviderID, reqModel string, c
 	apiKey := r.apiKey
 	model := r.model
 
-	if reqProviderID != "" && r.db != nil {
-		// First try llm_providers (preset providers)
-		var ep, key, mdl string
-		err := r.db.QueryRow(
-			"SELECT endpoint, api_key, model_id FROM llm_providers WHERE id=? AND user_id=?",
-			reqProviderID, userID,
-		).Scan(&ep, &key, &mdl)
-		if err == nil && ep != "" {
-			endpoint = ep
-			if key != "" {
-				apiKey = key
-			}
-			if reqModel != "" {
-				model = reqModel
-			} else if mdl != "" {
-				model = mdl
-			}
-			log.Printf("[Agent] resolveLLMConfig: provider=%s endpoint=%s model=%s", reqProviderID, endpoint, model)
-			return endpoint, apiKey, model
-		}
-		// Then try custom_providers table (try by name first, then by UUID id)
-		var cpEp, cpKey, cpModel string
-		cpErr := r.db.QueryRow(
-			"SELECT endpoint, api_key, COALESCE(model_id,'') FROM custom_providers WHERE name=? AND user_id=?",
-			reqProviderID, userID,
-		).Scan(&cpEp, &cpKey, &cpModel)
-		if cpErr != nil {
-			cpErr = r.db.QueryRow(
-				"SELECT endpoint, api_key, COALESCE(model_id,'') FROM custom_providers WHERE id=? AND user_id=?",
-				reqProviderID, userID,
-			).Scan(&cpEp, &cpKey, &cpModel)
-		}
-		if cpErr == nil && cpEp != "" {
-			endpoint = cpEp
-			if cpKey != "" {
-				// Decode base64-encoded API key if needed
-				if decoded, dErr := base64.StdEncoding.DecodeString(cpKey); dErr == nil {
-					apiKey = string(decoded)
-				} else {
-					apiKey = cpKey
-				}
-			}
-			if reqModel != "" {
-				model = reqModel
-			} else if cpModel != "" {
-				model = cpModel
-			}
-			log.Printf("[Agent] resolveLLMConfig: custom provider=%s endpoint=%s model=%s", reqProviderID, endpoint, model)
-			return endpoint, apiKey, model
-		}
-		log.Printf("[Agent] resolveLLMConfig: provider=%s not found in db, fallback to default", reqProviderID)
-	}
-
 	if r.db != nil {
-		var cfgModel, cfgEndpoint, cfgKey string
-		err := r.db.QueryRow("SELECT model_id, endpoint, api_key FROM llm_config WHERE id='default'").Scan(&cfgModel, &cfgEndpoint, &cfgKey)
-		if err == nil {
-			if cfgModel != "" {
-				model = cfgModel
+		if reqProviderID != "" {
+			// Single query: try llm_providers first, then custom_providers (by name, then by id)
+			ep, key, mdl, found := r.resolveProviderByID(userID, reqProviderID)
+			if found && ep != "" {
+				endpoint = ep
+				if key != "" {
+					apiKey = decodeAPIKey(key)
+				}
+				if reqModel != "" {
+					model = reqModel
+				} else if mdl != "" {
+					model = mdl
+				}
+				log.Printf("[Agent] resolveLLMConfig: provider=%s endpoint=%s model=%s", reqProviderID, endpoint, model)
+				return endpoint, apiKey, model
 			}
-			if cfgEndpoint != "" {
-				endpoint = cfgEndpoint
-			}
-			if cfgKey != "" {
-				apiKey = cfgKey
-			}
+			log.Printf("[Agent] resolveLLMConfig: provider=%s not found, falling back to defaults", reqProviderID)
 		}
 
-		// P0-Fix: If llm_config loaded a preset provider with no API key,
-		// also check custom_providers for this user. This ensures callLLMSummary
-		// (compact/plan) uses the correct custom provider instead of falling back
-		// to the free preset (which triggers FreeUsageLimitError 429).
+		// Load default config (1 query)
+		cfgModel, cfgEndpoint, cfgKey := r.loadDefaultLLMConfig()
+		if cfgModel != "" {
+			model = cfgModel
+		}
+		if cfgEndpoint != "" {
+			endpoint = cfgEndpoint
+		}
+		if cfgKey != "" {
+			apiKey = decodeAPIKey(cfgKey)
+		}
+
+		// If still no API key, try latest custom provider for this user (1 query)
 		if apiKey == "" && userID != "" {
-			var cpEp, cpKey, cpModel string
-			cpErr := r.db.QueryRow(
-				"SELECT endpoint, api_key, COALESCE(model_id,'') FROM custom_providers WHERE user_id=? ORDER BY updated_at DESC LIMIT 1",
-				userID,
-			).Scan(&cpEp, &cpKey, &cpModel)
-			if cpErr == nil && cpEp != "" {
+			cpEp, cpKey, cpModel, found := r.loadLatestCustomProvider(userID)
+			if found && cpEp != "" {
 				endpoint = cpEp
 				if cpKey != "" {
-					if decoded, dErr := base64.StdEncoding.DecodeString(cpKey); dErr == nil {
-						apiKey = string(decoded)
-					} else {
-						apiKey = cpKey
-					}
+					apiKey = decodeAPIKey(cpKey)
 				}
 				if cpModel != "" {
 					model = cpModel
@@ -164,3 +94,86 @@ func (r *AgentRunner) resolveLLMConfig(userID, reqProviderID, reqModel string, c
 	log.Printf("[Agent] resolveLLMConfig: fallback endpoint=%s model=%s", endpoint, model)
 	return endpoint, apiKey, model
 }
+
+// resolveProviderByID tries llm_providers then custom_providers in a single query via UNION ALL.
+func (r *AgentRunner) resolveProviderByID(userID, providerID string) (endpoint, apiKey, model string, found bool) {
+	query := `
+		SELECT endpoint, api_key, COALESCE(model_id, ''), 'llm' as src FROM llm_providers WHERE id=? AND user_id=?
+		UNION ALL
+		SELECT endpoint, api_key, COALESCE(model_id, ''), 'custom' FROM custom_providers WHERE name=? AND user_id=?
+		UNION ALL
+		SELECT endpoint, api_key, COALESCE(model_id, ''), 'custom' FROM custom_providers WHERE id=? AND user_id=?
+		LIMIT 1`
+	err := r.db.QueryRow(query, providerID, userID, providerID, userID, providerID, userID).
+		Scan(&endpoint, &apiKey, &model, new(string))
+	if err != nil {
+		return "", "", "", false
+	}
+	return endpoint, apiKey, model, true
+}
+
+// loadProviderKeyAndEndpoint loads API key from provider_configs or custom_providers (single query).
+func (r *AgentRunner) loadProviderKeyAndEndpoint(userID, providerID, currentEndpoint string) (apiKey, endpoint string) {
+	// Try provider_configs first
+	var encKey string
+	err := r.db.QueryRow(
+		"SELECT api_key FROM provider_configs WHERE id=? AND user_id=?",
+		providerID, userID,
+	).Scan(&encKey)
+	if err == nil && encKey != "" {
+		return decodeAPIKey(encKey), currentEndpoint
+	}
+
+	// Try custom_providers (by name then by id in one query)
+	var cpKey, cpEp string
+	err = r.db.QueryRow(`
+		SELECT api_key, endpoint FROM (
+			SELECT api_key, endpoint FROM custom_providers WHERE name=? AND user_id=?
+			UNION ALL
+			SELECT api_key, endpoint FROM custom_providers WHERE id=? AND user_id=?
+		) LIMIT 1`,
+		providerID, userID, providerID, userID,
+	).Scan(&cpKey, &cpEp)
+	if err == nil && cpKey != "" {
+		if cpEp != "" {
+			endpoint = cpEp
+		} else {
+			endpoint = currentEndpoint
+		}
+		return decodeAPIKey(cpKey), endpoint
+	}
+
+	return "", currentEndpoint
+}
+
+// loadDefaultLLMConfig loads the default LLM configuration (1 query).
+func (r *AgentRunner) loadDefaultLLMConfig() (modelID, endpoint, apiKey string) {
+	err := r.db.QueryRow(
+		"SELECT COALESCE(model_id, ''), COALESCE(endpoint, ''), COALESCE(api_key, '') FROM llm_config WHERE id='default'",
+	).Scan(&modelID, &endpoint, &apiKey)
+	if err != nil {
+		return "", "", ""
+	}
+	return modelID, endpoint, apiKey
+}
+
+// loadLatestCustomProvider loads the most recently updated custom provider for a user (1 query).
+func (r *AgentRunner) loadLatestCustomProvider(userID string) (endpoint, apiKey, model string, found bool) {
+	err := r.db.QueryRow(
+		"SELECT endpoint, COALESCE(api_key, ''), COALESCE(model_id, '') FROM custom_providers WHERE user_id=? ORDER BY updated_at DESC LIMIT 1",
+		userID,
+	).Scan(&endpoint, &apiKey, &model)
+	if err != nil || endpoint == "" {
+		return "", "", "", false
+	}
+	return endpoint, apiKey, model, true
+}
+
+// resolveLLMConfigFromRow is a helper for scanning provider rows.
+func resolveLLMConfigFromRow(row interface{ Scan(...interface{}) error }) (endpoint, apiKey, model string, err error) {
+	err = row.Scan(&endpoint, &apiKey, &model)
+	return
+}
+
+// Ensure unused import is consumed
+var _ = sql.ErrNoRows
