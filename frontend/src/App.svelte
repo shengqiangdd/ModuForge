@@ -403,7 +403,7 @@
     <QuickActions onAction={handleQuickAction} />
   {/if}
 
-  <div class="flex h-screen overflow-hidden {current === 'ai' ? 'ai-fullscreen' : ''}" style="background: var(--color-bg)">
+  <div class="flex flex-col md:flex-row h-screen overflow-hidden {current === 'ai' ? 'ai-fullscreen' : ''}" style="background: var(--color-bg)">
     <!-- Global Loading Overlay -->
     {#if globalLoading.value}
       <div class="fixed inset-0 z-50 flex items-center justify-center" style="background: rgba(0,0,0,0.5); backdrop-filter: blur(4px)">
@@ -426,6 +426,7 @@
       onConfirmLogout={confirmLogout}
     />
 
+    <div class="flex flex-col flex-1 min-w-0">
     <AppHeader
       {themeMode}
       onNavigate={navigate}
@@ -456,5 +457,6 @@
       onConfirmDelete={confirmDelete}
       onSetMobileMenuOpen={(v) => mobileMenuOpen = v}
     />
+    </div>
   </div>
 {/if}
