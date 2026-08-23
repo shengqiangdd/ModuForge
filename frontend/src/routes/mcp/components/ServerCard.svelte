@@ -79,36 +79,36 @@
   const toolList = $derived(filteredTools(server));
 </script>
 
-<div class="rounded-2xl border overflow-hidden transition-all" style="background: var(--color-bg-elevated); border-color: var(--color-border)">
+<div class="rounded-2xl border transition-all" style="background: var(--color-bg-elevated); border-color: var(--color-border)">
   <!-- Server header -->
   <div
-    class="w-full flex items-center gap-3 p-4 text-left overflow-hidden"
+    class="w-full flex items-center gap-2 md:gap-3 p-3 md:p-4 text-left"
     role="button"
     tabindex="0"
     onclick={() => onToggle(server.name)}
     onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle(server.name); } }}
   >
     <div
-      class="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
+      class="w-9 h-9 md:w-10 md:h-10 rounded-xl flex items-center justify-center flex-shrink-0"
       style="background: {server.ready ? 'var(--gradient-brand-subtle)' : 'color-mix(in srgb, var(--color-text-muted) 12%, transparent)'}"
     >
-      <span class="material-symbols-outlined" style="color: {server.ready ? 'var(--color-primary)' : 'var(--color-error)'}">
+      <span class="material-symbols-outlined text-[18px] md:text-[20px]" style="color: {server.ready ? 'var(--color-primary)' : 'var(--color-error)'}">
         {server.ready ? 'check_circle' : 'error'}
       </span>
     </div>
     <div class="flex-1 min-w-0 overflow-hidden">
-      <div class="flex items-center gap-2 flex-wrap min-w-0">
-        <span class="font-semibold" style="color: var(--color-text)">{server.name}</span>
+      <div class="flex items-center gap-1.5 md:gap-2 flex-wrap">
+        <span class="font-semibold text-sm md:text-base truncate" style="color: var(--color-text)">{server.name}</span>
         {#if !server.managed}
-          <span class="badge text-[10px]" style="background: color-mix(in srgb, var(--color-text-muted) 12%, transparent); color: var(--color-text-muted)">环境变量</span>
+          <span class="badge text-[10px] flex-shrink-0" style="background: color-mix(in srgb, var(--color-text-muted) 12%, transparent); color: var(--color-text-muted)">环境变量</span>
         {/if}
         {#if server.ready}
-          <span class="badge text-[10px]" style="background: var(--color-success-light); color: var(--color-success)">已连接</span>
+          <span class="badge text-[10px] flex-shrink-0" style="background: var(--color-success-light); color: var(--color-success)">已连接</span>
         {:else}
-          <span class="badge text-[10px]" style="background: var(--color-error-light); color: var(--color-error)">未连接</span>
+          <span class="badge text-[10px] flex-shrink-0" style="background: var(--color-error-light); color: var(--color-error)">未连接</span>
         {/if}
         {#if server.server_name}
-          <span class="badge text-[10px]" style="background: var(--color-primary-light); color: var(--color-primary)">{server.server_name}</span>
+          <span class="badge text-[10px] flex-shrink-0 truncate max-w-[120px]" style="background: var(--color-primary-light); color: var(--color-primary)">{server.server_name}</span>
         {/if}
       </div>
       <p class="text-xs mt-0.5 truncate" style="color: var(--color-text-muted)">
@@ -118,10 +118,10 @@
         {/if}
       </p>
     </div>
-    <div class="flex items-center gap-1 flex-shrink-0" onclick={(e) => e.stopPropagation()}>
+    <div class="flex items-center gap-0.5 flex-shrink-0" onclick={(e) => e.stopPropagation()}>
       {#if server.managed}
         <button
-          class="p-1.5 rounded-lg hover:bg-[var(--color-surface)] min-w-[30px] min-h-[30px] flex items-center justify-center"
+          class="p-1 rounded-lg hover:bg-[var(--color-surface)] min-w-[28px] min-h-[28px] flex items-center justify-center hidden md:flex"
           style="color: var(--color-text-muted)"
           title="重连"
           onclick={() => onReconnect(server)}
@@ -129,7 +129,7 @@
           <span class="material-symbols-outlined text-[17px]">sync</span>
         </button>
         <button
-          class="p-1.5 rounded-lg hover:bg-[var(--color-surface)] min-w-[30px] min-h-[30px] flex items-center justify-center"
+          class="p-1 rounded-lg hover:bg-[var(--color-surface)] min-w-[28px] min-h-[28px] flex items-center justify-center hidden md:flex"
           style="color: var(--color-text-muted)"
           title="编辑"
           onclick={() => onEdit(server)}
@@ -137,7 +137,7 @@
           <span class="material-symbols-outlined text-[17px]">edit</span>
         </button>
         <button
-          class="p-1.5 rounded-lg hover:bg-[var(--color-surface)] min-w-[30px] min-h-[30px] flex items-center justify-center"
+          class="p-1 rounded-lg hover:bg-[var(--color-surface)] min-w-[28px] min-h-[28px] flex items-center justify-center hidden md:flex"
           style="color: var(--color-error)"
           title="删除"
           onclick={() => onDelete(server)}
@@ -146,7 +146,7 @@
         </button>
       {/if}
     </div>
-    <span class="material-symbols-outlined text-[20px] transition-transform duration-200" style="color: var(--color-text-muted)">
+    <span class="material-symbols-outlined text-[18px] md:text-[20px] transition-transform duration-200 flex-shrink-0" style="color: var(--color-text-muted)">
       {expanded ? 'expand_less' : 'expand_more'}
     </span>
   </div>
