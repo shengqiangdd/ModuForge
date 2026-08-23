@@ -65,10 +65,10 @@
 </script>
 
 <!-- ═══ Main Content ═══ -->
-<main class="flex-1 flex flex-col min-h-0 {current === 'ai' ? '' : 'pb-16 md:pb-0'}" style="background: var(--color-bg);">
+<main class="flex-1 flex flex-col overflow-hidden {current === 'ai' ? '' : 'pb-16 md:pb-0'}" style="background: var(--color-bg)">
   <!-- Page Content -->
   {#if current === 'projects'}
-    <div class="flex-1 overflow-y-auto page-enter min-w-0" style="overscroll-behavior: contain; -webkit-overflow-scrolling: touch;">
+    <div class="flex-1 overflow-y-auto page-enter min-w-0">
       <div class="w-full p-4 md:p-6 max-w-7xl mx-auto">
         <div class="flex items-center gap-3 mb-4">
           <div class="flex-1">
@@ -177,7 +177,7 @@
     {/if}
   {:else}
     <!-- Lazy-loaded route component -->
-    <div class="flex-1 {current === 'ai' ? '' : 'overflow-y-auto'} flex flex-col min-h-0 min-w-0 {current === 'ai' ? '' : 'page-enter'}" style="overscroll-behavior: contain; -webkit-overflow-scrolling: touch;">
+    <div class="flex-1 overflow-y-auto overflow-x-hidden flex flex-col min-h-0 min-w-0 {current === 'ai' ? '' : 'page-enter'}">
       {#if routeLoading}
         <PageSkeleton variant={current === 'editor' ? 'editor' : current === 'market' ? 'market' : current === 'market-publish' ? 'market' : 'list'} />
       {:else if routeComponent}
