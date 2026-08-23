@@ -12,7 +12,6 @@ import ProgressIndicator from './components/ProgressIndicator.svelte';
 import AutoBuildProjectCard from './components/AutoBuildProjectCard.svelte';
 import GatherSpecCard from './components/GatherSpecCard.svelte';
 import GeneratedFilesPanel from './components/GeneratedFilesPanel.svelte';
-import ProjectContextPanel from './components/ProjectContextPanel.svelte';
 import RepoReferencePanel from './components/RepoReferencePanel.svelte';
 import BuildProgressBar from './components/BuildProgressBar.svelte';
 import McpPermissionModal from './components/McpPermissionModal.svelte';
@@ -444,15 +443,14 @@ import * as cb from './lib/callbacks';
 
     <GatherSpecCard show={showSpecCard} spec={gatheredSpec} onClose={() => showSpecCard = false} onGenerate={switchToGenerateWithSpec} />
     <GeneratedFilesPanel show={showGeneratedFiles} files={generatedFiles} {mode} {viewMode} onClose={() => showGeneratedFiles = false} onViewModeChange={(m) => viewMode = m} onDeploy={deployAutoBuild} />
-    <ProjectContextPanel show={showProjectContext} {contextProjectList} {contextProjects} selectedProject={selectedContextProject} selectedFile={selectedContextFile} {projectContext}
-      onClose={() => showProjectContext = false}
-      onProjectChange={(v) => { selectedContextProject = v; if (v) loadProjectFiles(v); }}
-      onFileAdd={(v) => { if (v) { projectContext += (projectContext ? '\n' : '') + '文件: ' + v; selectedContextFile = ''; } }}
-      onContextChange={(v) => projectContext = v}
-    />
     <RepoReferencePanel show={showRepoReference} onClose={() => showRepoReference = false} onAddReference={addRepoReference} />
 
     <ChatInput {input} {mode} {streaming} {buildLog} {mcpToolCount}
+      {showProjectContext} {contextProjectList} {contextProjects} selectedProject={selectedContextProject} selectedFile={selectedContextFile} {projectContext}
+      onToggleProjectContext={() => showProjectContext = !showProjectContext}
+      onProjectChange={(v) => { selectedContextProject = v; if (v) loadProjectFiles(v); }}
+      onFileAdd={(v) => { if (v) { projectContext += (projectContext ? '\n' : '') + '文件: ' + v; selectedContextFile = ''; } }}
+      onContextChange={(v) => projectContext = v}
       onSend={() => handler.send()} onStop={handler.stopStream}
       onInputChange={(v) => input = v}
       onBuildLogChange={(v) => buildLog = v}

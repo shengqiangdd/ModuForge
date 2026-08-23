@@ -32,7 +32,6 @@
     onEditMaxTokensStart,
     onModeChange,
     onToggleComparison,
-    onToggleProjectContext,
     onToggleRepoReference,
     onToggleHistory,
     onLoadCapability,
@@ -70,7 +69,6 @@
     onEditMaxTokensStart?: (id: string, val: string) => void;
     onModeChange?: (m: Mode) => void;
     onToggleComparison?: () => void;
-    onToggleProjectContext?: () => void;
     onToggleRepoReference?: () => void;
     onToggleHistory?: () => void;
     onLoadCapability?: () => void;
@@ -92,13 +90,11 @@
   onEditMaxTokensStart={(id, val) => onEditMaxTokensStart?.(id, val)}
 />
 
-<CompactToolbar {mode} {streaming} {showComparison} {showProjectContext} {showRepoReference} {showHistorySidebar} {showCapability} {showMcpTools}
+<CompactToolbar {mode} {streaming} {showComparison} {showRepoReference} {showHistorySidebar} {showMcpTools}
   onModeChange={(m) => onModeChange?.(m)}
   onToggleComparison={() => onToggleComparison?.()}
-  onToggleProjectContext={() => onToggleProjectContext?.()}
   onToggleRepoReference={() => onToggleRepoReference?.()}
   onToggleHistory={() => onToggleHistory?.()}
-  onLoadCapability={() => onLoadCapability?.()}
   onToggleMcpTools={() => onToggleMcpTools?.()}
   onOpenPromptSettings={() => onOpenPromptSettings?.()}
   onOpenMDPrompts={() => onOpenMDPrompts?.()}
