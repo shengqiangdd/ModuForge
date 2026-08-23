@@ -2,7 +2,6 @@ package builder
 
 import (
 	"fmt"
-	"time"
 )
 
 // ChangeType describes the type of file change.
@@ -103,14 +102,10 @@ func (ib *IncrementalBuilder) GetAffectedFiles(change FileChange, dependencyGrap
 // BuildIncremental performs an incremental build using only changed files.
 func (ib *IncrementalBuilder) BuildIncremental(
 	changes []FileChange,
-	builder func(files map[string]string) (BuildResult, error),
+	builderFn func(files map[string]string) (BuildResult, error),
 ) (BuildResult, error) {
 	if len(changes) == 0 {
-		return BuildResult{
-			Success:  true,
-			Stdout:   "no changes detected, skipping build",
-			Duration: 0,
-		}, nil
+		return BuildResult{}, nil
 	}
 
 	// Build file set from changes (only additions and modifications)
@@ -121,16 +116,7 @@ func (ib *IncrementalBuilder) BuildIncremental(
 		}
 	}
 
-	start := time.Now()
-	result, err := builder(files)
-	result.Duration = time.Since(start)
-
-	if err != nil {
-		result.Success = false
-		result.Stderr = err.Error()
-	}
-
-	return result, nil
+	return builderFn(files)
 }
 
 // FilterChangesByType returns changes of a specific type.
@@ -201,6 +187,7 @@ func ChangeSummary(changes []FileChange) string {
 // IncrementalResult holds the result of an incremental build analysis.
 type IncrementalResult struct {
 	ChangedFiles []string        `json:"changed_files"`
+	NewFiles     []string        `json:"new_files"`
 	SkippedFiles []string        `json:"skipped_files"`
 	NeedsRebuild bool            `json:"needs_rebuild"`
 	Reason       string          `json:"reason,omitempty"`
