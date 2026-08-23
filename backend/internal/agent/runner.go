@@ -487,9 +487,9 @@ You are running WITHOUT a project context. This means:
 						repoMapErrCh <- fmt.Errorf("repo-map panic: %v", r)
 					}
 				}()
-				if err := rm.GenerateRepoMapWithTimeout(ctx, projectPath, 10*time.Second); err != nil {
-					log.Printf("[Agent] repo-map generation failed: %v", err)
-					repoMapErrCh <- err
+				if result := rm.GenerateRepoMapWithTimeout(ctx, projectPath, 10*time.Second); result != "" {
+					log.Printf("[Agent] repo-map generation result: %s", result)
+					repoMapErrCh <- fmt.Errorf("%s", result)
 					return
 				}
 				log.Printf("[Agent] repo-map generated: %d files indexed", len(rm.fileIndex))
