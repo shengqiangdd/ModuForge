@@ -26,7 +26,7 @@ func (b *Builder) AutoFixCompileErrors(
 	}
 
 	errMsg := compileErr.Error()
-	logFn(fmt.Sprintf("\n🔧 Auto-fix: Attempting to fix compilation errors...\n"))
+	logFn("\n🔧 Auto-fix: Attempting to fix compilation errors...\n")
 
 	// Parse errors from compilation output
 	errors := parseCompileErrors(errMsg)

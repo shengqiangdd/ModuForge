@@ -2,6 +2,7 @@ package builder
 
 import (
 	"fmt"
+	"strings"
 )
 
 // ChangeType describes the type of file change.
@@ -181,7 +182,7 @@ func ChangeSummary(changes []FileChange) string {
 		parts = append(parts, fmt.Sprintf("%d deleted", deleted))
 	}
 
-	return join(parts, ", ")
+	return strings.Join(parts, ", ")
 }
 
 // IncrementalResult holds the result of an incremental build analysis.

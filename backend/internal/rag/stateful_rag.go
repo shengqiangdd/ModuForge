@@ -41,7 +41,7 @@ func (m *SessionMemory) ClearMemory() {
 
 // ContextString builds a context string from all memory pairs.
 func (m *SessionMemory) ContextString() string {
-	if m.Pairs == nil || len(m.Pairs) == 0 {
+	if len(m.Pairs) == 0 {
 		return ""
 	}
 	var sb strings.Builder
@@ -172,7 +172,7 @@ func (sr *StatefulRAG) SearchWithContext(query string, topK int) ([]SearchResult
 
 // memoryBoost computes a score boost based on memory keyword overlap.
 func memoryBoost(chunk CodeChunk, memory *SessionMemory) float64 {
-	if memory.Pairs == nil || len(memory.Pairs) == 0 {
+	if len(memory.Pairs) == 0 {
 		return 0
 	}
 

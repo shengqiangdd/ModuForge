@@ -199,10 +199,7 @@ func TestLayeredVector_JSON(t *testing.T) {
 
 // splitLines is a helper for tests.
 func splitLines(s string) []string {
-	var lines []string
-	for _, line := range splitString(s, "\n") {
-		lines = append(lines, line)
-	}
+	lines := splitString(s, "\n")
 	return lines
 }
 

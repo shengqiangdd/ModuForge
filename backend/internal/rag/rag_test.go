@@ -3,6 +3,7 @@ package rag
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -73,8 +74,8 @@ func TestTokenize(t *testing.T) {
 	}
 	// Should be lowercase
 	for _, tok := range tokens {
-		if tok != tok {
-			// always true, but checking lowercase
+		if tok != strings.ToLower(tok) {
+			t.Errorf("token %q is not lowercase", tok)
 		}
 		if tok != "hello" && tok != "world" && tok != "test" {
 			// other tokens are fine

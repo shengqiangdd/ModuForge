@@ -245,10 +245,10 @@ func (b *Builder) runBashSyntaxCheck(
 	ctx context.Context,
 	projectDir string,
 	logFn func(string),
-) (stdout, stderr string, err error) {
+) (string, string, error) {
 	var allErr []string
 
-	err = filepath.Walk(projectDir, func(path string, info os.FileInfo, err error) error {
+	walkErr := filepath.Walk(projectDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil || info.IsDir() || !strings.HasSuffix(path, ".sh") {
 			return nil
 		}
@@ -265,6 +265,9 @@ func (b *Builder) runBashSyntaxCheck(
 		}
 		return nil
 	})
+	if walkErr != nil {
+		return "", "", walkErr
+	}
 
 	if len(allErr) > 0 {
 		return "", strings.Join(allErr, "\n"), fmt.Errorf("bash syntax check failed")
@@ -313,20 +316,6 @@ func writeGeneratedFiles(dir string, llmResponse string) error {
 	}
 
 	return nil
-}
-
-// parseFileEntries tries to parse JSON file entries from LLM response.
-func parseFileEntries(code string, files *[]struct {
-	Path    string `json:"path"`
-	Content string `json:"content"`
-}) error {
-	// Find JSON array boundaries
-	start := strings.Index(code, "[")
-	end := strings.LastIndex(code, "]")
-	if start < 0 || end < 0 || end <= start {
-		return fmt.Errorf("no JSON array found")
-	}
-	return parseJSONArray(code[start:end+1], files)
 }
 
 // parseJSONArray does minimal JSON parsing for [{"path":"...","content":"..."}].

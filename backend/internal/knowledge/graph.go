@@ -270,7 +270,6 @@ func extractGo(filePath, content string) ([]Entity, []Relation) {
 
 var (
 	shellFuncRe = regexp.MustCompile(`^(\w+)\s*\(\)\s*\{`)
-	shellCallRe = regexp.MustCompile(`(\w+)\s`)
 	shellVarRe  = regexp.MustCompile(`^(\w+)=`)
 	shellAPIRe  = regexp.MustCompile(`(set_perm|set_perm_recursive|ui_print|abort)`)
 )

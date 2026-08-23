@@ -605,7 +605,6 @@ func isValidFilesJSON(s string) bool {
 	return false
 }
 
-var reJSONBlock *regexp.Regexp
 
 // truncateStr truncates a string to maxLen characters for logging.
 func truncateStr(s string, maxLen int) string {
@@ -955,7 +954,7 @@ module.prop, customize.sh, META-INF/(update-binary + updater-script含#MAGISK)
 	safeSSE(map[string]interface{}{
 		"type":    "phase",
 		"phase":   "building",
-		"message": fmt.Sprintf("使用付费模型重新编译..."),
+		"message": "使用付费模型重新编译...",
 	})
 
 	buildSvc := NewBuildService(s.db, s.cfg)

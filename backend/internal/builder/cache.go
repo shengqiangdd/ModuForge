@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 	"sync"
 	"time"
 )
@@ -237,70 +236,6 @@ func HashFiles(paths []string) (string, error) {
 	}
 
 	return fmt.Sprintf("%x", h.Sum(nil)), nil
-}
-
-// fileExists checks if a file exists.
-func fileExists(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
-}
-
-// joinPath joins path components.
-func joinPath(parts ...string) string {
-	return filepath.Join(parts...)
-}
-
-// ensureDir creates a directory if it doesn't exist.
-func ensureDir(path string) error {
-	return os.MkdirAll(path, 0755)
-}
-
-// readFile reads a file and returns its contents.
-func readFile(path string) ([]byte, error) {
-	return os.ReadFile(path)
-}
-
-// writeFile writes data to a file.
-func writeFile(path string, data []byte) error {
-	return os.WriteFile(path, data, 0644)
-}
-
-// contains checks if a string slice contains a value.
-func contains(slice []string, val string) bool {
-	for _, s := range slice {
-		if s == val {
-			return true
-		}
-	}
-	return false
-}
-
-// unique returns unique strings from a slice.
-func unique(slice []string) []string {
-	seen := make(map[string]bool)
-	var result []string
-	for _, s := range slice {
-		if !seen[s] {
-			seen[s] = true
-			result = append(result, s)
-		}
-	}
-	return result
-}
-
-// join concatenates strings with a separator.
-func join(slice []string, sep string) string {
-	return strings.Join(slice, sep)
-}
-
-// split splits a string by separator.
-func split(s, sep string) []string {
-	return strings.Split(s, sep)
-}
-
-// trimSpace trims whitespace from a string.
-func trimSpace(s string) string {
-	return strings.TrimSpace(s)
 }
 
 // BuildCacheJSON is a JSON-based build cache tracking file hashes and build metadata.

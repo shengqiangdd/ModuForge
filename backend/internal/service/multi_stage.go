@@ -746,10 +746,6 @@ func (s *AIService) getPaidModelConfig(userID string) (endpoint, apiKey, model, 
 	return "", "", "", ""
 }
 
-// getAlternativeFreeModels returns a list of free models to try when the primary is exhausted.
-func getAlternativeFreeModels() []string {
-	return []string{"poolside/laguna-s-2.1-free", "mimo-v2.5-free"}
-}
 
 func truncate(s string, maxLen int) string {
 	if len(s) <= maxLen {

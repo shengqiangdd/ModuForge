@@ -31,8 +31,6 @@ type SearchResult struct {
 
 // HierarchicalEmbedder creates multi-level embeddings for code.
 type HierarchicalEmbedder struct {
-	fileIDF     map[string]float64
-	functionIDF map[string]float64
 }
 
 // NewHierarchicalEmbedder creates a new embedder.

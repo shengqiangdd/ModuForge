@@ -255,7 +255,6 @@ func (si *StructuralIndex) parseGo(filePath string, lines []string) {
 var (
 	shellFuncRe = regexp.MustCompile(`^(\w+)\s*\(\)\s*\{`)
 	shellVarRe  = regexp.MustCompile(`^(\w+)=`)
-	shellCallRe = regexp.MustCompile(`(\w+)\s`)
 )
 
 func (si *StructuralIndex) parseShell(filePath string, lines []string) {

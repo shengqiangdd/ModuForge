@@ -27,7 +27,7 @@ func (b *Builder) AutoFixCompileErrorsV2(
 	}
 
 	errMsg := compileErr.Error()
-	logFn(fmt.Sprintf("\n🔧 Auto-fix v2: Analyzing compilation errors...\n"))
+	logFn("\n🔧 Auto-fix v2: Analyzing compilation errors...\n")
 
 	// Categorize errors
 	categorized := categorizeErrors(errMsg)

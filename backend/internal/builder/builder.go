@@ -140,7 +140,7 @@ func (b *Builder) BuildWithResultAndProgress(ctx context.Context, projectDir, ta
 		goResult, err := b.CompileGoFilesArchWithProgress(ctx, projectDir, arch, incr, logFn, goProgress)
 		if err != nil {
 			// Retry with enhanced post-processing
-			logFn(fmt.Sprintf("\n🔧 Go compilation failed, applying enhanced post-processing...\n"))
+			logFn("\n🔧 Go compilation failed, applying enhanced post-processing...\n")
 			PostProcessSourceFiles(projectDir, goFiles, "go", logFn)
 			goResult, err = b.CompileGoFilesArchWithProgress(ctx, projectDir, arch, incr, logFn, goProgress)
 			if err != nil {

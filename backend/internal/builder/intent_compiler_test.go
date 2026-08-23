@@ -1,6 +1,7 @@
 package builder
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
 )
@@ -70,7 +71,7 @@ func TestIntentCompiler_SynthesizeGo(t *testing.T) {
 	}
 
 	logFn := func(s string) error { t.Log(s); return nil }
-	files, err := compiler.CompileIntent(nil, intent, nil, "", logFn)
+	files, err := compiler.CompileIntent(context.Background(), intent, nil, "", logFn)
 	if err != nil {
 		t.Fatalf("CompileIntent failed: %v", err)
 	}
