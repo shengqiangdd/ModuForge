@@ -1,112 +1,128 @@
 /**
- * Debounce function - delays execution until after wait milliseconds
- * have elapsed since the last time the function was called.
+ * Throttle function execution
  */
-export function debounce<T extends (...args: any[]) => any>(
-  fn: T,
-  wait: number = 150
+export function throttle<T extends (...args: unknown[]) => unknown>(
+	fn: T,
+	delay: number
 ): (...args: Parameters<T>) => void {
-  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+	let lastCall = 0;
+	let timeoutId: ReturnType<typeof setTimeout> | null = null;
 
-  return function (this: any, ...args: Parameters<T>) {
-    if (timeoutId !== null) {
-      clearTimeout(timeoutId);
-    }
-    timeoutId = setTimeout(() => {
-      fn.apply(this, args);
-      timeoutId = null;
-    }, wait);
-  };
+	return (...args: Parameters<T>) => {
+		const now = Date.now();
+		const remaining = delay - (now - lastCall);
+
+		if (remaining <= 0) {
+			if (timeoutId) {
+				clearTimeout(timeoutId);
+				timeoutId = null;
+			}
+			lastCall = now;
+			fn(...args);
+		} else if (!timeoutId) {
+			timeoutId = setTimeout(() => {
+				lastCall = Date.now();
+				timeoutId = null;
+				fn(...args);
+			}, remaining);
+		}
+	};
 }
 
 /**
- * Throttle function - ensures fn is called at most once every wait milliseconds.
+ * Debounce function execution
  */
-export function throttle<T extends (...args: any[]) => any>(
-  fn: T,
-  wait: number = 16
+export function debounce<T extends (...args: unknown[]) => unknown>(
+	fn: T,
+	delay: number
 ): (...args: Parameters<T>) => void {
-  let lastTime = 0;
-  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+	let timeoutId: ReturnType<typeof setTimeout> | null = null;
 
-  return function (this: any, ...args: Parameters<T>) {
-    const now = Date.now();
-    const remaining = wait - (now - lastTime);
+	return (...args: Parameters<T>) => {
+		if (timeoutId) {
+			clearTimeout(timeoutId);
+		}
+		timeoutId = setTimeout(() => {
+			timeoutId = null;
+			fn(...args);
+		}, delay);
+	};
+}
 
-    if (remaining <= 0) {
-      if (timeoutId !== null) {
-        clearTimeout(timeoutId);
-        timeoutId = null;
-      }
-      lastTime = now;
-      fn.apply(this, args);
-    } else if (timeoutId === null) {
-      timeoutId = setTimeout(() => {
-        lastTime = Date.now();
-        timeoutId = null;
-        fn.apply(this, args);
-      }, remaining);
-    }
-  };
+export interface VirtualListResult {
+	startIndex: number;
+	endIndex: number;
+	visibleItems: unknown[];
+	offsetY: number;
+	totalHeight: number;
 }
 
 /**
- * Create a debounced store value for Svelte 5.
- * Returns a derived value that updates after the debounce delay.
+ * Calculate virtual list visible range
  */
-export function createDebouncedValue<T>(
-  getValue: () => T,
-  wait: number = 150
-): { get: () => T; update: () => void } {
-  let currentValue = getValue();
-  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+export function virtualList<T>(
+	items: T[],
+	containerHeight: number,
+	itemHeight: number,
+	scrollTop: number = 0
+): VirtualListResult {
+	const totalHeight = items.length * itemHeight;
+	const startIndex = Math.floor(scrollTop / itemHeight);
+	const visibleCount = Math.ceil(containerHeight / itemHeight);
+	const endIndex = Math.min(startIndex + visibleCount + 1, items.length);
 
-  return {
-    get: () => currentValue,
-    update: () => {
-      if (timeoutId !== null) {
-        clearTimeout(timeoutId);
-      }
-      timeoutId = setTimeout(() => {
-        currentValue = getValue();
-        timeoutId = null;
-      }, wait);
-    }
-  };
+	return {
+		startIndex: Math.max(0, startIndex),
+		endIndex,
+		visibleItems: items.slice(Math.max(0, startIndex), endIndex),
+		offsetY: Math.max(0, startIndex * itemHeight),
+		totalHeight
+	};
 }
 
 /**
- * Run once - ensures a function is only called once.
+ * Lazy load with condition
  */
-export function runOnce<T extends (...args: any[]) => any>(fn: T): T {
-  let called = false;
-  let result: any;
-  return ((...args: any[]) => {
-    if (!called) {
-      called = true;
-      result = fn(...args);
-    }
-    return result;
-  }) as T;
+export async function lazyLoad<T>(
+	condition: boolean,
+	loader: () => Promise<T>
+): Promise<T | null> {
+	if (!condition) return null;
+	return loader();
 }
 
 /**
- * Sleep utility for async operations.
+ * Batch updates into chunks
  */
-export function sleep(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
+export function batchUpdate<T>(
+	items: T[],
+	batchSize: number,
+	callback: (batch: T[]) => void
+): void {
+	for (let i = 0; i < items.length; i += batchSize) {
+		callback(items.slice(i, i + batchSize));
+	}
 }
 
 /**
- * Batch multiple rapid updates into a single update.
+ * Measure execution time
  */
-export function batchUpdates<T>(
-  fn: () => T,
-  wait: number = 0
-): Promise<T> {
-  return new Promise(resolve => {
-    setTimeout(() => {
-      resolve(fn());
-    }, wait);
-  });
+export function measureTime<T>(label: string, fn: () => T): T {
+	console.time(label);
+	const result = fn();
+	console.timeEnd(label);
+	return result;
+}
+
+/**
+ * Request idle callback polyfill
+ */
+export function requestIdleCallbackPolyfill(
+	callback: (deadline: { timeRemaining: () => number }) => void
+): void {
+	if (typeof requestIdleCallback !== 'undefined') {
+		requestIdleCallback(callback);
+	} else {
+		setTimeout(() => callback({ timeRemaining: () => 0 }), 1);
+	}
 }

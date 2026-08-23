@@ -1,118 +1,92 @@
-import { describe, it, expect, vi } from 'vitest';
-import { debounce, throttle, runOnce, sleep, batchUpdates, createDebouncedValue } from './performance';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { throttle, debounce, virtualList, batchUpdate } from './performance';
 
-describe('debounce', () => {
-  it('delays execution', async () => {
-    vi.useFakeTimers();
-    const fn = vi.fn();
-    const debounced = debounce(fn, 100);
+describe('performance', () => {
+	beforeEach(() => {
+		vi.useFakeTimers();
+	});
 
-    debounced();
-    expect(fn).not.toHaveBeenCalled();
+	afterEach(() => {
+		vi.useRealTimers();
+	});
 
-    vi.advanceTimersByTime(100);
-    expect(fn).toHaveBeenCalledTimes(1);
+	describe('throttle', () => {
+		it('should throttle function calls', () => {
+			const fn = vi.fn();
+			const throttled = throttle(fn, 100);
 
-    vi.useRealTimers();
-  });
+			throttled();
+			throttled();
+			throttled();
 
-  it('only calls once for rapid invocations', async () => {
-    vi.useFakeTimers();
-    const fn = vi.fn();
-    const debounced = debounce(fn, 100);
+			expect(fn).toHaveBeenCalledTimes(1);
 
-    debounced();
-    debounced();
-    debounced();
+			vi.advanceTimersByTime(100);
+			throttled();
 
-    vi.advanceTimersByTime(100);
-    expect(fn).toHaveBeenCalledTimes(1);
+			expect(fn).toHaveBeenCalledTimes(2);
+		});
+	});
 
-    vi.useRealTimers();
-  });
-});
+	describe('debounce', () => {
+		it('should debounce function calls', () => {
+			const fn = vi.fn();
+			const debounced = debounce(fn, 100);
 
-describe('throttle', () => {
-  it('calls immediately on first invocation', () => {
-    vi.useFakeTimers();
-    const fn = vi.fn();
-    const throttled = throttle(fn, 100);
+			debounced();
+			debounced();
+			debounced();
 
-    throttled();
-    expect(fn).toHaveBeenCalledTimes(1);
+			expect(fn).not.toHaveBeenCalled();
 
-    vi.useRealTimers();
-  });
+			vi.advanceTimersByTime(100);
+			expect(fn).toHaveBeenCalledTimes(1);
+		});
+	});
 
-  it('limits calls within the window', () => {
-    vi.useFakeTimers();
-    const fn = vi.fn();
-    const throttled = throttle(fn, 100);
+	describe('virtualList', () => {
+		it('should calculate visible range', () => {
+			const items = Array.from({ length: 100 }, (_, i) => i);
+			const result = virtualList(items, 300, 30, 0);
 
-    throttled(); // immediate
-    throttled(); // throttled
-    expect(fn).toHaveBeenCalledTimes(1);
+			expect(result.startIndex).toBe(0);
+			expect(result.endIndex).toBeGreaterThan(0);
+			expect(result.visibleItems.length).toBeGreaterThan(0);
+			expect(result.totalHeight).toBe(3000);
+		});
 
-    vi.advanceTimersByTime(100);
-    expect(fn).toHaveBeenCalledTimes(2);
+		it('should handle scroll position', () => {
+			const items = Array.from({ length: 100 }, (_, i) => i);
+			const result = virtualList(items, 300, 30, 150);
 
-    vi.useRealTimers();
-  });
-});
+			expect(result.startIndex).toBe(5);
+			expect(result.offsetY).toBe(150);
+		});
 
-describe('runOnce', () => {
-  it('only calls the function once', () => {
-    const fn = vi.fn(() => 42);
-    const once = runOnce(fn);
+		it('should handle empty items', () => {
+			const result = virtualList([], 300, 30, 0);
+			expect(result.visibleItems.length).toBe(0);
+			expect(result.totalHeight).toBe(0);
+		});
+	});
 
-    expect(once()).toBe(42);
-    expect(once()).toBe(42);
-    expect(fn).toHaveBeenCalledTimes(1);
-  });
-});
+	describe('batchUpdate', () => {
+		it('should batch items', () => {
+			const items = [1, 2, 3, 4, 5];
+			const batches: number[][] = [];
 
-describe('sleep', () => {
-  it('resolves after the specified time', async () => {
-    vi.useFakeTimers();
-    const promise = sleep(100);
+			batchUpdate(items, 2, (batch) => batches.push(batch));
 
-    vi.advanceTimersByTime(100);
-    await expect(promise).resolves.toBeUndefined();
+			expect(batches.length).toBe(3);
+			expect(batches[0]).toEqual([1, 2]);
+			expect(batches[1]).toEqual([3, 4]);
+			expect(batches[2]).toEqual([5]);
+		});
 
-    vi.useRealTimers();
-  });
-});
-
-describe('batchUpdates', () => {
-  it('batches and returns the result', async () => {
-    vi.useFakeTimers();
-    const fn = vi.fn(() => 'result');
-    const promise = batchUpdates(fn, 50);
-
-    vi.advanceTimersByTime(50);
-    await expect(promise).resolves.toBe('result');
-    expect(fn).toHaveBeenCalledTimes(1);
-
-    vi.useRealTimers();
-  });
-});
-
-describe('createDebouncedValue', () => {
-  it('updates value after debounce delay', async () => {
-    vi.useFakeTimers();
-    let value = 1;
-    const debounced = createDebouncedValue(() => value, 100);
-
-    expect(debounced.get()).toBe(1);
-
-    value = 2;
-    debounced.update();
-    // Value should not update immediately
-    expect(debounced.get()).toBe(1);
-
-    vi.advanceTimersByTime(100);
-    expect(debounced.get()).toBe(2);
-
-    vi.useRealTimers();
-  });
+		it('should handle empty items', () => {
+			const batches: number[][] = [];
+			batchUpdate([], 2, (batch) => batches.push(batch));
+			expect(batches.length).toBe(0);
+		});
+	});
 });
