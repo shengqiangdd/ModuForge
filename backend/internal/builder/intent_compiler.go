@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 )
@@ -16,8 +17,8 @@ import (
 // 3. Intent JSON (what the model describes the code should do)
 // 4. Self-evolution (new patterns can be added at runtime)
 type IntentCompiler struct {
-	catalog  *PatternCatalog
-	builder  *Builder
+	catalog *PatternCatalog
+	builder *Builder
 }
 
 // IntentJSON is the structured intent description from the model.
@@ -39,10 +40,10 @@ type IntentFunction struct {
 
 // IntentLogic describes the algorithmic behavior.
 type IntentLogic struct {
-	MainLoop     string      `json:"main_loop"`     // What the main loop does
-	Triggers     []Trigger   `json:"triggers"`      // Event triggers
-	InitSteps    []string    `json:"init_steps"`    // Initialization steps
-	CleanupSteps []string    `json:"cleanup_steps"` // Cleanup on exit
+	MainLoop     string    `json:"main_loop"`     // What the main loop does
+	Triggers     []Trigger `json:"triggers"`      // Event triggers
+	InitSteps    []string  `json:"init_steps"`    // Initialization steps
+	CleanupSteps []string  `json:"cleanup_steps"` // Cleanup on exit
 }
 
 // Trigger describes an event-condition-action rule.
@@ -53,8 +54,8 @@ type Trigger struct {
 
 // DataStructure describes a Go struct to generate.
 type DataStructure struct {
-	Name   string         `json:"name"`   // e.g. "BatteryStatus"
-	Fields []StructField  `json:"fields"` // Struct fields
+	Name   string        `json:"name"`   // e.g. "BatteryStatus"
+	Fields []StructField `json:"fields"` // Struct fields
 }
 
 // StructField is one field in a data structure.
@@ -542,6 +543,7 @@ DO NOT write actual source code. Instead, describe WHAT the code should do in st
 Path: %s
 Purpose: %s
 %s
+%s
 
 %s
 
@@ -587,7 +589,7 @@ Purpose: %s
 - Output ONLY valid JSON, nothing else
 - Do NOT include code snippets in the JSON`,
 		description, fileInfo.Path, fileInfo.Description,
-		languageGuide, researchStr, fileInfo.Path,
+		languageGuide, structGuide, researchStr, fileInfo.Path,
 	)
 
 	endpoint, apiKey, model := ic.builder.resolveLLMForFix()

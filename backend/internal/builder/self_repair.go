@@ -283,9 +283,19 @@ func writeGeneratedFiles(dir string, llmResponse string) error {
 	var files []fileEntry
 
 	// Try standard JSON unmarshal
-	if err := parseFileEntries(code, &files); err != nil || len(files) == 0 {
-		// Fallback: treat entire response as a single main.go file
-		files = []fileEntry{{Path: "main.go", Content: code}}
+	if err := json.Unmarshal([]byte(code), &files); err != nil || len(files) == 0 {
+		// Fallback: try parseJSONArray, then treat as single file
+		var parsed []struct {
+			Path    string `json:"path"`
+			Content string `json:"content"`
+		}
+		if parseErr := parseJSONArray(code, &parsed); parseErr == nil && len(parsed) > 0 {
+			for _, p := range parsed {
+				files = append(files, fileEntry{Path: p.Path, Content: p.Content})
+			}
+		} else {
+			files = []fileEntry{{Path: "main.go", Content: code}}
+		}
 	}
 
 	for _, f := range files {
@@ -424,14 +434,6 @@ func extractJSONString(obj, key string) string {
 	val = strings.ReplaceAll(val, `\"`, `"`)
 	val = strings.ReplaceAll(val, `\\`, `\`)
 	return val
-}
-
-// truncate shortens s to maxLen characters, appending "..." if truncated.
-func truncate(s string, maxLen int) string {
-	if len(s) <= maxLen {
-		return s
-	}
-	return s[:maxLen] + "..."
 }
 
 // copyDirSelfRepair copies src directory contents into dst recursively.

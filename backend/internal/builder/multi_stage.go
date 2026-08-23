@@ -438,7 +438,7 @@ No Go or C source files needed. build.sh should only package the shell scripts i
 `
 	}
 
-	return `Generate build scripts and config files for this Android Magisk module.
+	prompt := `Generate build scripts and config files for this Android Magisk module.
 
 ## Architecture Plan
 ` + planJSON + `
