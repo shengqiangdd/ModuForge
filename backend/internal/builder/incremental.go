@@ -188,6 +188,7 @@ func ChangeSummary(changes []FileChange) string {
 type IncrementalResult struct {
 	ChangedFiles []string        `json:"changed_files"`
 	NewFiles     []string        `json:"new_files"`
+	RemovedFiles []string        `json:"removed_files"`
 	SkippedFiles []string        `json:"skipped_files"`
 	NeedsRebuild bool            `json:"needs_rebuild"`
 	Reason       string          `json:"reason,omitempty"`
