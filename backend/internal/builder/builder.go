@@ -22,6 +22,9 @@ var targetToImage = map[string]string{
 
 // BuildResult holds the full result of a build operation.
 type BuildResult struct {
+	Success         bool               `json:"success"`
+	Stdout          string             `json:"stdout,omitempty"`
+	Stderr          string             `json:"stderr,omitempty"`
 	ArtifactPath    string             `json:"artifact_path"`
 	Incremental     *IncrementalResult `json:"incremental,omitempty"`
 	RecompiledFiles []string           `json:"recompiled_files,omitempty"`
