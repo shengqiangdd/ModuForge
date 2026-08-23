@@ -9,7 +9,7 @@ import (
 )
 
 func AuthMiddleware(jwtSecret string) fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		token := ""
 		if authHeader := c.Get("Authorization"); authHeader != "" {
 			parts := strings.SplitN(authHeader, " ", 2)
