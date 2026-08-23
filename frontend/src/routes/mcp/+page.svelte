@@ -172,7 +172,7 @@
 
 <svelte:head><title>MCP 服务器 · ModuForge</title></svelte:head>
 
-<div class="p-4 md:p-6 max-w-7xl mx-auto page-enter">
+<div class="p-4 md:p-6 max-w-7xl mx-auto page-enter overflow-hidden">
   <McpHeader
     {search}
     {loading}
