@@ -410,13 +410,22 @@ func serveFrontend(app *fiber.App, fsys fs.FS) {
 				} else if ext == ".js" || ext == ".css" {
 					// Hashed assets are immutable — safe to cache long-term
 					c.Set("Cache-Control", "public, max-age=31536000, immutable")
+				} else if ext == ".woff2" || ext == ".woff" || ext == ".ttf" {
+					// Fonts change rarely — cache for 1 year
+					c.Set("Cache-Control", "public, max-age=31536000, immutable")
 				}
 				data, _ := fs.ReadFile(fsys, relPath)
 				return c.Send(data)
 			}
 		}
 
-		// SPA fallback: serve index.html for all non-file routes
+		// SPA fallback: serve index.html for non-file routes,
+		// but return 404 for missing static assets (e.g. stale hashed filenames
+		// from a previous build) so browsers don't receive HTML with MIME text/html.
+		if strings.Contains(relPath, ".") {
+			// Looks like a file request — asset not found → 404
+			return c.Status(404).SendString("Not Found")
+		}
 		data, err := fs.ReadFile(fsys, "index.html")
 		if err != nil {
 			return c.Next() // no frontend, pass through
