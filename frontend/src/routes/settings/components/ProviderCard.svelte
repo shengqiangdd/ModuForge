@@ -62,7 +62,7 @@
   <td class="py-3 pr-4">
     <span class="font-medium text-[var(--color-text)]">{provider.name}</span>
   </td>
-  <td class="py-3 pr-4 text-[var(--color-text-secondary)]">
+  <td class="py-3 pr-4 text-[var(--color-text-secondary)] hidden sm:table-cell">
     <button class="hover:text-[var(--color-primary)] transition-colors cursor-pointer" onclick={onOpenModels}>
       {totalModels}
       {#if userModels.length > 0}
@@ -75,17 +75,17 @@
       {badgeLabel(status)}
     </span>
   </td>
-  <td class="py-3 pr-4 max-w-[200px] truncate text-[var(--color-text-muted)] text-xs" title={provider.endpoint}>
+  <td class="py-3 pr-4 max-w-[200px] truncate text-[var(--color-text-muted)] text-xs hidden md:table-cell" title={provider.endpoint}>
     {config?.endpoint || provider.endpoint || '-'}
   </td>
   <td class="py-3 text-right">
     <div class="flex items-center justify-end gap-1">
-      <button class="btn-ghost text-xs px-2.5 py-1.5 min-h-0" onclick={onOpenModels}>
+      <button class="btn-ghost text-xs px-2 sm:px-2.5 py-1.5 min-h-0" onclick={onOpenModels}>
         模型
       </button>
-      <button class="btn-ghost text-xs px-2.5 py-1.5 min-h-0" onclick={onOpenConfig}>配置</button>
+      <button class="btn-ghost text-xs px-2 sm:px-2.5 py-1.5 min-h-0" onclick={onOpenConfig}>配置</button>
       {#if config}
-        <button class="btn-ghost text-xs px-2.5 py-1.5 min-h-0 text-[var(--color-error)]" onclick={onResetConfig}>
+        <button class="btn-ghost text-xs px-2 sm:px-2.5 py-1.5 min-h-0 text-[var(--color-error)]" onclick={onResetConfig}>
           重置
         </button>
       {/if}

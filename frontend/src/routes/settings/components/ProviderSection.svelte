@@ -250,14 +250,14 @@
     <h3>预设提供商</h3>
     <p class="text-xs text-[var(--color-text-muted)]">内置提供商，可自定义 Endpoint 和 API Key</p>
   </div>
-  <div class="overflow-x-auto">
+  <div class="overflow-x-auto -mx-5 sm:mx-0 px-5 sm:px-0">
     <table class="provider-table w-full text-sm">
       <thead>
         <tr class="text-left text-[var(--color-text-muted)]">
           <th class="pb-3 pr-4 font-medium">名称</th>
-          <th class="pb-3 pr-4 font-medium">模型数</th>
+          <th class="pb-3 pr-4 font-medium hidden sm:table-cell">模型数</th>
           <th class="pb-3 pr-4 font-medium">状态</th>
-          <th class="pb-3 pr-4 font-medium">Endpoint</th>
+          <th class="pb-3 pr-4 font-medium hidden md:table-cell">Endpoint</th>
           <th class="pb-3 text-right font-medium">操作</th>
         </tr>
       </thead>
@@ -306,19 +306,19 @@
   {:else}
     <div class="space-y-2">
       {#each customProviders as cp}
-        <div class="flex items-center gap-3 p-3 rounded-xl" style="border: 1px solid var(--color-border);">
-          <span class="material-symbols-outlined text-[var(--color-text-muted)]">dns</span>
+        <div class="flex items-center gap-2 sm:gap-3 p-2.5 sm:p-3 rounded-xl" style="border: 1px solid var(--color-border);">
+          <span class="material-symbols-outlined text-[var(--color-text-muted)] hidden sm:block">dns</span>
           <div class="flex-1 min-w-0">
             <p class="text-sm font-medium text-[var(--color-text)]">{cp.name}</p>
             <p class="text-xs text-[var(--color-text-muted)] truncate">{cp.endpoint}</p>
           </div>
-          <span class="badge text-xs {cp.id === currentProvider ? 'bg-primary/20 text-primary' : 'bg-zinc-500/20 text-zinc-400'}">
+          <span class="badge text-xs whitespace-nowrap {cp.id === currentProvider ? 'bg-primary/20 text-primary' : 'bg-zinc-500/20 text-zinc-400'}">
             {cp.id === currentProvider ? '使用中' : cp.api_key ? '已配置' : '无 Key'}
           </span>
-          <div class="flex items-center gap-1">
-            <button class="btn-ghost text-xs px-2.5 py-1.5 min-h-0" onclick={() => openEditCustomModal(cp)}>编辑</button>
-            <button class="btn-ghost text-xs px-2.5 py-1.5 min-h-0 text-[var(--color-error)]" onclick={() => deleteCustomProvider(cp.id)} disabled={deletingCustomId === cp.id}>
-              {deletingCustomId === cp.id ? '删除中...' : '删除'}
+          <div class="flex items-center gap-0.5 sm:gap-1">
+            <button class="btn-ghost text-xs px-1.5 sm:px-2.5 py-1.5 min-h-0" onclick={() => openEditCustomModal(cp)}>编辑</button>
+            <button class="btn-ghost text-xs px-1.5 sm:px-2.5 py-1.5 min-h-0 text-[var(--color-error)]" onclick={() => deleteCustomProvider(cp.id)} disabled={deletingCustomId === cp.id}>
+              {deletingCustomId === cp.id ? '...' : '删除'}
             </button>
           </div>
         </div>

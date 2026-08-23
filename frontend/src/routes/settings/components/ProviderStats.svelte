@@ -49,20 +49,20 @@
 </div>
 
 <!-- Stats Summary -->
-<div class="flex gap-3 mb-5">
-  <div class="flex-1 p-3 rounded-xl" style="background: var(--color-surface); border: 1px solid var(--color-border)">
+<div class="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 mb-5">
+  <div class="p-2.5 sm:p-3 rounded-xl" style="background: var(--color-surface); border: 1px solid var(--color-border)">
     <p class="text-xs" style="color: var(--color-text-muted)">预设供应商</p>
     <p class="text-lg font-bold text-[var(--color-text)]">{presetProviders.length}</p>
   </div>
-  <div class="flex-1 p-3 rounded-xl" style="background: var(--color-surface); border: 1px solid var(--color-border)">
+  <div class="p-2.5 sm:p-3 rounded-xl" style="background: var(--color-surface); border: 1px solid var(--color-border)">
     <p class="text-xs" style="color: var(--color-text-muted)">自定义供应商</p>
     <p class="text-lg font-bold text-[var(--color-text)]">{customProviders.length}</p>
   </div>
-  <div class="flex-1 p-3 rounded-xl" style="background: var(--color-surface); border: 1px solid var(--color-border)">
+  <div class="p-2.5 sm:p-3 rounded-xl" style="background: var(--color-surface); border: 1px solid var(--color-border)">
     <p class="text-xs" style="color: var(--color-text-muted)">可用模型</p>
     <p class="text-lg font-bold text-[var(--color-text)]">{totalModels}</p>
   </div>
-  <div class="flex-1 p-3 rounded-xl" style="background: var(--color-surface); border: 1px solid var(--color-border)">
+  <div class="p-2.5 sm:p-3 rounded-xl" style="background: var(--color-surface); border: 1px solid var(--color-border)">
     <p class="text-xs" style="color: var(--color-text-muted)">免费可用</p>
     <p class="text-lg font-bold text-[var(--color-text)]">{configuredCount}</p>
   </div>
