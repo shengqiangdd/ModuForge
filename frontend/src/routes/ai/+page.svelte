@@ -267,7 +267,23 @@ import * as cb from './lib/callbacks';
     // Re-wire chatMessages ref for scrollToBottom
     (handler as any)._chatMessages = () => chatMessages;
     setupOnInit(handler);
-    await loadInitialData(state as any, handler, loadProjectFiles, loadSessionMessages);
+    await loadInitialData({
+      loadProviders: () => cb.loadProviders().then(r => {
+        state.providers = r.providers;
+        state.selectedProviderID = r.selectedProviderID;
+        state.selectedModelID = r.selectedModelID;
+        state.configLoaded = true;
+      }),
+      loadSessions: () => cb.loadSessions(state as any),
+      loadConversations: () => cb.loadConversations(state as any),
+      loadGenHistory: () => cb.loadGenHistory(state as any),
+      loadContextProjectList: () => cb.loadContextProjectList(state as any),
+      loadSessionMessages: (id: string) => cb.loadSessionMessages(state as any, id),
+      activeSessionId: state.activeSessionId,
+      sessions: state.sessions,
+      messages: state.messages,
+      updateState: (partial: Record<string, any>) => Object.assign(state, partial),
+    });
   });
 
   onDestroy(() => {
