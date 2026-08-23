@@ -494,8 +494,9 @@ You are running WITHOUT a project context. This means:
 				}
 				log.Printf("[Agent] repo-map generated: %d files indexed", len(rm.fileIndex))
 			}()
+			// Wait for repo-map in background and close channel when done
 			go func() {
-				_ = repoMapWg.Wait()
+				repoMapWg.Wait()
 				close(repoMapErrCh)
 			}()
 		}
