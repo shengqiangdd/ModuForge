@@ -169,11 +169,5 @@ func (r *AgentRunner) loadLatestCustomProvider(userID string) (endpoint, apiKey,
 	return endpoint, apiKey, model, true
 }
 
-// resolveLLMConfigFromRow is a helper for scanning provider rows.
-func resolveLLMConfigFromRow(row interface{ Scan(...interface{}) error }) (endpoint, apiKey, model string, err error) {
-	err = row.Scan(&endpoint, &apiKey, &model)
-	return
-}
-
 // Ensure unused import is consumed
 var _ = sql.ErrNoRows
