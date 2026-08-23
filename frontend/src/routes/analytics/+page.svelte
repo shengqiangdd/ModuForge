@@ -154,22 +154,25 @@ const modeIcons: Record<string, string> = {
       {#if activeTab === 'overview'}
         <!-- Overview Cards -->
         <div class="overview-grid">
-          <div class="stat-card">
-            <div class="stat-icon" style="background: var(--color-primary-light); color: var(--color-primary)">
-              <span class="material-symbols-outlined">group</span>
+          {#if isAdmin}
+            <!-- Admin: show user count -->
+            <div class="stat-card">
+              <div class="stat-icon" style="background: var(--color-primary-light); color: var(--color-primary)">
+                <span class="material-symbols-outlined">group</span>
+              </div>
+              <div class="stat-info">
+                <span class="stat-value">{overview?.total_users ?? 0}</span>
+                <span class="stat-label">活跃用户</span>
+              </div>
             </div>
-            <div class="stat-info">
-              <span class="stat-value">{overview?.total_users ?? 0}</span>
-              <span class="stat-label">活跃用户</span>
-            </div>
-          </div>
+          {/if}
           <div class="stat-card">
             <div class="stat-icon" style="background: var(--color-info-light); color: var(--color-info)">
               <span class="material-symbols-outlined">chat</span>
             </div>
             <div class="stat-info">
               <span class="stat-value">{overview?.total_conversations ?? 0}</span>
-              <span class="stat-label">总对话数</span>
+              <span class="stat-label">{isAdmin ? '总对话数' : '我的对话数'}</span>
             </div>
           </div>
           <div class="stat-card">
@@ -178,7 +181,7 @@ const modeIcons: Record<string, string> = {
             </div>
             <div class="stat-info">
               <span class="stat-value">{formatTokens(overview?.total_tokens ?? 0)}</span>
-              <span class="stat-label">总 Token 消耗</span>
+              <span class="stat-label">{isAdmin ? '总 Token 消耗' : '我的 Token 消耗'}</span>
             </div>
           </div>
           <div class="stat-card">
@@ -187,35 +190,37 @@ const modeIcons: Record<string, string> = {
             </div>
             <div class="stat-info">
               <span class="stat-value">{overview?.total_models ?? 0}</span>
-              <span class="stat-label">使用模型数</span>
+              <span class="stat-label">{isAdmin ? '使用模型数' : '我的模型数'}</span>
             </div>
           </div>
         </div>
 
-        <!-- Build Stats -->
-        <div class="section">
-          <h2 class="section-title">构建统计</h2>
-          <div class="overview-grid">
-            <div class="stat-card wide">
-              <div class="stat-icon" style="background: var(--color-success-light); color: var(--color-success)">
-                <span class="material-symbols-outlined">build</span>
+        <!-- Build Stats (admin only) -->
+        {#if isAdmin}
+          <div class="section">
+            <h2 class="section-title">构建统计</h2>
+            <div class="overview-grid">
+              <div class="stat-card wide">
+                <div class="stat-icon" style="background: var(--color-success-light); color: var(--color-success)">
+                  <span class="material-symbols-outlined">build</span>
+                </div>
+                <div class="stat-info">
+                  <span class="stat-value">{overview?.total_builds ?? 0}</span>
+                  <span class="stat-label">总构建次数</span>
+                </div>
               </div>
-              <div class="stat-info">
-                <span class="stat-value">{overview?.total_builds ?? 0}</span>
-                <span class="stat-label">总构建次数</span>
-              </div>
-            </div>
-            <div class="stat-card wide">
-              <div class="stat-icon" style="background: var(--color-info-light); color: var(--color-info)">
-                <span class="material-symbols-outlined">check_circle</span>
-              </div>
-              <div class="stat-info">
-                <span class="stat-value">{(overview?.build_success_rate ?? 0).toFixed(1)}%</span>
-                <span class="stat-label">构建成功率</span>
+              <div class="stat-card wide">
+                <div class="stat-icon" style="background: var(--color-info-light); color: var(--color-info)">
+                  <span class="material-symbols-outlined">check_circle</span>
+                </div>
+                <div class="stat-info">
+                  <span class="stat-value">{(overview?.build_success_rate ?? 0).toFixed(1)}%</span>
+                  <span class="stat-label">构建成功率</span>
+                </div>
               </div>
             </div>
           </div>
-        </div>
+        {/if}
 
         <!-- Quick Mode & Model Preview -->
         <div class="two-col">
