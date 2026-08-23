@@ -33,12 +33,12 @@ func TestSetAndGetCache(t *testing.T) {
 		t.Fatal("expected cache hit")
 	}
 
-	if !got.Success {
+	if !got.BuildResult.Success {
 		t.Error("expected success=true")
 	}
 
-	if got.Stdout != "build output" {
-		t.Errorf("expected 'build output', got %s", got.Stdout)
+	if got.BuildResult.Stdout != "build output" {
+		t.Errorf("expected 'build output', got %s", got.BuildResult.Stdout)
 	}
 }
 
