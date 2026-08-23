@@ -9,6 +9,14 @@ func registerAIRoutes(ctx *routeContext) {
 	cfg := ctx.cfg
 	fileRepo := ctx.fileRepo
 
+	// AI Analytics (protected — admin sees all data, normal user sees only own data)
+	analyticsH := NewAIAnalyticsHandler(db.Conn)
+	ctx.r("GET", "/analytics/overview", analyticsH.Overview)
+	ctx.r("GET", "/analytics/users", analyticsH.Users)
+	ctx.r("GET", "/analytics/models", analyticsH.Models)
+	ctx.r("GET", "/analytics/timeline", analyticsH.Timeline)
+	ctx.r("GET", "/analytics/modes", analyticsH.Modes)
+
 	aiSvc := service.NewAIServiceWithDB(cfg, db.Conn)
 	aiStreamSvc := service.NewAIStreamServiceWithConfig(cfg)
 
