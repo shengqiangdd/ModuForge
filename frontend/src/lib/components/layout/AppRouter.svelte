@@ -65,7 +65,7 @@
 </script>
 
 <!-- ═══ Main Content ═══ -->
-<main class="flex-1 flex flex-col min-h-0 {current === 'ai' ? '' : 'pb-16 md:pb-0'}" style="background: var(--color-bg)">
+<main class="flex-1 flex flex-col min-h-0 overflow-hidden {current === 'ai' ? '' : 'pb-16 md:pb-0'}" style="background: var(--color-bg)">
   <!-- Page Content -->
   {#if current === 'projects'}
     <div class="flex-1 overflow-y-auto page-enter min-w-0">

@@ -426,7 +426,7 @@
       onConfirmLogout={confirmLogout}
     />
 
-    <div class="flex flex-col flex-1 min-w-0 overflow-hidden">
+    <div class="flex flex-col flex-1 min-w-0 min-h-0">
     <AppHeader
       {themeMode}
       onNavigate={navigate}
