@@ -18,7 +18,8 @@ export function renderMarkdown(text: string): string {
     if (/^(javascript|data|vbscript):/i.test(url.trim())) {
       return text; // strip dangerous links, show text only
     }
-    return `<a href="${url}" target="_blank" rel="noopener noreferrer" class="ai-link">${text}</a>`;
+    const safeUrl = url.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    return `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer" class="ai-link">${text}</a>`;
   });
 
   const lines = html.split('\n');
@@ -179,6 +180,16 @@ export function preRenderVisibleMessages(visibleMessages: Message[]): void {
       preRenderMarkdown(msg.content);
     }
   }
+}
+
+// ─── Global cache cleanup ───
+export function clearAllCaches(): void {
+  markdownCache.clear();
+  segmentCache.clear();
+  filesCache.clear();
+  recFilesCache.clear();
+  errDetailCache.clear();
+  webUICache.clear();
 }
 
 // ─── Global copyCode setup ───

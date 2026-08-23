@@ -585,12 +585,22 @@ type TokenOptimizer struct {
 	prefixCache   *PrefixCache
 }
 
-// NewTokenOptimizer creates a fully-configured optimizer.
+// NewTokenOptimizer creates a fully-configured optimizer and starts
+// a background goroutine that periodically cleans up expired cache entries.
 func NewTokenOptimizer(promptsDir string) *TokenOptimizer {
+	dc := NewDifferentialCache(2 * time.Minute)
+	// Start periodic cleanup every 2 minutes
+	go func() {
+		ticker := time.NewTicker(2 * time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
+			dc.Cleanup()
+		}
+	}()
 	return &TokenOptimizer{
 		estimator:     &TokenEstimator{},
 		pruner:        NewToolResultPruner(),
-		diffCache:     NewDifferentialCache(2 * time.Minute),
+		diffCache:     dc,
 		promptChunker: NewPromptChunker(promptsDir),
 		convoOpt:      NewConversationOptimizer(),
 		prefixCache:   NewPrefixCache(100, 5*time.Minute),

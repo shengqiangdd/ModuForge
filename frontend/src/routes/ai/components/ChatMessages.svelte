@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onDestroy } from 'svelte';
   import ChatMessage from './ChatMessage.svelte';
   import type { Message, TokenUsage } from '../lib/types';
 
@@ -151,6 +152,10 @@
   let searchIdx = $state(-1);
   let highlightIdx = $state(-1);
   let highlightTimer: ReturnType<typeof setTimeout> | undefined;
+
+  onDestroy(() => {
+    if (highlightTimer) clearTimeout(highlightTimer);
+  });
 
   function runSearch(q: string) {
     searchQuery = q;

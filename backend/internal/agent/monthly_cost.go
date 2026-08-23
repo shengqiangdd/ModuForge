@@ -26,16 +26,10 @@ func (r *AgentRunner) calcMonthlyCost(userID string, inputPrice, outputPrice flo
 		return info
 	}
 	monthPrefix := time.Now().Format("2006-01")
-	rows, err := r.db.Query(`SELECT llm_token_usage FROM ai_usage_daily WHERE user_id = ? AND date LIKE ?`, userID, monthPrefix+"%")
-	if err != nil {
-		return info
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var tokens int64
-		if err := rows.Scan(&tokens); err == nil {
-			info.Tokens += tokens
-		}
+	var tokens int64
+	err := r.db.QueryRow(`SELECT COALESCE(SUM(llm_token_usage), 0) FROM ai_usage_daily WHERE user_id = ? AND date LIKE ?`, userID, monthPrefix+"%").Scan(&tokens)
+	if err == nil {
+		info.Tokens = tokens
 	}
 	avgPrice := (inputPrice + outputPrice) / 2
 	if avgPrice > 0 {

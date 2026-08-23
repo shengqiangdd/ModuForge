@@ -5,7 +5,7 @@ import { toast } from '$lib/stores/toast.svelte';
 import { client } from '$lib/api/client';
 import type { Mode, AgentStep, TokenUsage } from '../types';
 import { MODES } from '../types';
-import { generateUUID } from '../utils';
+import { generateUUID, redactArgValues } from '../utils';
 import {
   loadGenHistory as loadGenHistoryFromStorage,
   fetchConversations,
@@ -329,23 +329,6 @@ export interface McpPermissionState {
     timeout_s: number;
   } | null;
   permissionBusy: boolean;
-}
-
-function redactArgValues(v: unknown, depth = 0): unknown {
-  if (depth > 4) return v;
-  if (Array.isArray(v)) return v.map(x => redactArgValues(x, depth + 1));
-  if (v && typeof v === 'object') {
-    const out: Record<string, unknown> = {};
-    for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
-      if (/token|secret|password|passwd|api[_-]?key|authorization|auth|credential|bearer|cookie/i.test(k)) {
-        out[k] = typeof val === 'string' && val.length > 8 ? `${val.slice(0, 4)}***${val.slice(-2)}` : '***';
-      } else {
-        out[k] = redactArgValues(val, depth + 1);
-      }
-    }
-    return out;
-  }
-  return v;
 }
 
 export function permissionArgsPreview(p: McpPermissionState): string {

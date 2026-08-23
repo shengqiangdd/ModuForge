@@ -61,7 +61,14 @@ func (r *AgentRunner) handleLLMCallError(ctx context.Context, w SSEWriter, cfg R
 	// Some proxies/CDNs drop connections with only SSE comments
 	sleepDone := make(chan struct{})
 	startKeepalive(ctx, w, sleepDone, 3*time.Second)
-	time.Sleep(backoff)
+	select {
+	case <-time.After(backoff):
+		// backoff elapsed, proceed with retry
+	case <-ctx.Done():
+		close(sleepDone)
+		log.Printf("[Agent] retry backoff interrupted by context cancellation")
+		return conversation, consecutiveErrors, ctx.Err()
+	}
 	close(sleepDone)
 
 	// Smart retry: Add context about what was being attempted to help LLM recover

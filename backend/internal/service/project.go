@@ -287,7 +287,9 @@ func (s *ProjectService) DeleteWithRecycle(ctx context.Context, id string, userI
 
 	// 4. Insert recycle bin entry (inside the same transaction!)
 	if userID != "" && name != "" {
-		projData := fmt.Sprintf(`{"id":"%s","name":"%s"}`, id, name)
+		// Use json.Marshal to prevent JSON injection from user-supplied name
+		projDataBytes, _ := json.Marshal(map[string]string{"id": id, "name": name})
+		projData := string(projDataBytes)
 		expires := time.Now().AddDate(0, 0, 30)
 		// Use a subquery to get the numeric rowid for item_id (recycle_bin.item_id is INTEGER)
 		_, _ = tx.ExecContext(ctx,

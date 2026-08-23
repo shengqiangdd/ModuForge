@@ -4,7 +4,7 @@
 import { toast } from "$lib/stores/toast.svelte";
 import type { Mode, AgentStep, Provider, Model, AIPrompt, GenHistoryItem, Message, ProgressStepDetail, AutoBuildPhase, ContextProject, ComparisonResult, SecurityScanResult } from './types';
 import { MODES } from "./types";
-import { generateUUID, safeCopyText } from "./utils";
+import { generateUUID, safeCopyText, redactArgValues } from "./utils";
 import { memoExtractFiles } from "./markdown";
 import { loadProvidersFromBackend, saveModelSelectionToStorage, saveConfigToBackend,
   refreshModelsFromBackend, saveModelMaxTokens, loadProviderConfig,
@@ -274,23 +274,7 @@ export function handleCopyText(text: string) {
 }
 
 // ─── MCP permission ───
-
-export function redactArgValues(v: unknown, depth = 0): unknown {
-  if (depth > 4) return v;
-  if (Array.isArray(v)) return v.map(x => redactArgValues(x, depth + 1));
-  if (v && typeof v === 'object') {
-    const out: Record<string, unknown> = {};
-    for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
-      if (/token|secret|password|passwd|api[_-]?key|authorization|auth|credential|bearer|cookie/i.test(k)) {
-        out[k] = typeof val === 'string' && val.length > 8 ? `${val.slice(0, 4)}***${val.slice(-2)}` : '***';
-      } else {
-        out[k] = redactArgValues(val, depth + 1);
-      }
-    }
-    return out;
-  }
-  return v;
-}
+// redactArgValues imported from utils (shared)
 
 export function permissionArgsPreview(args: Record<string, unknown> | undefined): string {
   if (!args || Object.keys(args).length === 0) return '（无参数）';

@@ -117,24 +117,165 @@ func (s *BashSkill) Execute(ctx context.Context, input map[string]interface{}) (
 	return outputStr, nil
 }
 
-// validateCommand checks command against security rules
+// validateCommand checks command against security rules (whitelist + blacklist)
 func (s *BashSkill) validateCommand(command string) error {
-	// Basic dangerous command blocking (independent of security engine)
-	dangerousPatterns := []string{
-		`rm\s+(-[a-zA-Z]*r[a-zA-Z]*f|-[a-zA-Z]*f[a-zA-Z]*r)\s+(/|/\*|\.\.)`,
-		`rm\s+(-[a-zA-Z]*r[a-zA-Z]*f|-[a-zA-Z]*f[a-zA-Z]*r)\s+/((usr|etc|var|sys|proc|dev|boot|sbin|bin)/)`,
-		`(mkfs|format)\s+(/dev/|//\\\\.\\\\)`,
-		`dd\s+if=/dev/(zero|random|urandom)\s+of=/dev/`,
-		`chmod\s+(-R\s+)?777\s+/`,
+	cmd := strings.TrimSpace(command)
+	if cmd == "" {
+		return fmt.Errorf("empty command")
 	}
 
-	for _, pattern := range dangerousPatterns {
-		if matched, _ := regexp.MatchString(pattern, command); matched {
-			return fmt.Errorf("🚫 命令被安全策略阻止: 检测到危险操作模式")
+	// ── Blacklist: dangerous patterns that are NEVER allowed ──
+	dangerousPatterns := []struct {
+		pattern string
+		reason  string
+	}{
+		// Destructive filesystem
+		{`rm\s+(-[a-zA-Z]*r[a-zA-Z]*f|-[a-zA-Z]*f[a-zA-Z]*r)\s+(/|/\*|\.\.)`, "recursive force delete root"},
+		{`rm\s+(-[a-zA-Z]*r[a-zA-Z]*f|-[a-zA-Z]*f[a-zA-Z]*r)\s+/((usr|etc|var|sys|proc|dev|boot|sbin|bin)/)`, "delete system directories"},
+		{`(mkfs|format)\s+(/dev/|//\\\\.\\\\)`, "format disk"},
+		{`dd\s+if=/dev/(zero|random|urandom)\s+of=/dev/`, "overwrite disk"},
+		{`chmod\s+(-R\s+)?777\s+/`, "chmod 777 root"},
+		// Piping to shell / downloading+executing
+		{`\|\s*(ba)?sh`, "pipe to shell"},
+		{`\|\s*python\b.*-c`, "pipe to python"},
+		{`curl\s+.*\|\s*(ba)?sh`, "download and execute"},
+		{`wget\s+.*\|\s*(ba)?sh`, "download and execute"},
+		{`curl\s+.*-o\s+\S+\s*&&\s*.*(ba)?sh`, "download then execute"},
+		// Network backdoors
+		{`nc\s+.*-e\s+/bin/(ba)?sh`, "netcat reverse shell"},
+		{`/dev/tcp/`, "bash reverse shell"},
+		{`/dev/udp/`, "bash udp shell"},
+		// Fork bomb
+		{`\(\)\s*\{.*\|.*&\s*\}`, "fork bomb"},
+		// Disk overwrite
+		{`>\s*/dev/sd[a-z]`, "overwrite disk device"},
+		// Finding and deleting
+		{`find\s+/\s+-exec\s+rm`, "find and delete from root"},
+		// Sensitive file access
+		{`cat\s+/etc/shadow`, "read shadow file"},
+		{`cat\s+/etc/passwd.*\|`, "exfiltrate passwd"},
+		// Kernel / system modification
+		{`insmod\s+`, "load kernel module"},
+		{`rmmod\s+`, "unload kernel module"},
+		{`sysctl\s+.*-\sw`, "modify kernel sysctl"},
+		// Env / credential theft
+		{`env\b.*\|\s*(curl|wget)`, "exfiltrate env vars"},
+		{`printenv.*\|\s*(curl|wget)`, "exfiltrate env vars"},
+		{`cat\s+\.env\b.*\|\s*(curl|wget)`, "exfiltrate .env"},
+	}
+
+	for _, dp := range dangerousPatterns {
+		if matched, _ := regexp.MatchString(dp.pattern, cmd); matched {
+			return fmt.Errorf("🚫 命令被安全策略阻止: %s", dp.reason)
 		}
 	}
 
+	// ── Root-level destructive operations ──
+	blockedRootDirs := []string{
+		"/bin", "/sbin", "/usr", "/etc", "/var", "/sys", "/proc",
+		"/dev", "/boot", "/lib", "/lib64", "/opt", "/srv",
+	}
+	for _, dir := range blockedRootDirs {
+		if matched, _ := regexp.MatchString(
+			fmt.Sprintf(`\b(rm|mv|chmod|chown|shred|rename)\b.*\b%s\b`, regexp.QuoteMeta(dir)),
+			cmd,
+		); matched {
+			return fmt.Errorf("🚫 命令被安全策略阻止: 操作系统目录 %s", dir)
+		}
+	}
+
+	// ── Whitelist: only safe command prefixes are allowed ──
+	// Extract the first command (handle pipes, &&, ||)
+	firstCmd := extractFirstCommand(cmd)
+
+	safePrefixes := []string{
+		// Version control
+		"git ", "git\t",
+		// Package managers
+		"npm ", "npx ", "yarn ", "pnpm ", "bun ",
+		"pip ", "pip3 ", "uv ",
+		"go ", "cargo ", "rustup ",
+		"apt ", "apt-get ", "dpkg ",
+		// Build & test
+		"make ", "cmake ", "cargo ",
+		"dotnet ", "msbuild ",
+		// Project-specific safe commands
+		"node ", "python ", "python3 ", "ruby ", "perl ", "php ",
+		"java ", "javac ",
+		// File inspection (read-only)
+		"ls ", "cat ", "head ", "tail ", "wc ", "grep ", "rg ",
+		"find ", "tree ", "stat ", "file ", "du ", "df ",
+		"pwd", "which ", "whereis ", "type ", "echo ", "printf ",
+		"diff ", "comm ", "sort ", "uniq ", "cut ", "awk ", "sed ",
+		"tr ", "xargs ",
+		// Git & project helpers
+		"jq ", "yq ",
+		// Network read-only
+		"curl ", "wget ",
+		// Archive
+		"tar ", "unzip ", "zip ", "gzip ", "gunzip ",
+		// Process
+		"ps ", "top ", "htop ", "uptime ", "date ", "env", "printenv",
+		// Build system
+		"flutter ", "dart ", "swift ", "xcodebuild ",
+		"gradle ", "mvn ",
+		// Directory navigation (always safe)
+		"cd ", "pushd", "popd",
+		// Safe filesystem operations (within project dir only)
+		"mkdir ", "touch ", "cp ", "mv ", "ln ",
+		"chmod ", "chown ",
+		// Compiler / toolchain
+		"gcc ", "g++ ", "clang ", "rustc ",
+		"tsc ", "esbuild ", "vite ",
+		"docker ", "docker-compose ",
+		"podman ",
+		// Safe dev tools
+		"eslint ", "prettier ", "biome ",
+		"jest ", "vitest ", "mocha ", "pytest ", "go test",
+		"cargo test",
+	}
+
+	allowed := false
+	for _, prefix := range safePrefixes {
+		if strings.HasPrefix(firstCmd, prefix) || firstCmd == strings.TrimSuffix(prefix, " ") {
+			allowed = true
+			break
+		}
+	}
+
+	// Also allow commands starting with ./
+	if strings.HasPrefix(firstCmd, "./") {
+		allowed = true
+	}
+
+	if !allowed {
+		return fmt.Errorf("🚫 命令不在白名单中: '%s'。允许的命令前缀包括: git, npm, go, python, node, ls, cat, find, mkdir, cp, mv 等", firstCmd)
+	}
+
 	return nil
+}
+
+// extractFirstCommand extracts the first command from a pipeline/chain.
+func extractFirstCommand(cmd string) string {
+	// Remove leading whitespace
+	cmd = strings.TrimSpace(cmd)
+
+	// Split by &&, ||, |, ;
+	separators := []string{" && ", " || ", " | ", "; "}
+	for _, sep := range separators {
+		if idx := strings.Index(cmd, sep); idx >= 0 {
+			cmd = cmd[:idx]
+		}
+	}
+
+	// Extract just the command name (first word)
+	cmd = strings.TrimSpace(cmd)
+	parts := strings.Fields(cmd)
+	if len(parts) == 0 {
+		return ""
+	}
+
+	return parts[0]
 }
 
 // syncProjectToDisk ensures all project files from the database exist on disk.

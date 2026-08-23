@@ -188,6 +188,11 @@ func (r *AgentRunner) startSessionCacheCleanup() {
 			}
 		}
 
+		// DifferentialCache cleanup: evict expired file content entries.
+		if r.diffCache != nil {
+			r.diffCache.Cleanup()
+		}
+
 		// Weekly SQLite VACUUM to reclaim space from deleted rows.
 		// Runs on the same daily tick but only once a week (7*24h).
 		if now.Sub(lastVacuum) > 7*24*time.Hour {

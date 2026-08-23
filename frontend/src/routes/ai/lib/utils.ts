@@ -138,6 +138,10 @@ export function getWebUIPreviewHTML(files: {path: string; content: string}[]): s
   const cssFiles = files.filter(f => f.path.startsWith('webroot/') && f.path.endsWith('.css'));
   const jsFiles = files.filter(f => f.path.startsWith('webroot/') && (f.path.endsWith('.js') || f.path.endsWith('.mjs')));
   const scriptClose = '<' + '/script>';
+  // Inject CSP meta tag into head to restrict scripts, styles, and connections in iframe preview
+  // connect-src 'none' blocks all network requests (fetch, XHR, WebSocket) from iframe
+  const cspMeta = '<meta http-equiv="Content-Security-Policy" content="default-src \'self\' \'unsafe-inline\'; script-src \'self\' \'unsafe-inline\'; style-src \'self\' \'unsafe-inline\'; img-src \'self\' data:; connect-src \'none\';">';
+  html = html.replace(/<head(\s[^>]*)?>/i, '$&' + cspMeta);
   for (const css of cssFiles) {
     const filename = css.path.split('/').pop() || '';
     if (!html.includes('<link') || !html.includes(filename)) {
@@ -230,4 +234,23 @@ export function extractGatherSpec(content: string): Record<string, unknown> | nu
     if (match) return JSON.parse(match[1]);
     return JSON.parse(content);
   } catch { return null; }
+}
+
+// ─── MCP security helpers ───
+
+export function redactArgValues(v: unknown, depth = 0): unknown {
+  if (depth > 4) return v;
+  if (Array.isArray(v)) return v.map(x => redactArgValues(x, depth + 1));
+  if (v && typeof v === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
+      if (/token|secret|password|passwd|api[_-]?key|authorization|auth|credential|bearer|cookie/i.test(k)) {
+        out[k] = typeof val === 'string' && val.length > 8 ? `${val.slice(0, 4)}***${val.slice(-2)}` : '***';
+      } else {
+        out[k] = redactArgValues(val, depth + 1);
+      }
+    }
+    return out;
+  }
+  return v;
 }

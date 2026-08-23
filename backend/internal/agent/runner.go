@@ -175,6 +175,9 @@ type AgentRunner struct {
 	semanticCache   *SemanticCache
 	contextCondenser *ContextCondenser
 	sessionLearner  *SessionLearner
+
+	// DifferentialCache for file content change detection (cleaned up periodically)
+	diffCache *DifferentialCache
 }
 
 func NewAgentRunner(registry *SkillRegistry, apiKey, endpoint, model string, db *sql.DB) *AgentRunner {
@@ -201,6 +204,7 @@ func NewAgentRunner(registry *SkillRegistry, apiKey, endpoint, model string, db 
 		semanticCache:    NewSemanticCache(500, 0.85),
 		contextCondenser: NewContextCondenser(30, 6, 1),
 		sessionLearner:   NewSessionLearner(100),
+		diffCache:        NewDifferentialCache(2 * time.Minute),
 	}
 	go r.startSessionCacheCleanup()
 	return r
@@ -472,9 +476,27 @@ You are running WITHOUT a project context. This means:
 		if projectPath != "" {
 			rm := NewRepoMap(projectPath)
 			r.repoMap = rm
+			var repoMapWg sync.WaitGroup
+			repoMapErrCh := make(chan error, 1)
+			repoMapWg.Add(1)
 			go func() {
-				rm.GenerateRepoMapWithTimeout(ctx, projectPath, 10*time.Second)
+				defer repoMapWg.Done()
+				defer func() {
+					if r := recover(); r != nil {
+						log.Printf("[Agent] repo-map goroutine panicked: %v", r)
+						repoMapErrCh <- fmt.Errorf("repo-map panic: %v", r)
+					}
+				}()
+				if err := rm.GenerateRepoMapWithTimeout(ctx, projectPath, 10*time.Second); err != nil {
+					log.Printf("[Agent] repo-map generation failed: %v", err)
+					repoMapErrCh <- err
+					return
+				}
 				log.Printf("[Agent] repo-map generated: %d files indexed", len(rm.fileIndex))
+			}()
+			go func() {
+				_ = repoMapWg.Wait()
+				close(repoMapErrCh)
 			}()
 		}
 	}

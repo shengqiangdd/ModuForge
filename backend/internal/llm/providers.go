@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sync"
 	"time"
 )
 
@@ -36,8 +37,21 @@ type RemoteModel struct {
 	OwnedBy string `json:"owned_by"`
 }
 
-// GetProviders 返回所有支持的提供商
+// GetProviders returns all supported providers.
+// Result is cached via sync.Once — the catalog is immutable after startup.
+var (
+	cachedProviders     []Provider
+	cachedProvidersOnce sync.Once
+)
+
 func GetProviders() []Provider {
+	cachedProvidersOnce.Do(func() {
+		cachedProviders = buildProvidersCatalog()
+	})
+	return cachedProviders
+}
+
+func buildProvidersCatalog() []Provider {
 	return []Provider{
 		// === OpenCode Zen（合并免费+付费）===
 		{

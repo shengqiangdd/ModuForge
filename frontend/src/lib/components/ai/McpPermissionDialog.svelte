@@ -4,6 +4,7 @@
    * Shows when AI requests to call a tool that may change remote state.
    */
   import type { McpPermissionState } from '../../../routes/ai/lib/stores/conversations';
+  import { redactArgValues } from '../../../routes/ai/lib/utils';
 
   let {
     permission,
@@ -23,23 +24,6 @@
     const req = permission;
     if (!req || !req.args || Object.keys(req.args).length === 0) return '（无参数）';
     try { return JSON.stringify(redactArgValues(req.args), null, 2); } catch { return String(req.args); }
-  }
-
-  function redactArgValues(v: unknown, depth = 0): unknown {
-    if (depth > 4) return v;
-    if (Array.isArray(v)) return v.map(x => redactArgValues(x, depth + 1));
-    if (v && typeof v === 'object') {
-      const out: Record<string, unknown> = {};
-      for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
-        if (/token|secret|password|passwd|api[_-]?key|authorization|auth|credential|bearer|cookie/i.test(k)) {
-          out[k] = typeof val === 'string' && val.length > 8 ? `${val.slice(0, 4)}***${val.slice(-2)}` : '***';
-        } else {
-          out[k] = redactArgValues(val, depth + 1);
-        }
-      }
-      return out;
-    }
-    return v;
   }
 </script>
 
