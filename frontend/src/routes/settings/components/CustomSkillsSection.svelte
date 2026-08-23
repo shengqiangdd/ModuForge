@@ -237,7 +237,7 @@
                 {#if showEvolution === skill.id && skillEvolutionData[skill.id]}
                   {@const evo = skillEvolutionData[skill.id]}
                   {@const stats = evo.stats || {}}
-                  <div class="grid grid-cols-3 gap-2 mt-2">
+                  <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-2">
                     <div class="text-center p-1.5 rounded-lg" style="background: var(--color-bg)">
                       <div class="text-sm font-bold" style="color: var(--color-text)">{stats.total_runs || 0}</div>
                       <div class="text-[9px]" style="color: var(--color-text-muted)">运行次数</div>

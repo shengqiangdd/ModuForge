@@ -101,7 +101,7 @@
     </div>
   </div>
   <div class="space-y-4">
-    <div class="grid grid-cols-2 gap-4">
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
       <div>
         <label for="smtp-host" class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1">SMTP 主机</label>
         <input id="smtp-host" type="text" class="input-field" placeholder="smtp.example.com" bind:value={smtpHost} />
@@ -111,7 +111,7 @@
         <input id="smtp-port" type="number" class="input-field" placeholder="587" bind:value={smtpPort} />
       </div>
     </div>
-    <div class="grid grid-cols-2 gap-4">
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
       <div>
         <label for="smtp-user" class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1">用户名</label>
         <input id="smtp-user" type="text" class="input-field" placeholder="user@example.com" bind:value={smtpUser} />
@@ -121,7 +121,7 @@
         <input id="smtp-pass" type="password" class="input-field" placeholder="SMTP 密码" bind:value={smtpPass} />
       </div>
     </div>
-    <div class="grid grid-cols-2 gap-4">
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
       <div>
         <label for="smtp-from-name" class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1">发件人名称</label>
         <input id="smtp-from-name" type="text" class="input-field" placeholder="ModuForge" bind:value={smtpFromName} />
@@ -131,7 +131,7 @@
         <input id="smtp-from" type="email" class="input-field" placeholder="noreply@example.com" bind:value={smtpFrom} />
       </div>
     </div>
-    <div class="grid grid-cols-2 gap-4">
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
       <div>
         <label for="smtp-use-tls" class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1">加密方式</label>
         <select id="smtp-use-tls" class="input-field" bind:value={smtpUseTLS}>

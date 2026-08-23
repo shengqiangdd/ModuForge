@@ -75,7 +75,7 @@
   };
 </script>
 
-<div class="w-full p-6 max-w-5xl mx-auto space-y-6">
+<div class="w-full p-4 md:p-6 max-w-5xl mx-auto space-y-6">
   <div class="flex items-center justify-between">
     <div>
       <h1 class="text-2xl font-bold text-[var(--color-text)]">崩溃分析</h1>
@@ -86,7 +86,7 @@
 
   <!-- Stats Cards -->
   {#if stats}
-    <div class="grid grid-cols-3 gap-4">
+    <div class="grid grid-cols-3 gap-2 md:gap-4">
       <div class="card p-4 text-center">
         <p class="text-2xl font-bold text-[var(--color-text)]">{stats.total || 0}</p>
         <p class="text-xs mt-1" style="color: var(--color-text-muted)">总计</p>
@@ -150,7 +150,7 @@
         </button>
       </div>
       <div class="p-5 space-y-4">
-        <div class="grid grid-cols-2 gap-4 text-sm">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
           <div><span class="text-[var(--color-text-muted)]">设备:</span> <span class="text-[var(--color-text)]">{selectedLog.device_id}</span></div>
           <div><span class="text-[var(--color-text-muted)]">模块:</span> <span class="text-[var(--color-text)]">{selectedLog.module_slug || '-'}</span></div>
           <div><span class="text-[var(--color-text-muted)]">版本:</span> <span class="text-[var(--color-text)]">{selectedLog.app_version || '-'}</span></div>

@@ -59,7 +59,7 @@
     </div>
   </div>
   <div class="space-y-4">
-    <div class="grid grid-cols-2 gap-4">
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
       <div>
         <label for="agent-max-iterations" class="block text-sm font-medium text-[var(--color-text-secondary)] mb-1">最大迭代次数</label>
         <input id="agent-max-iterations" type="number" class="input-field" min="1" max="100" bind:value={agentMaxIterations} />

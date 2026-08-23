@@ -26,7 +26,7 @@
   }
 </script>
 
-<div class="settings-grid p-6 w-full max-w-4xl mx-auto space-y-8 overflow-x-hidden">
+<div class="w-full max-w-4xl mx-auto p-4 md:p-6 space-y-8">
   <div>
     <h1 class="text-2xl font-bold text-[var(--color-text)]">设置</h1>
     <p class="text-sm text-[var(--color-text-secondary)] mt-0.5">管理你的 ModuForge 配置</p>
@@ -53,17 +53,3 @@
   <CustomSkillsSection />
   <AboutSection />
 </div>
-
-<style>
-  .settings-grid {
-    width: 100%;
-    max-width: 100%;
-  }
-
-  @media (max-width: 640px) {
-    .settings-grid {
-      padding: 1rem !important;
-      gap: 1.25rem !important;
-    }
-  }
-</style>

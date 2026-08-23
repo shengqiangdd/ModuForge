@@ -81,7 +81,7 @@
   {:else if templateList.length === 0}
     <p class="text-xs text-[var(--color-text-muted)] text-center py-8">暂无模板</p>
   {:else}
-    <div class="grid grid-cols-2 gap-3">
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
       {#each templateList as t (t.id)}
         <div class="p-3 border border-[var(--color-border)] rounded-lg hover:border-primary/50 transition-colors">
           <div class="flex items-start justify-between mb-2">

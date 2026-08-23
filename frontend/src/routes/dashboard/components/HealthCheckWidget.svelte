@@ -22,7 +22,7 @@
     </span>
     <span class="text-xs ml-auto" style="color: var(--color-text-muted)">运行 {data.uptime}</span>
   </div>
-  <div class="grid grid-cols-2 gap-2 mb-3">
+  <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3">
     {#each Object.entries(data.checks || {}) as [key, check]}
       {@const checkStatus = (check as any).status}
       <div

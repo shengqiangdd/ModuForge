@@ -96,7 +96,7 @@
   onMount(() => loadActivities());
 </script>
 
-<div class="w-full p-6 max-w-5xl mx-auto space-y-6">
+<div class="w-full p-4 md:p-6 max-w-5xl mx-auto space-y-6">
   <!-- Header -->
   <div class="flex items-center justify-between">
     <div>
@@ -114,7 +114,7 @@
   {/if}
 
   <!-- Quick Stats -->
-  <div class="grid grid-cols-4 gap-3">
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-3">
     {#each [{ key: 'build', label: '构建', icon: 'build' }, { key: 'deploy', label: '部署', icon: 'rocket_launch' }, { key: 'collab', label: '协作', icon: 'group' }, { key: 'security', label: '安全', icon: 'shield' }] as s}
       <div class="card p-3 text-center">
         <span class="material-symbols-outlined text-[20px]" style="color: {typeColor(s.key)}">{s.icon}</span>

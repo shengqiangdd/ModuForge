@@ -129,7 +129,7 @@
   onMount(() => { loadHistory(); });
 </script>
 
-<div class="w-full p-6 max-w-5xl mx-auto space-y-6">
+<div class="w-full p-4 md:p-6 max-w-5xl mx-auto space-y-6">
   <!-- Header -->
   <div class="flex items-center justify-between">
     <div>
@@ -171,7 +171,7 @@
   {/if}
 
   <!-- Stats -->
-  <div class="grid grid-cols-4 gap-4">
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-4">
     <div class="card p-4 text-center">
       <p class="text-2xl font-bold text-[var(--color-text)]">{totalVulns}</p>
       <p class="text-xs mt-1" style="color: var(--color-text-muted)">总漏洞</p>

@@ -178,7 +178,7 @@
         {#if addingProviderId === provider.id}
           <div class="p-3 rounded-xl" style="background: var(--color-surface); border: 1px solid var(--color-border)">
             <p class="text-xs font-medium text-[var(--color-text-muted)] mb-2">添加自定义模型</p>
-            <div class="grid grid-cols-2 gap-2 mb-2">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-2">
               <input type="text" class="input-field text-xs" placeholder="模型 ID (如 gpt-4-custom)" bind:value={newModelId} />
               <input type="text" class="input-field text-xs" placeholder="模型名称" bind:value={newModelName} />
             </div>

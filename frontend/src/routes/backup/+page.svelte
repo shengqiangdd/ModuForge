@@ -125,7 +125,7 @@
   onMount(() => { loadSchedules(); loadHistory(); });
 </script>
 
-<div class="w-full p-6 max-w-5xl mx-auto space-y-6">
+<div class="w-full p-4 md:p-6 max-w-5xl mx-auto space-y-6">
   <!-- Header -->
   <div class="flex items-center justify-between">
     <div>

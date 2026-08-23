@@ -4,7 +4,7 @@
   let { data, loading }: { data: any; loading: boolean } = $props();
 </script>
 
-<div class="grid grid-cols-3 gap-2 mb-3">
+<div class="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-3">
   {#each [
     { label: $t('dashboard.total_modules'), value: data?.total_modules ?? 0 },
     { label: $t('dashboard.total_installs'), value: data?.total_installs ?? 0 },

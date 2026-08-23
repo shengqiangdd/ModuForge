@@ -99,7 +99,7 @@
                     {checkStatus}
                   </span>
                 </div>
-                <div class="grid grid-cols-2 gap-2 text-xs">
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
                   {#each Object.entries(check as any) as [prop, val]}
                     {#if prop !== 'status' && prop !== 'error'}
                       <div>

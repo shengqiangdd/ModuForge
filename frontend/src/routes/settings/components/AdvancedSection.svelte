@@ -193,7 +193,7 @@
     </button>
   </div>
   {#if healthLoading}
-    <div class="grid grid-cols-2 gap-3">
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
       {#each Array(4) as _}
         <div class="skeleton h-20 rounded-xl"></div>
       {/each}
@@ -204,7 +204,7 @@
       <span class="text-sm font-medium" style="color: {healthData.status === 'healthy' ? 'var(--color-success)' : 'var(--color-error)'}">{healthData.status === 'healthy' ? '健康' : '异常'}</span>
       <span class="text-xs ml-auto" style="color: var(--color-text-muted)">运行时间: {healthData.uptime} · v{healthData.version}</span>
     </div>
-    <div class="grid grid-cols-2 gap-3">
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
       {#each Object.entries(healthData.checks || {}) as [key, check]}
         <div class="p-3 rounded-xl" style="background: var(--color-surface); border: 1px solid var(--color-border)">
           <div class="flex items-center justify-between mb-1">
