@@ -6,14 +6,14 @@ export function loadGenHistory(): GenHistoryItem[] {
   try {
     const stored = localStorage.getItem('moduforge_ai_history');
     if (stored) return JSON.parse(stored);
-  } catch {}
+  } catch (e) { console.warn('Failed to load gen history:', e); }
   return [];
 }
 
 export function saveGenHistory(genHistory: GenHistoryItem[]): void {
   try {
     localStorage.setItem('moduforge_ai_history', JSON.stringify(genHistory.slice(0, 30)));
-  } catch {}
+  } catch (e) { console.warn('Failed to save gen history:', e); }
 }
 
 export function addGenHistory(
@@ -44,7 +44,7 @@ export function addGenHistory(
 }
 
 // ─── Backend Conversations ───
-async function authFetch(url: string, opts: RequestInit = {}): Promise<Response> {
+export async function authFetch(url: string, opts: RequestInit = {}): Promise<Response> {
   const token = localStorage.getItem('moduforge_token') || '';
   return fetch(url, { ...opts, headers: { 'Authorization': `Bearer ${token}`, ...opts.headers } });
 }
@@ -53,7 +53,7 @@ export async function fetchConversations(): Promise<SavedConv[]> {
   try {
     const res = await authFetch('/api/v1/ai/conversations');
     if (res.ok) { const data = await res.json(); return data.conversations || []; }
-  } catch {}
+  } catch (e) { console.warn('Failed to fetch conversations:', e); }
   return [];
 }
 
@@ -61,7 +61,7 @@ export async function fetchConversation(id: string): Promise<any | null> {
   try {
     const res = await authFetch(`/api/v1/ai/conversations/${id}`);
     if (res.ok) return await res.json();
-  } catch {}
+  } catch (e) { console.warn('Failed to fetch conversation:', e); }
   return null;
 }
 
@@ -83,7 +83,7 @@ export async function saveConversationToBackend(params: {
       body: JSON.stringify(params),
     });
     if (res.ok) { const data = await res.json(); return data.id || null; }
-  } catch {}
+  } catch (e) { console.warn('Failed to save conversation:', e); }
   return null;
 }
 
@@ -95,7 +95,7 @@ export async function loadSessionsList(offset = 0, limit = 100): Promise<{ sessi
       headers: { 'Authorization': `Bearer ${token}` },
     });
     if (res.ok) { const data = await res.json(); return { sessions: data.sessions || [], total: data.total ?? (data.sessions || []).length }; }
-  } catch {}
+  } catch (e) { console.warn('Failed to load sessions:', e); }
   return { sessions: [], total: 0 };
 }
 
@@ -163,7 +163,7 @@ export async function fetchSessionMessages(sessId: string, limit = 0, before = '
           const skill = colonIdx > 0 ? m.content.substring(0, colonIdx) : m.step_type;
           const jsonStr = colonIdx > 0 ? m.content.substring(colonIdx + 2) : '{}';
           let inputObj = {};
-          try { inputObj = JSON.parse(jsonStr); } catch {}
+          try { inputObj = JSON.parse(jsonStr); } catch (e) { console.warn('Failed to parse skill input:', e); }
           allSteps.push({ type: 'skill_call', skill, content: m.content, input: inputObj, round: ri });
         } else if (m.step_type === 'skill_result') {
           const colonIdx = m.content.indexOf(': ');
@@ -219,7 +219,7 @@ export async function searchSessions(query: string): Promise<{ session_id: strin
   try {
     const res = await authFetch(`/api/v1/ai/sessions/search?q=${encodeURIComponent(query)}`);
     if (res.ok) { const data = await res.json(); return data.results || []; }
-  } catch {}
+  } catch (e) { console.warn('Failed to search sessions:', e); }
   return [];
 }
 
@@ -228,7 +228,7 @@ export async function fetchProjectFiles(projectId: string): Promise<{ path: stri
   try {
     const res = await authFetch(`/api/v1/projects/${projectId}/files`);
     if (res.ok) { const data = await res.json(); return data.files || []; }
-  } catch {}
+  } catch (e) { console.warn('Failed to fetch project files:', e); }
   return [];
 }
 
@@ -236,7 +236,7 @@ export async function fetchProjectList(): Promise<{ id: string; name: string }[]
   try {
     const res = await authFetch('/api/v1/projects');
     if (res.ok) { const data = await res.json(); return (data.projects || []).map((p: { id: string; name: string }) => ({ id: p.id, name: p.name })); }
-  } catch {}
+  } catch (e) { console.warn('Failed to fetch project list:', e); }
   return [];
 }
 

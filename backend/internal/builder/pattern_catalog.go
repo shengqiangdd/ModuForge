@@ -6,14 +6,14 @@ import (
 
 // CodePattern represents a reusable code pattern in the catalog.
 type CodePattern struct {
-	ID          string   `json:"id"`           // e.g. "go_daemon"
-	Name        string   `json:"name"`         // e.g. "Go Daemon"
-	Language    string   `json:"language"`     // "go", "c", "sh"
-	Category    string   `json:"category"`     // "daemon", "system_call", "monitor", etc.
-	Description string   `json:"description"`  // When to use this pattern
-	Tags        []string `json:"tags"`         // Searchable tags
-	Imports     []string `json:"imports"`      // Required Go imports
-	Code        string   `json:"code"`         // Template code with {{SLOT}} placeholders
+	ID          string   `json:"id"`          // e.g. "go_daemon"
+	Name        string   `json:"name"`        // e.g. "Go Daemon"
+	Language    string   `json:"language"`    // "go", "c", "sh"
+	Category    string   `json:"category"`    // "daemon", "system_call", "monitor", etc.
+	Description string   `json:"description"` // When to use this pattern
+	Tags        []string `json:"tags"`        // Searchable tags
+	Imports     []string `json:"imports"`     // Required Go imports
+	Code        string   `json:"code"`        // Template code with {{SLOT}} placeholders
 }
 
 // PatternCatalog holds all available code patterns.
@@ -85,6 +85,13 @@ func (pc *PatternCatalog) loadBuiltinPatterns() {
 		cWatchdogPattern(),
 		cSysrqPattern(),
 		cProcReaderPattern(),
+
+		// ═══════════════════════════════════════
+		// EXTENDED GO PATTERNS
+		// ═══════════════════════════════════════
+		goHTTPClientPattern(),
+		goFileMonitorPattern(),
+		goSystemCallPattern(),
 	)
 }
 
@@ -338,12 +345,12 @@ func appendLog(path, line string) error {
 
 func cWatchdogPattern() CodePattern {
 	return CodePattern{
-		ID:       "c_watchdog",
-		Name:     "C Watchdog",
-		Language: "c",
-		Category: "daemon",
+		ID:          "c_watchdog",
+		Name:        "C Watchdog",
+		Language:    "c",
+		Category:    "daemon",
 		Description: "A C watchdog daemon that monitors a condition and takes action.",
-		Tags:    []string{"watchdog", "monitor", "看门狗", "守护"},
+		Tags:        []string{"watchdog", "monitor", "看门狗", "守护"},
 		Code: `#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -449,6 +456,187 @@ int read_proc_string(const char *path, char *buf, int bufsize) {
 	buf[strcspn(buf, "\\n")] = 0;
 	fclose(f);
 	return 0;
+}
+`,
+	}
+}
+
+// ═══════════════════════════════════════════════════════
+// EXTENDED GO PATTERNS
+// ═══════════════════════════════════════════════════════
+
+func goHTTPClientPattern() CodePattern {
+	return CodePattern{
+		ID:          "go_http_client",
+		Name:        "Go HTTP Client",
+		Language:    "go",
+		Category:    "network",
+		Description: "HTTP client with timeout, retry, and JSON parsing. Use for API calls.",
+		Tags:        []string{"http", "client", "api", "network", "网络", "请求"},
+		Imports:     []string{"bytes", "encoding/json", "fmt", "io", "net/http", "time"},
+		Code: `// HTTPClient wraps http.Client with timeout and retry logic
+type HTTPClient struct {
+	client    *http.Client
+	maxRetry  int
+	retryDelay time.Duration
+}
+
+func NewHTTPClient(timeout time.Duration, maxRetry int) *HTTPClient {
+	return &HTTPClient{
+		client: &http.Client{Timeout: timeout},
+		maxRetry: maxRetry,
+		retryDelay: 2 * time.Second,
+	}
+}
+
+// Get performs an HTTP GET with retry
+func (c *HTTPClient) Get(url string, headers map[string]string) ([]byte, error) {
+	return c.doWithRetry("GET", url, nil, headers)
+}
+
+// PostJSON sends a JSON POST request
+func (c *HTTPClient) PostJSON(url string, payload interface{}, headers map[string]string) ([]byte, error) {
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("marshal payload: %w", err)
+	}
+	if headers == nil {
+		headers = make(map[string]string)
+	}
+	headers["Content-Type"] = "application/json"
+	return c.doWithRetry("POST", url, body, headers)
+}
+
+func (c *HTTPClient) doWithRetry(method, url string, body []byte, headers map[string]string) ([]byte, error) {
+	var lastErr error
+	for attempt := 0; attempt <= c.maxRetry; attempt++ {
+		if attempt > 0 {
+			time.Sleep(c.retryDelay * time.Duration(attempt))
+		}
+		req, err := http.NewRequest(method, url, bytes.NewReader(body))
+		if err != nil {
+			return nil, err
+		}
+		for k, v := range headers {
+			req.Header.Set(k, v)
+		}
+		resp, err := c.client.Do(req)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		defer resp.Body.Close()
+		data, err := io.ReadAll(resp.Body)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		if resp.StatusCode >= 500 {
+			lastErr = fmt.Errorf("server error: %d", resp.StatusCode)
+			continue
+		}
+		if resp.StatusCode >= 400 {
+			return data, fmt.Errorf("client error: %d %s", resp.StatusCode, string(data))
+		}
+		return data, nil
+	}
+	return nil, fmt.Errorf("all %d retries failed: %w", c.maxRetry, lastErr)
+}
+`,
+	}
+}
+
+func goFileMonitorPattern() CodePattern {
+	return CodePattern{
+		ID:          "go_file_monitor",
+		Name:        "Go File Monitor",
+		Language:    "go",
+		Category:    "monitor",
+		Description: "Monitor file changes using os.Stat polling. Lightweight alternative to inotify.",
+		Tags:        []string{"file", "monitor", "watch", "change", "文件", "监控"},
+		Imports:     []string{"log", "os", "time"},
+		Code: `// FileMonitor watches a file for changes using polling
+type FileMonitor struct {
+	path     string
+	interval time.Duration
+	lastMod  time.Time
+	onChange func(path string)
+}
+
+func NewFileMonitor(path string, interval time.Duration, onChange func(string)) *FileMonitor {
+	return &FileMonitor{
+		path:     path,
+		interval: interval,
+		onChange: onChange,
+	}
+}
+
+// Start begins monitoring (blocks until context is done)
+func (m *FileMonitor) Start(stop <-chan struct{}) {
+	// Get initial modification time
+	if info, err := os.Stat(m.path); err == nil {
+		m.lastMod = info.ModTime()
+	}
+
+	ticker := time.NewTicker(m.interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-stop:
+			log.Printf("FileMonitor: stopped watching %s", m.path)
+			return
+		case <-ticker.C:
+			info, err := os.Stat(m.path)
+			if err != nil {
+				continue
+			}
+			if info.ModTime().After(m.lastMod) {
+				m.lastMod = info.ModTime()
+				m.onChange(m.path)
+			}
+		}
+	}
+}
+`,
+	}
+}
+
+func goSystemCallPattern() CodePattern {
+	return CodePattern{
+		ID:          "go_system_call",
+		Name:        "Go System Call Wrapper",
+		Language:    "go",
+		Category:    "system_call",
+		Description: "Safe exec.Command wrapper with timeout, output capture, and error handling.",
+		Tags:        []string{"exec", "command", "system", "shell", "系统", "命令"},
+		Imports:     []string{"context", "fmt", "os/exec", "strings", "time"},
+		Code: `// RunCommand executes a command with timeout and returns output
+func RunCommand(ctx context.Context, name string, args ...string) (string, error) {
+	return RunCommandWithTimeout(ctx, 30*time.Second, name, args...)
+}
+
+// RunCommandWithTimeout executes a command with custom timeout
+func RunCommandWithTimeout(ctx context.Context, timeout time.Duration, name string, args ...string) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, name, args...)
+	output, err := cmd.CombinedOutput()
+	outputStr := strings.TrimSpace(string(output))
+
+	if ctx.Err() == context.DeadlineExceeded {
+		return outputStr, fmt.Errorf("command timed out after %v", timeout)
+	}
+	if err != nil {
+		return outputStr, fmt.Errorf("command failed: %w\nOutput: %s", err, outputStr)
+	}
+	return outputStr, nil
+}
+
+// RunShellCommand runs a command through sh -c (for pipes, redirects, etc.)
+func RunShellCommand(ctx context.Context, command string) (string, error) {
+	return RunCommandWithTimeout(ctx, 30*time.Second, "sh", "-c", command)
 }
 `,
 	}

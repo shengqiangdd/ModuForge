@@ -1,5 +1,6 @@
 import { toast } from '$lib/stores/toast.svelte';
 import type { Provider, Model } from './types';
+import { authFetch } from './history';
 
 interface CustomProviderPayload {
   id?: string;
@@ -56,26 +57,23 @@ export async function loadProvidersFromBackend(): Promise<{
     providers = data.providers || [];
 
     // /api/v1/llm/providers 请求未带 token，后端不会合并自定义提供商，需单独拉取并按 id 去重合并
-    const token = localStorage.getItem('moduforge_token') || '';
-    if (token) {
-      try {
-        const customRes = await fetch('/api/v1/llm/custom-providers', { headers: { 'Authorization': `Bearer ${token}` } });
-        if (customRes.ok) {
-          const customData = await customRes.json();
-          const knownIDs = new Set(providers.map(p => p.id));
-          for (const cp of customData.providers || []) {
-            if (knownIDs.has(cp.id)) continue;
-            knownIDs.add(cp.id);
-            providers.push(toCustomProvider(cp));
-          }
+    try {
+      const customRes = await authFetch('/api/v1/llm/custom-providers');
+      if (customRes.ok) {
+        const customData = await customRes.json();
+        const knownIDs = new Set(providers.map(p => p.id));
+        for (const cp of customData.providers || []) {
+          if (knownIDs.has(cp.id)) continue;
+          knownIDs.add(cp.id);
+          providers.push(toCustomProvider(cp));
         }
-      } catch {}
-    }
+      }
+    } catch (e) { console.warn('Failed to load custom providers:', e); }
 
     let savedProvider = '';
     let savedModel = '';
     try {
-      const cfgRes = await fetch('/api/v1/llm/config', { headers: { 'Authorization': `Bearer ${localStorage.getItem('moduforge_token') || ''}` } });
+      const cfgRes = await authFetch('/api/v1/llm/config');
       if (cfgRes.ok) {
         const cfg = await cfgRes.json();
         savedProvider = cfg.provider || '';
@@ -99,7 +97,7 @@ export async function loadProvidersFromBackend(): Promise<{
       selectedProviderID = providers[0].id;
       if (providers[0].models.length > 0) selectedModelID = providers[0].models[0].id;
     }
-  } catch {}
+  } catch (e) { console.warn('loadProvidersFromBackend failed:', e); }
 
   return { providers, selectedProviderID, selectedModelID };
 }
@@ -122,9 +120,9 @@ export async function saveConfigToBackend(providerID: string, modelID: string): 
   if (lastSavedConfig && lastSavedConfig.provider === providerID && lastSavedConfig.model === modelID) return;
   lastSavedConfig = { provider: providerID, model: modelID };
   try {
-    const res = await fetch('/api/v1/llm/config', {
+    const res = await authFetch('/api/v1/llm/config', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ provider: providerID, model_id: modelID }),
     });
     if (!res.ok) {
@@ -136,7 +134,7 @@ export async function saveConfigToBackend(providerID: string, modelID: string): 
 }
 
 export async function refreshModelsFromBackend(): Promise<void> {
-  try { await fetch('/api/v1/llm/refresh'); } catch {}
+  try { await authFetch('/api/v1/llm/refresh'); } catch (e) { console.warn('refreshModels failed:', e); }
 }
 
 // ─── Save model max_tokens ───
@@ -158,9 +156,9 @@ export async function saveModelMaxTokens(
     price_output_per_m: m.price_output_per_m || 0,
   }));
   try {
-    await fetch('/api/v1/llm/provider-config', {
+    await authFetch('/api/v1/llm/provider-config', {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id: providerID, models_json: JSON.stringify(models) }),
     });
     const m = provider.models.find(x => x.id === modelId);
@@ -172,11 +170,10 @@ export async function saveModelMaxTokens(
 
 // ─── Provider Config (API Key + Base URL) ───
 export async function loadProviderConfig(pid: string): Promise<{ endpoint: string; apiKey: string }> {
-  const token = localStorage.getItem('moduforge_token') || '';
   let endpoint = '';
   let apiKey = '';
   try {
-    const r = await fetch('/api/v1/llm/provider-configs', { headers: { 'Authorization': `Bearer ${token}` } });
+    const r = await authFetch('/api/v1/llm/provider-configs');
     if (r.ok) {
       const data = await r.json();
       for (const c of data.configs || []) {
@@ -187,7 +184,7 @@ export async function loadProviderConfig(pid: string): Promise<{ endpoint: strin
         }
       }
     }
-  } catch {}
+  } catch (e) { console.warn('loadProviderConfig failed:', e); }
   return { endpoint, apiKey };
 }
 
@@ -196,12 +193,11 @@ export async function saveProviderConfigToBackend(
   endpoint: string,
   apiKey: string,
 ): Promise<boolean> {
-  const token = localStorage.getItem('moduforge_token');
-  if (!token || !providerID) return false;
+  if (!providerID) return false;
   try {
-    const r = await fetch('/api/v1/llm/provider-config', {
+    const r = await authFetch('/api/v1/llm/provider-config', {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id: providerID, endpoint, api_key: apiKey }),
     });
     if (r.ok) {
@@ -218,12 +214,11 @@ export async function saveProviderConfigToBackend(
 // ─── AI Capability ───
 export async function fetchCapability(): Promise<any | null> {
   try {
-    const token = localStorage.getItem('moduforge_token') || '';
-    const res = await fetch('/api/v1/ai/capability', { headers: { 'Authorization': `Bearer ${token}` } });
+    const res = await authFetch('/api/v1/ai/capability');
     if (res.ok) {
       const data = await res.json();
       return data.capability;
     }
-  } catch {}
+  } catch (e) { console.warn('fetchCapability failed:', e); }
   return null;
 }

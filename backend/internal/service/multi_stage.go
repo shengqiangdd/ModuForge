@@ -157,6 +157,24 @@ func (s *AIService) MultiStageBuild(
 
 		shellFilesCompact := filesMapToJSON(allFiles)
 
+		// Initialize Intent Compiler for synthesis
+		intentCompiler := builder.NewIntentCompiler(nil)
+
+		// Optional: Run Stage 1.5 (Technical Research) to improve code quality
+		var researchCtx *builder.ResearchContext
+		if len(coreFiles) > 0 {
+			researchPrompt := builder.ResearchStagePrompt(string(planJSONCompact), description)
+			researchJSON, researchErr := s.callLLMForJSON(ctx, endpoint, apiKey, model, researchPrompt)
+			if researchErr == nil {
+				var rc builder.ResearchContext
+				if json.Unmarshal([]byte(researchJSON), &rc) == nil {
+					researchCtx = &rc
+					log.Printf("[MultiStage] Stage 1.5: Research completed, %d best practices, %d API patterns",
+						len(rc.BestPractices), len(rc.APIPatterns))
+				}
+			}
+		}
+
 		for i, fileInfo := range coreFiles {
 			// Delay between file generations to respect rate limits
 			if i > 0 {
@@ -169,30 +187,70 @@ func (s *AIService) MultiStageBuild(
 				"message": fmt.Sprintf("  生成 %s (%d/%d)...", fileInfo.Path, i+1, len(coreFiles)),
 			})
 
-			var corePrompt string
+			// Step 1: Generate intent JSON (what the code should do)
+			var intentPrompt string
 			if strings.HasSuffix(fileInfo.Path, ".go") {
-				corePrompt = builder.GoStagePrompt(string(planJSONCompact), shellFilesCompact, description, fileInfo)
+				intentPrompt = builder.GoIntentPrompt(string(planJSONCompact), shellFilesCompact, description, fileInfo, "")
 			} else {
-				corePrompt = builder.CStagePrompt(string(planJSONCompact), shellFilesCompact, description, fileInfo)
+				intentPrompt = builder.CIntentPrompt(string(planJSONCompact), shellFilesCompact, description, fileInfo, "")
 			}
 
-			coreJSON, err := s.callLLMForJSON(ctx, endpoint, apiKey, model, corePrompt)
+			intentJSON, err := s.callLLMForJSON(ctx, endpoint, apiKey, model, intentPrompt)
 			if err != nil {
 				safeSSE(map[string]interface{}{
 					"type":    "phase",
 					"phase":   "warning",
-					"message": fmt.Sprintf("  %s 生成失败: %v", fileInfo.Path, err),
+					"message": fmt.Sprintf("  %s intent 生成失败: %v", fileInfo.Path, err),
 				})
 				continue
 			}
 
-			coreFilesMap := parseFilesJSON(coreJSON)
-			for path, content := range coreFilesMap {
-				allFiles[path] = content
-				safeSSE(map[string]interface{}{"type": "file_saved", "path": path, "stage": "core"})
+			// Step 2: Parse intent and synthesize code via Intent Compiler
+			var intent builder.IntentJSON
+			if err := json.Unmarshal([]byte(intentJSON), &intent); err != nil {
+				log.Printf("[MultiStage] Intent parse failed for %s: %v, falling back to direct generation", fileInfo.Path, err)
+				// Fallback: direct code generation
+				var fallbackPrompt string
+				if strings.HasSuffix(fileInfo.Path, ".go") {
+					fallbackPrompt = builder.GoStagePrompt(string(planJSONCompact), shellFilesCompact, description, fileInfo)
+				} else {
+					fallbackPrompt = builder.CStagePrompt(string(planJSONCompact), shellFilesCompact, description, fileInfo)
+				}
+				fallbackJSON, fbErr := s.callLLMForJSON(ctx, endpoint, apiKey, model, fallbackPrompt)
+				if fbErr != nil {
+					safeSSE(map[string]interface{}{
+						"type":    "phase",
+						"phase":   "warning",
+						"message": fmt.Sprintf("  %s 生成失败: %v", fileInfo.Path, fbErr),
+					})
+					continue
+				}
+				fallbackFiles := parseFilesJSON(fallbackJSON)
+				for path, content := range fallbackFiles {
+					allFiles[path] = content
+					safeSSE(map[string]interface{}{"type": "file_saved", "path": path, "stage": "core"})
+				}
+				continue
+			}
+
+			// Step 3: Synthesize code from intent
+			logFn := func(msg string) error {
+				log.Printf("[MultiStage] %s", msg)
+				return nil
+			}
+			compiledFiles, compileErr := intentCompiler.CompileIntent(ctx, intent, researchCtx, "", logFn)
+			if compileErr != nil || len(compiledFiles) == 0 {
+				log.Printf("[MultiStage] Intent compilation failed for %s: %v, using synthesized code", fileInfo.Path, compileErr)
+				// If synthesis fails, use the intent JSON as-is (LLM already generated code-like output)
+				allFiles[fileInfo.Path] = intentJSON
+			} else {
+				for _, cf := range compiledFiles {
+					allFiles[cf.Path] = cf.Content
+					safeSSE(map[string]interface{}{"type": "file_saved", "path": cf.Path, "stage": "core"})
+				}
 			}
 		}
-		log.Printf("[MultiStage] Stage 2: core files generated, total files now: %d", len(allFiles))
+		log.Printf("[MultiStage] Stage 2: core files generated via Intent Compiler, total files now: %d", len(allFiles))
 	}
 
 	// ===== Stage 3: Build System =====

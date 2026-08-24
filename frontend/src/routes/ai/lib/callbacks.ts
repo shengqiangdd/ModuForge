@@ -6,6 +6,7 @@ import type { Mode, AgentStep, Provider, Model, AIPrompt, GenHistoryItem, Messag
 import { MODES } from "./types";
 import { generateUUID, safeCopyText, redactArgValues } from "./utils";
 import { memoExtractFiles } from "./markdown";
+import { authFetch } from './history';
 import { loadProvidersFromBackend, saveModelSelectionToStorage, saveConfigToBackend,
   refreshModelsFromBackend, saveModelMaxTokens, loadProviderConfig,
   saveProviderConfigToBackend, fetchCapability
@@ -250,10 +251,9 @@ export async function runComparisonAction(
     for (const m of p.models.slice(0, 1)) {
       const start = Date.now();
       try {
-        const token = localStorage.getItem('moduforge_token') || '';
-        const res = await fetch('/api/v1/ai/chat', {
+        const res = await authFetch('/api/v1/ai/chat', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ message: comparisonInput, provider_id: p.id, model: m.id, messages: [{ role: 'user', content: comparisonInput }] }),
         });
         const data = await res.json();
@@ -282,9 +282,9 @@ export function permissionArgsPreview(args: Record<string, unknown> | undefined)
 }
 
 export async function resolvePermissionAction(requestId: string, allow: boolean) {
-  const res = await fetch('/api/v1/agent/mcp/confirm', {
+  const res = await authFetch('/api/v1/agent/mcp/confirm', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('moduforge_token') || ''}` },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ request_id: requestId, allow }),
   });
   if (!res.ok) {
