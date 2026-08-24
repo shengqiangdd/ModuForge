@@ -102,6 +102,12 @@ func (r *AgentRunner) buildToolDefinitionsForMode(mode AgentMode, modelName stri
 				"old_text": map[string]interface{}{"type": "string", "description": "Exact text to find (must match exactly)"},
 				"new_text": map[string]interface{}{"type": "string", "description": "Replacement text"},
 			}, []string{"path", "old_text", "new_text"})
+		case "apply_patch":
+			def.Function.Description = "Apply line-based patches to a file. Each patch line is 'lineNumber|newContent' (1-based). Useful for editing specific lines without rewriting the whole file."
+			def.Function.Parameters = toolParams(map[string]interface{}{
+				"path":  map[string]interface{}{"type": "string", "description": "File path to patch"},
+				"patch": map[string]interface{}{"type": "string", "description": "Patch content: one 'lineNum|newContent' per line (1-based line numbers)"},
+			}, []string{"path", "patch"})
 		case "grep_search":
 			def.Function.Description = "Search code patterns across all project files (like grep -rn). Use BEFORE read_file to find relevant code."
 			def.Function.Parameters = toolParams(map[string]interface{}{

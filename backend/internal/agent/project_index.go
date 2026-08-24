@@ -1,0 +1,124 @@
+package agent
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+)
+
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+// ProjectIndex holds a scan summary of the project directory.
+type ProjectIndex struct {
+	Root      string
+	TotalFiles int
+	Dirs      int
+	ByExt     map[string]int // extension → count
+	SourceFiles []string      // key source file paths (up to 50)
+}
+
+// IndexProject scans projectDir and returns a structured index.
+// Skips hidden dirs, node_modules, vendor, __pycache__, .git.
+func IndexProject(projectDir string) *ProjectIndex {
+	idx := &ProjectIndex{
+		Root:   projectDir,
+		ByExt:  make(map[string]int),
+	}
+
+	// Skip directories that are never useful for context
+	skipDirs := map[string]bool{
+		".git": true, "node_modules": true, "vendor": true,
+		"__pycache__": true, ".venv": true, "venv": true,
+		".idea": true, ".vscode": true, "dist": true,
+		"build": true, "target": true,
+	}
+
+	err := filepath.Walk(projectDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil // skip unreadable files
+		}
+		if info.IsDir() {
+			name := info.Name()
+			if name != projectDir && (strings.HasPrefix(name, ".") || skipDirs[name]) {
+				return filepath.SkipDir
+			}
+			idx.Dirs++
+			return nil
+		}
+		idx.TotalFiles++
+		ext := strings.ToLower(filepath.Ext(path))
+		if ext == "" {
+			ext = "(no ext)"
+		}
+		idx.ByExt[ext]++
+
+		// Collect source files for context (exclude generated/binary)
+		relPath, _ := filepath.Rel(projectDir, path)
+		if isSourceFile(ext) && len(idx.SourceFiles) < 50 {
+			idx.SourceFiles = append(idx.SourceFiles, relPath)
+		}
+		return nil
+	})
+	if err != nil {
+		return idx
+	}
+
+	return idx
+}
+
+// isSourceFile returns true for meaningful source files.
+func isSourceFile(ext string) bool {
+	switch ext {
+	case ".go", ".py", ".js", ".ts", ".rs", ".c", ".cpp", ".h", ".hpp",
+		".java", ".kt", ".swift", ".rb", ".sh", ".bash",
+		".toml", ".yaml", ".yml", ".json", ".xml",
+		".md", ".txt", ".sql", ".proto", ".graphql":
+		return true
+	}
+	return false
+}
+
+// Summary returns a concise project overview for injection into the system prompt.
+func (idx *ProjectIndex) Summary() string {
+	if idx == nil || idx.TotalFiles == 0 {
+		return ""
+	}
+
+	var sb strings.Builder
+	sb.WriteString("## PROJECT INDEX (auto-generated)\n")
+	sb.WriteString(fmt.Sprintf("Root: %s\n", idx.Root))
+	sb.WriteString(fmt.Sprintf("Files: %d total, %d directories\n\n", idx.TotalFiles, idx.Dirs))
+
+	// Language breakdown (sorted by count descending)
+	type extCount struct {
+		Ext  string
+		Count int
+	}
+	var sorted []extCount
+	for ext, count := range idx.ByExt {
+		sorted = append(sorted, extCount{ext, count})
+	}
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i].Count > sorted[j].Count })
+
+	sb.WriteString("### Languages / File Types\n")
+	for _, ec := range sorted[:minInt(len(sorted), 10)] { // top 10
+		sb.WriteString(fmt.Sprintf("- %s: %d files\n", ec.Ext, ec.Count))
+	}
+
+	// Source file listing
+	if len(idx.SourceFiles) > 0 {
+		sb.WriteString("\n### Key Source Files\n")
+		for _, f := range idx.SourceFiles {
+			sb.WriteString(fmt.Sprintf("- %s\n", f))
+		}
+	}
+
+	return sb.String()
+}

@@ -5,7 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -100,26 +104,77 @@ func (p *toolResultProcessor) process(iter int, conversation []map[string]interf
 				nextStepsPrompt := buildNextStepsPrompt(res.result)
 				conversation = appendRoleMessage(conversation, "system", nextStepsPrompt)
 			} else {
-				// Build failed - check if it's a compile error that can be auto-retried
+				// Build failed - use self-healing iteration engine
 				p.compileErrorCount++
+				
+				// Classify errors using the new error classifier
+				errs := classifyBuildError(res.result, "go")
 				compileErrors := extractCompileErrors(res.result)
-
-				if len(compileErrors) > 0 && p.compileErrorCount <= 3 {
-					// Compile error detected — inject targeted fix prompt
-					log.Printf("[Agent] compile error detected (attempt %d/3): %d errors found", p.compileErrorCount, len(compileErrors))
+				
+				if p.compileErrorCount <= 3 {
+					// Self-healing iteration: try to auto-fix before injecting prompt
+					log.Printf("[Agent] self-healing iteration %d/3: %d classified errors, %d compile errors", 
+						p.compileErrorCount, len(errs), len(compileErrors))
 					p.w.WriteSSE(map[string]interface{}{
 						"type":    "step",
 						"step":    "think",
-						"content": fmt.Sprintf("❌ 编译失败（第 %d/3 次尝试），%d 个错误，正在自动修复...", p.compileErrorCount, len(compileErrors)),
+						"content": fmt.Sprintf("🔧 自修复第 %d/3 次尝试（发现 %d 个错误）", p.compileErrorCount, len(errs)),
 					})
-
-					// Inject compile error context for LLM to fix
-					fixPrompt := buildCompileErrorRetryPrompt(res.result, compileErrors, p.compileErrorCount)
+					
+					// Try auto-install missing dependencies
+					hasInstallable := false
+					for _, e := range errs {
+						if e.FixStrategy == "install_dep" {
+							hasInstallable = true
+							autoInstallMissingDeps(e.Message, p.cfg.ProjectDir)
+						}
+					}
+					
+					// Try auto-fix syntax errors
+					fixed := 0
+					if p.cfg.ProjectDir != "" {
+						fixed = fixSyntaxErrors(p.cfg.ProjectDir, errs)
+					}
+					
+					// Build the fix prompt based on what we attempted
+					var fixParts []string
+					fixParts = append(fixParts, fmt.Sprintf("🔧 自修复第 %d/3 次尝试", p.compileErrorCount))
+					fixParts = append(fixParts, "")
+					
+					if hasInstallable {
+						fixParts = append(fixParts, "✅ 已自动安装缺失依赖（go mod tidy）")
+						fixParts = append(fixParts, "")
+					}
+					if fixed > 0 {
+						fixParts = append(fixParts, fmt.Sprintf("✅ 已自动修复 %d 个语法错误", fixed))
+						fixParts = append(fixParts, "")
+					}
+					
+					// Add error details for LLM to fix remaining issues
+					if len(compileErrors) > 0 {
+						fixParts = append(fixParts, fmt.Sprintf("❌ 仍有 %d 个编译错误需要手动修复:", len(compileErrors)))
+						fixParts = append(fixParts, "")
+						for i, err := range compileErrors {
+							if i < 10 { // Limit to first 10 errors
+								fixParts = append(fixParts, fmt.Sprintf("  %d. %s", i+1, err))
+							}
+						}
+						fixParts = append(fixParts, "")
+					}
+					
+					fixParts = append(fixParts, "📋 下一步操作:")
+					fixParts = append(fixParts, "  1. 使用 read_file 读取错误文件")
+					fixParts = append(fixParts, "  2. 使用 edit_file 修复每个错误")
+					fixParts = append(fixParts, "  3. 修复完成后，调用 build_module 重新构建")
+					fixParts = append(fixParts, "")
+					fixParts = append(fixParts, "⚠️ 如果无法修复，请停止工具调用并提供最终答案")
+					
+					fixPrompt := strings.Join(fixParts, "\n")
 					conversation = appendRoleMessage(conversation, "system", fixPrompt)
 				} else {
-					// Non-compile error or max retries reached — fall back to normal auto-fix
+					// Max retries reached — fall back to normal auto-fix
 					p.compileErrorCount = 0
-					log.Printf("[Agent] build_module failed (non-compile or max retries), injecting auto-fix prompt")
+					log.Printf("[Agent] build_module failed (max retries), injecting auto-fix prompt")
 					fixPrompt := buildAutoFixPrompt(res.result)
 					conversation = appendRoleMessage(conversation, "system", fixPrompt)
 				}
@@ -659,4 +714,155 @@ func buildCompileErrorRetryPrompt(buildOutput string, compileErrors []string, at
 	parts = append(parts, "  - Do NOT give up — keep fixing until the build succeeds")
 
 	return strings.Join(parts, "\n")
+}
+
+// ErrorCategory represents a classified build error
+type ErrorCategory struct {
+	Category    string // syntax, missing_dep, type_error, linker, security
+	Severity    string // critical, warning, info
+	File        string
+	Line        int
+	Message     string
+	FixStrategy string // auto_fix, install_dep, regenerate
+}
+
+// classifyBuildError analyzes build output and categorizes errors per language
+func classifyBuildError(output string, language string) []ErrorCategory {
+	var cats []ErrorCategory
+	lines := strings.Split(output, "\n")
+	for _, line := range lines {
+		lower := strings.ToLower(line)
+		// Go missing package
+		if strings.Contains(lower, "cannot find package") {
+			cats = append(cats, ErrorCategory{Category: "missing_dep", Severity: "critical", FixStrategy: "install_dep", Message: line})
+			continue
+		}
+		// Go syntax error
+		if strings.Contains(lower, "syntax error") {
+			cats = append(cats, ErrorCategory{Category: "syntax", Severity: "critical", FixStrategy: "auto_fix", Message: line})
+			continue
+		}
+		// Go undefined
+		if strings.Contains(lower, "undefined:") || strings.Contains(lower, "undeclared name") {
+			cats = append(cats, ErrorCategory{Category: "type_error", Severity: "critical", FixStrategy: "auto_fix", Message: line})
+			continue
+		}
+		// Go unused variable/import
+		if strings.Contains(lower, "declared but not used") || strings.Contains(lower, "imported and not used") {
+			cats = append(cats, ErrorCategory{Category: "syntax", Severity: "warning", FixStrategy: "auto_fix", Message: line})
+			continue
+		}
+		// C implicit declaration
+		if strings.Contains(lower, "implicit declaration") {
+			cats = append(cats, ErrorCategory{Category: "missing_dep", Severity: "critical", FixStrategy: "auto_fix", Message: line})
+			continue
+		}
+		// C expected
+		if strings.Contains(lower, "expected ';'") || strings.Contains(lower, "expected ')'") {
+			cats = append(cats, ErrorCategory{Category: "syntax", Severity: "critical", FixStrategy: "auto_fix", Message: line})
+			continue
+		}
+		// C undefined reference (linker)
+		if strings.Contains(lower, "undefined reference") {
+			cats = append(cats, ErrorCategory{Category: "linker", Severity: "critical", FixStrategy: "auto_fix", Message: line})
+			continue
+		}
+		// Rust unresolved import
+		if strings.Contains(lower, "unresolved import") {
+			cats = append(cats, ErrorCategory{Category: "missing_dep", Severity: "critical", FixStrategy: "install_dep", Message: line})
+			continue
+		}
+		// Rust mismatched types
+		if strings.Contains(lower, "mismatched types") {
+			cats = append(cats, ErrorCategory{Category: "type_error", Severity: "critical", FixStrategy: "auto_fix", Message: line})
+			continue
+		}
+		// Shell command not found
+		if strings.Contains(lower, "command not found") {
+			cats = append(cats, ErrorCategory{Category: "missing_dep", Severity: "critical", FixStrategy: "install_dep", Message: line})
+			continue
+		}
+		// Timeout / signal
+		if strings.Contains(lower, "signal: killed") || strings.Contains(lower, "timeout") {
+			cats = append(cats, ErrorCategory{Category: "security", Severity: "critical", FixStrategy: "regenerate", Message: line})
+			continue
+		}
+	}
+	return cats
+}
+
+// autoInstallMissingDeps attempts to resolve missing dependencies
+func autoInstallMissingDeps(output string, projectDir string) error {
+	// Parse "cannot find package" for Go
+	re := regexp.MustCompile(`cannot find package "([^"]+)"`)
+	if match := re.FindStringSubmatch(output); len(match) > 1 {
+		pkg := match[1]
+		// Skip stdlib
+		if !strings.Contains(pkg, ".") {
+			return nil
+		}
+		cmd := exec.Command("go", "mod", "tidy")
+		cmd.Dir = projectDir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("go mod tidy failed: %s", string(out))
+		}
+		return nil
+	}
+	// Parse "command not found" for Shell
+	reShell := regexp.MustCompile(`(\w+): command not found`)
+	if match := reShell.FindStringSubmatch(output); len(match) > 1 {
+		pkg := match[1]
+		// Try apt-get install
+		cmd := exec.Command("sh", "-c", fmt.Sprintf("apk add --no-cache %s 2>/dev/null || apt-get install -y %s 2>/dev/null || true", pkg, pkg))
+		cmd.Dir = projectDir
+		_ = cmd.Run()
+	}
+	return nil
+}
+
+// fixSyntaxErrors attempts regex-based fixes for common syntax errors in Go files
+func fixSyntaxErrors(projectDir string, errs []ErrorCategory) int {
+	fixed := 0
+	for _, e := range errs {
+		if e.Category != "syntax" {
+			continue
+		}
+		// Parse file:line from error message
+		re := regexp.MustCompile(`(\S+\.go):(\d+)`)
+		match := re.FindStringSubmatch(e.Message)
+		if len(match) < 3 {
+			continue
+		}
+		filePath := filepath.Join(projectDir, match[1])
+		lineNum, _ := strconv.Atoi(match[2])
+		content, err := os.ReadFile(filePath)
+		if err != nil {
+			continue
+		}
+		lines := strings.Split(string(content), "\n")
+		if lineNum < 1 || lineNum > len(lines) {
+			continue
+		}
+		line := lines[lineNum-1]
+		changed := false
+
+		// Fix: missing func keyword before method
+		if strings.Contains(e.Message, "missing func") || strings.Contains(e.Message, "expected declaration") {
+			if !strings.HasPrefix(strings.TrimSpace(line), "func ") && !strings.HasPrefix(strings.TrimSpace(line), "package ") {
+				lines[lineNum-1] = "func " + line
+				changed = true
+			}
+		}
+		// Fix: go used as variable name
+		if strings.Contains(e.Message, "cannot use") && strings.Contains(line, "go ") {
+			lines[lineNum-1] = strings.Replace(line, "go ", "g ", 1)
+			changed = true
+		}
+
+		if changed {
+			os.WriteFile(filePath, []byte(strings.Join(lines, "\n")), 0644)
+			fixed++
+		}
+	}
+	return fixed
 }

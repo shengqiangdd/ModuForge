@@ -70,6 +70,14 @@ func init() {
 		}
 		return skill
 	})
+	// P1-4: Line-based patch application
+	registry.RegisterFactory("apply_patch", func(d *registry.Deps) registry.Skill {
+		skill := NewApplyPatchSkillWithDB(d.StoragePath+"/projects", d.DB)
+		if st := getStorage(d); st != nil {
+			skill.WithStorage(st)
+		}
+		return skill
+	})
 	registry.RegisterFactory("list_dir", func(d *registry.Deps) registry.Skill { return NewListDirSkill(d.DB) })
 	registry.RegisterFactory("delete_file", func(d *registry.Deps) registry.Skill {
 		skill := NewDeleteFileSkill(d.StoragePath+"/projects", d.DB)

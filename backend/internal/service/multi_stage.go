@@ -265,17 +265,69 @@ func (s *AIService) MultiStageBuild(
 		log.Printf("[MultiStage] Stage 2: core files generated via Intent Compiler, total files now: %d", len(allFiles))
 	}
 
-	// ===== Stage 3: Build System =====
+	// ===== Stage 3: Build System (Language-Aware) =====
 	safeSSE(map[string]interface{}{
 		"type":    "phase",
 		"phase":   "build_system",
-		"message": "阶段3: 生成构建系统...",
+		"message": "阶段3: 分析项目语言，生成构建系统...",
 	})
 
 	time.Sleep(10 * time.Second)
 
+	// Determine build system based on actual generated file types
+	hasGo := false
+	hasC := false
+	hasRust := false
+	hasShellOnly := true
+
+	for path := range allFiles {
+		ext := strings.ToLower(filepath.Ext(path))
+		switch ext {
+		case ".go":
+			hasGo = true
+			hasShellOnly = false
+		case ".c", ".cpp", ".h", ".hpp":
+			hasC = true
+			hasShellOnly = false
+		case ".rs":
+			hasRust = true
+			hasShellOnly = false
+		}
+	}
+
+	// Also count source files from the plan (handles case where Stage 2 failed to generate)
+	if !hasGo && len(plan.GoFiles) > 0 {
+		hasGo = true
+		hasShellOnly = false
+	}
+	if !hasC && len(plan.CFiles) > 0 {
+		hasC = true
+		hasShellOnly = false
+	}
+
+	// Build language profile for the prompt
+	var langProfile string
+	switch {
+	case hasGo && hasC:
+		langProfile = "MIXED_GO_C"
+	case hasGo:
+		langProfile = "PURE_GO"
+	case hasC:
+		langProfile = "PURE_C"
+	case hasRust:
+		langProfile = "PURE_RUST"
+	default:
+		langProfile = "SHELL_ONLY"
+	}
+
+	log.Printf("[MultiStage] Stage 3 language detection: go=%v c=%v rust=%v shell_only=%v → profile=%s",
+		hasGo, hasC, hasRust, hasShellOnly, langProfile)
+
 	sourceFilesJSON := filesMapToJSON(allFiles)
-	buildPrompt := builder.BuildSystemPrompt(string(planJSONCompact), sourceFilesJSON, description)
+	buildPrompt := builder.BuildSystemPromptWithLang(
+		string(planJSONCompact), sourceFilesJSON, description,
+		hasGo, hasC, hasRust, hasShellOnly, langProfile,
+	)
 	buildJSON, err := s.callLLMForJSON(ctx, endpoint, apiKey, model, buildPrompt)
 	if err != nil {
 		safeSSE(map[string]interface{}{

@@ -492,3 +492,100 @@ func InjectRAGContext(prompt string, description string, topK int) string {
 
 	return sb.String()
 }
+// BuildSystemPromptWithLang generates build scripts (Stage 3) with explicit language awareness.
+// Unlike BuildSystemPrompt which parses the plan JSON to guess languages, this function
+// receives the actual detected language profile from analyzing generated files.
+func BuildSystemPromptWithLang(planJSON, sourceFilesJSON, description string, hasGo, hasC, hasRust, shellOnly bool, langProfile string) string {
+	var filesToGenerate []string
+	var requirement string
+
+	switch langProfile {
+	case "PURE_GO":
+		filesToGenerate = []string{"build.sh", "go.mod"}
+		requirement = `## Go Module Build
+- Module path: github.com/moduforge/module
+- Go version: 1.21+
+- NO external dependencies — stdlib only
+- build.sh: GOOS=android GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o ./bin/<module_name> ./src/
+- go.mod: standard Go module definition
+`
+
+	case "PURE_C":
+		filesToGenerate = []string{"build.sh", "Makefile"}
+		requirement = `## C Build (Makefile + Cross-Compilation)
+- Cross-compiler: aarch64-linux-android-gcc or clang (from NDK)
+- Makefile targets: clean, build, install
+- CFLAGS: -static -O2 -Wall -Werror -Wextra -pedantic
+- build.sh: wrapper that invokes make
+- Target architecture: arm64-v8a (aarch64)
+`
+
+	case "PURE_RUST":
+		filesToGenerate = []string{"build.sh", "Cargo.toml"}
+		requirement = `## Rust Build (Cargo)
+- Target: aarch64-linux-android
+- Use cross or cargo-ndk for Android cross-compilation
+- build.sh: cross build --target aarch64-linux-android --release
+- Cargo.toml: [package] + [[bin]] section
+- NO external crates unless absolutely necessary — prefer stdlib
+`
+
+	case "MIXED_GO_C":
+		filesToGenerate = []string{"build.sh"}
+		requirement = `## Mixed Go + C Build
+- build.sh must handle BOTH Go and C compilation
+- Go: GOOS=android GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w"
+- C: aarch64-linux-android-gcc -static -O2 -Wall -Werror -o ./bin/<name> src/main.c
+- Order: compile C first, then Go (Go may reference C objects if CGO is used)
+- If CGO_ENABLED=1 is needed, set CC=aarch64-linux-android-gcc
+`
+
+	case "SHELL_ONLY":
+		filesToGenerate = []string{"build.sh"}
+		requirement = `## Shell-Only Module
+- No Go or C source files to compile
+- build.sh should only package shell scripts into the module zip
+- Just echo "Shell-only module, no compilation needed" and create a basic zip
+`
+
+	default:
+		filesToGenerate = []string{"build.sh"}
+		requirement = `## Build System
+- Generate a build.sh appropriate for the source files present
+`
+	}
+
+	prompt := `Generate build scripts and config files for this Android Magisk module.
+
+## Language Profile
+` + langProfile + `
+
+## Architecture Plan
+` + planJSON + `
+
+## Generated Source Files (for reference — DO NOT regenerate)
+` + sourceFilesJSON + `
+
+## Requirement
+` + description + `
+
+` + requirement + `
+## Files to generate:
+` + strings.Join(filesToGenerate, "\n") + `
+
+## build.sh Rules:
+- #!/bin/sh (not bash)
+- Create ./bin/ directory: mkdir -p ./bin
+- NO mv/cp commands — just compile directly to ./bin/
+- Include error handling: set -e
+- For Go: GOOS=android GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o ./bin/<name> ./src/
+- For C: $CC -static -O2 -Wall -o ./bin/<name> src/main.c
+- For Shell-only: just echo "Shell-only module, no compilation needed"
+- Print success message on completion
+
+## OUTPUT FORMAT
+{"files":[{"path":"build.sh","content":"..."},{"path":"go.mod","content":"..."}]}
+
+Return ONLY valid JSON. Full file contents with \\n for newlines.`
+	return InjectRAGContext(prompt, description, 2)
+}

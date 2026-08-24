@@ -108,6 +108,7 @@ type RunConfig struct {
 	UserID          string
 	ProjectID       string
 	ProjectContext  string
+	ProjectDir      string // Resolved project directory path
 	MaxIterations   int
 	MaxResultLen    int
 	Mode            AgentMode // "plan" or "act"
@@ -352,6 +353,26 @@ You are running WITHOUT a project context. This means:
 - Keep your answers focused and practical`
 	}
 
+	// Index project directory for additional context
+	if cfg.ProjectID != "" && r.db != nil {
+		var projectDir string
+		r.db.QueryRow(`SELECT COALESCE(storage_path,'') FROM projects WHERE id=?`, cfg.ProjectID).Scan(&projectDir)
+		if projectDir == "" {
+			storageRoot := os.Getenv("STORAGE_PATH")
+			if storageRoot == "" {
+				storageRoot = "/data/storage"
+			}
+			projectDir = storageRoot + "/projects/" + cfg.ProjectID
+		}
+		if projectDir != "" {
+			idx := IndexProject(projectDir)
+			if summary := idx.Summary(); summary != "" {
+				systemPrompt += "\n" + summary
+				log.Printf("[Agent] project index injected: %d files, %d dirs", idx.TotalFiles, idx.Dirs)
+			}
+		}
+	}
+
 	// Auto-recall relevant past memories
 	if len(task) > 0 {
 		if recalled := r.autoRecallMemory(cfg, task, 3); recalled != "" {
@@ -439,6 +460,7 @@ You are running WITHOUT a project context. This means:
 		var storagePath string
 		r.db.QueryRow(`SELECT COALESCE(storage_path,'') FROM projects WHERE id=?`, cfg.ProjectID).Scan(&storagePath)
 		if storagePath != "" {
+			cfg.ProjectDir = storagePath
 			enhancedPlanner = NewEnhancedPlanner(r.db, storagePath)
 		}
 	}
