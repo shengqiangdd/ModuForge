@@ -17,19 +17,23 @@ func minInt(a, b int) int {
 
 // ProjectIndex holds a scan summary of the project directory.
 type ProjectIndex struct {
-	Root      string
-	TotalFiles int
-	Dirs      int
-	ByExt     map[string]int // extension → count
-	SourceFiles []string      // key source file paths (up to 50)
+	Root        string
+	TotalFiles  int
+	Dirs        int
+	ByExt       map[string]int      // extension → count
+	SourceFiles []string            // key source file paths (up to 50)
+	GoFunctions map[string][]string // file → function names (Go only)
+	FileTree    []string            // all relative file paths
 }
 
 // IndexProject scans projectDir and returns a structured index.
 // Skips hidden dirs, node_modules, vendor, __pycache__, .git.
 func IndexProject(projectDir string) *ProjectIndex {
 	idx := &ProjectIndex{
-		Root:   projectDir,
-		ByExt:  make(map[string]int),
+		Root:        projectDir,
+		ByExt:       make(map[string]int),
+		GoFunctions: make(map[string][]string),
+		FileTree:    make([]string, 0, 200),
 	}
 
 	// Skip directories that are never useful for context
@@ -59,10 +63,19 @@ func IndexProject(projectDir string) *ProjectIndex {
 		}
 		idx.ByExt[ext]++
 
-		// Collect source files for context (exclude generated/binary)
 		relPath, _ := filepath.Rel(projectDir, path)
+		idx.FileTree = append(idx.FileTree, relPath)
+
+		// Collect source files for context (exclude generated/binary)
 		if isSourceFile(ext) && len(idx.SourceFiles) < 50 {
 			idx.SourceFiles = append(idx.SourceFiles, relPath)
+		}
+
+		// Extract Go function names for smart file selection
+		if ext == ".go" && len(idx.GoFunctions) < 200 {
+			if funcs := extractGoFunctions(path); len(funcs) > 0 {
+				idx.GoFunctions[relPath] = funcs
+			}
 		}
 		return nil
 	})
@@ -86,7 +99,7 @@ func (idx *ProjectIndex) Summary() string {
 
 	// Language breakdown (sorted by count descending)
 	type extCount struct {
-		Ext  string
+		Ext   string
 		Count int
 	}
 	var sorted []extCount
@@ -109,4 +122,34 @@ func (idx *ProjectIndex) Summary() string {
 	}
 
 	return sb.String()
+}
+
+// extractGoFunctions extracts exported function and method names from a Go file.
+// Uses simple regex-like string scanning (no AST dependency).
+func extractGoFunctions(path string) []string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	content := string(data)
+	var funcs []string
+	lines := strings.Split(content, "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		// Match: func FuncName( or func (r *Type) MethodName(
+		if strings.HasPrefix(line, "func ") && !strings.HasPrefix(line, "func Test") {
+			afterFunc := line[5:] // after "func "
+			// Simple function: func Name(
+			if idx := strings.IndexByte(afterFunc, '('); idx > 0 {
+				name := strings.TrimSpace(afterFunc[:idx])
+				if name != "" && len(name) < 80 {
+					funcs = append(funcs, name)
+				}
+			}
+		}
+		if len(funcs) >= 30 {
+			break
+		}
+	}
+	return funcs
 }

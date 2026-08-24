@@ -8,6 +8,7 @@ import (
 	"hash/fnv"
 	"log"
 	"os"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -162,10 +163,11 @@ type AgentRunner struct {
 	depGraph       *DependencyGraph
 
 	// High-value optimization modules
-	buildHealer    *BuildHealer
-	atomicWriter   *AtomicWriter
-	enhancedPlan   *EnhancedPlanner
-	fileDepGraph   *FileDependencyGraph
+	buildHealer   *BuildHealer
+	atomicWriter  *AtomicWriter
+	enhancedPlan  *EnhancedPlanner
+	fileDepGraph  *FileDependencyGraph
+	sessionMemory *SessionMemory
 
 	perfMetrics *PerformanceMetrics
 
@@ -179,10 +181,10 @@ type AgentRunner struct {
 	progressTrackers sync.Map
 
 	// Context caching improvements
-	prefixCache     *PrefixCache
-	semanticCache   *SemanticCache
+	prefixCache      *PrefixCache
+	semanticCache    *SemanticCache
 	contextCondenser *ContextCondenser
-	sessionLearner  *SessionLearner
+	sessionLearner   *SessionLearner
 
 	// DifferentialCache for file content change detection (cleaned up periodically)
 	diffCache *DifferentialCache
@@ -193,24 +195,25 @@ type AgentRunner struct {
 
 func NewAgentRunner(registry *SkillRegistry, apiKey, endpoint, model string, db *sql.DB) *AgentRunner {
 	r := &AgentRunner{
-		registry:      registry,
-		apiKey:        apiKey,
-		endpoint:      endpoint,
-		model:         model,
-		db:            db,
-		convStore:     service.NewConversationStore(),
-		toolDefCache:  make(map[string][]ToolDef),
-		fileHashCache: NewFileHashCache(),
-		auditLog:       NewAuditLog(""),
-		permChecker:    NewPermissionChecker(),
-		securityEngine: NewSecurityEngine(),
-		sessionPersist: NewSessionPersistence(""),
-		depGraph:       NewDependencyGraph(),
-		perfMetrics:    NewPerformanceMetrics(),
-		buildHealer:    NewBuildHealer(),
-		atomicWriter:   NewAtomicWriter(""),
-		enhancedPlan:   nil,
-		fileDepGraph:   nil,
+		registry:         registry,
+		apiKey:           apiKey,
+		endpoint:         endpoint,
+		model:            model,
+		db:               db,
+		convStore:        service.NewConversationStore(),
+		toolDefCache:     make(map[string][]ToolDef),
+		fileHashCache:    NewFileHashCache(),
+		auditLog:         NewAuditLog(""),
+		permChecker:      NewPermissionChecker(),
+		securityEngine:   NewSecurityEngine(),
+		sessionPersist:   NewSessionPersistence(""),
+		depGraph:         NewDependencyGraph(),
+		perfMetrics:      NewPerformanceMetrics(),
+		sessionMemory:    NewSessionMemory(""),
+		buildHealer:      NewBuildHealer(),
+		atomicWriter:     NewAtomicWriter(""),
+		enhancedPlan:     nil,
+		fileDepGraph:     nil,
 		prefixCache:      NewPrefixCache(100, 5*time.Minute),
 		semanticCache:    NewSemanticCache(500, 0.85),
 		contextCondenser: NewContextCondenser(30, 6, 1),
@@ -370,6 +373,20 @@ You are running WITHOUT a project context. This means:
 				systemPrompt += "\n" + summary
 				log.Printf("[Agent] project index injected: %d files, %d dirs", idx.TotalFiles, idx.Dirs)
 			}
+			// Smart file selection: inject relevant files based on user request
+			if task != "" {
+				relevant := SelectRelevantFiles(idx, task, 10)
+				if len(relevant) > 0 {
+					var fileCtx strings.Builder
+					fileCtx.WriteString("\n## RELEVANT FILES (auto-selected)\n")
+					for _, fr := range relevant {
+						fileCtx.WriteString(fmt.Sprintf("- %s (score: %.1f, reasons: %s)\n",
+							fr.Path, fr.Score, strings.Join(fr.Reasons, "; ")))
+					}
+					systemPrompt += fileCtx.String()
+					log.Printf("[Agent] smart file selection: %d relevant files for request", len(relevant))
+				}
+			}
 		}
 	}
 
@@ -490,13 +507,13 @@ You are running WITHOUT a project context. This means:
 			step.Status = "in_progress"
 			step.StartedAt = time.Now().Unix()
 			w.WriteSSE(map[string]interface{}{
-				"type":       "step",
-				"step":       "task_progress",
-				"step_id":    step.ID,
-				"status":     "in_progress",
-				"content":    step.Description,
-				"progress":   enhancedPlanner.GetProgress(enhancedPlan),
-				"files":      step.Files,
+				"type":     "step",
+				"step":     "task_progress",
+				"step_id":  step.ID,
+				"status":   "in_progress",
+				"content":  step.Description,
+				"progress": enhancedPlanner.GetProgress(enhancedPlan),
+				"files":    step.Files,
 			})
 		}
 	}
@@ -632,6 +649,11 @@ You are running WITHOUT a project context. This means:
 		llmDone := make(chan struct{})
 		startKeepalive(iterCtx, w, llmDone, 10*time.Second)
 
+		// Smart compact: compress conversation if too large (token-aware)
+		if estimateMapTokens(conversation) > 100000 {
+			conversation = smartCompactMapConversation(conversation, 100000)
+		}
+
 		prefiltered := prefilterConversation(conversation)
 
 		// Token optimization: prune old tool results to reduce token usage
@@ -726,7 +748,7 @@ You are running WITHOUT a project context. This means:
 			startTime: startTime, toolRetryFallback: toolRetryFallback,
 			writeFileCalled: &writeFileCalled, anyWriteCalled: &anyWriteCalled,
 			editFileConsecutiveFailures: &editFileConsecutiveFailures,
-			answerSent: &answerSent, conversation: &conversation,
+			answerSent:                  &answerSent, conversation: &conversation,
 		}
 		seqState.executeSequentialToolBlock(plan.sequentialTasks)
 

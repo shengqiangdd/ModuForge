@@ -225,8 +225,8 @@ func (r *AgentRunner) incrementalCompactHistory(ctx context.Context, history []s
 // while summarizing earlier messages. This provides a balance between
 // context preservation and token efficiency.
 func (r *AgentRunner) slidingWindowCompact(ctx context.Context, history []service.Message, w SSEWriter, cfg RunConfig) []service.Message {
-	const keepRounds = 5 // Keep last 5 user-assistant rounds
-	const maxMessages = keepRounds * 2 + 1 // 5 rounds + system message
+	const keepRounds = 5                 // Keep last 5 user-assistant rounds
+	const maxMessages = keepRounds*2 + 1 // 5 rounds + system message
 
 	if len(history) <= maxMessages {
 		return history // Already within window
@@ -367,6 +367,126 @@ Be concise but complete. Output ONLY the summary text, no labels.`},
 	}
 
 	return compacted
+}
+
+// SmartCompact performs intelligent conversation compression.
+// Preserves: system prompts, recent N rounds, key tool results.
+// Compresses: middle-round long text into summaries.
+func SmartCompact(messages []service.Message, maxTokens int) []service.Message {
+	if estimateTokens(messages) <= maxTokens {
+		return messages
+	}
+
+	result := make([]service.Message, 0, len(messages))
+
+	for i, msg := range messages {
+		// System prompts always preserved
+		if msg.Role == "system" {
+			result = append(result, msg)
+			continue
+		}
+
+		// Last 10 messages (5 rounds) preserved in full
+		if i >= len(messages)-10 {
+			result = append(result, msg)
+			continue
+		}
+
+		// Middle rounds: compress long assistant messages
+		if msg.Role == "assistant" && len(msg.Content) > 500 {
+			compressed := msg.Content[:200] + "\n... [compressed: full content preserved at original position]"
+			result = append(result, service.Message{Role: msg.Role, Content: compressed})
+			continue
+		}
+
+		// Middle rounds: compress long tool results
+		if msg.Role == "tool" && len(msg.Content) > 300 {
+			compressed := msg.Content[:150] + "\n... [tool result compressed]"
+			result = append(result, service.Message{
+				Role:       msg.Role,
+				Content:    compressed,
+				ToolCallID: msg.ToolCallID,
+			})
+			continue
+		}
+
+		result = append(result, msg)
+	}
+	return result
+}
+
+// estimateTokens provides a rough token estimate (1 token ≈ 4 chars for English,
+// ~2 chars for CJK). Uses 3 as a compromise for mixed content.
+func estimateTokens(messages []service.Message) int {
+	total := 0
+	for _, m := range messages {
+		total += len(m.Content) / 3
+	}
+	return total
+}
+
+// estimateMapTokens estimates tokens for map-based conversation.
+func estimateMapTokens(conversation []map[string]interface{}) int {
+	total := 0
+	for _, msg := range conversation {
+		if content, ok := msg["content"].(string); ok {
+			total += len(content) / 3
+		}
+	}
+	return total
+}
+
+// smartCompactMapConversation compresses a map-based conversation.
+// Preserves system prompts and last 10 messages, compresses middle content.
+func smartCompactMapConversation(conversation []map[string]interface{}, maxTokens int) []map[string]interface{} {
+	if estimateMapTokens(conversation) <= maxTokens {
+		return conversation
+	}
+
+	result := make([]map[string]interface{}, 0, len(conversation))
+
+	for i, msg := range conversation {
+		role, _ := msg["role"].(string)
+		content, _ := msg["content"].(string)
+
+		// System prompts always preserved
+		if role == "system" {
+			result = append(result, msg)
+			continue
+		}
+
+		// Last 10 messages preserved in full
+		if i >= len(conversation)-10 {
+			result = append(result, msg)
+			continue
+		}
+
+		// Middle rounds: compress long messages
+		if len(content) > 500 && role == "assistant" {
+			compressed := content[:200] + "\n... [smart-compressed]"
+			newMsg := make(map[string]interface{})
+			for k, v := range msg {
+				newMsg[k] = v
+			}
+			newMsg["content"] = compressed
+			result = append(result, newMsg)
+			continue
+		}
+
+		if len(content) > 300 && role == "tool" {
+			compressed := content[:150] + "\n... [tool result compressed]"
+			newMsg := make(map[string]interface{})
+			for k, v := range msg {
+				newMsg[k] = v
+			}
+			newMsg["content"] = compressed
+			result = append(result, newMsg)
+			continue
+		}
+
+		result = append(result, msg)
+	}
+	return result
 }
 
 func (r *AgentRunner) compactConversation(ctx context.Context, conversation []map[string]interface{}, w SSEWriter, cfg RunConfig) ([]map[string]interface{}, error) {
