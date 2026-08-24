@@ -15,7 +15,7 @@ import (
 // and a non-nil error only when the run must abort immediately (non-retryable
 // error or retry limit reached). When it returns nil the caller should
 // `continue` the iteration loop so the next attempt re-enters the loop body.
-func (r *AgentRunner) handleLLMCallError(ctx context.Context, w SSEWriter, cfg RunConfig, conversation []map[string]interface{}, consecutiveErrors int, err error) ([]map[string]interface{}, int, error) {
+func (r *AgentRunner) handleLLMCallError(ctx context.Context, w SSEWriter, cfg *RunConfig, conversation []map[string]interface{}, consecutiveErrors int, err error) ([]map[string]interface{}, int, error) {
 	// Classify error: permanent errors stop immediately, transient ones retry
 	if !isRetryableError(err) {
 		log.Printf("[Agent] non-retryable error: %v", err)
@@ -30,6 +30,26 @@ func (r *AgentRunner) handleLLMCallError(ctx context.Context, w SSEWriter, cfg R
 		w.WriteSSEPlain("[DONE]")
 		return conversation, consecutiveErrors, err
 	}
+
+	// Auto-switch: free model → paid fallback after 2 consecutive errors
+	if consecutiveErrors >= 2 && cfg.modelTier == TierFree && !cfg.fallbackActive &&
+		cfg.fallbackEndpoint != "" && cfg.fallbackModel != "" {
+		log.Printf("[Agent] auto-switching from free model %s to paid fallback %s after %d errors",
+			cfg.resolvedModel, cfg.fallbackModel, consecutiveErrors)
+		cfg.resolvedEndpoint = cfg.fallbackEndpoint
+		cfg.resolvedAPIKey = cfg.fallbackAPIKey
+		cfg.resolvedModel = cfg.fallbackModel
+		cfg.modelTier = cfg.fallbackTier
+		cfg.fallbackActive = true
+		w.WriteSSE(map[string]interface{}{
+			"type":    "step",
+			"step":    "think",
+			"content": fmt.Sprintf("免费模型响应质量不佳，已自动切换到付费模型 %s 继续...", cfg.fallbackModel),
+		})
+		// Reset error count after switch so the paid model gets a fresh attempt
+		consecutiveErrors = 0
+	}
+
 	// Auto-compact on context-too-long errors before retrying
 	errStr := err.Error()
 	if strings.Contains(errStr, "context_length_exceeded") || strings.Contains(errStr, "maximum context length") || strings.Contains(errStr, "max_tokens") {
@@ -158,6 +178,21 @@ func (r *AgentRunner) handleFinalAnswer(
 	answerSent bool,
 ) ([]map[string]interface{}, bool, bool, error) {
 	answer := cleanAnswer(llmResp.Content)
+
+	// Multi-file detection: if answer contains ### filename markers but no write_file was called,
+	// inject reminder to use write_file tool instead of inline code
+	if !writeFileCalled && !anyWriteCalled && iter < cfg.MaxIterations-1 {
+		fileHeaders := fileHeaderRe.FindAllString(answer, -1)
+		if len(fileHeaders) > 1 {
+			log.Printf("[Agent] multi-file inline output detected: %d file headers without write_file", len(fileHeaders))
+			conversation = appendRoleMessage(conversation, "assistant", answer)
+			conversation = appendRoleMessage(conversation, "user",
+				fmt.Sprintf("[System: You output %d file sections (### filename) in your text, but did NOT call write_file. "+
+					"This is NOT allowed. You MUST use the write_file tool to create each file individually. "+
+					"Start with the first file now. Write ONE file per write_file call.]", len(fileHeaders)))
+			return conversation, false, writeFileCalled, nil
+		}
+	}
 
 	// Append quality report if we have quality data
 	if len(qualityReports) > 0 {

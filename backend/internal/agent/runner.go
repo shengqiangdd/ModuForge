@@ -122,6 +122,13 @@ type RunConfig struct {
 	resolvedAPIKey   string
 	resolvedModel    string
 	modelTier        ModelTier
+
+	// Model fallback: free → paid auto-switch on repeated failures
+	fallbackEndpoint string
+	fallbackAPIKey   string
+	fallbackModel    string
+	fallbackTier     ModelTier
+	fallbackActive   bool // true once we've switched to fallback
 }
 
 type AgentRunner struct {
@@ -294,6 +301,18 @@ func (r *AgentRunner) Run(ctx context.Context, task string, userID string, messa
 	}
 	cfg.modelTier = resolveModelTierWithMaxTokens(resolvedModel, cfg.MaxOutputTokens)
 	modelTier := cfg.modelTier
+
+	// Resolve fallback model (free → paid) for auto-switch on repeated failures
+	if modelTier == TierFree {
+		if fbEp, fbKey, fbModel, found := r.resolveFallbackConfig(userID, resolvedEndpoint); found {
+			cfg.fallbackEndpoint = fbEp
+			cfg.fallbackAPIKey = fbKey
+			cfg.fallbackModel = fbModel
+			cfg.fallbackTier = resolveModelTierWithMaxTokens(fbModel, 0)
+			log.Printf("[Agent] fallback configured: primary=%s → fallback=%s (tier=%d)", resolvedModel, fbModel, cfg.fallbackTier)
+		}
+	}
+
 	compactionThreshold := compactionThresholdForTier(modelTier, cfg.MaxOutputTokens)
 	if cfg.MaxResultLen == defaultMaxResultLen {
 		cfg.MaxResultLen = maxResultLenForTier(modelTier)
@@ -607,7 +626,7 @@ You are running WITHOUT a project context. This means:
 		if err != nil {
 			runPerfMetrics.RecordError()
 			var abortErr error
-			conversation, consecutiveErrors, abortErr = r.handleLLMCallError(ctx, w, cfg, conversation, consecutiveErrors, err)
+			conversation, consecutiveErrors, abortErr = r.handleLLMCallError(ctx, w, &cfg, conversation, consecutiveErrors, err)
 			if abortErr != nil {
 				iterCancel()
 				return abortErr

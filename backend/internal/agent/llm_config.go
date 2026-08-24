@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"log"
+	"strings"
 )
 
 // decodeAPIKey decodes a base64-encoded API key if possible, otherwise returns raw value.
@@ -167,6 +168,69 @@ func (r *AgentRunner) loadLatestCustomProvider(userID string) (endpoint, apiKey,
 		return "", "", "", false
 	}
 	return endpoint, apiKey, model, true
+}
+
+// resolveFallbackConfig finds a paid model to use as fallback when the primary is free.
+// It queries the DB for user-configured paid providers, falling back to built-in defaults.
+func (r *AgentRunner) resolveFallbackConfig(userID string, currentEndpoint string) (endpoint, apiKey, model string, found bool) {
+	if r.db != nil && userID != "" {
+		// Try to find a paid provider from the user's llm_providers config
+		rows, err := r.db.Query(
+			`SELECT endpoint, api_key, model_id FROM llm_providers
+			 WHERE user_id=? AND model_id != ''
+			 ORDER BY created_at DESC LIMIT 20`,
+			userID,
+		)
+		if err == nil {
+			defer rows.Close()
+			for rows.Next() {
+				var ep, key, mdl string
+				if err := rows.Scan(&ep, &key, &mdl); err != nil {
+					continue
+				}
+				tier := resolveModelTier(mdl)
+				if tier != TierFree && ep != "" {
+					log.Printf("[Agent] fallback: found paid provider model=%s tier=%d", mdl, tier)
+					return ep, decodeAPIKey(key), mdl, true
+				}
+			}
+		}
+
+		// Try custom_providers for paid models
+		rows2, err := r.db.Query(
+			`SELECT endpoint, api_key, model_id FROM custom_providers
+			 WHERE user_id=? AND model_id != ''
+			 ORDER BY updated_at DESC LIMIT 20`,
+			userID,
+		)
+		if err == nil {
+			defer rows2.Close()
+			for rows2.Next() {
+				var ep, key, mdl string
+				if err := rows2.Scan(&ep, &key, &mdl); err != nil {
+					continue
+				}
+				tier := resolveModelTier(mdl)
+				if tier != TierFree && ep != "" {
+					log.Printf("[Agent] fallback: found paid custom provider model=%s tier=%d", mdl, tier)
+					return ep, decodeAPIKey(key), mdl, true
+				}
+			}
+		}
+	}
+
+	// Built-in fallback: use OpenCode Zen's paid GPT-5.4 Mini as universal fallback
+	// This requires an API key, so only return if we have one configured globally
+	if r.apiKey != "" && r.endpoint != "" {
+		// Check if the current endpoint is already the fallback (avoid loop)
+		if strings.Contains(currentEndpoint, "opencode.ai") {
+			return "", "", "", false
+		}
+		log.Printf("[Agent] fallback: using built-in paid model gpt-5.4-mini")
+		return "https://opencode.ai/zen/v1", r.apiKey, "gpt-5.4-mini", true
+	}
+
+	return "", "", "", false
 }
 
 // Ensure unused import is consumed

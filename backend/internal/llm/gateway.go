@@ -151,9 +151,20 @@ func (g *Gateway) StreamChat(ctx context.Context, messages []Message) (<-chan st
 
 		buf := make([]byte, 4096)
 		for {
+			// Check context cancellation before each read attempt
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
 			n, readErr := resp.Body.Read(buf)
 			if n > 0 {
-				ch <- string(buf[:n])
+				// Also check ctx after reading (in case data arrived but ctx was cancelled)
+				select {
+				case <-ctx.Done():
+					return
+				case ch <- string(buf[:n]):
+				}
 			}
 			if readErr == io.EOF {
 				break

@@ -24,6 +24,9 @@ type toolResultProcessor struct {
 	progressTracker    *ProgressTracker
 }
 
+// fileHeaderRe matches ### filename patterns in LLM text output (multi-file generation detection).
+var fileHeaderRe = regexp.MustCompile(`(?m)^#{1,3}\s+[\w/.\\-]+\.\w+\s*$`)
+
 // process analyzes executed tool results and returns the updated conversation,
 // whether an answer was force-sent, and any termination error.
 func (p *toolResultProcessor) process(iter int, conversation []map[string]interface{}, results []toolResult, anyWriteCalled, answerSent bool) ([]map[string]interface{}, bool, error) {
