@@ -112,6 +112,9 @@ export async function resetPromptToDefaultAction(promptTab: Mode) {
   return await resetPromptToDefault(promptTab);
 }
 
+// Alias for +page.svelte compatibility
+export const resetPrompt = resetPromptToDefaultAction;
+
 // ─── Import ───
 
 export async function loadImportProjectsList() {
@@ -361,3 +364,14 @@ export function loadCapability(s: any) { return loadCapabilityData(); }
 export function scanAndImport(s: any, project: string, files: any[]) { return scanAndImportFiles(project, files); }
 export function continueImportAfterWarning(s: any, project: string, files: any[]) { return doImportFiles(project, files); }
 export function proceedImport(s: any, project: string, files: any[]) { return doImportFiles(project, files); }
+
+// ─── Load single conversation by ID ───
+export async function loadConversation(s: any, loadProjectFilesFn: any, loadSessionMessagesFn: any, id: string) {
+  const conv = await fetchConversation(id);
+  if (!conv) { toast('加载对话失败', 'error'); return; }
+  s.messages = conv.messages || [];
+  s.mode = conv.mode || 'generate';
+  s.activeSessionId = conv.session_id || '';
+  if (conv.project_id) { await loadProjectFilesFn(conv.project_id); }
+  if (conv.session_id) { await loadSessionMessagesFn(conv.session_id); }
+}
