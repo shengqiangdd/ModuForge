@@ -717,7 +717,7 @@ func buildCompileErrorRetryPrompt(buildOutput string, compileErrors []string, at
 }
 
 // ErrorCategory represents a classified build error
-type ErrorCategory struct {
+type BuildError struct {
 	Category    string // syntax, missing_dep, type_error, linker, security
 	Severity    string // critical, warning, info
 	File        string
@@ -727,64 +727,64 @@ type ErrorCategory struct {
 }
 
 // classifyBuildError analyzes build output and categorizes errors per language
-func classifyBuildError(output string, language string) []ErrorCategory {
-	var cats []ErrorCategory
+func classifyBuildError(output string, language string) []BuildError {
+	var cats []BuildError
 	lines := strings.Split(output, "\n")
 	for _, line := range lines {
 		lower := strings.ToLower(line)
 		// Go missing package
 		if strings.Contains(lower, "cannot find package") {
-			cats = append(cats, ErrorCategory{Category: "missing_dep", Severity: "critical", FixStrategy: "install_dep", Message: line})
+			cats = append(cats, BuildError{Category: "missing_dep", Severity: "critical", FixStrategy: "install_dep", Message: line})
 			continue
 		}
 		// Go syntax error
 		if strings.Contains(lower, "syntax error") {
-			cats = append(cats, ErrorCategory{Category: "syntax", Severity: "critical", FixStrategy: "auto_fix", Message: line})
+			cats = append(cats, BuildError{Category: "syntax", Severity: "critical", FixStrategy: "auto_fix", Message: line})
 			continue
 		}
 		// Go undefined
 		if strings.Contains(lower, "undefined:") || strings.Contains(lower, "undeclared name") {
-			cats = append(cats, ErrorCategory{Category: "type_error", Severity: "critical", FixStrategy: "auto_fix", Message: line})
+			cats = append(cats, BuildError{Category: "type_error", Severity: "critical", FixStrategy: "auto_fix", Message: line})
 			continue
 		}
 		// Go unused variable/import
 		if strings.Contains(lower, "declared but not used") || strings.Contains(lower, "imported and not used") {
-			cats = append(cats, ErrorCategory{Category: "syntax", Severity: "warning", FixStrategy: "auto_fix", Message: line})
+			cats = append(cats, BuildError{Category: "syntax", Severity: "warning", FixStrategy: "auto_fix", Message: line})
 			continue
 		}
 		// C implicit declaration
 		if strings.Contains(lower, "implicit declaration") {
-			cats = append(cats, ErrorCategory{Category: "missing_dep", Severity: "critical", FixStrategy: "auto_fix", Message: line})
+			cats = append(cats, BuildError{Category: "missing_dep", Severity: "critical", FixStrategy: "auto_fix", Message: line})
 			continue
 		}
 		// C expected
 		if strings.Contains(lower, "expected ';'") || strings.Contains(lower, "expected ')'") {
-			cats = append(cats, ErrorCategory{Category: "syntax", Severity: "critical", FixStrategy: "auto_fix", Message: line})
+			cats = append(cats, BuildError{Category: "syntax", Severity: "critical", FixStrategy: "auto_fix", Message: line})
 			continue
 		}
 		// C undefined reference (linker)
 		if strings.Contains(lower, "undefined reference") {
-			cats = append(cats, ErrorCategory{Category: "linker", Severity: "critical", FixStrategy: "auto_fix", Message: line})
+			cats = append(cats, BuildError{Category: "linker", Severity: "critical", FixStrategy: "auto_fix", Message: line})
 			continue
 		}
 		// Rust unresolved import
 		if strings.Contains(lower, "unresolved import") {
-			cats = append(cats, ErrorCategory{Category: "missing_dep", Severity: "critical", FixStrategy: "install_dep", Message: line})
+			cats = append(cats, BuildError{Category: "missing_dep", Severity: "critical", FixStrategy: "install_dep", Message: line})
 			continue
 		}
 		// Rust mismatched types
 		if strings.Contains(lower, "mismatched types") {
-			cats = append(cats, ErrorCategory{Category: "type_error", Severity: "critical", FixStrategy: "auto_fix", Message: line})
+			cats = append(cats, BuildError{Category: "type_error", Severity: "critical", FixStrategy: "auto_fix", Message: line})
 			continue
 		}
 		// Shell command not found
 		if strings.Contains(lower, "command not found") {
-			cats = append(cats, ErrorCategory{Category: "missing_dep", Severity: "critical", FixStrategy: "install_dep", Message: line})
+			cats = append(cats, BuildError{Category: "missing_dep", Severity: "critical", FixStrategy: "install_dep", Message: line})
 			continue
 		}
 		// Timeout / signal
 		if strings.Contains(lower, "signal: killed") || strings.Contains(lower, "timeout") {
-			cats = append(cats, ErrorCategory{Category: "security", Severity: "critical", FixStrategy: "regenerate", Message: line})
+			cats = append(cats, BuildError{Category: "security", Severity: "critical", FixStrategy: "regenerate", Message: line})
 			continue
 		}
 	}
@@ -821,7 +821,7 @@ func autoInstallMissingDeps(output string, projectDir string) error {
 }
 
 // fixSyntaxErrors attempts regex-based fixes for common syntax errors in Go files
-func fixSyntaxErrors(projectDir string, errs []ErrorCategory) int {
+func fixSyntaxErrors(projectDir string, errs []BuildError) int {
 	fixed := 0
 	for _, e := range errs {
 		if e.Category != "syntax" {

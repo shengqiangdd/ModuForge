@@ -73,18 +73,6 @@ func IndexProject(projectDir string) *ProjectIndex {
 	return idx
 }
 
-// isSourceFile returns true for meaningful source files.
-func isSourceFile(ext string) bool {
-	switch ext {
-	case ".go", ".py", ".js", ".ts", ".rs", ".c", ".cpp", ".h", ".hpp",
-		".java", ".kt", ".swift", ".rb", ".sh", ".bash",
-		".toml", ".yaml", ".yml", ".json", ".xml",
-		".md", ".txt", ".sql", ".proto", ".graphql":
-		return true
-	}
-	return false
-}
-
 // Summary returns a concise project overview for injection into the system prompt.
 func (idx *ProjectIndex) Summary() string {
 	if idx == nil || idx.TotalFiles == 0 {
