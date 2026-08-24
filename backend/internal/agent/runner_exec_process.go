@@ -581,14 +581,6 @@ func containsErrorType(types []string, target string) bool {
 // COMPILE ERROR AUTO-RETRY
 // ═══════════════════════════════════════════════════════
 
-// compileErrorRe matches compile error patterns from Go, C, Rust, and GCC.
-var compileErrorRe = regexp.MustCompile(`(?i)` +
-	`(.*\.go:\d+:\d+:\s*(?:error|warning):\s*.+)` + // Go errors
-	`|(.*\.(?:c|cpp|h):\d+:\d+:\s*(?:error|warning):\s*.+)` + // C/C++ errors
-	`|(error\[E\d+\]:\s*.+)` + // Rust errors
-	`|((?:cannot find package|undefined|undeclared|syntax error|type mismatch).+)` + // Go semantic errors
-	`|((?:implicit declaration|expected|unexpected).+)`) // C semantic errors
-
 // extractCompileErrors parses build output to find specific compile errors.
 func extractCompileErrors(output string) []string {
 	var errors []string
