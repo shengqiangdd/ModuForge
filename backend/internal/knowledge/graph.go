@@ -552,7 +552,7 @@ func (kg *KnowledgeGraph) RecommendPatterns(moduleType string, requirements []st
 		daysSinceUse := Now().Sub(ps.LastUsed).Hours() / 24
 		recencyBoost := 1.0 / (1.0 + daysSinceUse*0.1)
 		score := successRate * recencyBoost * ps.AvgQuality / 100
-		candidates = append(candidates, scoredPattern{pattern: ps.pattern, score: score})
+		candidates = append(candidates, scoredPattern{pattern: ps.PatternID, score: score})
 	}
 
 	// Sort by score (simple selection sort for small N)
