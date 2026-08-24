@@ -22,6 +22,7 @@ type toolResultProcessor struct {
 	stagnationDetector *StagnationDetector
 	m                  *runMetrics
 	progressTracker    *ProgressTracker
+	compileErrorCount  int // Track consecutive compile errors for auto-retry
 }
 
 // fileHeaderRe matches ### filename patterns in LLM text output (multi-file generation detection).
@@ -83,7 +84,8 @@ func (p *toolResultProcessor) process(iter int, conversation []map[string]interf
 			emitBuildProgress(p.w, res.result)
 
 			if buildReady || !isError {
-				// Build succeeded - inject completion prompt with next steps
+				// Build succeeded - reset compile error count and inject completion prompt
+				p.compileErrorCount = 0
 				log.Printf("[Agent] build_module completed successfully (build_ready=%v), injecting completion prompt", buildReady)
 				p.w.WriteSSE(map[string]interface{}{
 					"type":    "step",
@@ -98,10 +100,29 @@ func (p *toolResultProcessor) process(iter int, conversation []map[string]interf
 				nextStepsPrompt := buildNextStepsPrompt(res.result)
 				conversation = appendRoleMessage(conversation, "system", nextStepsPrompt)
 			} else {
-				// Build failed - inject auto-fix prompt with specific error guidance
-				log.Printf("[Agent] build_module failed, injecting auto-fix prompt")
-				fixPrompt := buildAutoFixPrompt(res.result)
-				conversation = appendRoleMessage(conversation, "system", fixPrompt)
+				// Build failed - check if it's a compile error that can be auto-retried
+				p.compileErrorCount++
+				compileErrors := extractCompileErrors(res.result)
+
+				if len(compileErrors) > 0 && p.compileErrorCount <= 3 {
+					// Compile error detected — inject targeted fix prompt
+					log.Printf("[Agent] compile error detected (attempt %d/3): %d errors found", p.compileErrorCount, len(compileErrors))
+					p.w.WriteSSE(map[string]interface{}{
+						"type":    "step",
+						"step":    "think",
+						"content": fmt.Sprintf("❌ 编译失败（第 %d/3 次尝试），%d 个错误，正在自动修复...", p.compileErrorCount, len(compileErrors)),
+					})
+
+					// Inject compile error context for LLM to fix
+					fixPrompt := buildCompileErrorRetryPrompt(res.result, compileErrors, p.compileErrorCount)
+					conversation = appendRoleMessage(conversation, "system", fixPrompt)
+				} else {
+					// Non-compile error or max retries reached — fall back to normal auto-fix
+					p.compileErrorCount = 0
+					log.Printf("[Agent] build_module failed (non-compile or max retries), injecting auto-fix prompt")
+					fixPrompt := buildAutoFixPrompt(res.result)
+					conversation = appendRoleMessage(conversation, "system", fixPrompt)
+				}
 			}
 		}
 	}
@@ -554,4 +575,96 @@ func containsErrorType(types []string, target string) bool {
 		}
 	}
 	return false
+}
+
+// ═══════════════════════════════════════════════════════
+// COMPILE ERROR AUTO-RETRY
+// ═══════════════════════════════════════════════════════
+
+// compileErrorRe matches compile error patterns from Go, C, Rust, and GCC.
+var compileErrorRe = regexp.MustCompile(`(?i)` +
+	`(.*\.go:\d+:\d+:\s*(?:error|warning):\s*.+)` + // Go errors
+	`|(.*\.(?:c|cpp|h):\d+:\d+:\s*(?:error|warning):\s*.+)` + // C/C++ errors
+	`|(error\[E\d+\]:\s*.+)` + // Rust errors
+	`|((?:cannot find package|undefined|undeclared|syntax error|type mismatch).+)` + // Go semantic errors
+	`|((?:implicit declaration|expected|unexpected).+)`) // C semantic errors
+
+// extractCompileErrors parses build output to find specific compile errors.
+func extractCompileErrors(output string) []string {
+	var errors []string
+	lines := strings.Split(output, "\n")
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+
+		// Go compile errors: file.go:line:col: error: message
+		if m := regexp.MustCompile(`(.+\.go):(\d+):\d+:\s*(?:error|warning):\s*(.+)`).FindStringSubmatch(trimmed); len(m) > 3 {
+			errors = append(errors, fmt.Sprintf("%s:%s: %s", m[1], m[2], m[3]))
+			continue
+		}
+
+		// C/C++ compile errors: file.c:line:col: error: message
+		if m := regexp.MustCompile(`(.+\.(?:c|cpp|cc|cxx|h)):(\d+):\d+:\s*(?:error|warning):\s*(.+)`).FindStringSubmatch(trimmed); len(m) > 3 {
+			errors = append(errors, fmt.Sprintf("%s:%s: %s", m[1], m[2], m[3]))
+			continue
+		}
+
+		// Rust compile errors: error[E0XXX]: message
+		if m := regexp.MustCompile(`(error\[E\d+\]:\s*.+)`).FindStringSubmatch(trimmed); len(m) > 1 {
+			errors = append(errors, m[1])
+			continue
+		}
+
+		// Go semantic errors (no file location)
+		if strings.Contains(trimmed, "cannot find package") || strings.Contains(trimmed, "undefined") ||
+			strings.Contains(trimmed, "undeclared") || strings.Contains(trimmed, "syntax error") {
+			errors = append(errors, trimmed)
+			continue
+		}
+
+		// C semantic errors
+		if strings.Contains(trimmed, "implicit declaration") || strings.Contains(trimmed, "expected ") ||
+			strings.Contains(trimmed, "unexpected ") {
+			errors = append(errors, trimmed)
+			continue
+		}
+	}
+
+	return errors
+}
+
+// buildCompileErrorRetryPrompt creates a targeted prompt for fixing compile errors.
+func buildCompileErrorRetryPrompt(buildOutput string, compileErrors []string, attempt int) string {
+	parts := []string{
+		fmt.Sprintf("❌ COMPILE ERROR AUTO-RETRY (attempt %d/3)", attempt),
+		"",
+		"The build failed with compile errors. You MUST fix ALL errors below.",
+		"",
+		"📋 COMPILE FIX WORKFLOW:",
+		"  1. Read the file(s) containing errors",
+		"  2. Fix EACH error using edit_file",
+		"  3. After fixing ALL errors, call build_module to verify",
+		"  4. If new errors appear, repeat steps 1-3",
+		"",
+		fmt.Sprintf("Found %d compile error(s):", len(compileErrors)),
+		"",
+	}
+
+	for i, err := range compileErrors {
+		parts = append(parts, fmt.Sprintf("  %d. %s", i+1, err))
+	}
+
+	parts = append(parts, "")
+	parts = append(parts, "⚠️ CRITICAL RULES:")
+	parts = append(parts, "  - Fix the ROOT CAUSE, not just the symptom")
+	parts = append(parts, "  - Check for missing imports, undefined variables, type mismatches")
+	parts = append(parts, "  - For Go: ensure all imports are used, all variables initialized")
+	parts = append(parts, "  - For C: ensure all variables declared before use, all memory freed")
+	parts = append(parts, "  - After fixing, ALWAYS call build_module to verify")
+	parts = append(parts, "  - Do NOT give up — keep fixing until the build succeeds")
+
+	return strings.Join(parts, "\n")
 }

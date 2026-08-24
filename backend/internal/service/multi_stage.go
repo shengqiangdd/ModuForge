@@ -18,6 +18,7 @@ import (
 
 	"github.com/moduforge/backend/internal/builder"
 	"github.com/moduforge/backend/internal/domain"
+	"github.com/moduforge/backend/internal/knowledge"
 )
 
 // MultiStageBuild is the enhanced build pipeline for free models.
@@ -102,11 +103,22 @@ func (s *AIService) MultiStageBuild(
 	}
 
 	safeSSE(map[string]interface{}{
-		"type":     "arch_plan",
-		"plan":     plan,
-		"message":  fmt.Sprintf("架构: %s (%s)", plan.Name, plan.Languages),
+		"type":       "arch_plan",
+		"plan":       plan,
+		"message":    fmt.Sprintf("架构: %s (%s)", plan.Name, plan.Languages),
 		"file_count": len(plan.ShellFiles) + len(plan.GoFiles) + len(plan.CFiles) + len(plan.BuildFiles) + len(plan.ExtraFiles),
 	})
+
+	// Query knowledge graph for recommendations
+	knowledgeRecs := s.queryKnowledgeRecommendations(description)
+	if len(knowledgeRecs) > 0 {
+		log.Printf("[MultiStage] Knowledge graph provided %d recommendations", len(knowledgeRecs))
+		safeSSE(map[string]interface{}{
+			"type":    "phase",
+			"phase":   "knowledge",
+			"message": fmt.Sprintf("知识库: 基于 %d 个相关实体提供实现建议", len(knowledgeRecs)),
+		})
+	}
 
 	// Create project
 	projectID, projectDir, err := s.ensureProject(ctx, projectID, userID, plan.Name, description)
@@ -710,6 +722,29 @@ func filesMapToJSON(files map[string]string) string {
 	return string(b)
 }
 
+// queryKnowledgeRecommendations queries the knowledge graph for relevant recommendations.
+func (s *AIService) queryKnowledgeRecommendations(description string) []knowledge.Recommendation {
+	// Initialize knowledge graph with default data directory
+	dataDir := filepath.Join(os.Getenv("STORAGE_PATH"), "knowledge")
+	if dataDir == filepath.Join("", "knowledge") {
+		dataDir = "/data/storage/knowledge"
+	}
+
+	kg := knowledge.NewKnowledgeGraph(dataDir)
+	gq := knowledge.NewGraphQuery(kg)
+
+	// Query for recommendations based on the requirement
+	recommendations := gq.RecommendApproach(description)
+
+	// Also find related entities
+	relatedEntities := gq.FindRelated(description, 2)
+	if len(relatedEntities) > 0 {
+		log.Printf("[Knowledge] Found %d related entities for: %s", len(relatedEntities), truncate(description, 50))
+	}
+
+	return recommendations
+}
+
 // fallbackPlan creates a basic plan when LLM plan generation fails.
 func fallbackPlan(description string) builder.StagePlan {
 	return builder.StagePlan{
@@ -803,7 +838,6 @@ func (s *AIService) getPaidModelConfig(userID string) (endpoint, apiKey, model, 
 
 	return "", "", "", ""
 }
-
 
 func truncate(s string, maxLen int) string {
 	if len(s) <= maxLen {
