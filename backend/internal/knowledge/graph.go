@@ -390,3 +390,287 @@ func EntityID(name string) string {
 func Now() time.Time {
 	return time.Now()
 }
+
+// ═══════════════════════════════════════════════════════
+// KNOWLEDGE ACCUMULATION — 成功/失败模式记录
+// ═══════════════════════════════════════════════════════
+
+// SuccessRecord records a successful module build.
+type SuccessRecord struct {
+	Timestamp    time.Time `json:"timestamp"`
+	ModuleType   string    `json:"module_type"`   // "daemon", "tool", "tweak"
+	Languages    []string  `json:"languages"`     // ["go", "shell"]
+	Patterns     []string  `json:"patterns"`      // Used code patterns
+	QualityScore int       `json:"quality_score"` // 0-100
+	FilePaths    []string  `json:"file_paths"`    // Generated files
+	Description  string    `json:"description"`   // Module description
+}
+
+// FailureRecord records a failed build attempt.
+type FailureRecord struct {
+	Timestamp    time.Time `json:"timestamp"`
+	ModuleType   string    `json:"module_type"`
+	ErrorType    string    `json:"error_type"` // "compile", "runtime", "linker"
+	ErrorMessage string    `json:"error_message"`
+	FixApplied   string    `json:"fix_applied"` // What fixed it
+	Patterns     []string  `json:"patterns"`    // Patterns that were used
+}
+
+// PatternScore tracks the success rate of a pattern.
+type PatternScore struct {
+	PatternID  string    `json:"pattern_id"`
+	Successes  int       `json:"successes"`
+	Failures   int       `json:"failures"`
+	LastUsed   time.Time `json:"last_used"`
+	AvgQuality float64   `json:"avg_quality"`
+}
+
+// KnowledgeHistory stores success and failure records.
+type KnowledgeHistory struct {
+	Successes []SuccessRecord `json:"successes"`
+	Failures  []FailureRecord `json:"failures"`
+	Patterns  []PatternScore  `json:"patterns"`
+}
+
+// RecordSuccess records a successful module build.
+func (kg *KnowledgeGraph) RecordSuccess(moduleType string, patterns []string, qualityScore int, filePaths []string, description string) error {
+	kg.mu.Lock()
+	defer kg.mu.Unlock()
+
+	if err := kg.load(); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("load: %w", err)
+	}
+
+	// Load history
+	history, err := kg.loadHistory()
+	if err != nil {
+		history = &KnowledgeHistory{}
+	}
+
+	// Add success record
+	record := SuccessRecord{
+		Timestamp:    Now(),
+		ModuleType:   moduleType,
+		Languages:    detectLanguages(filePaths),
+		Patterns:     patterns,
+		QualityScore: qualityScore,
+		FilePaths:    filePaths,
+		Description:  description,
+	}
+	history.Successes = append(history.Successes, record)
+
+	// Update pattern scores
+	for _, patternID := range patterns {
+		found := false
+		for i := range history.Patterns {
+			if history.Patterns[i].PatternID == patternID {
+				history.Patterns[i].Successes++
+				history.Patterns[i].LastUsed = Now()
+				// Update average quality
+				total := float64(history.Patterns[i].Successes + history.Patterns[i].Failures)
+				history.Patterns[i].AvgQuality = (history.Patterns[i].AvgQuality*(total-1) + float64(qualityScore)) / total
+				found = true
+				break
+			}
+		}
+		if !found {
+			history.Patterns = append(history.Patterns, PatternScore{
+				PatternID:  patternID,
+				Successes:  1,
+				LastUsed:   Now(),
+				AvgQuality: float64(qualityScore),
+			})
+		}
+	}
+
+	return kg.saveHistory(history)
+}
+
+// RecordFailure records a failed build attempt.
+func (kg *KnowledgeGraph) RecordFailure(moduleType string, errorType string, errorMessage string, fixApplied string, patterns []string) error {
+	kg.mu.Lock()
+	defer kg.mu.Unlock()
+
+	if err := kg.load(); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("load: %w", err)
+	}
+
+	history, err := kg.loadHistory()
+	if err != nil {
+		history = &KnowledgeHistory{}
+	}
+
+	record := FailureRecord{
+		Timestamp:    Now(),
+		ModuleType:   moduleType,
+		ErrorType:    errorType,
+		ErrorMessage: errorMessage,
+		FixApplied:   fixApplied,
+		Patterns:     patterns,
+	}
+	history.Failures = append(history.Failures, record)
+
+	// Update pattern scores
+	for _, patternID := range patterns {
+		for i := range history.Patterns {
+			if history.Patterns[i].PatternID == patternID {
+				history.Patterns[i].Failures++
+				history.Patterns[i].LastUsed = Now()
+				break
+			}
+		}
+	}
+
+	return kg.saveHistory(history)
+}
+
+// RecommendPatterns recommends patterns based on historical success rates.
+func (kg *KnowledgeGraph) RecommendPatterns(moduleType string, requirements []string) []string {
+	kg.mu.RLock()
+	defer kg.mu.RUnlock()
+	kg.load()
+
+	history, err := kg.loadHistory()
+	if err != nil {
+		return nil
+	}
+
+	// Find patterns with high success rates
+	type scoredPattern struct {
+		pattern string
+		score   float64
+	}
+
+	var candidates []scoredPattern
+	for _, ps := range history.Patterns {
+		total := ps.Successes + ps.Failures
+		if total == 0 {
+			continue
+		}
+		successRate := float64(ps.Successes) / float64(total)
+		// Boost recently used patterns
+		daysSinceUse := Now().Sub(ps.LastUsed).Hours() / 24
+		recencyBoost := 1.0 / (1.0 + daysSinceUse*0.1)
+		score := successRate * recencyBoost * ps.AvgQuality / 100
+		candidates = append(candidates, scoredPattern{pattern: ps.pattern, score: score})
+	}
+
+	// Sort by score (simple selection sort for small N)
+	for i := 0; i < len(candidates); i++ {
+		for j := i + 1; j < len(candidates); j++ {
+			if candidates[j].score > candidates[i].score {
+				candidates[i], candidates[j] = candidates[j], candidates[i]
+			}
+		}
+	}
+
+	// Return top 5 patterns
+	var result []string
+	limit := 5
+	if len(candidates) < limit {
+		limit = len(candidates)
+	}
+	for i := 0; i < limit; i++ {
+		result = append(result, candidates[i].pattern)
+	}
+
+	return result
+}
+
+// GetSuccessRate returns the overall success rate.
+func (kg *KnowledgeGraph) GetSuccessRate() float64 {
+	kg.mu.RLock()
+	defer kg.mu.RUnlock()
+	kg.load()
+
+	history, err := kg.loadHistory()
+	if err != nil {
+		return 0
+	}
+
+	total := len(history.Successes) + len(history.Failures)
+	if total == 0 {
+		return 0
+	}
+	return float64(len(history.Successes)) / float64(total)
+}
+
+// GetRecentFailures returns recent failure records for analysis.
+func (kg *KnowledgeGraph) GetRecentFailures(limit int) []FailureRecord {
+	kg.mu.RLock()
+	defer kg.mu.RUnlock()
+	kg.load()
+
+	history, err := kg.loadHistory()
+	if err != nil {
+		return nil
+	}
+
+	// Return most recent failures
+	if limit <= 0 {
+		limit = 10
+	}
+	start := len(history.Failures) - limit
+	if start < 0 {
+		start = 0
+	}
+	return history.Failures[start:]
+}
+
+// detectLanguages detects programming languages from file paths.
+func detectLanguages(filePaths []string) []string {
+	langSet := make(map[string]bool)
+	for _, fp := range filePaths {
+		ext := filepath.Ext(fp)
+		switch ext {
+		case ".go":
+			langSet["go"] = true
+		case ".c", ".cpp", ".h":
+			langSet["c"] = true
+		case ".rs":
+			langSet["rust"] = true
+		case ".sh":
+			langSet["shell"] = true
+		case ".py":
+			langSet["python"] = true
+		case ".js", ".ts":
+			langSet["javascript"] = true
+		}
+	}
+	var langs []string
+	for lang := range langSet {
+		langs = append(langs, lang)
+	}
+	return langs
+}
+
+// ═══════════════════════════════════════════════════════
+// History Persistence
+// ═══════════════════════════════════════════════════════
+
+func (kg *KnowledgeGraph) loadHistory() (*KnowledgeHistory, error) {
+	path := filepath.Join(kg.dir, "knowledge_history.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+
+	var history KnowledgeHistory
+	if err := json.Unmarshal(data, &history); err != nil {
+		return nil, err
+	}
+	return &history, nil
+}
+
+func (kg *KnowledgeGraph) saveHistory(history *KnowledgeHistory) error {
+	if err := os.MkdirAll(kg.dir, 0755); err != nil {
+		return err
+	}
+
+	data, err := json.MarshalIndent(history, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(filepath.Join(kg.dir, "knowledge_history.json"), data, 0644)
+}

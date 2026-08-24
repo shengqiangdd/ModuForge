@@ -3,6 +3,8 @@ package skills
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -16,7 +18,7 @@ func NewTestGeneratorSkill() *TestGeneratorSkill {
 func (s *TestGeneratorSkill) Name() string { return "test_generator" }
 
 func (s *TestGeneratorSkill) Description() string {
-	return `Generate unit tests for a source file. Input: {"path": "...", "content": "...", "language": "go|rust|c++|python|typescript"}.
+	return `Generate unit tests for a source file. Input: {"path": "...", "content": "...", "language": "go|rust|c++|python|typescript", "project_dir": "..."}.
 Returns: complete test file content with test cases covering happy path, edge cases, and error conditions.
 Use this after code_review to ensure testability before build_module.`
 }
@@ -25,12 +27,21 @@ func (s *TestGeneratorSkill) Execute(ctx context.Context, input map[string]inter
 	content, _ := input["content"].(string)
 	language, _ := input["language"].(string)
 	path, _ := input["path"].(string)
+	projectDir, _ := input["project_dir"].(string)
 
 	if content == "" {
 		return "", fmt.Errorf("content is required")
 	}
 	if language == "" {
 		language = detectLanguage(path)
+	}
+
+	// Check if test file already exists
+	if projectDir != "" {
+		testExists, existingTests := checkExistingTests(projectDir, path, language)
+		if testExists {
+			return fmt.Sprintf("测试文件已存在，包含 %d 个测试函数。如需重新生成请先删除现有测试文件。", existingTests), nil
+		}
 	}
 
 	var testContent string
@@ -45,6 +56,8 @@ func (s *TestGeneratorSkill) Execute(ctx context.Context, input map[string]inter
 		testContent, err = generatePythonTests(path, content)
 	case "typescript", "ts":
 		testContent, err = generateTypeScriptTests(path, content)
+	case "c", "cpp":
+		testContent, err = generateCTests(path, content)
 	default:
 		return "", fmt.Errorf("unsupported language for test generation: %s", language)
 	}
@@ -54,6 +67,46 @@ func (s *TestGeneratorSkill) Execute(ctx context.Context, input map[string]inter
 	}
 
 	return testContent, nil
+}
+
+// checkExistingTests checks if test files already exist for the given source file.
+func checkExistingTests(projectDir, sourcePath, language string) (bool, int) {
+	baseName := strings.TrimSuffix(filepath.Base(sourcePath), filepath.Ext(sourcePath))
+
+	var testPattern string
+	switch strings.ToLower(language) {
+	case "go":
+		testPattern = baseName + "_test.go"
+	case "rust":
+		testPattern = "" // Rust tests are in the same file
+	case "python":
+		testPattern = "test_" + baseName + ".py"
+	default:
+		testPattern = ""
+	}
+
+	if testPattern == "" {
+		return false, 0
+	}
+
+	testCount := 0
+	filepath.Walk(projectDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil
+		}
+		if !info.IsDir() && strings.HasSuffix(path, testPattern) {
+			content, readErr := os.ReadFile(path)
+			if readErr == nil {
+				testCount = strings.Count(string(content), "func Test") +
+					strings.Count(string(content), "#[test]") +
+					strings.Count(string(content), "def test_") +
+					strings.Count(string(content), "it('")
+			}
+		}
+		return nil
+	})
+
+	return testCount > 0, testCount
 }
 
 func generateGoTests(path, content string) (string, error) {
@@ -96,7 +149,7 @@ func generateGoTests(path, content string) (string, error) {
 func extractGoFunctions(content string) []string {
 	var functions []string
 	lines := strings.Split(content, "\n")
-	
+
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
 		if strings.HasPrefix(trimmed, "func ") && !strings.HasPrefix(trimmed, "func Test") {
@@ -157,7 +210,7 @@ func extractRustFunctionName(line string) string {
 	line = strings.TrimPrefix(line, "pub ")
 	line = strings.TrimPrefix(line, "async ")
 	line = strings.TrimPrefix(line, "fn ")
-	
+
 	// Extract name before (
 	if idx := strings.Index(line, "("); idx > 0 {
 		return strings.TrimSpace(line[:idx])
@@ -235,4 +288,58 @@ func extractTypeScriptFunctionName(line string) string {
 		return strings.TrimSpace(line[:idx])
 	}
 	return ""
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// C/C++ TEST GENERATION
+// ═══════════════════════════════════════════════════════════════════
+
+func generateCTests(path, content string) (string, error) {
+	var sb strings.Builder
+	lines := strings.Split(content, "\n")
+
+	sb.WriteString("#include <stdio.h>\n")
+	sb.WriteString("#include <stdlib.h>\n")
+	sb.WriteString("#include <string.h>\n")
+	sb.WriteString("#include <assert.h>\n\n")
+
+	// Find functions and generate basic tests
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		// Match function definitions: type funcname(args) {
+		if strings.HasSuffix(trimmed, "{") && !strings.HasPrefix(trimmed, "if") &&
+			!strings.HasPrefix(trimmed, "for") && !strings.HasPrefix(trimmed, "while") &&
+			!strings.HasPrefix(trimmed, "switch") && !strings.HasPrefix(trimmed, "else") {
+			// Extract function name
+			parts := strings.Fields(trimmed)
+			if len(parts) >= 2 {
+				funcName := parts[len(parts)-1]
+				// Remove trailing {
+				funcName = strings.TrimSuffix(funcName, "{")
+				// Remove parameters
+				if idx := strings.Index(funcName, "("); idx > 0 {
+					funcName = funcName[:idx]
+				}
+				// Skip main and static functions
+				if funcName != "main" && funcName != "" && len(funcName) > 1 {
+					sb.WriteString(fmt.Sprintf("void test_%s() {\n", funcName))
+					sb.WriteString(fmt.Sprintf("\t// TODO: Implement test for %s\n", funcName))
+					sb.WriteString(fmt.Sprintf("\tprintf(\"Testing %s...\\n\");\n", funcName))
+					sb.WriteString("\t// Add test assertions here\n")
+					sb.WriteString("}\n\n")
+				}
+			}
+		}
+	}
+
+	// Add test runner
+	sb.WriteString("int main() {\n")
+	sb.WriteString("\tprintf(\"Running tests...\\n\");\n")
+	sb.WriteString("\t// Call test functions here\n")
+	sb.WriteString("\tprintf(\"All tests passed!\\n\");\n")
+	sb.WriteString("\treturn 0;\n")
+	sb.WriteString("}\n")
+
+	testFileName := strings.TrimSuffix(path, filepath.Ext(path)) + "_test.c"
+	return fmt.Sprintf("// Generated test file: %s\n// Source: %s\n\n%s", testFileName, path, sb.String()), nil
 }
