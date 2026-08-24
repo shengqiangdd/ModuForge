@@ -54,7 +54,7 @@ func (r *AgentRunner) handleLLMCallError(ctx context.Context, w SSEWriter, cfg *
 	errStr := err.Error()
 	if strings.Contains(errStr, "context_length_exceeded") || strings.Contains(errStr, "maximum context length") || strings.Contains(errStr, "max_tokens") {
 		log.Printf("[Agent] context too long, compacting conversation before retry...")
-		compacted, cErr := r.compactConversation(ctx, conversation, w, cfg)
+		compacted, cErr := r.compactConversation(ctx, conversation, w, *cfg)
 		if cErr == nil {
 			conversation = compacted
 			w.WriteSSE(map[string]interface{}{
