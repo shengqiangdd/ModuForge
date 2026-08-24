@@ -138,7 +138,7 @@
   });
 </script>
 
-<div class="border-t border-[var(--color-border)] bg-[var(--color-bg-elevated)] ai-input-area">
+<div class="border-t border-[var(--color-border)] bg-[var(--color-bg-elevated)] ai-input-area" style="flex-shrink:0;">
   <!-- Project Context Bar -->
   <div class="context-bar flex items-center gap-2 px-3 pt-2 pb-1">
     <button

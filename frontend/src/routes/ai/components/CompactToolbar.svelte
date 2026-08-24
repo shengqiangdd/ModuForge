@@ -37,6 +37,22 @@ let {
   showSearch?: boolean;
   onToggleSearch?: () => void;
 } = $props();
+
+  // Touch-scroll vs tap detection for mode pills — pointer events for cross-browser compat
+  let _px = 0, _py = 0, _moved = false, _down = false;
+  function onPillPointerDown(e: PointerEvent) { _px = e.clientX; _py = e.clientY; _moved = false; _down = true; }
+  function onPillPointerMove(e: PointerEvent) { if (!_down) return; if (Math.abs(e.clientX - _px) > 8 || Math.abs(e.clientY - _py) > 8) _moved = true; }
+  function onPillPointerUp(e: PointerEvent) {
+    if (!_down) return;
+    _down = false;
+    if (!_moved) {
+      const btn = (e.target as HTMLElement)?.closest('button');
+      if (btn) {
+        // Dispatch a real click event that browsers honour (some ignore programmatic .click() on mobile)
+        btn.dispatchEvent(new PointerEvent('click', { bubbles: true, cancelable: true, pointerId: e.pointerId }));
+      }
+    }
+  }
 </script>
 
 <div class="flex items-center gap-1 px-2 py-1.5 border-b border-[var(--color-border)] bg-[var(--color-surface)]">
@@ -46,8 +62,12 @@ let {
   </button>
   <div class="md:hidden w-px h-4 bg-[var(--color-border)] mx-0.5 flex-shrink-0"></div>
 
-  <!-- Mode pills -->
-  <div class="flex items-center gap-0.5 overflow-x-auto flex-shrink-0" style="scrollbar-width: none;">
+  <!-- Mode pills (scrollable on mobile, tap-vs-scroll handled by JS) -->
+  <div class="flex items-center gap-0.5 overflow-x-auto flex-1 min-w-0" style="scrollbar-width: none; touch-action: pan-x;"
+    onpointerdown={onPillPointerDown}
+    onpointermove={onPillPointerMove}
+    onpointerup={onPillPointerUp}
+  >
     {#each MODES as m}
       <button
         class="flex-shrink-0 flex items-center justify-center gap-1 px-2 py-1 rounded-lg text-xs font-medium transition-all duration-150 min-h-[32px]
@@ -69,22 +89,22 @@ let {
     <button class="flex-shrink-0 flex items-center justify-center p-1.5 rounded-lg text-[var(--color-text-secondary)] hover:bg-[var(--color-surface)] transition-all min-h-[32px]" onclick={onToggleComparison} title="多模型对比">
       <span class="material-symbols-outlined text-[16px]">compare_arrows</span>
     </button>
-    <button class="flex-shrink-0 flex items-center justify-center p-1.5 rounded-lg transition-all min-h-[32px] {showRepoReference ? 'bg-primary-500/10 text-primary-500' : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-surface)]'}" onclick={onToggleRepoReference} title="参考仓库">
+    <button class="hidden sm:flex flex-shrink-0 items-center justify-center p-1.5 rounded-lg transition-all min-h-[32px] {showRepoReference ? 'bg-primary-500/10 text-primary-500' : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-surface)]'}" onclick={onToggleRepoReference} title="参考仓库">
       <span class="material-symbols-outlined text-[16px]">link</span>
     </button>
     <button class="flex-shrink-0 flex items-center justify-center p-1.5 rounded-lg transition-all disabled:opacity-50 min-h-[32px] {showHistorySidebar ? 'bg-primary-500/10 text-primary-500' : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-surface)]'}" onclick={onToggleHistory} title="历史记录">
       <span class="material-symbols-outlined text-[16px]">history</span>
     </button>
-    <button class="flex-shrink-0 flex items-center justify-center p-1.5 rounded-lg transition-all disabled:opacity-50 min-h-[32px] {showMcpTools ? 'bg-primary-500/10 text-primary-500' : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-surface)]'}" onclick={onToggleMcpTools} title="MCP 工具">
+    <button class="hidden sm:flex flex-shrink-0 items-center justify-center p-1.5 rounded-lg transition-all disabled:opacity-50 min-h-[32px] {showMcpTools ? 'bg-primary-500/10 text-primary-500' : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-surface)]'}" onclick={onToggleMcpTools} title="MCP 工具">
       <span class="material-symbols-outlined text-[16px]">hub</span>
     </button>
-    <button class="flex-shrink-0 flex items-center justify-center p-1.5 rounded-lg text-[var(--color-text-secondary)] hover:bg-[var(--color-surface)] transition-all min-h-[32px]" onclick={onOpenPromptSettings} title="提示词设置">
+    <button class="hidden sm:flex flex-shrink-0 items-center justify-center p-1.5 rounded-lg text-[var(--color-text-secondary)] hover:bg-[var(--color-surface)] transition-all min-h-[32px]" onclick={onOpenPromptSettings} title="提示词设置">
       <span class="material-symbols-outlined text-[16px]">edit_note</span>
     </button>
-    <button class="flex-shrink-0 flex items-center justify-center p-1.5 rounded-lg text-[var(--color-text-secondary)] hover:bg-[var(--color-surface)] transition-all min-h-[32px]" onclick={onOpenMDPrompts} title="MD 提示词编辑器">
+    <button class="hidden sm:flex flex-shrink-0 items-center justify-center p-1.5 rounded-lg text-[var(--color-text-secondary)] hover:bg-[var(--color-surface)] transition-all min-h-[32px]" onclick={onOpenMDPrompts} title="MD 提示词编辑器">
       <span class="material-symbols-outlined text-[16px]">code</span>
     </button>
-    <div class="w-px h-4 bg-[var(--color-border)] mx-0.5 flex-shrink-0"></div>
+    <div class="hidden sm:block w-px h-4 bg-[var(--color-border)] mx-0.5 flex-shrink-0"></div>
     <button class="flex-shrink-0 flex items-center justify-center p-1.5 rounded-lg transition-all min-h-[32px] {showSearch ? 'bg-primary-500/10 text-primary-500' : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-surface)]'}" onclick={onToggleSearch} title="搜索会话">
       <span class="material-symbols-outlined text-[16px]">search</span>
     </button>

@@ -3,7 +3,7 @@
   import { t } from '$lib/i18n';
   import PageSkeleton from '$lib/components/ui/PageSkeleton.svelte';
 
-  type Route = 'auth' | 'projects' | 'editor' | 'builds' | 'tests' | 'settings' | 'market' | 'market-publish' | 'dashboard' | 'ai' | 'mcp' | 'devices' | 'crash' | 'glossary' | 'notification' | 'activity' | 'search' | 'template' | 'module-version';
+  type Route = 'auth' | 'projects' | 'editor' | 'builds' | 'tests' | 'settings' | 'market' | 'market-publish' | 'dashboard' | 'ai' | 'analytics' | 'mcp' | 'devices' | 'crash' | 'glossary' | 'notification' | 'activity' | 'search' | 'template' | 'module-version';
 
   interface Project { id: string; name: string; module_type: string; description: string; created_at: string; updated_at: string; }
 
@@ -226,6 +226,7 @@
          onclick={(e) => e.stopPropagation()}>
       {#each [
         { id: 'dashboard', icon: 'monitoring', label: '仪表盘' },
+        { id: 'analytics', icon: 'analytics', label: 'AI 统计' },
         { id: 'glossary', icon: 'menu_book', label: '术语表' },
         { id: 'crash', icon: 'bug_report', label: '崩溃分析' },
         { id: 'market-publish', icon: 'publish', label: '发布模块' },

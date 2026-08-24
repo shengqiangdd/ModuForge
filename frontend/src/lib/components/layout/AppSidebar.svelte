@@ -3,7 +3,7 @@
   import NotificationBell from '$lib/components/NotificationBell.svelte';
   import LocaleSwitcher from '$lib/components/LocaleSwitcher.svelte';
 
-  type Route = 'auth' | 'projects' | 'editor' | 'builds' | 'tests' | 'settings' | 'market' | 'market-publish' | 'dashboard' | 'ai' | 'mcp' | 'devices' | 'crash' | 'glossary';
+  type Route = 'auth' | 'projects' | 'editor' | 'builds' | 'tests' | 'settings' | 'market' | 'market-publish' | 'dashboard' | 'ai' | 'analytics' | 'mcp' | 'devices' | 'crash' | 'glossary';
 
   interface Props {
     current: Route;
@@ -38,6 +38,7 @@
       { id: 'tests', icon: 'bug_report', label: '测试' },
     ] : []),
     { id: 'ai', icon: 'psychology', label: 'AI 助手' },
+    { id: 'analytics', icon: 'analytics', label: 'AI 统计' },
     { id: 'mcp', icon: 'hub', label: 'MCP' },
     { id: 'glossary', icon: 'menu_book', label: '术语表' },
     { id: 'devices', icon: 'devices', label: $t('nav.devices') },

@@ -492,11 +492,11 @@ import * as cb from './lib/callbacks';
     .ai-page :global(.top-bar-model-wrap) { position: relative; flex: 1 1 0; min-width: 0; }
     .ai-page :global(.top-bar-model-wrap .top-bar-model) { width: 100%; min-height: 34px; font-size: 12px !important; padding: 4px 6px !important; }
     .ai-page :global(.model-dropdown) { left: 0 !important; right: 0 !important; width: 100% !important; max-width: 100% !important; box-sizing: border-box; }
-    .ai-page :global(.ai-input-area) { padding: 8px; padding-bottom: 60px; }
+    .ai-page :global(.ai-input-area) { padding: 8px; padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px)); }
     .ai-page :global(.ai-input-area textarea) { min-height: 60px !important; }
     .ai-page :global(.prompt-modal-overlay) { align-items: stretch !important; padding: 0 !important; }
     .ai-page :global(.prompt-modal-overlay > div) { max-width: 100% !important; max-height: 100% !important; border-radius: 0 !important; width: 100%; height: 100%; }
     .ai-page :global(.prompt-modal-overlay textarea) { height: 60vh !important; }
-    .ai-page :global(.messages-area) { padding: 6px; padding-bottom: 60px; min-height: 0; flex: 1 1 0%; }
+    .ai-page :global(.messages-area) { padding: 6px; min-height: 0; flex: 1 1 0%; }
   }
 </style>
