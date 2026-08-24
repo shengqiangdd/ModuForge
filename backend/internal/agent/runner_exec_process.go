@@ -716,6 +716,9 @@ func buildCompileErrorRetryPrompt(buildOutput string, compileErrors []string, at
 	return strings.Join(parts, "\n")
 }
 
+// Suppress unused warning — will be used when self-healing loop is integrated
+var _ = buildCompileErrorRetryPrompt
+
 // ErrorCategory represents a classified build error
 type BuildError struct {
 	Category    string // syntax, missing_dep, type_error, linker, security
