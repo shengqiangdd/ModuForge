@@ -91,7 +91,9 @@ func (s *BatchEditFileSkill) Execute(ctx context.Context, input map[string]inter
 
 		// Read file and validate old_text exists (S3 first, DB fallback)
 		projectPath := ResolveProjectPath(s.db, s.projectPath, projectID)
-		fullPath := filepath.Join(projectPath, path)
+		// Strip leading slash to get relative path for joining
+		relPath := strings.TrimPrefix(path, "/")
+		fullPath := filepath.Join(projectPath, relPath)
 		if !isPathWithin(projectPath, fullPath) {
 			return "", fmt.Errorf("edit %d: path traversal not allowed", i)
 		}
@@ -132,7 +134,9 @@ func (s *BatchEditFileSkill) Execute(ctx context.Context, input map[string]inter
 
 		// Write to disk (best-effort)
 		projectPath := ResolveProjectPath(s.db, s.projectPath, projectID)
-		fullPath := filepath.Join(projectPath, op.path)
+		// Strip leading slash to get relative path for joining
+		relPath := strings.TrimPrefix(op.path, "/")
+		fullPath := filepath.Join(projectPath, relPath)
 		os.MkdirAll(filepath.Dir(fullPath), 0755)
 		os.WriteFile(fullPath, []byte(newContent), 0644)
 

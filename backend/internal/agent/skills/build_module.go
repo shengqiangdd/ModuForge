@@ -135,7 +135,9 @@ func (s *BuildModuleSkill) Execute(ctx context.Context, input map[string]interfa
 				if err != nil {
 					continue
 				}
-				fullPath := filepath.Join(projectPath, path)
+				// Strip leading slash to get relative path for joining
+				relPath := strings.TrimPrefix(path, "/")
+				fullPath := filepath.Join(projectPath, relPath)
 				// DB/S3 is source of truth - always overwrite disk with content
 				dir := filepath.Dir(fullPath)
 				if err := os.MkdirAll(dir, 0755); err != nil {
