@@ -160,7 +160,7 @@ func CacheMiddleware(cache *ResponseCache) fiber.Handler {
 		// Check cache
 		if data, status, ok := cache.Get(key); ok {
 			c.Set("X-Cache", "HIT")
-			c.Set("Cache-Control", "public, max-age="+formatDuration(cache.ttl))
+			c.Set("Cache-Control", "public, max-age="+formatCacheMaxAge(cache.ttl))
 			c.Set("Vary", "Authorization")
 			c.Set("Content-Type", "application/json")
 			return c.Status(status).Send(data)
@@ -179,15 +179,15 @@ func CacheMiddleware(cache *ResponseCache) fiber.Handler {
 
 		// Set cache headers on the (non-cached) response too
 		c.Set("X-Cache", "MISS")
-		c.Set("Cache-Control", "public, max-age="+formatDuration(cache.ttl))
+		c.Set("Cache-Control", "public, max-age="+formatCacheMaxAge(cache.ttl))
 		c.Set("Vary", "Authorization")
 
 		return err
 	}
 }
 
-// formatDuration formats a Duration as seconds for Cache-Control max-age.
-func formatDuration(d time.Duration) string {
+// formatCacheMaxAge formats a Duration as seconds for Cache-Control max-age.
+func formatCacheMaxAge(d time.Duration) string {
 	return formatInt(int(d.Seconds()))
 }
 
