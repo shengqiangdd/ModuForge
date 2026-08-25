@@ -39,7 +39,7 @@
       const sizeRes = await apiGet(`/api/v1/adb/screen/size?serial=${serial}`);
       if (sizeRes) { screenWidth = sizeRes.width; screenHeight = sizeRes.height; }
       await refreshScreen();
-    } catch {}
+    } catch (e) { console.error('load screen info failed:', e); }
     screenLoading = false;
   }
 
@@ -49,7 +49,7 @@
     try {
       const res = await apiGet(`/api/v1/adb/screen/screenshot?serial=${serial}`);
       if (res?.image_base64) { screenImage = `data:image/png;base64,${res.image_base64}`; }
-    } catch {}
+    } catch (e) { console.error('refresh screen failed:', e); }
     screenRefreshing = false;
   }
 

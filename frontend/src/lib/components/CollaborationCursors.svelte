@@ -56,7 +56,7 @@
       try {
         const data = JSON.parse(event.data);
         handleWsMessage(data);
-      } catch {}
+      } catch (e) { console.warn('parse WS message failed:', e); }
     };
 
     ws.onclose = () => {

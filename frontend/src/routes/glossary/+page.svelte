@@ -39,7 +39,7 @@
       try {
         const payload = JSON.parse(atob(token.split('.')[1]));
         isAdmin = payload.role === 'admin';
-      } catch { isAdmin = false; }
+      } catch (e) { console.warn('解析 JWT 失败:', e); isAdmin = false; }
     }
     await loadItems();
   });
@@ -55,7 +55,7 @@
       if (token) headers['Authorization'] = `Bearer ${token}`;
       const r = await fetch(`/api/v1/glossary?${params}`, { headers });
       if (r.ok) { const d = await r.json(); items = d.items || []; }
-    } catch {}
+    } catch (e) { console.error('load glossary failed:', e); }
     loading = false;
   }
 
@@ -102,7 +102,7 @@
         if (r.ok) { showForm = false; await loadItems(); }
         else { const d = await r.json(); alert(d.error || '创建失败'); }
       }
-    } catch {}
+    } catch (e) { console.error('save glossary item failed:', e); }
     saving = false;
   }
 
@@ -113,7 +113,7 @@
       await fetch(`/api/v1/admin/glossary/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
       if (selectedItem?.id === id) selectedItem = null;
       await loadItems();
-    } catch {}
+    } catch (e) { console.error('delete glossary item failed:', e); }
   }
 </script>
 

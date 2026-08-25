@@ -8,17 +8,27 @@ import (
 	"hash/fnv"
 	"log"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/moduforge/backend/internal/evolution"
 	"github.com/moduforge/backend/internal/service"
 )
 
 // agentDebug enables verbose logging for hot-path operations.
 // Set MODUFORGE_DEBUG=1 to enable.
 var agentDebug = os.Getenv("MODUFORGE_DEBUG") == "1"
+
+// boolToFloat converts a boolean to a float64 (1.0 for true, 0.0 for false).
+func boolToFloat(b bool) float64 {
+	if b {
+		return 1.0
+	}
+	return 0.0
+}
 
 // Optimization 42: Goroutine leak detector
 var (
@@ -192,6 +202,9 @@ type AgentRunner struct {
 	// TokenOptimizer for token-aware conversation pruning and tool result caching
 	tokenOptimizer *TokenOptimizer
 
+	// Evolution: experience store for learning from past runs
+	experienceStore *evolution.ExperienceStore
+
 	// bgCancel cancels the background context used by long-lived goroutines
 	bgCancel context.CancelFunc
 }
@@ -232,6 +245,7 @@ func NewAgentRunner(registry *SkillRegistry, apiKey, endpoint, model string, db 
 		sessionLearner:   NewSessionLearner(100),
 		diffCache:        NewDifferentialCache(bgCtx, 2*time.Minute),
 		tokenOptimizer:   NewTokenOptimizer(bgCtx, ""),
+		experienceStore:  evolution.NewExperienceStore(filepath.Join(".", "data", "evolution")),
 		bgCancel:         bgCancel,
 	}
 	go r.startSessionCacheCleanup()
@@ -833,6 +847,18 @@ You are running WITHOUT a project context. This means:
 	log.Printf("[Agent:Performance] Session=%s Duration=%v LLM_Calls=%d Tool_Calls=%d Errors=%d Retries=%d",
 		sessionID, totalDuration, perfSummary["llm_call_count"], perfSummary["tool_call_count"],
 		perfSummary["error_count"], perfSummary["retry_count"])
+
+	// Record experience for learning from past runs
+	if r.experienceStore != nil {
+		runSuccess := answerSent && perfSummary["error_count"].(int) == 0
+		r.experienceStore.SaveExperience(evolution.Experience{
+			ErrorPattern: task,
+			FixSolution:  fmt.Sprintf("session=%s model=%s iterations=%d", sessionID, resolvedModel, perfSummary["llm_call_count"]),
+			SuccessRate:  boolToFloat(runSuccess),
+			Timestamp:    time.Now(),
+			Source:       fmt.Sprintf("agent_run:%s", sessionID),
+		})
+	}
 
 	if iterCancel != nil {
 		iterCancel()

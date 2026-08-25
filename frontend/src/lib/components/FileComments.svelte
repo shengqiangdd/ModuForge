@@ -70,7 +70,7 @@
         const data = await res.json();
         comments = data.comments || [];
       }
-    } catch {}
+    } catch (e) { console.error('load comments failed:', e); }
     loading = false;
   }
 
@@ -92,7 +92,7 @@
         newCommentLine = 0;
         await loadComments();
       }
-    } catch {}
+    } catch (e) { console.error('add comment failed:', e); }
     submitting = false;
   }
 
@@ -110,7 +110,7 @@
         replyingTo = null;
         await loadComments();
       }
-    } catch {}
+    } catch (e) { console.error('reply comment failed:', e); }
     replying = false;
   }
 
@@ -123,7 +123,7 @@
       if (res.ok) {
         await loadComments();
       }
-    } catch {}
+    } catch (e) { console.error('delete comment failed:', e); }
   }
 
   function toggleLineComments(line: number) {

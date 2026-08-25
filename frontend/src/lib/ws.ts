@@ -37,7 +37,7 @@ class WSClient {
       this.ws.onclose = null;
       this.ws.onerror = null;
       this.ws.onmessage = null;
-      try { this.ws.close(); } catch {}
+      try { this.ws.close(); } catch (e) { console.error('WS close failed:', e); }
       this.ws = null;
     }
 
@@ -78,7 +78,7 @@ class WSClient {
     this.connectTimeout = setTimeout(() => {
       if (this.ws?.readyState === WebSocket.CONNECTING) {
         console.warn('[WS] connection timeout, closing');
-        try { this.ws.close(); } catch {}
+        try { this.ws.close(); } catch (e) { console.error('WS close failed:', e); }
       }
     }, 20000);
 
@@ -104,7 +104,7 @@ class WSClient {
         if (callbacks) callbacks.forEach(cb => cb(msg.data));
         const allCallbacks = this.listeners.get('*');
         if (allCallbacks) allCallbacks.forEach(cb => cb(msg));
-      } catch {}
+      } catch (e) { console.error('WS parse message failed:', e); }
     };
 
     this.ws.onclose = (event) => {
@@ -138,7 +138,7 @@ class WSClient {
       this.ws.onclose = null;
       this.ws.onerror = null;
       this.ws.onmessage = null;
-      try { this.ws.close(); } catch {}
+      try { this.ws.close(); } catch (e) { console.error('WS close failed:', e); }
       this.ws = null;
     }
   }
@@ -146,7 +146,7 @@ class WSClient {
   private startPing() {
     this.pingInterval = setInterval(() => {
       if (this.ws?.readyState === WebSocket.OPEN) {
-        try { this.ws.send(JSON.stringify({ type: 'ping' })); } catch {}
+        try { this.ws.send(JSON.stringify({ type: 'ping' })); } catch (e) { console.error('WS send failed:', e); }
       }
     }, 25000);
   }
@@ -164,7 +164,7 @@ class WSClient {
     this.idleTimeout = setTimeout(() => {
       if (this.ws?.readyState === WebSocket.OPEN) {
         console.warn('[WS] idle timeout, reconnecting');
-        try { this.ws.close(); } catch {}
+        try { this.ws.close(); } catch (e) { console.error('WS close failed:', e); }
       }
     }, 5 * 60 * 1000);
   }

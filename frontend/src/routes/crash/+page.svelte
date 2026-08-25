@@ -49,7 +49,7 @@
       ]);
       if (logsR.ok) { const d = await logsR.json(); logs = d.logs || []; }
       if (statsR.ok) stats = await statsR.json();
-    } catch {}
+    } catch (e) { console.error('load crash logs failed:', e); }
     loading = false;
   }
 

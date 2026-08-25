@@ -375,7 +375,7 @@
     try {
       const fileData = await client.get<{ id?: number; path: string }[]>(`/projects/${projectId}/files`);
       files = (fileData || []).map(f => ({ ...f, path: f.path })).sort(folderFirstCompare);
-    } catch {}
+    } catch (e) { console.error('load project files failed:', e); }
   }
 
   function handleEditorChange(val: string) {

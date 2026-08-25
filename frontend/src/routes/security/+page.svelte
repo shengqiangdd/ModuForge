@@ -61,7 +61,7 @@
     try {
       const r = await fetch('/api/v1/projects/0/vuln-history', { headers: { Authorization: `Bearer ${getToken()}` } });
       if (r.ok) { const d = await r.json(); history = d.history || d || []; }
-    } catch {}
+    } catch (e) { console.error('load vuln history failed:', e); }
     loading = false;
   }
 
@@ -82,7 +82,7 @@
           created_at: v.created_at || new Date().toISOString(),
         }));
       }
-    } catch {}
+    } catch (e) { console.error('load vulns failed:', e); }
     loading = false;
   }
 

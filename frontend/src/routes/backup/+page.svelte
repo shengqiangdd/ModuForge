@@ -56,7 +56,7 @@
     try {
       const r = await fetch('/api/v1/backup/schedules', { headers: { Authorization: `Bearer ${getToken()}` } });
       if (r.ok) { const d = await r.json(); schedules = d.schedules || d || []; }
-    } catch {}
+    } catch (e) { console.error('load backup schedules failed:', e); }
     loading = false;
   }
 
@@ -64,7 +64,7 @@
     try {
       const r = await fetch('/api/v1/backup/history', { headers: { Authorization: `Bearer ${getToken()}` } });
       if (r.ok) { const d = await r.json(); history = d.history || d || []; }
-    } catch {}
+    } catch (e) { console.error('load backup history failed:', e); }
   }
 
   async function createSchedule() {

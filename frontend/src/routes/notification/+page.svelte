@@ -49,7 +49,7 @@
     try {
       const r = await fetch('/api/v1/notifications', { headers: { Authorization: `Bearer ${getToken()}` } });
       if (r.ok) { const d = await r.json(); notifications = d.notifications || d || []; }
-    } catch {}
+    } catch (e) { console.error('load notifications failed:', e); }
     loading = false;
   }
 
@@ -57,7 +57,7 @@
     try {
       const r = await fetch(`/api/v1/notifications/${id}/read`, { method: 'PUT', headers: { Authorization: `Bearer ${getToken()}` } });
       if (r.ok) notifications = notifications.map(n => n.id === id ? { ...n, read: true } : n);
-    } catch {}
+    } catch (e) { console.error('mark notification read failed:', e); }
   }
 
   async function markAllRead() {
@@ -71,7 +71,7 @@
     try {
       const r = await fetch(`/api/v1/notifications/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${getToken()}` } });
       if (r.ok) notifications = notifications.filter(n => n.id !== id);
-    } catch {}
+    } catch (e) { console.error('delete notification failed:', e); }
   }
 
   const unreadCount = $derived(notifications.filter(n => !n.read).length);

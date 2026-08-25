@@ -333,7 +333,7 @@ export function streamRequest(path: string, body: unknown, idleMs = 90000): Even
           const errText = await res.text();
           const errJson = JSON.parse(errText);
           errMsg = errJson.error || errJson.message || errMsg;
-        } catch {}
+        } catch (e) { console.warn('parse error response failed:', e); }
         window.dispatchEvent(new CustomEvent('ai-stream-error', { detail: errMsg }));
         ctrl.abort('http error');
         return;

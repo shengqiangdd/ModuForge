@@ -68,7 +68,7 @@
         hasMore = items.length >= limit;
         offset += items.length;
       }
-    } catch {}
+    } catch (e) { console.error('load activities failed:', e); }
     loading = false;
     loadingMore = false;
   }

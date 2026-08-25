@@ -95,7 +95,7 @@
     }
     // Destroy old decoder
     if (decoder) {
-      try { decoder.close(); } catch {}
+      try { decoder.close(); } catch (e) { console.warn('decoder close failed:', e); }
       decoder = null;
     }
     if (!('VideoDecoder' in globalThis)) return false;
@@ -300,7 +300,7 @@
           if (msg.action === 'error') {
             console.warn('[ScreenWS] server error:', msg.message);
           }
-        } catch {}
+        } catch (e) { console.warn('parse WS message failed:', e); }
       }
     };
 
@@ -332,7 +332,7 @@
     clearTimers();
     if (ws) { ws.close(); ws = null; }
     connected = false;
-    if (decoder) { try { decoder.close(); } catch {} decoder = null; }
+    if (decoder) { try { decoder.close(); } catch (e) { console.warn('decoder close failed:', e); } decoder = null; }
   }
 
   // ─── Page Visibility — reconnect when tab comes back ───

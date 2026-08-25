@@ -44,7 +44,7 @@
     try {
       const r = await fetch('/api/v1/tags', { headers: { Authorization: `Bearer ${getToken()}` } });
       if (r.ok) { const d = await r.json(); tags = d.tags || d || []; }
-    } catch {}
+    } catch (e) { console.error('load tags failed:', e); }
     loading = false;
   }
 
@@ -92,7 +92,7 @@
     try {
       const r = await fetch(`/api/v1/tags/${tag.id}/projects`, { headers: { Authorization: `Bearer ${getToken()}` } });
       if (r.ok) { const d = await r.json(); tagProjects = d.projects || d || []; }
-    } catch {}
+    } catch (e) { console.error('load tag projects failed:', e); }
     loadingProjects = false;
   }
 

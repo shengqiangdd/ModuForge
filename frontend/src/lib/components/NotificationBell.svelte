@@ -28,7 +28,7 @@
         const data = await res.json();
         unreadCount = data.count || 0;
       }
-    } catch {}
+    } catch (e) { console.error('load unread count failed:', e); }
   }
 
   async function loadList() {
@@ -43,7 +43,7 @@
         const data = await res.json();
         notifications = data.notifications || [];
       }
-    } catch {}
+    } catch (e) { console.error('load notifications failed:', e); }
     loading = false;
   }
 
@@ -57,7 +57,7 @@
       });
       notifications = notifications.map((n: any) => n.id === id ? { ...n, is_read: true } : n);
       unreadCount = Math.max(0, unreadCount - 1);
-    } catch {}
+    } catch (e) { console.error('mark notification read failed:', e); }
   }
 
   async function markAllRead() {
@@ -70,7 +70,7 @@
       });
       notifications = notifications.map((n: any) => ({ ...n, is_read: true }));
       unreadCount = 0;
-    } catch {}
+    } catch (e) { console.error('mark all read failed:', e); }
   }
 
   function toggle() {

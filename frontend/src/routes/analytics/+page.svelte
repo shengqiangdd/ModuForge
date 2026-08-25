@@ -25,7 +25,7 @@ onMount(async () => {
     try {
       const r = await client.get<any>('/auth/profile');
       isAdmin = r?.is_admin || r?.role === 'admin' || false;
-    } catch {}
+    } catch (e) { console.error('load profile failed:', e); }
   }
   loadAnalytics();
 });

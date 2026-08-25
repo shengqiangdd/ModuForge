@@ -146,7 +146,7 @@
       if (parts.length !== 3) return null;
       const payload = JSON.parse(atob(parts[1]));
       return payload.exp ? payload.exp * 1000 : null;
-    } catch { return null; }
+    } catch (e) { console.warn('parse JWT failed:', e); return null; }
   }
 
   async function scheduleTokenRefresh(_initialToken?: string) {
@@ -172,9 +172,9 @@
           token = data.token;
           setToken(data.token, true);
           scheduleTokenRefresh();
-          try { ws.disconnect(); ws.connect(); } catch {}
+          try { ws.disconnect(); ws.connect(); } catch (e) { console.error('WS reconnect failed:', e); }
         }
-      } catch {}
+      } catch (e) { console.error('token refresh failed:', e); }
     }, refreshIn);
   }
 
@@ -281,7 +281,7 @@
         current = 'projects';
         loadProjects();
         scheduleTokenRefresh();
-        try { ws.connect(); } catch {}
+        try { ws.connect(); } catch (e) { console.error('WS connect failed:', e); }
       } else if (saved) {
         const refreshed = await tryRefreshToken();
         if (refreshed) {
@@ -289,7 +289,7 @@
           current = 'projects';
           loadProjects();
           scheduleTokenRefresh();
-          try { ws.connect(); } catch {}
+          try { ws.connect(); } catch (e) { console.error('WS connect failed:', e); }
         } else {
           clearToken();
         }
