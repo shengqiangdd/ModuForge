@@ -112,21 +112,47 @@ func (s *BuildModuleSkill) Execute(ctx context.Context, input map[string]interfa
 		}
 
 		// Detect common top-level directory (e.g., all files under "hello-world/")
+		// Strategy: find the deepest common ancestor of all file paths, which is the module root.
 		effectivePath := projectPath
-		commonPrefix := ""
-		if len(files) > 0 {
-			parts := strings.Split(files[0].relPath, "/")
-			if len(parts) > 1 {
-				commonPrefix = parts[0]
-				for _, fe := range files {
-					fp := strings.Split(fe.relPath, "/")
-					if len(fp) == 0 || fp[0] != commonPrefix {
-						commonPrefix = ""
+		if len(files) > 1 {
+			// Split all paths and find common prefix components
+			splitPaths := make([][]string, len(files))
+			for i, fe := range files {
+				splitPaths[i] = strings.Split(fe.relPath, "/")
+			}
+			minLen := len(splitPaths[0])
+			for _, sp := range splitPaths {
+				if len(sp) < minLen {
+					minLen = len(sp)
+				}
+			}
+			commonComponents := 0
+			for ci := 0; ci < minLen; ci++ {
+				val := splitPaths[0][ci]
+				allMatch := true
+				for _, sp := range splitPaths {
+					if sp[ci] != val {
+						allMatch = false
 						break
 					}
 				}
+				if !allMatch {
+					break
+				}
+				commonComponents = ci + 1
 			}
-			if commonPrefix != "" && commonPrefix != "." {
+			if commonComponents > 0 {
+				prefixParts := splitPaths[0][:commonComponents]
+				commonPrefix = strings.Join(prefixParts, "/")
+				effectivePath = filepath.Join(projectPath, commonPrefix)
+				log.WriteString(fmt.Sprintf("  📁 Detected module root: %s/\n", commonPrefix))
+				os.MkdirAll(effectivePath, 0755)
+			}
+		} else if len(files) == 1 {
+			// Single file: use its directory as root
+			dir := filepath.Dir(files[0].relPath)
+			if dir != "" && dir != "." {
+				commonPrefix = dir
 				effectivePath = filepath.Join(projectPath, commonPrefix)
 				log.WriteString(fmt.Sprintf("  📁 Detected module root: %s/\n", commonPrefix))
 				os.MkdirAll(effectivePath, 0755)
