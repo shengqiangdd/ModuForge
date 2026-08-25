@@ -19,7 +19,7 @@ type seqToolExecState struct {
 	r                  *AgentRunner
 	ctx                context.Context
 	w                  SSEWriter
-	cfg                RunConfig
+	cfg                *RunConfig
 	sessionID          string
 	reqProviderID      string
 	reqModel           string

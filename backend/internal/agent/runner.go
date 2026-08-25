@@ -768,7 +768,7 @@ You are running WITHOUT a project context. This means:
 		// Execute sequential tools
 		editFileConsecutiveFailures := 0
 		seqState := &seqToolExecState{
-			r: r, ctx: ctx, w: w, cfg: cfg, sessionID: sessionID,
+			r: r, ctx: ctx, w: w, cfg: &cfg, sessionID: sessionID,
 			reqProviderID: reqProviderID, reqModel: reqModel,
 			m: m, modelTier: modelTier, toolCache: toolCache,
 			callBudget: callBudget, fileLock: fileLock,
