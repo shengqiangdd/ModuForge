@@ -6,6 +6,7 @@ import (
 )
 
 var globalKB *KnowledgeBase
+var globalQualityTracker *QualityTracker
 
 // Init loads or builds the knowledge base.
 // Call this once at startup. If the persisted KB exists, load it;
@@ -24,6 +25,7 @@ func Init(baseDir string) error {
 	}
 
 	globalKB = kb
+	globalQualityTracker = NewQualityTracker()
 	return nil
 }
 
@@ -131,4 +133,19 @@ func GetKB() *KnowledgeBase {
 // SetKB sets the global knowledge base (for testing).
 func SetKB(kb *KnowledgeBase) {
 	globalKB = kb
+}
+
+// RecordQueryOutcome records the outcome of a RAG query for quality tracking.
+func RecordQueryOutcome(query string, retrieved []string, usedFiles []string) {
+	if globalQualityTracker != nil {
+		globalQualityTracker.RecordQuery(query, retrieved, usedFiles)
+	}
+}
+
+// GetQualityMetrics returns current RAG quality metrics.
+func GetQualityMetrics() (float64, int) {
+	if globalQualityTracker == nil {
+		return 0, 0
+	}
+	return globalQualityTracker.GetAveragePrecision(), globalQualityTracker.QueryCount()
 }

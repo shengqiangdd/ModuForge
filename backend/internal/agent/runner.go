@@ -208,6 +208,9 @@ type AgentRunner struct {
 	reviewStore     *evolution.ReviewStore
 	promptOptimizer *evolution.PromptOptimizer
 
+	// Phase 3: feedback loop for closed-loop evolution
+	feedbackLoop *FeedbackLoop
+
 	// bgCancel cancels the background context used by long-lived goroutines
 	bgCancel context.CancelFunc
 }
@@ -251,6 +254,7 @@ func NewAgentRunner(registry *SkillRegistry, apiKey, endpoint, model string, db 
 		experienceStore:  evolution.NewExperienceStore(filepath.Join(".", "data", "evolution")),
 		reviewStore:      evolution.NewReviewStore(filepath.Join(".", "data", "evolution")),
 		promptOptimizer:  evolution.NewPromptOptimizer(filepath.Join(".", "data", "evolution")),
+		feedbackLoop:     NewFeedbackLoop(filepath.Join(".", "data", "evolution")),
 		bgCancel:         bgCancel,
 	}
 	go r.startSessionCacheCleanup()
@@ -365,6 +369,19 @@ func (r *AgentRunner) Run(ctx context.Context, task string, userID string, messa
 			}
 			recent := recommendations[start:]
 			task = fmt.Sprintf("%s\n\n[历史经验提示] 之前的成功模式: %s", task, strings.Join(recent, "; "))
+		}
+	}
+
+	// Phase 3: Inject FeedbackLoop recommendations into task context
+	if r.feedbackLoop != nil {
+		fbRecommendations := r.feedbackLoop.GetRecommendations("general")
+		if len(fbRecommendations) > 0 {
+			start := 0
+			if len(fbRecommendations) > 3 {
+				start = len(fbRecommendations) - 3
+			}
+			recent := fbRecommendations[start:]
+			task = fmt.Sprintf("%s\n\n[反馈闭环提示] 历史成功模式: %s", task, strings.Join(recent, "; "))
 		}
 	}
 
@@ -950,6 +967,26 @@ You are running WITHOUT a project context. This means:
 		)
 		r.reviewStore.SaveReview(report)
 
+		// Phase 3: Enhanced CodeReview — detect potential issues on successful builds
+		if buildSuccess {
+			detailedIssues := detectPotentialIssues(task)
+			if len(detailedIssues) > 0 {
+				limit := 5
+				if len(detailedIssues) < limit {
+					limit = len(detailedIssues)
+				}
+				reviewMsg := fmt.Sprintf("CodeReview 发现 %d 个潜在问题:\n", len(detailedIssues))
+				for _, issue := range detailedIssues[:limit] {
+					reviewMsg += fmt.Sprintf("- %s\n", issue)
+				}
+				w.WriteSSE(map[string]interface{}{
+					"type":    "step",
+					"step":    "code_review",
+					"content": reviewMsg,
+				})
+			}
+		}
+
 		// Periodically analyze for prompt optimizations
 		if r.promptOptimizer != nil && r.experienceStore != nil {
 			exps := r.experienceStore.GetAll()
@@ -962,8 +999,61 @@ You are running WITHOUT a project context. This means:
 		}
 	}
 
+	// Phase 3: Record outcome in feedback loop for closed-loop evolution
+	if r.feedbackLoop != nil {
+		runSuccess := answerSent && perfSummary["error_count"].(int) == 0
+		var errorType string
+		var fixStrategy string
+		if !runSuccess {
+			if !answerSent {
+				errorType = "no_answer"
+			} else if perfSummary["error_count"].(int) > 0 {
+				errorType = "tool_errors"
+			}
+		}
+		r.feedbackLoop.RecordOutcome(BuildOutcome{
+			TaskID:      sessionID,
+			Language:    "auto",
+			Success:     runSuccess,
+			Duration:    time.Since(startTime),
+			ErrorType:   errorType,
+			FixStrategy: fixStrategy,
+		})
+	}
+
 	if iterCancel != nil {
 		iterCancel()
 	}
 	return nil
+}
+
+// detectPotentialIssues performs lightweight static analysis on the task context
+// to flag common problems. Returns a list of human-readable issue descriptions.
+func detectPotentialIssues(task string) []string {
+	var issues []string
+
+	lower := strings.ToLower(task)
+
+	// Detect hardcoded secrets / sensitive keywords
+	secretPatterns := []string{"password", "secret", "api_key", "apikey", "token", "private_key", "credential"}
+	for _, p := range secretPatterns {
+		if strings.Contains(lower, p) && strings.Contains(lower, "=") {
+			issues = append(issues, "potential_hardcoded_secret: "+p)
+		}
+	}
+
+	// Detect very long functions (task description mentions 100+ lines or similar)
+	if strings.Contains(lower, "function") && (strings.Contains(lower, "100 line") || strings.Contains(lower, "200 line")) {
+		issues = append(issues, "potentially_long_function: consider splitting into smaller functions")
+	}
+
+	// Detect TODO/FIXME/HACK markers
+	todoMarkers := []string{"todo", "fixme", "hack", "xxx", "workaround"}
+	for _, marker := range todoMarkers {
+		if strings.Contains(lower, marker) {
+			issues = append(issues, "unresolved_marker: "+marker)
+		}
+	}
+
+	return issues
 }
