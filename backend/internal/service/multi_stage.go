@@ -6,7 +6,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"os"
@@ -20,6 +19,7 @@ import (
 	"github.com/moduforge/backend/internal/domain"
 	"github.com/moduforge/backend/internal/knowledge"
 	"github.com/moduforge/backend/internal/quality"
+	"github.com/moduforge/backend/internal/saferead"
 )
 
 // MultiStageBuild is the enhanced build pipeline for free models.
@@ -593,7 +593,7 @@ func (s *AIService) doLLMRequest(
 	defer httpResp.Body.Close()
 
 	if httpResp.StatusCode >= 400 {
-		respBody, _ := io.ReadAll(httpResp.Body)
+		respBody, _ := saferead.SafeReadAll(httpResp.Body)
 		return "", fmt.Errorf("LLM HTTP %d: %s", httpResp.StatusCode, string(respBody[:min(len(respBody), 500)]))
 	}
 

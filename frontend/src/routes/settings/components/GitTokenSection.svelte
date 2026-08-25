@@ -22,7 +22,7 @@
         maskedToken = data.token || '';
         rawToken = data.raw_token || '';
       }
-    } catch {}
+    } catch (e) { console.error('Failed to load GitHub token:', e); }
     loading = false;
   }
 

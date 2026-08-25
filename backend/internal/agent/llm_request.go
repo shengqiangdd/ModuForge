@@ -10,6 +10,8 @@ import (
 	"log"
 	"net/http"
 	"strings"
+
+	"github.com/moduforge/backend/internal/saferead"
 	"sync"
 	"time"
 )
@@ -411,7 +413,7 @@ func buildLLMRequestBody(messages []map[string]interface{}, tools []ToolDef, cfg
 }
 
 func handleLLMHTTPError(resp *http.Response, modelTier ModelTier, reqProviderID, model string) (error, bool) {
-	respBody, _ := io.ReadAll(resp.Body)
+	respBody, _ := saferead.SafeReadAll(resp.Body)
 	resp.Body.Close()
 	errMsg := fmt.Sprintf("LLM error (HTTP %d) provider=%s model=%s: %s", resp.StatusCode, reqProviderID, model, string(respBody))
 	err := errors.New(errMsg)

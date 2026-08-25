@@ -40,7 +40,7 @@
       rememberMe = true;
     }
     if (savedPass) {
-      try { password = atob(savedPass); } catch {}
+      try { password = atob(savedPass); } catch (e) { console.warn('Failed to decode saved password:', e); }
     }
   });
 

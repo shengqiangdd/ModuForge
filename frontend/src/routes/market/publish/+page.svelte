@@ -78,7 +78,7 @@
         const data = await res.json();
         searchResults = (data.modules || []).filter((m: any) => !dependencies.some(d => d.id === m.slug));
       }
-    } catch {}
+    } catch (e) { console.error('Failed to search modules:', e); }
     searchingDeps = false;
   }
 
@@ -112,7 +112,7 @@
         body: JSON.stringify({ title: title.trim(), description: description.trim(), category, tags: tags.trim(), version, version_code: versionCode, changelog: changelog.trim(), cover_image: coverImage, license, author: 'Anonymous', dependencies }),
       });
       if (res.ok) published = true;
-    } catch {}
+    } catch (e) { console.error('Failed to publish module:', e); }
     publishing = false;
   }
 </script>

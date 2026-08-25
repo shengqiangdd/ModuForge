@@ -6,7 +6,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"os"
@@ -17,6 +16,7 @@ import (
 	"time"
 
 	"github.com/moduforge/backend/internal/domain"
+	"github.com/moduforge/backend/internal/saferead"
 )
 
 // GenerateModule 用 LLM 生成模块代码
@@ -345,10 +345,12 @@ module.prop, customize.sh, META-INF/(update-binary + updater-script含#MAGISK)
 	defer httpResp.Body.Close()
 
 	if httpResp.StatusCode >= 400 {
-		bodyBytes, _ := io.ReadAll(httpResp.Body)
+		bodyBytes, _ := saferead.SafeReadAll(httpResp.Body)
 		errMsg := fmt.Sprintf("LLM error (HTTP %d)", httpResp.StatusCode)
 		var errBody struct {
-			Error struct{ Message string `json:"message"` } `json:"error"`
+			Error struct {
+				Message string `json:"message"`
+			} `json:"error"`
 		}
 		if json.Unmarshal(bodyBytes, &errBody) == nil && errBody.Error.Message != "" {
 			errMsg = errBody.Error.Message
@@ -397,7 +399,7 @@ module.prop, customize.sh, META-INF/(update-binary + updater-script含#MAGISK)
 	log.Printf("[AutoBuild] After extractJSONBlock length: %d, first 200: %s", len(content), truncateStr(content, 200))
 
 	var result struct {
-		Files   []struct {
+		Files []struct {
 			Path    string `json:"path"`
 			Content string `json:"content"`
 		} `json:"files"`
@@ -605,7 +607,6 @@ func isValidFilesJSON(s string) bool {
 	return false
 }
 
-
 // truncateStr truncates a string to maxLen characters for logging.
 func truncateStr(s string, maxLen int) string {
 	if len(s) <= maxLen {
@@ -726,9 +727,9 @@ func (s *AIService) streamBuildLog(ctx context.Context, buildID string, w *bufio
 			}
 			mu.Lock()
 			s.sendSSE(w, map[string]interface{}{
-				"type":      "build_status",
-				"build_id":  buildID,
-				"status":    status,
+				"type":     "build_status",
+				"build_id": buildID,
+				"status":   status,
 			})
 			mu.Unlock()
 
@@ -818,8 +819,8 @@ module.prop, customize.sh, META-INF/(update-binary + updater-script含#MAGISK)
 		"messages": []map[string]string{
 			{"role": "system", "content": systemPrompt},
 		},
-		"stream":             true,
-		"response_format":    map[string]string{"type": "json_object"},
+		"stream":          true,
+		"response_format": map[string]string{"type": "json_object"},
 	}
 	for _, m := range userMsg {
 		reqBody["messages"] = append(reqBody["messages"].([]map[string]string),
@@ -844,7 +845,7 @@ module.prop, customize.sh, META-INF/(update-binary + updater-script含#MAGISK)
 	defer httpResp.Body.Close()
 
 	if httpResp.StatusCode >= 400 {
-		bodyBytes, _ := io.ReadAll(httpResp.Body)
+		bodyBytes, _ := saferead.SafeReadAll(httpResp.Body)
 		return "", fmt.Errorf("paid model LLM error (HTTP %d): %s", httpResp.StatusCode, string(bodyBytes))
 	}
 
@@ -981,9 +982,9 @@ module.prop, customize.sh, META-INF/(update-binary + updater-script含#MAGISK)
 			s.db.QueryRow("SELECT status FROM builds WHERE id = ?", build.ID).Scan(&status)
 			mu.Lock()
 			s.sendSSE(w, map[string]interface{}{
-				"type":      "build_status",
-				"build_id":  build.ID,
-				"status":    status,
+				"type":     "build_status",
+				"build_id": build.ID,
+				"status":   status,
 			})
 			mu.Unlock()
 			if status == "success" || status == "failed" || status == "error" {

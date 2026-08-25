@@ -16,7 +16,7 @@
         agentMaxIterations = parseInt(data.max_iterations) || 50;
         agentMaxResultLen = parseInt(data.max_result_len) || 32768;
       }
-    } catch {}
+    } catch (e) { console.error('Failed to load agent config:', e); }
   }
 
   async function saveAgentConfig() {

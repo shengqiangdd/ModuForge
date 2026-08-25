@@ -24,7 +24,7 @@ export async function fetchModules(params: {
   try {
     const res = await fetch(`/api/v1/market/modules?${sp}`, { headers });
     if (res.ok) { const d = await res.json(); return { modules: d.modules || [], total: d.total || 0 }; }
-  } catch {}
+  } catch (e) { console.error('Failed to fetch modules:', e); }
   return { modules: [], total: 0 };
 }
 
@@ -44,7 +44,7 @@ export async function fetchFavoriteIds(): Promise<Set<string>> {
       for (const f of (d.favorites || [])) ids.add(`mod_${String(f.item_id).padStart(4, '0')}`);
       return ids;
     }
-  } catch {}
+  } catch (e) { console.error('Failed to fetch favorite IDs:', e); }
   return new Set();
 }
 
@@ -64,7 +64,7 @@ export async function toggleFavoriteApi(modId: string, isFav: boolean): Promise<
     }
     if (r.status === 401) { localStorage.removeItem('moduforge_token'); return null; }
     return !isFav;
-  } catch {}
+  } catch (e) { console.error('Failed to toggle favorite:', e); }
   return null;
 }
 
@@ -80,7 +80,7 @@ export async function fetchAllTags(): Promise<{ id: number; name: string; color:
     const r = await fetch('/api/v1/tags', { headers });
     if (r.status === 401) return [];
     if (r.ok) { const d = await r.json(); return d.tags || []; }
-  } catch {}
+  } catch (e) { console.error('Failed to fetch tags:', e); }
   return [];
 }
 
@@ -92,7 +92,7 @@ export async function fetchReviews(slug: string): Promise<Review[]> {
   try {
     const res = await fetch(`/api/v1/market/module/${slug}/reviews`);
     if (res.ok) { const d = await res.json(); return d.reviews || []; }
-  } catch {}
+  } catch (e) { console.error('Failed to fetch reviews:', e); }
   return [];
 }
 
@@ -100,7 +100,7 @@ export async function fetchHealthScore(slug: string): Promise<HealthScore | null
   try {
     const r = await fetch(`/api/v1/market/module/${slug}/health`);
     if (r.ok) return await r.json();
-  } catch {}
+  } catch (e) { console.error('Failed to fetch health score:', e); }
   return null;
 }
 
@@ -108,7 +108,7 @@ export async function fetchModuleTags(slug: string): Promise<ModuleTag[]> {
   try {
     const r = await fetch(`/api/v1/market/module/${slug}/tags`);
     if (r.ok) { const d = await r.json(); return d.tags || []; }
-  } catch {}
+  } catch (e) { console.error('Failed to fetch module tags:', e); }
   return [];
 }
 
@@ -118,7 +118,7 @@ export async function starModuleApi(slug: string): Promise<number | null> {
     const res = await fetch(`/api/v1/market/module/${slug}/star`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}` } });
     if (res.status === 401) { localStorage.removeItem('moduforge_token'); return null; }
     if (res.ok) { const d = await res.json(); return d.stars; }
-  } catch {}
+  } catch (e) { console.error('Failed to star module:', e); }
   return null;
 }
 
@@ -132,7 +132,7 @@ export async function submitReviewApi(slug: string, rating: number, comment: str
     });
     if (res.status === 401) { localStorage.removeItem('moduforge_token'); return false; }
     return res.ok;
-  } catch {}
+  } catch (e) { console.error('Failed to submit review:', e); }
   return false;
 }
 
@@ -146,7 +146,7 @@ export async function fetchVersions(slug: string): Promise<ModuleVersion[]> {
     const res = await fetch(`/api/v1/market/module/${slug}/versions`, { headers: { 'Authorization': `Bearer ${token}` } });
     if (res.status === 401) { localStorage.removeItem('moduforge_token'); return []; }
     if (res.ok) { const d = await res.json(); return d.versions || []; }
-  } catch {}
+  } catch (e) { console.error('Failed to fetch versions:', e); }
   return [];
 }
 
@@ -160,7 +160,7 @@ export async function rollbackApi(slug: string, versionId: string): Promise<bool
     });
     if (res.status === 401) { localStorage.removeItem('moduforge_token'); return false; }
     return res.ok;
-  } catch {}
+  } catch (e) { console.error('Failed to rollback:', e); }
   return false;
 }
 
@@ -174,7 +174,7 @@ export async function updateVersionApi(slug: string, versionCode: string, change
     });
     if (res.status === 401) { localStorage.removeItem('moduforge_token'); return false; }
     return res.ok;
-  } catch {}
+  } catch (e) { console.error('Failed to update version:', e); }
   return false;
 }
 
@@ -186,7 +186,7 @@ export async function fetchChangelogs(slug: string): Promise<ChangelogEntry[]> {
   try {
     const r = await fetch(`/api/v1/market/module/${slug}/changelogs`);
     if (r.ok) { const d = await r.json(); return d.changelogs || []; }
-  } catch {}
+  } catch (e) { console.error('Failed to fetch changelogs:', e); }
   return [];
 }
 
@@ -198,7 +198,7 @@ export async function fetchInstallStats(slug: string, period: string): Promise<I
   try {
     const r = await fetch(`/api/v1/market/module/${slug}/install-stats?period=${period}&days=30`);
     if (r.ok) { const d = await r.json(); return d.stats || []; }
-  } catch {}
+  } catch (e) { console.error('Failed to fetch install stats:', e); }
   return [];
 }
 
@@ -206,7 +206,7 @@ export async function fetchTrending(): Promise<MarketModule[]> {
   try {
     const r = await fetch('/api/v1/market/stats/trending');
     if (r.ok) { const d = await r.json(); return d.modules?.slice(0, 10) || []; }
-  } catch {}
+  } catch (e) { console.error('Failed to fetch trending:', e); }
   return [];
 }
 
@@ -228,7 +228,7 @@ export async function runBatchApi(action: string, slugs: string[]): Promise<{ sl
       const d = await r.json();
       return (d.results || []).map((res: any) => ({ ...res, status: res.error ? 'failed' : 'ok' }));
     }
-  } catch {}
+  } catch (e) { console.error('Failed to run batch action:', e); }
   return [];
 }
 
@@ -240,7 +240,7 @@ export async function fetchDevices(): Promise<{ serial: string; model: string; s
   try {
     const r = await fetch('/api/v1/adb/devices');
     if (r.ok) { const d = await r.json(); return (d.devices || []).filter((dev: any) => dev.state === 'device'); }
-  } catch {}
+  } catch (e) { console.error('Failed to fetch devices:', e); }
   return [];
 }
 
@@ -251,7 +251,7 @@ export async function downloadModule(slug: string): Promise<{ blob: Blob; filena
     if (!res.ok) throw new Error(`下载失败 (${res.status})`);
     const blob = await res.blob();
     return { blob, filename: `${slug}.zip` };
-  } catch {}
+  } catch (e) { console.error('Failed to download module:', e); }
   return null;
 }
 
@@ -278,7 +278,7 @@ export async function fetchTemplates(params: {
   try {
     const r = await fetch(`/api/v1/templates/market?${sp}`);
     if (r.ok) { const d = await r.json(); return { templates: d.templates || [], total: d.total || 0 }; }
-  } catch {}
+  } catch (e) { console.error('Failed to fetch templates:', e); }
   return { templates: [], total: 0 };
 }
 
@@ -286,7 +286,7 @@ export async function fetchTemplateCategories(): Promise<TemplateCategory[]> {
   try {
     const r = await fetch('/api/v1/templates/market/categories');
     if (r.ok) { const d = await r.json(); return d.categories || []; }
-  } catch {}
+  } catch (e) { console.error('Failed to fetch template categories:', e); }
   return [];
 }
 
@@ -294,7 +294,7 @@ export async function useTemplateApi(id: number): Promise<string | null> {
   try {
     const r = await fetch(`/api/v1/templates/market/${id}/use`, { method: 'POST' });
     if (r.ok) { const d = await r.json(); return d.module_data; }
-  } catch {}
+  } catch (e) { console.error('Failed to use template:', e); }
   return null;
 }
 
@@ -308,7 +308,7 @@ export async function rateTemplateApi(id: number, rating: number): Promise<numbe
       body: JSON.stringify({ rating }),
     });
     if (r.ok) { const d = await r.json(); return d.rating; }
-  } catch {}
+  } catch (e) { console.error('Failed to rate template:', e); }
   return null;
 }
 
@@ -322,7 +322,7 @@ export async function publishTemplateApi(name: string, desc: string, category: s
       body: JSON.stringify({ name, description: desc, category, module_data: JSON.stringify({ name, description: desc }) }),
     });
     return r.ok;
-  } catch {}
+  } catch (e) { console.error('Failed to publish template:', e); }
   return false;
 }
 

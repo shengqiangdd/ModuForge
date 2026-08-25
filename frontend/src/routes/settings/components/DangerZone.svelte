@@ -18,7 +18,7 @@
       } else {
         toast('操作失败', 'error');
       }
-    } catch { toast('操作失败', 'error'); }
+    } catch (e) { console.error('Failed to clear recycle bin:', e); toast('操作失败', 'error'); }
     clearRecycleLoading = false;
   }
 
@@ -33,7 +33,7 @@
         toast('所有记忆已清除', 'info');
         onClear?.();
       }
-    } catch {}
+    } catch (e) { console.error('Failed to clear AI memory:', e); }
     clearMemoryLoading = false;
   }
 
@@ -45,7 +45,7 @@
         toast('搜索历史已清空', 'info');
         onClear?.();
       }
-    } catch {}
+    } catch (e) { console.error('Failed to clear search history:', e); }
     clearHistoryLoading = false;
   }
 </script>

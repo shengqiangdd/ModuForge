@@ -6,11 +6,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/moduforge/backend/internal/saferead"
 )
 
 // ─── Streaming LLM Calls ───
@@ -67,7 +68,7 @@ func (s *AIService) streamChatWithSystemForUser(ctx context.Context, systemPromp
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
-		bodyBytes, _ := io.ReadAll(resp.Body)
+		bodyBytes, _ := saferead.SafeReadAll(resp.Body)
 		errMsg := fmt.Sprintf("LLM error (HTTP %d)", resp.StatusCode)
 		var errBody struct {
 			Error struct {
@@ -194,4 +195,3 @@ func (s *AIService) sendSSE(w *bufio.Writer, data map[string]interface{}) error 
 	}
 	return w.Flush()
 }
-

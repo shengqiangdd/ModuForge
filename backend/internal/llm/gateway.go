@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+
+	"github.com/moduforge/backend/internal/saferead"
 	"regexp"
 	"strings"
 	"time"
@@ -108,7 +110,7 @@ func (g *Gateway) Chat(messages []Message) (string, error) {
 	}
 	defer resp.Body.Close()
 
-	respBody, _ := io.ReadAll(resp.Body)
+	respBody, _ := saferead.SafeReadAll(resp.Body)
 	var chatResp ChatResponse
 	if err := json.Unmarshal(respBody, &chatResp); err != nil {
 		return "", fmt.Errorf("llm parse: %w", err)

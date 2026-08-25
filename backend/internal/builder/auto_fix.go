@@ -5,12 +5,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/moduforge/backend/internal/saferead"
 )
 
 // AutoFixCompileErrors attempts to fix compilation errors by sending them
@@ -272,7 +273,7 @@ func callLLMForFix(ctx context.Context, endpoint, apiKey, model, prompt string) 
 	}
 	defer resp.Body.Close()
 
-	respBody, err := io.ReadAll(resp.Body)
+	respBody, err := saferead.SafeReadAll(resp.Body)
 	if err != nil {
 		return "", fmt.Errorf("failed to read response: %w", err)
 	}

@@ -4,11 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/moduforge/backend/internal/saferead"
 )
 
 type TranslateService struct {
@@ -54,7 +55,7 @@ func (s *TranslateService) Translate(ctx context.Context, text, sourceLang, targ
 		return fmt.Sprintf("[%s] %s", targetLang, text), nil
 	}
 
-	respBody, _ := io.ReadAll(resp.Body)
+	respBody, _ := saferead.SafeReadAll(resp.Body)
 	var result struct {
 		TranslatedText string `json:"translatedText"`
 	}

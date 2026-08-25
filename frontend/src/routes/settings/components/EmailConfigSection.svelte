@@ -30,7 +30,7 @@
         smtpUseTLS = data.use_tls ?? 1;
         smtpIsActive = data.is_active ?? 0;
       }
-    } catch {}
+    } catch (e) { console.error('Failed to load email config:', e); }
   }
 
   async function saveEmailConfig() {

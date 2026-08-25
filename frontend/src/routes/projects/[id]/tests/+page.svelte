@@ -24,7 +24,7 @@
         headers: { 'Authorization': `Bearer ${localStorage.getItem('moduforge_token') || ''}` },
       });
       if (res.ok) project = await res.json();
-    } catch {}
+    } catch (e) { console.error('Failed to load project:', e); }
   }
 
   async function loadHistory() {
@@ -37,7 +37,7 @@
         const builds = await res.json();
         historyData = builds.slice(-20).filter((b: any) => b.status === 'success' || b.status === 'failed');
       }
-    } catch {}
+    } catch (e) { console.error('Failed to load history:', e); }
   }
 
   async function loadFiles() {
@@ -55,11 +55,11 @@
               headers: { 'Authorization': `Bearer ${localStorage.getItem('moduforge_token') || ''}` },
             });
             if (fres.ok) fileMap[f] = await fres.text();
-          } catch {}
+          } catch (e) { console.error('Failed to load file:', e); }
         }
         files = fileMap;
       }
-    } catch {}
+    } catch (e) { console.error('Failed to load files:', e); }
   }
 
   async function runTests() {
@@ -100,7 +100,7 @@
             try {
               const data = JSON.parse(line.slice(6));
               testResults = data;
-            } catch {}
+            } catch (e) { console.warn('Failed to parse test output:', e); }
           }
         }
       }

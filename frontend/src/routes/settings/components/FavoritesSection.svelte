@@ -20,7 +20,7 @@
     try {
       await fetch(`/api/v1/favorites/${f.item_type}/${f.item_id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
       favoriteItems = favoriteItems.filter(i => i.id !== f.id);
-    } catch {}
+    } catch (e) { console.error('Failed to remove favorite:', e); }
   }
 
   onMount(() => {

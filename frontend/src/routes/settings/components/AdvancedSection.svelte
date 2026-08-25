@@ -67,7 +67,7 @@
         headers: { 'Authorization': `Bearer ${getToken()}` }
       });
       if (r.ok) healthData = await r.json();
-    } catch {}
+    } catch (e) { console.error('Failed to load health data:', e); }
     healthLoading = false;
   }
 
@@ -78,7 +78,7 @@
         headers: { 'Authorization': `Bearer ${getToken()}` }
       });
       if (r.ok) cacheData = await r.json();
-    } catch {}
+    } catch (e) { console.error('Failed to load cache status:', e); }
     cacheLoading = false;
   }
 
@@ -114,7 +114,7 @@
         logs = d.logs || [];
         logsTotal = d.total || 0;
       }
-    } catch {}
+    } catch (e) { console.error('Failed to load logs:', e); }
     logsLoading = false;
   }
 
@@ -125,7 +125,7 @@
         headers: { 'Authorization': `Bearer ${getToken()}` }
       });
       if (r.ok) logsStats = await r.json();
-    } catch {}
+    } catch (e) { console.error('Failed to load log stats:', e); }
     logsStatsLoading = false;
   }
 

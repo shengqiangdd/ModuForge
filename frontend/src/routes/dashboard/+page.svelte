@@ -53,7 +53,7 @@
         const d = await r.json();
         widgets = d.widgets || [];
       }
-    } catch {}
+    } catch (e) { console.error('Failed to load widgets:', e); }
   }
 
   async function loadWidgetTypes() {
@@ -66,7 +66,7 @@
         const d = await r.json();
         widgetTypes = d.types || [];
       }
-    } catch {}
+    } catch (e) { console.error('Failed to load widget types:', e); }
   }
 
   async function loadAll() {
@@ -107,7 +107,7 @@
       idx++;
       const tm = results[idx];
       if (tm?.status === 'fulfilled') trendingMods = tm.value?.modules?.slice(0, 5) || [];
-    } catch {}
+    } catch (e) { console.error('Failed to load dashboard data:', e); }
     loading = false;
   }
 
@@ -121,7 +121,7 @@
         healthDetail = await r.json();
         showHealthDetail = true;
       }
-    } catch {}
+    } catch (e) { console.error('Failed to load health detail:', e); }
     healthDetailLoading = false;
   }
 
@@ -136,7 +136,7 @@
         try {
           const r = await fetch('/api/v1/auth/profile', { headers: { Authorization: `Bearer ${token}` } });
           if (r.ok) { const d = await r.json(); isAdmin = d.is_admin || false; }
-        } catch {}
+        } catch (e) { console.error('Failed to check admin status:', e); }
       }
       await Promise.all([loadWidgets(), loadWidgetTypes(), loadAll()]);
       if (widgets.length === 0) {
@@ -150,7 +150,7 @@
               headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
               body: JSON.stringify({ widget_type: defaults[i], title: defaults[i], position_x: 0, position_y: i, width: 2, height: 1 })
             });
-          } catch {}
+          } catch (e) { console.error('Failed to create default widget:', e); }
         }
         await loadWidgets();
       }
@@ -181,7 +181,7 @@
       });
       await loadWidgets();
       showAddModal = false;
-    } catch {}
+    } catch (e) { console.error('Failed to add widget:', e); }
   }
 
   async function removeWidget(id: number) {
@@ -190,7 +190,7 @@
     try {
       await fetch(`/api/v1/dashboard/widgets/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
       widgets = widgets.filter(w => w.id !== id);
-    } catch {}
+    } catch (e) { console.error('Failed to remove widget:', e); }
   }
 
   function handleDragStart(e: DragEvent, i: number) {
@@ -216,7 +216,7 @@
         method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ items: reorder })
       });
-    } catch {}
+    } catch (e) { console.error('Failed to reorder widgets:', e); }
   }
 
   const gridCols = 'grid grid-cols-1 md:grid-cols-2 gap-4';

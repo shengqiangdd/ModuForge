@@ -35,7 +35,7 @@
         isAdmin = data.is_admin || false;
         onProfileLoaded?.({ isAdmin: data.is_admin || false });
       }
-    } catch {}
+    } catch (e) { console.error('Failed to load profile:', e); }
   }
 
   async function saveProfile() {
@@ -52,7 +52,7 @@
       } else {
         toast((await r.json()).error || '保存失败', 'error');
       }
-    } catch { toast('保存失败', 'error'); }
+    } catch (e) { console.error('Failed to save profile:', e); toast('保存失败', 'error'); }
     savingProfile = false;
   }
 
@@ -76,7 +76,7 @@
         const d = await r.json().catch(() => ({}));
         toast(d.error || '修改失败', 'error');
       }
-    } catch { toast('修改失败', 'error'); }
+    } catch (e) { console.error('Failed to change password:', e); toast('修改失败', 'error'); }
     changingPassword = false;
   }
 
@@ -100,7 +100,7 @@
         avatarUrl = data.avatar_url || '';
         toast('头像已更新', 'success');
       } else toast((await r.json()).error || '上传失败', 'error');
-    } catch { toast('上传失败', 'error'); }
+    } catch (e) { console.error('Failed to upload avatar:', e); toast('上传失败', 'error'); }
     avatarInput!.value = '';
   }
 

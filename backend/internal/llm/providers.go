@@ -3,21 +3,22 @@ package llm
 import (
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"sync"
 	"time"
+
+	"github.com/moduforge/backend/internal/saferead"
 )
 
 // Provider 定义 LLM 提供商
 type Provider struct {
-	Name        string   `json:"name"`
-	ID          string   `json:"id"`
-	Endpoint    string   `json:"endpoint"`
-	Models      []Model  `json:"models"`
-	RequiresKey bool     `json:"requires_key"`
-	IsFree      bool     `json:"is_free"`
-	Tier        string   `json:"tier"` // "free", "paid", "subscription"
+	Name        string  `json:"name"`
+	ID          string  `json:"id"`
+	Endpoint    string  `json:"endpoint"`
+	Models      []Model `json:"models"`
+	RequiresKey bool    `json:"requires_key"`
+	IsFree      bool    `json:"is_free"`
+	Tier        string  `json:"tier"` // "free", "paid", "subscription"
 }
 
 // Model 定义可用模型
@@ -56,7 +57,7 @@ func buildProvidersCatalog() []Provider {
 		// === OpenCode Zen（合并免费+付费）===
 		{
 			Name: "OpenCode Zen", ID: "opencode-zen",
-			Endpoint: "https://opencode.ai/zen/v1/chat/completions",
+			Endpoint:    "https://opencode.ai/zen/v1/chat/completions",
 			RequiresKey: false, IsFree: true, Tier: "free",
 			Models: []Model{
 				// — 免费模型 (price=0) —
@@ -107,7 +108,7 @@ func buildProvidersCatalog() []Provider {
 		// === OpenCode Go (订阅制) ===
 		{
 			Name: "OpenCode Go", ID: "opencode-go",
-			Endpoint: "https://opencode.ai/zen/go/v1/chat/completions",
+			Endpoint:    "https://opencode.ai/zen/go/v1/chat/completions",
 			RequiresKey: false, IsFree: false, Tier: "subscription",
 			Models: []Model{
 				// — MiMo 系列 —
@@ -137,7 +138,7 @@ func buildProvidersCatalog() []Provider {
 		// === OpenAI ===
 		{
 			Name: "OpenAI", ID: "openai",
-			Endpoint: "https://api.openai.com/v1/chat/completions",
+			Endpoint:    "https://api.openai.com/v1/chat/completions",
 			RequiresKey: true, IsFree: false, Tier: "paid",
 			Models: []Model{
 				{ID: "gpt-5.6-sol", Name: "GPT 5.6 Sol", Provider: "openai", MaxTokens: 1000000, SupportsStream: true, PriceInput: 5.0, PriceOutput: 30.0},
@@ -152,7 +153,7 @@ func buildProvidersCatalog() []Provider {
 		// === Anthropic (Claude) ===
 		{
 			Name: "Anthropic", ID: "anthropic",
-			Endpoint: "https://api.anthropic.com/v1/messages",
+			Endpoint:    "https://api.anthropic.com/v1/messages",
 			RequiresKey: true, IsFree: false, Tier: "paid",
 			Models: []Model{
 				{ID: "claude-opus-4-8", Name: "Claude Opus 4.8", Provider: "anthropic", MaxTokens: 1000000, SupportsStream: true, PriceInput: 5.0, PriceOutput: 25.0},
@@ -167,7 +168,7 @@ func buildProvidersCatalog() []Provider {
 		// === Google (Gemini) ===
 		{
 			Name: "Google", ID: "google",
-			Endpoint: "https://generativelanguage.googleapis.com/v1beta/models",
+			Endpoint:    "https://generativelanguage.googleapis.com/v1beta/models",
 			RequiresKey: true, IsFree: false, Tier: "paid",
 			Models: []Model{
 				{ID: "gemini-3.5-flash", Name: "Gemini 3.5 Flash", Provider: "google", MaxTokens: 1000000, SupportsStream: true, PriceInput: 1.5, PriceOutput: 9.0},
@@ -181,7 +182,7 @@ func buildProvidersCatalog() []Provider {
 		// === DeepSeek ===
 		{
 			Name: "DeepSeek", ID: "deepseek",
-			Endpoint: "https://api.deepseek.com/chat/completions",
+			Endpoint:    "https://api.deepseek.com/chat/completions",
 			RequiresKey: true, IsFree: false, Tier: "paid",
 			Models: []Model{
 				{ID: "deepseek-v4-flash", Name: "DeepSeek V4 Flash", Provider: "deepseek", MaxTokens: 1000000, SupportsStream: true, PriceInput: 0.14, PriceOutput: 0.28},
@@ -192,7 +193,7 @@ func buildProvidersCatalog() []Provider {
 		// === xAI / Grok ===
 		{
 			Name: "xAI (Grok)", ID: "xai",
-			Endpoint: "https://api.x.ai/v1/chat/completions",
+			Endpoint:    "https://api.x.ai/v1/chat/completions",
 			RequiresKey: true, IsFree: false, Tier: "paid",
 			Models: []Model{
 				{ID: "grok-4.5", Name: "Grok 4.5", Provider: "xai", MaxTokens: 500000, SupportsStream: true, PriceInput: 2.0, PriceOutput: 6.0},
@@ -203,7 +204,7 @@ func buildProvidersCatalog() []Provider {
 		// === Ollama (本地) ===
 		{
 			Name: "Ollama (本地)", ID: "ollama",
-			Endpoint: "http://localhost:11434/v1/chat/completions",
+			Endpoint:    "http://localhost:11434/v1/chat/completions",
 			RequiresKey: false, IsFree: true, Tier: "free",
 			Models: []Model{
 				{ID: "qwen3-coder:7b", Name: "Qwen3 Coder 7B", Provider: "ollama", MaxTokens: 32000, SupportsStream: true, PriceInput: 0, PriceOutput: 0},
@@ -216,7 +217,7 @@ func buildProvidersCatalog() []Provider {
 		// === 阿里云百炼 (Aliyun Bailian) ===
 		{
 			Name: "阿里云百炼", ID: "aliyun-bailian",
-			Endpoint: "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
+			Endpoint:    "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
 			RequiresKey: true, IsFree: false, Tier: "paid",
 			Models: []Model{
 				{ID: "qwen3.7-max", Name: "Qwen3.7 Max", Provider: "aliyun-bailian", MaxTokens: 128000, SupportsStream: true, PriceInput: 1.66, PriceOutput: 5.0},
@@ -229,7 +230,7 @@ func buildProvidersCatalog() []Provider {
 		// === 阿里云灵积 (Aliyun Lingji) ===
 		{
 			Name: "阿里云灵积", ID: "aliyun-lingji",
-			Endpoint: "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
+			Endpoint:    "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
 			RequiresKey: true, IsFree: false, Tier: "paid",
 			Models: []Model{
 				{ID: "qwen3.7-max", Name: "Qwen3.7 Max", Provider: "aliyun-lingji", MaxTokens: 128000, SupportsStream: true, PriceInput: 1.66, PriceOutput: 5.0},
@@ -241,7 +242,7 @@ func buildProvidersCatalog() []Provider {
 		// === 小米 MiMo (Xiaomi MiMo) ===
 		{
 			Name: "小米 MiMo", ID: "xiaomi-mimo",
-			Endpoint: "https://api.mimo.xiaomi.com/v1/chat/completions",
+			Endpoint:    "https://api.mimo.xiaomi.com/v1/chat/completions",
 			RequiresKey: true, IsFree: false, Tier: "paid",
 			Models: []Model{
 				{ID: "MiMo-v2.5-Pro", Name: "MiMo V2.5 Pro", Provider: "xiaomi-mimo", MaxTokens: 128000, SupportsStream: true, PriceInput: 1.0, PriceOutput: 3.0},
@@ -251,7 +252,7 @@ func buildProvidersCatalog() []Provider {
 		// === 智谱 AI (Zhipu AI) ===
 		{
 			Name: "智谱 AI", ID: "zhipu",
-			Endpoint: "https://open.bigmodel.cn/api/paas/v4/chat/completions",
+			Endpoint:    "https://open.bigmodel.cn/api/paas/v4/chat/completions",
 			RequiresKey: true, IsFree: false, Tier: "paid",
 			Models: []Model{
 				{ID: "glm-5", Name: "GLM-5", Provider: "zhipu", MaxTokens: 200000, SupportsStream: true, PriceInput: 5.0, PriceOutput: 10.0},
@@ -264,7 +265,7 @@ func buildProvidersCatalog() []Provider {
 		// === 月之暗面 (Moonshot / Kimi) ===
 		{
 			Name: "月之暗面", ID: "moonshot",
-			Endpoint: "https://api.moonshot.cn/v1/chat/completions",
+			Endpoint:    "https://api.moonshot.cn/v1/chat/completions",
 			RequiresKey: true, IsFree: false, Tier: "paid",
 			Models: []Model{
 				{ID: "kimi-k2.7-code", Name: "Kimi K2.7 Code", Provider: "moonshot", MaxTokens: 262000, SupportsStream: true, PriceInput: 0.95, PriceOutput: 4.0},
@@ -276,7 +277,7 @@ func buildProvidersCatalog() []Provider {
 		// === 百川智能 (Baichuan) ===
 		{
 			Name: "百川智能", ID: "baichuan",
-			Endpoint: "https://api.baichuan-ai.com/v1/chat/completions",
+			Endpoint:    "https://api.baichuan-ai.com/v1/chat/completions",
 			RequiresKey: true, IsFree: false, Tier: "paid",
 			Models: []Model{
 				{ID: "Baichuan-M3-Plus", Name: "Baichuan M3 Plus", Provider: "baichuan", MaxTokens: 192000, SupportsStream: true, PriceInput: 0.80, PriceOutput: 2.0},
@@ -287,7 +288,7 @@ func buildProvidersCatalog() []Provider {
 		// === 零一万物 (Lingyiwanwu / Yi) ===
 		{
 			Name: "零一万物", ID: "lingyiwanwu",
-			Endpoint: "https://api.lingyiwanwu.com/v1/chat/completions",
+			Endpoint:    "https://api.lingyiwanwu.com/v1/chat/completions",
 			RequiresKey: true, IsFree: false, Tier: "paid",
 			Models: []Model{
 				{ID: "yi-large", Name: "Yi Large", Provider: "lingyiwanwu", MaxTokens: 32000, SupportsStream: true, PriceInput: 1.0, PriceOutput: 3.0},
@@ -298,7 +299,7 @@ func buildProvidersCatalog() []Provider {
 		// === 讯飞星火 (iFlytek Spark) ===
 		{
 			Name: "讯飞星火", ID: "xfyun",
-			Endpoint: "https://spark-api-open.xf-yun.com/v1/chat/completions",
+			Endpoint:    "https://spark-api-open.xf-yun.com/v1/chat/completions",
 			RequiresKey: true, IsFree: false, Tier: "paid",
 			Models: []Model{
 				{ID: "spark-4.0-ultra", Name: "Spark 4.0 Ultra", Provider: "xfyun", MaxTokens: 128000, SupportsStream: true, PriceInput: 1.0, PriceOutput: 4.0},
@@ -309,7 +310,7 @@ func buildProvidersCatalog() []Provider {
 		// === 硅基流动 (SiliconFlow) ===
 		{
 			Name: "硅基流动", ID: "siliconflow",
-			Endpoint: "https://api.siliconflow.cn/v1/chat/completions",
+			Endpoint:    "https://api.siliconflow.cn/v1/chat/completions",
 			RequiresKey: true, IsFree: false, Tier: "paid",
 			Models: []Model{
 				{ID: "Qwen/Qwen3-8B", Name: "Qwen3 8B", Provider: "siliconflow", MaxTokens: 32000, SupportsStream: true, PriceInput: 0.20, PriceOutput: 0.60},
@@ -320,7 +321,7 @@ func buildProvidersCatalog() []Provider {
 		// === Groq ===
 		{
 			Name: "Groq", ID: "groq",
-			Endpoint: "https://api.groq.com/openai/v1/chat/completions",
+			Endpoint:    "https://api.groq.com/openai/v1/chat/completions",
 			RequiresKey: true, IsFree: false, Tier: "paid",
 			Models: []Model{
 				{ID: "openai/gpt-oss-120b", Name: "GPT-OSS 120B", Provider: "groq", MaxTokens: 128000, SupportsStream: true, PriceInput: 0, PriceOutput: 0},
@@ -333,7 +334,7 @@ func buildProvidersCatalog() []Provider {
 		// === Together ===
 		{
 			Name: "Together", ID: "together",
-			Endpoint: "https://api.together.xyz/v1/chat/completions",
+			Endpoint:    "https://api.together.xyz/v1/chat/completions",
 			RequiresKey: true, IsFree: false, Tier: "paid",
 			Models: []Model{
 				{ID: "MiniMax-M3", Name: "MiniMax M3", Provider: "together", MaxTokens: 128000, SupportsStream: true, PriceInput: 0.69, PriceOutput: 2.19},
@@ -346,7 +347,7 @@ func buildProvidersCatalog() []Provider {
 		// === OpenRouter ===
 		{
 			Name: "OpenRouter", ID: "openrouter",
-			Endpoint: "https://openrouter.ai/api/v1/chat/completions",
+			Endpoint:    "https://openrouter.ai/api/v1/chat/completions",
 			RequiresKey: true, IsFree: false, Tier: "paid",
 			Models: []Model{
 				{ID: "auto", Name: "Auto (根据路由选择)", Provider: "openrouter", MaxTokens: 128000, SupportsStream: true, PriceInput: 0, PriceOutput: 0},
@@ -439,7 +440,7 @@ func FetchRemoteModels() ([]RemoteModel, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+		body, _ := saferead.SafeReadAll(resp.Body)
 		return nil, fmt.Errorf("API returned %d: %s", resp.StatusCode, string(body))
 	}
 

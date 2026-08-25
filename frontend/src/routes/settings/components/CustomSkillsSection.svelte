@@ -60,7 +60,7 @@
         const data = await res.json();
         customSkills = data.skills || [];
       }
-    } catch {}
+    } catch (e) { console.error('Failed to load skills:', e); }
     loadingSkills = false;
   }
 
@@ -151,7 +151,7 @@
       const evo = evoRes.ok ? await evoRes.json() : {};
       const opt = optRes.ok ? await optRes.json() : {};
       skillEvolutionData = { ...skillEvolutionData, [skillId]: { ...evo, ...opt } };
-    } catch {}
+    } catch (e) { console.error('Failed to load skill evolution:', e); }
     loadingEvolution = new Set([...loadingEvolution].filter(x => x !== skillId));
   }
 

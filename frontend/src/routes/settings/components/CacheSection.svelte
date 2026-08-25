@@ -20,7 +20,7 @@
         headers: { 'Authorization': `Bearer ${getToken()}` }
       });
       if (r.ok) cacheData = await r.json();
-    } catch {}
+    } catch (e) { console.error('Failed to load cache status:', e); }
     cacheLoading = false;
   }
 

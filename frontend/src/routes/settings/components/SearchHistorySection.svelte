@@ -18,7 +18,7 @@
     try {
       await fetch(`/api/v1/search/history/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
       searchHistory = searchHistory.filter(h => h.id !== id);
-    } catch {}
+    } catch (e) { console.error('Failed to delete search history item:', e); }
   }
 
   async function clearSearchHistory() {
@@ -26,7 +26,7 @@
     try {
       await fetch('/api/v1/search/history', { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
       searchHistory = [];
-    } catch {}
+    } catch (e) { console.error('Failed to clear search history:', e); }
   }
 
   onMount(() => {
