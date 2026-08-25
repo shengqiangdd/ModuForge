@@ -114,6 +114,7 @@ func (s *BuildModuleSkill) Execute(ctx context.Context, input map[string]interfa
 		// Detect common top-level directory (e.g., all files under "hello-world/")
 		// Strategy: find the deepest common ancestor of all file paths, which is the module root.
 		effectivePath := projectPath
+		commonPrefix := ""
 		if len(files) > 1 {
 			// Split all paths and find common prefix components
 			splitPaths := make([][]string, len(files))
