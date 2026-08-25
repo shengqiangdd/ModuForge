@@ -183,6 +183,29 @@ func (h *HealthHandler) Check(c fiber.Ctx) error {
 		}
 	}
 
+	// Evolution / experience_store writability check
+	evolutionDir := filepath.Join(".", "data", "evolution")
+	evolutionStatus := "ok"
+	var evolutionErr string
+	if err := os.MkdirAll(evolutionDir, 0755); err != nil {
+		evolutionStatus = "error"
+		evolutionErr = fmt.Sprintf("mkdir: %v", err)
+	} else {
+		// Attempt to create a temporary probe file to verify write access
+		probe := filepath.Join(evolutionDir, ".health_probe")
+		if err := os.WriteFile(probe, []byte("ok"), 0644); err != nil {
+			evolutionStatus = "warning"
+			evolutionErr = fmt.Sprintf("not writable: %v", err)
+		} else {
+			os.Remove(probe) // best-effort cleanup
+		}
+	}
+	checks["evolution"] = fiber.Map{
+		"status":   evolutionStatus,
+		"dir":      evolutionDir,
+		"error":    evolutionErr,
+	}
+
 	uptime := time.Since(startTime)
 	uptimeStr := formatDuration(uptime)
 
@@ -200,11 +223,14 @@ func (h *HealthHandler) Check(c fiber.Ctx) error {
 	}
 
 	return c.JSON(fiber.Map{
-		"status":    overallStatus,
-		"version":   "2.0-lite",
-		"uptime":    uptimeStr,
-		"checked_at": checkedAt,
-		"checks":    checks,
+		"status":      overallStatus,
+		"version":     "2.0-lite",
+		"uptime":      uptimeStr,
+		"uptime_s":    uptime.Seconds(),
+		"goroutines":  runtime.NumGoroutine(),
+		"memory_mb":   float64(mem.Alloc) / 1024 / 1024,
+		"checked_at":  checkedAt,
+		"checks":      checks,
 	})
 }
 

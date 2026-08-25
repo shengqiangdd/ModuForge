@@ -64,12 +64,12 @@ func registerCoreRoutes(ctx *routeContext, authH *AuthHandler) {
 	repoH := NewRepoHandler(repoSvc)
 
 	// Templates
-	api.Get("/templates", CacheMiddleware(cache), projectH.ListTemplates)
-	api.Get("/templates/list", CacheMiddleware(cache), templateH.List)
+	api.Get("/templates", projectH.ListTemplates)
+	api.Get("/templates/list", templateH.List)
 	api.Get("/templates/market", templateMarketH.ListTemplates)
 	api.Get("/templates/market/trending", templateMarketH.GetTrending)
 	api.Get("/templates/market/categories", templateMarketH.GetCategories)
-	api.Get("/templates/:name", CacheMiddleware(cache), templateH.Get)
+	api.Get("/templates/:name", templateH.Get)
 	api.Post("/templates/recommend", templateH.Recommend)
 
 	// Repo

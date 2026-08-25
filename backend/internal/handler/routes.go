@@ -41,18 +41,18 @@ func reg4(api fiber.Router, method, path string, mw1, mw2, mw3, mw4 fiber.Handle
 
 // routeContext holds all shared state for route registration across sub-files.
 type routeContext struct {
-	api       fiber.Router
-	db        *database.DB
-	cfg       *config.Config
-	fileRepo  *service.FileContentRepo
-	cache     *ResponseCache
-	rateRepo  fiber.Handler
-	authMW    fiber.Handler
-	jwtMW     fiber.Handler
-	rateAuth  fiber.Handler
-	rateAI    fiber.Handler
-	adminMW   fiber.Handler
-	aiSem     chan struct{}
+	api      fiber.Router
+	db       *database.DB
+	cfg      *config.Config
+	fileRepo *service.FileContentRepo
+	cache    *ResponseCache
+	rateRepo fiber.Handler
+	authMW   fiber.Handler
+	jwtMW    fiber.Handler
+	rateAuth fiber.Handler
+	rateAI   fiber.Handler
+	adminMW  fiber.Handler
+	aiSem    chan struct{}
 }
 
 // r registers a protected route.
@@ -85,6 +85,7 @@ func (ctx *routeContext) rAdmin(method, path string, h fiber.Handler) {
 func RegisterRoutes(api fiber.Router, db *database.DB, cfg *config.Config) {
 	rateLimiter := middleware.NewRateLimiter()
 	cache := GetCache()
+	cache.SetTTL(cfg.CacheResponseTTL)
 	authMW := middleware.APIKeyAuth(db.Conn)
 	jwtMW := AuthMiddleware(cfg.JWTSecret)
 	rateAuth := middleware.RateLimit(rateLimiter, cfg.RateLimitAuth, cfg.RateLimitAuth/60)
@@ -98,14 +99,19 @@ func RegisterRoutes(api fiber.Router, db *database.DB, cfg *config.Config) {
 		var s3err error
 		for i := 0; i < 30; i++ {
 			s3adapter, s3err = storage.NewS3Adapter(storage.S3Config{
-				Endpoint:  cfg.S3Endpoint, AccessKey: cfg.S3AccessKey, SecretKey: cfg.S3SecretKey,
+				Endpoint: cfg.S3Endpoint, AccessKey: cfg.S3AccessKey, SecretKey: cfg.S3SecretKey,
 				Bucket: cfg.S3Bucket, Prefix: "projects", Secure: false,
 			})
-			if s3err == nil { slog.Info("S3 storage enabled", "endpoint", cfg.S3Endpoint, "bucket", cfg.S3Bucket); break }
+			if s3err == nil {
+				slog.Info("S3 storage enabled", "endpoint", cfg.S3Endpoint, "bucket", cfg.S3Bucket)
+				break
+			}
 			slog.Warn("S3 storage init failed, retrying...", "attempt", i+1, "error", s3err)
 			time.Sleep(1 * time.Second)
 		}
-		if s3err != nil { slog.Warn("S3 storage init failed after 30 retries, falling back to legacy storage", "error", s3err) }
+		if s3err != nil {
+			slog.Warn("S3 storage init failed after 30 retries, falling back to legacy storage", "error", s3err)
+		}
 	}
 	fileRepo := service.NewFileContentRepo(db.Conn, s3adapter)
 
@@ -139,6 +145,9 @@ func RegisterRoutes(api fiber.Router, db *database.DB, cfg *config.Config) {
 
 	// Apply feature flag middleware to the protected API group
 	api.Use(featureFlagMW)
+
+	// Global API response cache (only affects GET; excluded paths pass through)
+	api.Use(CacheMiddleware(cache))
 
 	// Admin feature flags
 	ctx.rAdmin("GET", "/admin/feature-flags", featureFlagH.List)

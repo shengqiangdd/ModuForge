@@ -4,6 +4,7 @@ import (
 	"os"
 	"strconv"
 	"sync"
+	"time"
 )
 
 type Config struct {
@@ -26,28 +27,29 @@ type Config struct {
 	LLMProvider string // 当前使用的提供商 ID
 	LLMModelID  string // 当前使用的模型 ID
 	// Provider API Keys
-	OpenAIApiKey     string  // OpenAI API key
-	AnthropicApiKey  string  // Anthropic API key
-	GoogleApiKey     string  // Google API key
-	DeepSeekApiKey   string  // DeepSeek API key
-	QwenApiKey       string  // 通义千问 API key
-	OpenCodeApiKey   string  // OpenCode Zen 和 Go 共用
-	XAIApiKey        string  // xAI / Grok API key
-	OllamaEndpoint   string  // Ollama 本地端点
-	DockerEndpoint   string  // Docker 端点（空 = 不启用 Docker 构建）
-	ADBAddress       string  // ADB 地址（空 = 不启用 ADB 健康检查）
-	WebhookSecret    string  // Git webhook HMAC secret
-	GitHubWebhookSec string  // GitHub webhook secret
-	RateLimitPublic  float64 // 公共路由限流 (req/min)
-	RateLimitAuth    float64 // 认证路由限流 (req/min)
-	RateLimitAI      float64 // AI 路由限流 (req/min)
-	MaxAIConcurrency int     // 同时进行的 AI 流式调用上限（并发守卫）
-	RateLimitRepo    float64 // GitHub 外部调用路由限流 (req/min)
-	MonthlyCostLimit float64 // AI 月度成本上限 (USD)，0 = 不限制
+	OpenAIApiKey     string        // OpenAI API key
+	AnthropicApiKey  string        // Anthropic API key
+	GoogleApiKey     string        // Google API key
+	DeepSeekApiKey   string        // DeepSeek API key
+	QwenApiKey       string        // 通义千问 API key
+	OpenCodeApiKey   string        // OpenCode Zen 和 Go 共用
+	XAIApiKey        string        // xAI / Grok API key
+	OllamaEndpoint   string        // Ollama 本地端点
+	DockerEndpoint   string        // Docker 端点（空 = 不启用 Docker 构建）
+	ADBAddress       string        // ADB 地址（空 = 不启用 ADB 健康检查）
+	WebhookSecret    string        // Git webhook HMAC secret
+	GitHubWebhookSec string        // GitHub webhook secret
+	RateLimitPublic  float64       // 公共路由限流 (req/min)
+	RateLimitAuth    float64       // 认证路由限流 (req/min)
+	RateLimitAI      float64       // AI 路由限流 (req/min)
+	MaxAIConcurrency int           // 同时进行的 AI 流式调用上限（并发守卫）
+	RateLimitRepo    float64       // GitHub 外部调用路由限流 (req/min)
+	MonthlyCostLimit float64       // AI 月度成本上限 (USD)，0 = 不限制
+	CacheResponseTTL time.Duration // API 响应缓存 TTL（默认 30s）
 }
 
-func (c *Config) Lock()    { c.mu.Lock() }
-func (c *Config) Unlock()  { c.mu.Unlock() }
+func (c *Config) Lock()   { c.mu.Lock() }
+func (c *Config) Unlock() { c.mu.Unlock() }
 
 // SetLLMConfig applies LLM provider/model/endpoint/key to the in-memory config.
 // Called by database.LoadLLMConfig on startup to restore persisted settings.
@@ -117,6 +119,9 @@ func Load() *Config {
 		// AI 月度成本上限（USD）：当月估算成本超过该值后拒绝新任务。
 		// 默认 0 = 不限制成本（避免意外拦截）。按当前模型单价 × 当月 token 估算。
 		MonthlyCostLimit: getEnvFloat("AI_MONTHLY_COST_LIMIT", 0),
+		// API 响应缓存 TTL（秒）：控制全局 HTTP 响应缓存的过期时间。
+		// 默认 30 秒。设置为 0 禁用缓存。
+		CacheResponseTTL: time.Duration(getEnvInt("CACHE_TTL_SECONDS", 30)) * time.Second,
 	}
 }
 
