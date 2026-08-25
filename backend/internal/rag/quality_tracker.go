@@ -8,12 +8,12 @@ import (
 // QualityTracker tracks RAG retrieval quality over time.
 type QualityTracker struct {
 	mu         sync.Mutex
-	queries    []QueryRecord
+	queries    []TrackingQueryRecord
 	maxRecords int
 }
 
-// QueryRecord represents a single RAG query and its outcome.
-type QueryRecord struct {
+// TrackingQueryRecord represents a single RAG query and its outcome.
+type TrackingQueryRecord struct {
 	Query        string
 	Retrieved    []string // file paths retrieved
 	UsedFiles    []string // files actually used in generated code
@@ -51,7 +51,7 @@ func (qt *QualityTracker) RecordQuery(query string, retrieved []string, usedFile
 		precision = float64(hits) / float64(len(retrieved))
 	}
 
-	qt.queries = append(qt.queries, QueryRecord{
+	qt.queries = append(qt.queries, TrackingQueryRecord{
 		Query:        query,
 		Retrieved:    retrieved,
 		UsedFiles:    usedFiles,
@@ -82,7 +82,7 @@ func (qt *QualityTracker) GetAveragePrecision() float64 {
 }
 
 // GetRecentQueries returns the most recent queries.
-func (qt *QualityTracker) GetRecentQueries(n int) []QueryRecord {
+func (qt *QualityTracker) GetRecentQueries(n int) []TrackingQueryRecord {
 	qt.mu.Lock()
 	defer qt.mu.Unlock()
 
