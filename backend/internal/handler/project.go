@@ -169,10 +169,6 @@ func (h *ProjectHandler) GetFile(c fiber.Ctx) error {
 	if decoded, err := url.PathUnescape(path); err == nil {
 		path = decoded
 	}
-	// Normalize path: ensure leading slash to match DB storage
-	if path != "" && path[0] != '/' {
-		path = "/" + path
-	}
 	userID := c.Locals("uid")
 	uid := ""
 	if userID != nil {
@@ -183,7 +179,14 @@ func (h *ProjectHandler) GetFile(c fiber.Ctx) error {
 	if uid == "" {
 		return Unauthorized(c, "未授权")
 	}
+	// Try exact path first, then with/without leading slash
 	file, err := h.svc.GetFile(c.Context(), projectID, path, uid)
+	if err != nil && path != "" && path[0] != '/' {
+		file, err = h.svc.GetFile(c.Context(), projectID, "/"+path, uid)
+	}
+	if err != nil && path != "" && path[0] == '/' {
+		file, err = h.svc.GetFile(c.Context(), projectID, path[1:], uid)
+	}
 	if err != nil {
 		return NotFound(c, "文件不存在")
 	}
