@@ -88,38 +88,10 @@ func (s *BuildModuleSkill) Execute(ctx context.Context, input map[string]interfa
 		}
 	}
 
-	// ========== Phase 1: Structure Validation ==========
-	log.WriteString("\n── Phase 1: Structure Validation ──\n")
-	log.WriteString("[BUILD_PROGRESS] phase=validate status=starting\n")
-	requiredFiles := []string{"module.prop", "META-INF/com/google/android/update-binary"}
-	var missingFiles []string
-	for _, f := range requiredFiles {
-		path := filepath.Join(projectPath, f)
-		if _, err := os.Stat(path); os.IsNotExist(err) {
-			missingFiles = append(missingFiles, f)
-		} else {
-			log.WriteString(fmt.Sprintf("  ✅ %s\n", f))
-		}
-	}
-
-	if len(missingFiles) > 0 {
-		for _, f := range missingFiles {
-			log.WriteString(fmt.Sprintf("  ❌ %s — missing\n", f))
-		}
-		log.WriteString(fmt.Sprintf("\n❌ Build failed: %d required files missing\n", len(missingFiles)))
-		log.WriteString("[BUILD_PROGRESS] phase=validate status=failed\n")
-		return log.String(), fmt.Errorf("missing required files: %s", strings.Join(missingFiles, ", "))
-	}
-
-	// Check recommended files
-	if _, err := os.Stat(filepath.Join(projectPath, "customize.sh")); os.IsNotExist(err) {
-		log.WriteString("  ⚠️ customize.sh not found (recommended)\n")
-	} else {
-		log.WriteString("  ✅ customize.sh\n")
-	}
-	log.WriteString("[BUILD_PROGRESS] phase=validate status=done\n")
-
-	// ========== Phase 1.5: Sync source files from DB/S3 to disk ==========
+	// ========== Phase 1: Sync source files from DB/S3 to disk ==========
+	// Sync MUST happen before validation so that files are on disk for stat checks.
+	log.WriteString("\n── Syncing source files to disk... ──\n")
+	if s.db != nil && projectID != "" {
 	log.WriteString("\n── Syncing source files to disk... ──\n")
 	if s.db != nil && projectID != "" {
 		// First pass: collect all relative paths and detect common prefix
@@ -194,8 +166,39 @@ func (s *BuildModuleSkill) Execute(ctx context.Context, input map[string]interfa
 		projectPath = effectivePath
 	}
 
-	// ========== Phase 2: Source Compilation ==========
-	log.WriteString("\n── Phase 2: Source Compilation ──\n")
+	// ========== Phase 2: Structure Validation ==========
+	log.WriteString("\n── Phase 2: Structure Validation ──\n")
+	log.WriteString("[BUILD_PROGRESS] phase=validate status=starting\n")
+	requiredFiles := []string{"module.prop", "META-INF/com/google/android/update-binary"}
+	var missingFiles []string
+	for _, f := range requiredFiles {
+		path := filepath.Join(projectPath, f)
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			missingFiles = append(missingFiles, f)
+		} else {
+			log.WriteString(fmt.Sprintf("  ✅ %s\n", f))
+		}
+	}
+
+	if len(missingFiles) > 0 {
+		for _, f := range missingFiles {
+			log.WriteString(fmt.Sprintf("  ❌ %s — missing\n", f))
+		}
+		log.WriteString(fmt.Sprintf("\n❌ Build failed: %d required files missing\n", len(missingFiles)))
+		log.WriteString("[BUILD_PROGRESS] phase=validate status=failed\n")
+		return log.String(), fmt.Errorf("missing required files: %s", strings.Join(missingFiles, ", "))
+	}
+
+	// Check recommended files
+	if _, err := os.Stat(filepath.Join(projectPath, "customize.sh")); os.IsNotExist(err) {
+		log.WriteString("  ⚠️ customize.sh not found (recommended)\n")
+	} else {
+		log.WriteString("  ✅ customize.sh\n")
+	}
+	log.WriteString("[BUILD_PROGRESS] phase=validate status=done\n")
+
+	// ========== Phase 3: Source Compilation ==========
+	log.WriteString("\n── Phase 3: Source Compilation ──\n")
 	log.WriteString("[BUILD_PROGRESS] phase=compile status=starting\n")
 	compileResult := s.compileSources(projectPath)
 	log.WriteString(compileResult.log)
@@ -205,8 +208,8 @@ func (s *BuildModuleSkill) Execute(ctx context.Context, input map[string]interfa
 		log.WriteString(fmt.Sprintf("[BUILD_PROGRESS] phase=compile status=failed errors=%d\n", len(compileResult.errors)))
 	}
 
-	// ========== Phase 3: Shell Script Validation ==========
-	log.WriteString("\n── Phase 3: Shell Script Validation ──\n")
+	// ========== Phase 4: Shell Script Validation ==========
+	log.WriteString("\n── Phase 4: Shell Script Validation ──\n")
 	log.WriteString("[BUILD_PROGRESS] phase=shellcheck status=starting\n")
 	shellValid := s.validateShellScripts(projectPath)
 	if shellValid {
@@ -216,8 +219,8 @@ func (s *BuildModuleSkill) Execute(ctx context.Context, input map[string]interfa
 	}
 	log.WriteString("[BUILD_PROGRESS] phase=shellcheck status=done\n")
 
-	// ========== Phase 4: Package ==========
-	log.WriteString("\n── Phase 4: Package ──\n")
+	// ========== Phase 5: Package ==========
+	log.WriteString("\n── Phase 5: Package ──\n")
 	log.WriteString("[BUILD_PROGRESS] phase=package status=starting\n")
 	outputZIP := filepath.Join(filepath.Dir(projectPath), "output.zip")
 	if err := s.removeExisting(outputZIP); err != nil {
