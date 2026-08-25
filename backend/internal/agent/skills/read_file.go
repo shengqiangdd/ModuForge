@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -66,12 +67,33 @@ func (s *ReadFileSkill) Execute(ctx context.Context, input map[string]interface{
 		return "", fmt.Errorf("path is required")
 	}
 
-	// S3 storage path: read from S3 directly
+	// S3 storage path: read from S3 directly, fall back to DB on failure
 	if s.storage != nil {
 		content, err := s.storage.Read(ctx, s.storagePath(projectID, path))
 		if err != nil {
-			return "", fmt.Errorf("s3 read failed: %w", err)
+			// S3 read failed — fall back to DB content column (same as project service)
+			slog.Warn("s3 read failed in read_file skill, falling back to db", "path", path, "error", err)
+		} else if len(content) > 0 {
+			// Differential-cache also applies to S3 reads (production path).
+			if s.fileHash != nil && startLine == 0 && endLine == 0 {
+				h := sha256.Sum256(content)
+				hash := fmt.Sprintf("%x", h)
+				prev := s.fileHash.Get(path)
+				totalLines := len(strings.Split(string(content), "\n"))
+				if prev != "" && prev == hash && totalLines > 500 {
+					return fmt.Sprintf(
+						"File: %s (%d lines) — UNCHANGED since last read (sha256:%s).\n"+
+							"Content is identical to what you already have in context. "+
+							"No need to re-analyze. Use start_line/end_line to read any specific section if required.",
+						path, totalLines, hash[:12],
+					), nil
+				}
+				s.fileHash.Set(path, hash)
+			}
+			return s.formatContent(path, string(content), startLine, endLine), nil
 		}
+		// content is empty or S3 failed — fall through to legacy disk/DB path below
+	}
 		// Differential-cache also applies to S3 reads (production path).
 		if s.fileHash != nil && startLine == 0 && endLine == 0 {
 			h := sha256.Sum256(content)
