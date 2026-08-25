@@ -50,6 +50,28 @@ func SelectRelevantFiles(projectIndex *ProjectIndex, request string, maxFiles in
 			}
 		}
 
+		// Type/interface matching
+		if types, ok := projectIndex.GoTypes[file]; ok {
+			for _, t := range types {
+				for _, kw := range keywords {
+					if containsIgnoreCase(t, kw) {
+						score += 0.4
+						reasons = append(reasons, "type match: "+t)
+					}
+				}
+			}
+		}
+
+		// Fingerprint matching
+		if fingerprint, ok := projectIndex.FileFingerprints[file]; ok {
+			for _, kw := range keywords {
+				if containsIgnoreCase(fingerprint, kw) {
+					score += 0.3
+					reasons = append(reasons, "fingerprint match: "+kw)
+				}
+			}
+		}
+
 		// Performance-related keywords
 		if containsAny(request, []string{"性能", "performance", "速度", "speed", "优化", "optimize", "fast", "slow", "latency", "瓶颈"}) {
 			if containsAny(file, []string{"runner", "llm", "cache", "pool", "worker", "config", "token", "compact", "optimizer", "budget"}) {
@@ -95,6 +117,10 @@ func SelectRelevantFiles(projectIndex *ProjectIndex, request string, maxFiles in
 		}
 	}
 
+	// Expand with dependencies
+	expanded := expandWithDependencies(projectIndex, results, 5)
+	results = append(results, expanded...)
+
 	// Sort by score descending
 	sort.Slice(results, func(i, j int) bool {
 		return results[i].Score > results[j].Score
@@ -104,6 +130,31 @@ func SelectRelevantFiles(projectIndex *ProjectIndex, request string, maxFiles in
 		results = results[:maxFiles]
 	}
 	return results
+}
+
+// expandWithDependencies adds upstream/downstream files from the dependency graph.
+func expandWithDependencies(idx *ProjectIndex, selected []FileRelevance, maxExtra int) []FileRelevance {
+	seen := map[string]bool{}
+	for _, fr := range selected {
+		seen[fr.Path] = true
+	}
+
+	var expanded []FileRelevance
+	for _, fr := range selected {
+		if deps, ok := idx.DepGraph[fr.Path]; ok {
+			for _, dep := range deps {
+				if !seen[dep] && len(expanded) < maxExtra {
+					seen[dep] = true
+					expanded = append(expanded, FileRelevance{
+						Path:    dep,
+						Score:   fr.Score * 0.5,
+						Reasons: []string{"dependency of " + fr.Path},
+					})
+				}
+			}
+		}
+	}
+	return expanded
 }
 
 func extractKeywords(text string) []string {
