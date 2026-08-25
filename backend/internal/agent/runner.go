@@ -191,9 +191,21 @@ type AgentRunner struct {
 
 	// TokenOptimizer for token-aware conversation pruning and tool result caching
 	tokenOptimizer *TokenOptimizer
+
+	// bgCancel cancels the background context used by long-lived goroutines
+	bgCancel context.CancelFunc
+}
+
+// Stop cancels background goroutines (cleanup loops, cache tickers).
+func (r *AgentRunner) Stop() {
+	if r.bgCancel != nil {
+		r.bgCancel()
+	}
 }
 
 func NewAgentRunner(registry *SkillRegistry, apiKey, endpoint, model string, db *sql.DB) *AgentRunner {
+	// Background context for long-lived goroutines; cancel via Stop().
+	bgCtx, bgCancel := context.WithCancel(context.Background())
 	r := &AgentRunner{
 		registry:         registry,
 		apiKey:           apiKey,
@@ -218,8 +230,9 @@ func NewAgentRunner(registry *SkillRegistry, apiKey, endpoint, model string, db 
 		semanticCache:    NewSemanticCache(500, 0.85),
 		contextCondenser: NewContextCondenser(30, 6, 1),
 		sessionLearner:   NewSessionLearner(100),
-		diffCache:        NewDifferentialCache(2 * time.Minute),
-		tokenOptimizer:   NewTokenOptimizer(""),
+		diffCache:        NewDifferentialCache(bgCtx, 2*time.Minute),
+		tokenOptimizer:   NewTokenOptimizer(bgCtx, ""),
+		bgCancel:         bgCancel,
 	}
 	go r.startSessionCacheCleanup()
 	return r

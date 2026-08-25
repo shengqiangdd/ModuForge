@@ -11,6 +11,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/moduforge/backend/internal/saferead"
 )
 
 type RepoInfo struct {
@@ -57,7 +59,10 @@ func (s *RepoService) FetchRepoInfo(ctx context.Context, repoURL string) (*RepoI
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+		body, err := saferead.SafeReadAll(resp.Body)
+		if err != nil {
+			return nil, fmt.Errorf("read GitHub API error response: %w", err)
+		}
 		return nil, fmt.Errorf("GitHub API returned %d: %s", resp.StatusCode, string(body))
 	}
 
@@ -116,7 +121,10 @@ func (s *RepoService) FetchRepoFiles(ctx context.Context, repoURL, path string) 
 		return nil, fmt.Errorf("GitHub API returned %d", resp.StatusCode)
 	}
 
-	body, _ := io.ReadAll(resp.Body)
+	body, err := saferead.SafeReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read GitHub API response: %w", err)
+	}
 	var result []map[string]interface{}
 	if err := json.Unmarshal(body, &result); err != nil {
 		// 可能是单文件

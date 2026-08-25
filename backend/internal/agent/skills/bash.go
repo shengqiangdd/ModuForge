@@ -15,15 +15,16 @@ import (
 	"github.com/moduforge/backend/internal/storage"
 )
 
-// SecurityChecker interface for command validation
+// SecurityChecker interface for command validation.
+// Implemented by agent.SecurityEngine; keeps skills decoupled from agent internals.
 type SecurityChecker interface {
-	CheckCommand(command string) (level int, riskScore int, matchedRules []interface{})
+	ValidateCommand(command string) (level int, riskScore int, message string)
 }
 
 type BashSkill struct {
 	projectPath    string
 	db             *sql.DB
-	securityEngine interface{} // *agent.SecurityEngine (avoid circular import)
+	securityEngine SecurityChecker // typed interface instead of interface{}
 	storage        storage.StorageAdapter // optional S3 storage backend
 }
 
@@ -38,7 +39,7 @@ func (s *BashSkill) WithStorage(st storage.StorageAdapter) *BashSkill {
 }
 
 // NewBashSkillWithSecurity creates a BashSkill with security engine
-func NewBashSkillWithSecurity(projectPath string, db *sql.DB, securityEngine interface{}) *BashSkill {
+func NewBashSkillWithSecurity(projectPath string, db *sql.DB, securityEngine SecurityChecker) *BashSkill {
 	return &BashSkill{
 		projectPath:    projectPath,
 		db:             db,
@@ -185,74 +186,112 @@ func (s *BashSkill) validateCommand(command string) error {
 	}
 
 	// ── Whitelist: only safe command prefixes are allowed ──
-	// Extract the first command (handle pipes, &&, ||)
-	firstCmd := extractFirstCommand(cmd)
-
-	safePrefixes := []string{
-		// Version control
-		"git ", "git\t",
-		// Package managers
-		"npm ", "npx ", "yarn ", "pnpm ", "bun ",
-		"pip ", "pip3 ", "uv ",
-		"go ", "cargo ", "rustup ",
-		"apt ", "apt-get ", "dpkg ",
-		// Build & test
-		"make ", "cmake ", "cargo ",
-		"dotnet ", "msbuild ",
-		// Project-specific safe commands
-		"node ", "python ", "python3 ", "ruby ", "perl ", "php ",
-		"java ", "javac ",
-		// File inspection (read-only)
-		"ls ", "cat ", "head ", "tail ", "wc ", "grep ", "rg ",
-		"find ", "tree ", "stat ", "file ", "du ", "df ",
-		"pwd", "which ", "whereis ", "type ", "echo ", "printf ",
-		"diff ", "comm ", "sort ", "uniq ", "cut ", "awk ", "sed ",
-		"tr ", "xargs ",
-		// Git & project helpers
-		"jq ", "yq ",
-		// Network read-only
-		"curl ", "wget ",
-		// Archive
-		"tar ", "unzip ", "zip ", "gzip ", "gunzip ",
-		// Process
-		"ps ", "top ", "htop ", "uptime ", "date ", "env", "printenv",
-		// Build system
-		"flutter ", "dart ", "swift ", "xcodebuild ",
-		"gradle ", "mvn ",
-		// Directory navigation (always safe)
-		"cd ", "pushd", "popd",
-		// Safe filesystem operations (within project dir only)
-		"mkdir ", "touch ", "cp ", "mv ", "ln ",
-		"chmod ", "chown ",
-		// Compiler / toolchain
-		"gcc ", "g++ ", "clang ", "rustc ",
-		"tsc ", "esbuild ", "vite ",
-		"docker ", "docker-compose ",
-		"podman ",
-		// Safe dev tools
-		"eslint ", "prettier ", "biome ",
-		"jest ", "vitest ", "mocha ", "pytest ", "go test",
-		"cargo test",
-	}
-
-	allowed := false
-	for _, prefix := range safePrefixes {
-		if strings.HasPrefix(firstCmd, prefix) || firstCmd == strings.TrimSuffix(prefix, " ") {
-			allowed = true
-			break
+	// Split into sub-commands and check EVERY one (prevents "ls; rm -rf /" bypass)
+	subCmds := splitSubCommands(cmd)
+	for _, sub := range subCmds {
+		sub = strings.TrimSpace(sub)
+		if sub == "" {
+			continue
+		}
+		firstCmd := extractFirstCommand(sub)
+		if firstCmd == "" {
+			continue
+		}
+		// If pipe command (contains |), extract part before pipe
+		if pipeIdx := strings.Index(firstCmd, "|"); pipeIdx > 0 {
+			firstCmd = strings.TrimSpace(firstCmd[:pipeIdx])
+		}
+		if !isAllowedPrefix(firstCmd) && !strings.HasPrefix(firstCmd, "./") {
+			return fmt.Errorf("🚫 子命令不在白名单中: '%s'", firstCmd)
 		}
 	}
 
-	// Also allow commands starting with ./
-	if strings.HasPrefix(firstCmd, "./") {
-		allowed = true
-	}
-
-	if !allowed {
-		return fmt.Errorf("🚫 命令不在白名单中: '%s'。允许的命令前缀包括: git, npm, go, python, node, ls, cat, find, mkdir, cp, mv 等", firstCmd)
+	// ── SecurityEngine integration: delegate to the centralized policy engine ──
+	if s.securityEngine != nil {
+		level, riskScore, msg := s.securityEngine.ValidateCommand(command)
+		if level == 2 { // SecurityDeny
+			if msg == "" {
+				msg = fmt.Sprintf("安全引擎拒绝 (risk: %d)", riskScore)
+			}
+			return fmt.Errorf("🚫 %s", msg)
+		}
 	}
 
 	return nil
+}
+
+// safePrefixes is the whitelist of allowed command prefixes.
+var safePrefixes = []string{
+	// Version control
+	"git ", "git\t",
+	// Package managers
+	"npm ", "npx ", "yarn ", "pnpm ", "bun ",
+	"pip ", "pip3 ", "uv ",
+	"go ", "cargo ", "rustup ",
+	"apt ", "apt-get ", "dpkg ",
+	// Build & test
+	"make ", "cmake ", "cargo ",
+	"dotnet ", "msbuild ",
+	// Project-specific safe commands
+	"node ", "python ", "python3 ", "ruby ", "perl ", "php ",
+	"java ", "javac ",
+	// File inspection (read-only)
+	"ls ", "cat ", "head ", "tail ", "wc ", "grep ", "rg ",
+	"find ", "tree ", "stat ", "file ", "du ", "df ",
+	"pwd", "which ", "whereis ", "type ", "echo ", "printf ",
+	"diff ", "comm ", "sort ", "uniq ", "cut ", "awk ", "sed ",
+	"tr ", "xargs ",
+	// Git & project helpers
+	"jq ", "yq ",
+	// Network read-only
+	"curl ", "wget ",
+	// Archive
+	"tar ", "unzip ", "zip ", "gzip ", "gunzip ",
+	// Process
+	"ps ", "top ", "htop ", "uptime ", "date ", "env", "printenv",
+	// Build system
+	"flutter ", "dart ", "swift ", "xcodebuild ",
+	"gradle ", "mvn ",
+	// Directory navigation (always safe)
+	"cd ", "pushd", "popd",
+	// Safe filesystem operations (within project dir only)
+	"mkdir ", "touch ", "cp ", "mv ", "ln ",
+	"chmod ", "chown ",
+	// Compiler / toolchain
+	"gcc ", "g++ ", "clang ", "rustc ",
+	"tsc ", "esbuild ", "vite ",
+	"docker ", "docker-compose ",
+	"podman ",
+	// Safe dev tools
+	"eslint ", "prettier ", "biome ",
+	"jest ", "vitest ", "mocha ", "pytest ", "go test",
+	"cargo test",
+}
+
+// isAllowedPrefix checks if a command name is in the whitelist.
+func isAllowedPrefix(cmdName string) bool {
+	for _, prefix := range safePrefixes {
+		if strings.HasPrefix(cmdName, prefix) || cmdName == strings.TrimSuffix(prefix, " ") {
+			return true
+		}
+	}
+	return false
+}
+
+// splitSubCommands splits a compound command into individual sub-commands.
+// Separators are split by priority: && > || > ;
+func splitSubCommands(cmd string) []string {
+	var result []string
+	for _, sep := range []string{" && ", " || ", "; "} {
+		parts := strings.Split(cmd, sep)
+		if len(parts) > 1 {
+			for _, p := range parts {
+				result = append(result, splitSubCommands(strings.TrimSpace(p))...)
+			}
+			return result
+		}
+	}
+	return []string{cmd}
 }
 
 // extractFirstCommand extracts the first command from a pipeline/chain.

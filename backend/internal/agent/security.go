@@ -292,6 +292,20 @@ func (se *SecurityEngine) AuditAndCheck(command, sessionID string) (allowed bool
 	return false, false, 0, "未知安全级别"
 }
 
+// ValidateCommand satisfies skills.SecurityChecker interface.
+// Returns (level, riskScore, message) — level 0=auto, 1=confirm, 2=deny.
+func (se *SecurityEngine) ValidateCommand(command string) (level int, riskScore int, message string) {
+	l, score, rules := se.CheckCommand(command)
+	switch l {
+	case SecurityDeny:
+		return 2, score, "🚫 禁止执行: " + se.buildDescription(rules) + fmt.Sprintf(" (风险评分: %d/100)", score)
+	case SecurityConfirm:
+		return 1, score, "⚠️ 需要确认: " + se.buildDescription(rules) + fmt.Sprintf(" (风险评分: %d/100)", score)
+	default:
+		return 0, score, ""
+	}
+}
+
 func (se *SecurityEngine) buildDescription(rules []SecurityRule) string {
 	if len(rules) == 0 {
 		return "未识别的危险操作"

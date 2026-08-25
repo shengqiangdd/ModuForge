@@ -11,9 +11,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"github.com/moduforge/backend/internal/domain"
 	"strings"
 	"time"
+
+	"github.com/moduforge/backend/internal/domain"
+	"github.com/moduforge/backend/internal/saferead"
 )
 
 // ReleaseInfo contains information about a GitHub Release
@@ -128,7 +130,10 @@ func (s *BuildService) createGitHubRelease(ctx context.Context, token, tagName, 
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusCreated {
-		bodyBytes, _ := io.ReadAll(resp.Body)
+		bodyBytes, err := saferead.SafeReadAll(resp.Body)
+		if err != nil {
+			return nil, fmt.Errorf("read GitHub API error response: %w", err)
+		}
 		return nil, fmt.Errorf("GitHub API error (status %d): %s", resp.StatusCode, string(bodyBytes))
 	}
 
@@ -252,7 +257,10 @@ func (s *BuildService) uploadReleaseAsset(ctx context.Context, token, uploadURL,
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusCreated {
-		bodyBytes, _ := io.ReadAll(resp.Body)
+		bodyBytes, err := saferead.SafeReadAll(resp.Body)
+		if err != nil {
+			return fmt.Errorf("read GitHub API error response: %w", err)
+		}
 		return fmt.Errorf("GitHub API error (status %d): %s", resp.StatusCode, string(bodyBytes))
 	}
 

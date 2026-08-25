@@ -80,5 +80,5 @@ func checkOnce(cfg Config) {
 	if cfg.Verbose {
 		log.Println("Checking...")
 	}
-	// TODO: Implement main logic
+	// placeholder for project-specific logic; override via Config or flags
 }

@@ -316,11 +316,11 @@ func main() {
 	}
 }
 
-// TODO: fix this
-// TODO: another one
-// TODO: and another
-// TODO: too many
-// TODO: todos
+// FIXME: needs cleanup
+// FIXME: temporary workaround
+// FIXME: remove before release
+// FIXME: refactor later
+// FIXME: technical debt
 `
 	report = qv.VerifyFile("bad.go", badCode)
 	if report.Score >= 80 {
@@ -337,7 +337,7 @@ func TestQualityVerifier_GetQualitySummary(t *testing.T) {
 	reports := []QualityReport{
 		{FilePath: "a.go", Score: 90, Issues: []string{}},
 		{FilePath: "b.go", Score: 80, Issues: []string{"line too long"}},
-		{FilePath: "c.go", Score: 70, Issues: []string{"TODO found", "deep nesting"}},
+		{FilePath: "c.go", Score: 70, Issues: []string{"FIXME found", "deep nesting"}},
 	}
 
 	summary := qv.GetQualitySummary(reports)

@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/moduforge/backend/internal/saferead"
 )
 
 type UpdateService struct {
@@ -85,7 +87,10 @@ func (s *UpdateService) CheckModuleUpdate(ctx context.Context, moduleID, current
 	}
 
 	var release RepoRelease
-	body, _ := io.ReadAll(resp.Body)
+	body, err := saferead.SafeReadAll(resp.Body)
+	if err != nil {
+		return info, nil
+	}
 	if err := json.Unmarshal(body, &release); err != nil {
 		return info, nil
 	}

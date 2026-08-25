@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -40,12 +41,22 @@ import (
 // English: ~4 chars/token, Code: ~3 chars/token, Chinese: ~1.5 chars/token.
 // Accuracy: ±15% vs tiktoken, but 100x faster (no network/disk overhead).
 type TokenEstimator struct {
-	cache     sync.Map // hash -> estimated tokens
-	cacheSize int64    // approximate cache size for eviction
+	cache     map[string]int   // hash -> estimated tokens
+	cacheKeys []string         // LRU queue (oldest first for eviction)
+	mu        sync.RWMutex
+	maxCache  int
 }
 
-// maxCacheEntries limits cache growth (each entry ~48 bytes key + 8 bytes value = ~56 bytes)
-const maxCacheEntries = 5000 // ~280KB
+const defaultMaxCache = 5000
+
+// NewTokenEstimator creates a new TokenEstimator with properly initialized cache.
+func NewTokenEstimator() *TokenEstimator {
+	return &TokenEstimator{
+		cache:    make(map[string]int, defaultMaxCache),
+		cacheKeys: make([]string, 0, defaultMaxCache),
+		maxCache: defaultMaxCache,
+	}
+}
 
 // EstimateTokens returns an estimated token count for the given text.
 func (te *TokenEstimator) EstimateTokens(text string) int {
@@ -56,9 +67,13 @@ func (te *TokenEstimator) EstimateTokens(text string) int {
 	// Fast path: check cache
 	hash := sha256.Sum256([]byte(text))
 	key := hex.EncodeToString(hash[:8])
-	if cached, ok := te.cache.Load(key); ok {
-		return cached.(int)
+
+	te.mu.RLock()
+	if v, ok := te.cache[key]; ok {
+		te.mu.RUnlock()
+		return v
 	}
+	te.mu.RUnlock()
 
 	// Classify characters by type
 	var chinese, ascii, code, whitespace int
@@ -82,18 +97,23 @@ func (te *TokenEstimator) EstimateTokens(text string) int {
 	tokens := float64(chinese)/1.5 + float64(ascii)/4.0 + float64(code)/3.0 + float64(whitespace)/4.0
 	result := int(math.Round(tokens))
 
-	// Cache with size limit
+	// Cache with LRU eviction
 	if len(text) < 100000 {
-		te.cache.Store(key, result)
-		size := te.cacheSize
-		te.cacheSize++
-		// Evict when over limit: clear entire cache (simple strategy, avoids full scan)
-		if size >= maxCacheEntries {
-			te.cache = sync.Map{}
-			te.cacheSize = 0
-			te.cache.Store(key, result)
-			te.cacheSize = 1
+		te.mu.Lock()
+		if te.cache == nil {
+			te.cache = make(map[string]int, defaultMaxCache)
+			te.cacheKeys = make([]string, 0, defaultMaxCache)
+			te.maxCache = defaultMaxCache
 		}
+		if len(te.cache) >= te.maxCache && len(te.cacheKeys) > 0 {
+			// Evict oldest entry
+			oldest := te.cacheKeys[0]
+			delete(te.cache, oldest)
+			te.cacheKeys = te.cacheKeys[1:]
+		}
+		te.cache[key] = result
+		te.cacheKeys = append(te.cacheKeys, key)
+		te.mu.Unlock()
 	}
 
 	return result
@@ -239,17 +259,38 @@ type diffCacheEntry struct {
 }
 
 // NewDifferentialCache creates a new differential cache.
-func NewDifferentialCache(ttl time.Duration) *DifferentialCache {
+// When ctx is non-nil, the background cleanup goroutine respects cancellation.
+func NewDifferentialCache(ctx context.Context, ttl time.Duration) *DifferentialCache {
 	if ttl <= 0 {
 		ttl = 2 * time.Minute
 	}
-	return &DifferentialCache{
+	dc := &DifferentialCache{
 		entries: make(map[string]map[string]*diffCacheEntry),
 		ttl:     ttl,
 	}
+	if ctx != nil {
+		go dc.cleanupLoop(ctx)
+	}
+	return dc
 }
 
-// CheckFile returns cached content if file hasn't changed, nil otherwise.
+// cleanupLoop periodically removes expired entries until ctx is cancelled.
+func (dc *DifferentialCache) cleanupLoop(ctx context.Context) {
+	ticker := time.NewTicker(2 * time.Minute)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			dc.Cleanup()
+		}
+	}
+}
+
+// CheckFile returns cached content if file hasn't changed.
+// Fast path: mtime + size check (no file read).
+// Slow path: SHA256 hash only when fast path is inconclusive.
 func (dc *DifferentialCache) CheckFile(sessionID, path string) (string, bool) {
 	dc.mu.RLock()
 	defer dc.mu.RUnlock()
@@ -268,25 +309,28 @@ func (dc *DifferentialCache) CheckFile(sessionID, path string) (string, bool) {
 		return "", false
 	}
 
-	// Check if file has changed (size)
+	// Fast path: stat mtime + size — skip file read entirely if unchanged
 	info, err := os.Stat(path)
 	if err != nil {
 		return "", false
 	}
 
-	if info.Size() != entry.fileSize {
-		return "", false
+	if !info.ModTime().After(entry.timestamp) && info.Size() == entry.fileSize {
+		return entry.content, true
 	}
 
-	// Content hash check
+	// Slow path: mtime advanced or size changed — verify with content hash
 	content, err := os.ReadFile(path)
 	if err != nil {
 		return "", false
 	}
 	hash := sha256.Sum256(content)
-	hashStr := hex.EncodeToString(hash[:])
+	hexHash := hex.EncodeToString(hash[:])
 
-	if hashStr == entry.hash {
+	if hexHash == entry.hash {
+		// File content is the same (mtime bumped without content change)
+		entry.timestamp = time.Now()
+		dc.entries[sessionID][path] = entry
 		return entry.content, true
 	}
 
@@ -430,11 +474,11 @@ type ConversationOptimizer struct {
 }
 
 // NewConversationOptimizer creates a new optimizer.
-func NewConversationOptimizer() *ConversationOptimizer {
+func NewConversationOptimizer(ctx context.Context) *ConversationOptimizer {
 	return &ConversationOptimizer{
-		estimator: &TokenEstimator{},
+		estimator: NewTokenEstimator(),
 		pruner:    NewToolResultPruner(),
-		diffCache: NewDifferentialCache(2 * time.Minute),
+		diffCache: NewDifferentialCache(ctx, 2*time.Minute),
 	}
 }
 
@@ -600,22 +644,15 @@ type TokenOptimizer struct {
 
 // NewTokenOptimizer creates a fully-configured optimizer and starts
 // a background goroutine that periodically cleans up expired cache entries.
-func NewTokenOptimizer(promptsDir string) *TokenOptimizer {
-	dc := NewDifferentialCache(2 * time.Minute)
-	// Start periodic cleanup every 2 minutes
-	go func() {
-		ticker := time.NewTicker(2 * time.Minute)
-		defer ticker.Stop()
-		for range ticker.C {
-			dc.Cleanup()
-		}
-	}()
+// Pass a cancellable context to enable graceful shutdown.
+func NewTokenOptimizer(ctx context.Context, promptsDir string) *TokenOptimizer {
+	dc := NewDifferentialCache(ctx, 2*time.Minute)
 	return &TokenOptimizer{
-		estimator:     &TokenEstimator{},
+		estimator:     NewTokenEstimator(),
 		pruner:        NewToolResultPruner(),
 		diffCache:     dc,
 		promptChunker: NewPromptChunker(promptsDir),
-		convoOpt:      NewConversationOptimizer(),
+		convoOpt:      NewConversationOptimizer(ctx),
 		prefixCache:   NewPrefixCache(100, 5*time.Minute),
 	}
 }

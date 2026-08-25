@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { untrack } from 'svelte';
+  import { untrack, onDestroy } from 'svelte';
   import { toast } from '$lib/stores/toast.svelte';
   
   let { open, onClose }: { open: boolean; onClose: () => void } = $props();
@@ -9,6 +9,9 @@
   let editContent = $state<string>('');
   let loading = $state(false);
   let saving = $state(false);
+  let abortController = $state<AbortController | null>(null);
+
+  onDestroy(() => abortController?.abort());
   
   // Load prompts when modal opens.
   // 用 untrack 包住 loadPrompts(): 它异步写 loading/prompts/selectedPrompt 这些
@@ -22,8 +25,11 @@
   async function loadPrompts() {
     loading = true;
     try {
+      abortController?.abort();
+      abortController = new AbortController();
       const token = localStorage.getItem('moduforge_token') || '';
       const res = await fetch('/api/v1/md-prompts', {
+        signal: abortController.signal,
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (res.ok) {
@@ -36,6 +42,7 @@
         toast('加载提示词列表失败', 'error');
       }
     } catch (e) {
+      if (e?.name === 'AbortError') return;
       toast(`加载失败: ${e instanceof Error ? e.message : e}`, 'error');
     } finally {
       loading = false;
@@ -46,8 +53,11 @@
     selectedPrompt = name;
     loading = true;
     try {
+      abortController?.abort();
+      abortController = new AbortController();
       const token = localStorage.getItem('moduforge_token') || '';
       const res = await fetch(`/api/v1/md-prompts/${name}`, {
+        signal: abortController.signal,
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (res.ok) {
@@ -57,6 +67,7 @@
         toast('加载提示词内容失败', 'error');
       }
     } catch (e) {
+      if (e?.name === 'AbortError') return;
       toast(`加载失败: ${e instanceof Error ? e.message : e}`, 'error');
     } finally {
       loading = false;
@@ -71,9 +82,12 @@
     
     saving = true;
     try {
+      abortController?.abort();
+      abortController = new AbortController();
       const token = localStorage.getItem('moduforge_token') || '';
       const res = await fetch(`/api/v1/md-prompts/${selectedPrompt}`, {
         method: 'PUT',
+        signal: abortController.signal,
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
@@ -90,6 +104,7 @@
         toast(`保存失败: ${err.error || '未知错误'}`, 'error');
       }
     } catch (e) {
+      if (e?.name === 'AbortError') return;
       toast(`保存失败: ${e instanceof Error ? e.message : e}`, 'error');
     } finally {
       saving = false;
@@ -108,9 +123,12 @@
     
     loading = true;
     try {
+      abortController?.abort();
+      abortController = new AbortController();
       const token = localStorage.getItem('moduforge_token') || '';
       const res = await fetch(`/api/v1/md-prompts/${selectedPrompt}/reset`, {
         method: 'POST',
+        signal: abortController.signal,
         headers: { 'Authorization': `Bearer ${token}` }
       });
       
@@ -122,6 +140,7 @@
         toast('重置失败', 'error');
       }
     } catch (e) {
+      if (e?.name === 'AbortError') return;
       toast(`重置失败: ${e instanceof Error ? e.message : e}`, 'error');
     } finally {
       loading = false;
@@ -131,9 +150,12 @@
   async function reloadPrompts() {
     loading = true;
     try {
+      abortController?.abort();
+      abortController = new AbortController();
       const token = localStorage.getItem('moduforge_token') || '';
       const res = await fetch('/api/v1/md-prompts/reload', {
         method: 'POST',
+        signal: abortController.signal,
         headers: { 'Authorization': `Bearer ${token}` }
       });
       
@@ -144,6 +166,7 @@
         toast('重新加载失败', 'error');
       }
     } catch (e) {
+      if (e?.name === 'AbortError') return;
       toast(`重新加载失败: ${e instanceof Error ? e.message : e}`, 'error');
     } finally {
       loading = false;

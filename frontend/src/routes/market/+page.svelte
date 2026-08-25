@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import MarketHeader from './components/MarketHeader.svelte';
   import ModuleGrid from './components/ModuleGrid.svelte';
   import ModuleDetailModal from './components/ModuleDetailModal.svelte';
@@ -267,6 +267,10 @@
   function compareWinner(a: number, b: number): 'a' | 'b' | 'tie' { return a > b ? 'a' : b > a ? 'b' : 'tie'; }
 
   onMount(() => { loadModules(); api.fetchFavoriteIds().then(ids => favoritedModules = ids); api.fetchAllTags().then(t => allTags = t); });
+
+  onDestroy(() => {
+    if (demoInterval) clearInterval(demoInterval);
+  });
 </script>
 
 <div class="w-full p-4 md:p-6 max-w-7xl mx-auto">

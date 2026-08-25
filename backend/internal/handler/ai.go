@@ -16,6 +16,7 @@ import (
 	"github.com/moduforge/backend/internal/config"
 	"github.com/moduforge/backend/internal/database"
 	"github.com/moduforge/backend/internal/llm"
+	"github.com/moduforge/backend/internal/saferead"
 	"github.com/moduforge/backend/internal/service"
 )
 
@@ -216,7 +217,10 @@ func (h *AIHandler) callLLMForSummary(prompt, systemPrompt string) (string, erro
 	}
 	defer resp.Body.Close()
 
-	respBody, _ := io.ReadAll(resp.Body)
+	respBody, err := saferead.SafeReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read LLM response: %w", err)
+	}
 	if resp.StatusCode >= 400 {
 		return "", fmt.Errorf("LLM API error %d: %s", resp.StatusCode, string(respBody))
 	}

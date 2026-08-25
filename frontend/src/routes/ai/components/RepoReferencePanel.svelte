@@ -1,4 +1,6 @@
 <script lang="ts">
+import { onDestroy } from 'svelte';
+
 let {
   show = false,
   onClose,
@@ -8,6 +10,10 @@ let {
   onClose: () => void;
   onAddReference: (text: string) => void;
 } = $props();
+
+let abortController = $state<AbortController | null>(null);
+
+onDestroy(() => abortController?.abort());
 
 let url = $state('');
 let loading = $state(false);
@@ -29,13 +35,17 @@ async function fetchRepo() {
   if (!url.trim()) { error = '请填写 GitHub 仓库 URL'; return; }
   loading = true; error = ''; info = null; allFiles = []; selected = [];
   try {
+    abortController?.abort();
+    abortController = new AbortController();
     const res = await fetch('/api/v1/repo/fetch', {
       method: 'POST', headers: authHeader(), body: JSON.stringify({ url: url.trim() }),
+      signal: abortController.signal,
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || '获取仓库失败');
     info = data;
   } catch (e: any) {
+    if (e?.name === 'AbortError') return;
     error = e.message || String(e);
   } finally { loading = false; }
 }
@@ -44,9 +54,12 @@ async function loadAndSmartSelect() {
   if (!info?.owner || !info?.name || !url.trim()) { error = '请先获取仓库信息'; return; }
   loadingFiles = true; error = '';
   try {
+    abortController?.abort();
+    abortController = new AbortController();
     // 一次性拉取完整文件树（后端用 git trees API 递归，1 次调用，规避 rate-limit）
     const res = await fetch('/api/v1/repo/tree', {
       method: 'POST', headers: authHeader(), body: JSON.stringify({ url: url.trim() }),
+      signal: abortController.signal,
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || '拉取文件树失败');
@@ -56,12 +69,14 @@ async function loadAndSmartSelect() {
     // 智能选择关键文件
     const sr = await fetch('/api/v1/repo/smart-select', {
       method: 'POST', headers: authHeader(), body: JSON.stringify({ files: flat }),
+      signal: abortController.signal,
     });
     const sd = await sr.json();
     if (sr.ok && Array.isArray(sd.selected)) {
       selected = sd.selected;
     }
   } catch (e: any) {
+    if (e?.name === 'AbortError') return;
     error = e.message || String(e);
   } finally { loadingFiles = false; }
 }
@@ -86,6 +101,7 @@ async function addReference() {
       try {
         const res = await fetch('/api/v1/repo/file', {
           method: 'POST', headers: authHeader(), body: JSON.stringify({ url: url.trim(), path: p }),
+          signal: abortController?.signal,
         });
         const data = await res.json();
         if (!res.ok) continue;
