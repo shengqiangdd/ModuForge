@@ -2,6 +2,8 @@ package builder
 
 import (
 	"strings"
+	
+	"github.com/moduforge/backend/internal/saferead"
 )
 
 // CodePattern represents a reusable code pattern in the catalog.
@@ -526,7 +528,7 @@ func (c *HTTPClient) doWithRetry(method, url string, body []byte, headers map[st
 			continue
 		}
 		defer resp.Body.Close()
-		data, err := io.ReadAll(resp.Body)
+		data, err := saferead.SafeReadAll(resp.Body)
 		if err != nil {
 			lastErr = err
 			continue
