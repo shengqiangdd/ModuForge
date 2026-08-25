@@ -15,7 +15,7 @@ func registerCoreRoutes(ctx *routeContext, authH *AuthHandler) {
 	cache := ctx.cache
 
 	// Services
-	projectSvc := service.NewProjectService(db.Conn, cfg.StoragePath, nil)
+	projectSvc := service.NewProjectService(db.Conn, cfg.StoragePath, ctx.s3adapter)
 	buildSvc := service.NewBuildService(db.Conn, cfg)
 	buildSvc.SetFileContentRepo(fileRepo)
 	templateSvc := service.NewTemplateService()

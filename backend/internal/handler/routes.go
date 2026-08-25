@@ -41,18 +41,19 @@ func reg4(api fiber.Router, method, path string, mw1, mw2, mw3, mw4 fiber.Handle
 
 // routeContext holds all shared state for route registration across sub-files.
 type routeContext struct {
-	api      fiber.Router
-	db       *database.DB
-	cfg      *config.Config
-	fileRepo *service.FileContentRepo
-	cache    *ResponseCache
-	rateRepo fiber.Handler
-	authMW   fiber.Handler
-	jwtMW    fiber.Handler
-	rateAuth fiber.Handler
-	rateAI   fiber.Handler
-	adminMW  fiber.Handler
-	aiSem    chan struct{}
+	api       fiber.Router
+	db        *database.DB
+	cfg       *config.Config
+	fileRepo  *service.FileContentRepo
+	s3adapter *storage.S3Adapter
+	cache     *ResponseCache
+	rateRepo  fiber.Handler
+	authMW    fiber.Handler
+	jwtMW     fiber.Handler
+	rateAuth  fiber.Handler
+	rateAI    fiber.Handler
+	adminMW   fiber.Handler
+	aiSem     chan struct{}
 }
 
 // r registers a protected route.
@@ -116,7 +117,7 @@ func RegisterRoutes(api fiber.Router, db *database.DB, cfg *config.Config) {
 	fileRepo := service.NewFileContentRepo(db.Conn, s3adapter)
 
 	ctx := &routeContext{
-		api: api, db: db, cfg: cfg, fileRepo: fileRepo, cache: cache, rateRepo: rateRepo,
+		api: api, db: db, cfg: cfg, fileRepo: fileRepo, s3adapter: s3adapter, cache: cache, rateRepo: rateRepo,
 		authMW: authMW, jwtMW: jwtMW, rateAuth: rateAuth, rateAI: rateAI, adminMW: adminMW, aiSem: aiSem,
 	}
 
