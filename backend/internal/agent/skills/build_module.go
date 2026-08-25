@@ -92,8 +92,6 @@ func (s *BuildModuleSkill) Execute(ctx context.Context, input map[string]interfa
 	// Sync MUST happen before validation so that files are on disk for stat checks.
 	log.WriteString("\n── Syncing source files to disk... ──\n")
 	if s.db != nil && projectID != "" {
-	log.WriteString("\n── Syncing source files to disk... ──\n")
-	if s.db != nil && projectID != "" {
 		// First pass: collect all relative paths and detect common prefix
 		type fileEntry struct {
 			path    string
