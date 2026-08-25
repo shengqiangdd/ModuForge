@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/moduforge/backend/internal/evolution"
+	"github.com/moduforge/backend/internal/rag"
 	"github.com/moduforge/backend/internal/service"
 )
 
@@ -354,6 +355,19 @@ func (r *AgentRunner) Run(ctx context.Context, task string, userID string, messa
 	}
 	debugLog("model=%s tier=%d compactionThreshold=%d maxResultLen=%d", resolvedModel, modelTier, compactionThreshold, cfg.MaxResultLen)
 
+	// Inject SessionMemory recommendations into task context
+	if r.sessionMemory != nil {
+		recommendations := r.sessionMemory.GetRecommendations("general")
+		if len(recommendations) > 0 {
+			start := 0
+			if len(recommendations) > 3 {
+				start = len(recommendations) - 3
+			}
+			recent := recommendations[start:]
+			task = fmt.Sprintf("%s\n\n[历史经验提示] 之前的成功模式: %s", task, strings.Join(recent, "; "))
+		}
+	}
+
 	if sessionID != "" && len(messages) > 0 {
 		r.convStore.Add(sessionID, messages)
 	}
@@ -425,6 +439,47 @@ You are running WITHOUT a project context. This means:
 	if len(task) > 0 {
 		if recalled := r.autoRecallMemory(cfg, task, 3); recalled != "" {
 			systemPrompt += "\n" + recalled
+		}
+	}
+
+	// RAG: inject relevant code context from knowledge base
+	if len(task) > 0 {
+		if chunks, err := rag.SearchRelevant(task, 5); err == nil && len(chunks) > 0 {
+			var ragCtx strings.Builder
+			ragCtx.WriteString("\n\n## 相关代码参考\n")
+			limit := 3
+			if len(chunks) < limit {
+				limit = len(chunks)
+			}
+			for i := 0; i < limit; i++ {
+				chunk := chunks[i]
+				lang := chunk.Metadata["language"]
+				if lang == "" {
+					lang = "unknown"
+				}
+				ragCtx.WriteString(fmt.Sprintf("\n### %s\n```%s\n%s\n```\n",
+					chunk.Source, lang, truncateString(chunk.Content, 500)))
+			}
+			systemPrompt += ragCtx.String()
+			log.Printf("[Agent] RAG: injected %d relevant code chunks", limit)
+		}
+	}
+
+	// Inject PromptOptimizer suggestions into system prompt
+	if r.promptOptimizer != nil {
+		if pending := r.promptOptimizer.GetPendingSuggestions(); len(pending) > 0 {
+			var optCtx strings.Builder
+			optCtx.WriteString("\n\n## 优化提示\n")
+			limit := 3
+			if len(pending) < limit {
+				limit = len(pending)
+			}
+			for i := 0; i < limit; i++ {
+				sug := pending[i]
+				optCtx.WriteString(fmt.Sprintf("- %s (置信度: %.0f%%)\n", sug.SuggestedChange, sug.Confidence))
+			}
+			systemPrompt += optCtx.String()
+			log.Printf("[Agent] PromptOptimizer: injected %d suggestions", limit)
 		}
 	}
 
@@ -862,6 +917,16 @@ You are running WITHOUT a project context. This means:
 			Timestamp:    time.Now(),
 			Source:       fmt.Sprintf("agent_run:%s", sessionID),
 		})
+	}
+
+	// Record session memory for cross-session learning
+	if r.sessionMemory != nil {
+		runSuccess := answerSent && perfSummary["error_count"].(int) == 0
+		if runSuccess {
+			r.sessionMemory.RecordSuccess("general", "auto", []string{fmt.Sprintf("session_%s", sessionID)}, 80)
+		} else {
+			r.sessionMemory.RecordFailure("build_failed", "auto_retry")
+		}
 	}
 
 	// Generate review report

@@ -230,3 +230,79 @@ func (s *Store) save() error {
 	path := filepath.Join(s.dir, "feedback.json")
 	return os.WriteFile(path, data, 0644)
 }
+
+// FormattedError is the structured output of FormatError.
+type FormattedError struct {
+	Summary     string   `json:"summary"`
+	ErrorLines  []string `json:"error_lines"`
+	Severity    string   `json:"severity"`
+	Suggestions []string `json:"suggestions,omitempty"`
+}
+
+// FormatError parses a raw build error message and returns a structured summary
+// suitable for feeding into an LLM repair prompt.
+func FormatError(errMsg string, generatedFiles []string) FormattedError {
+	lines := strings.Split(errMsg, "\n")
+	var errorLines []string
+	severity := "error"
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		// Classify severity
+		lower := strings.ToLower(trimmed)
+		if strings.Contains(lower, "warning") {
+			if severity != "error" {
+				severity = "warning"
+			}
+		}
+		// Collect meaningful error lines (skip redundant noise)
+		if strings.Contains(lower, "error") || strings.Contains(lower, "undefined") ||
+			strings.Contains(lower, "cannot") || strings.Contains(lower, "unused") ||
+			strings.Contains(lower, "missing") || strings.Contains(lower, "fail") ||
+			strings.Contains(lower, "panic") || strings.Contains(lower, "syntax") {
+			if len(trimmed) > 200 {
+				trimmed = trimmed[:200]
+			}
+			errorLines = append(errorLines, trimmed)
+		}
+	}
+
+	// Cap at 10 error lines
+	if len(errorLines) > 10 {
+		errorLines = errorLines[:10]
+	}
+
+	// Build summary
+	summary := fmt.Sprintf("Build failed with %d error(s).", len(errorLines))
+	if len(generatedFiles) > 0 {
+		summary += fmt.Sprintf(" Affected files: %s", strings.Join(generatedFiles, ", "))
+	}
+	if len(errorLines) > 0 {
+		summary += fmt.Sprintf(" Primary error: %s", errorLines[0])
+	}
+
+	// Generate suggestions based on error patterns
+	var suggestions []string
+	for _, line := range errorLines {
+		lower := strings.ToLower(line)
+		if strings.Contains(lower, "undefined") || strings.Contains(lower, "undeclared") {
+			suggestions = append(suggestions, "Check for missing variable declarations or imports")
+		}
+		if strings.Contains(lower, "unused") {
+			suggestions = append(suggestions, "Remove unused variables/imports or use _ prefix")
+		}
+		if strings.Contains(lower, "cannot") && strings.Contains(lower, "use") {
+			suggestions = append(suggestions, "Verify type compatibility in assignments")
+		}
+	}
+
+	return FormattedError{
+		Summary:     summary,
+		ErrorLines:  errorLines,
+		Severity:    severity,
+		Suggestions: suggestions,
+	}
+}

@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/moduforge/backend/internal/feedback"
 )
 
 const (
@@ -139,13 +141,19 @@ func (b *Builder) repairCode(
 		errMsg = errMsg[len(errMsg)-3000:]
 	}
 
+	// Use FeedbackFormatter to structure the error for better LLM repair
+	formattedFeedback := feedback.FormatError(errMsg, nil)
+
 	prompt := fmt.Sprintf(`You are an expert Go developer. Your previous code had build errors.
 Fix ALL errors and return the COMPLETE corrected code.
 
 ## Original Description
 %s
 
-## Build Errors
+## Build Error Summary
+%s
+
+## Detailed Error Lines
 %s
 
 ## Rules
@@ -158,7 +166,7 @@ Fix ALL errors and return the COMPLETE corrected code.
 - Output format: JSON array of files
 [{"path":"go.mod","content":"..."},{"path":"main.go","content":"..."}]
 
-Return ONLY the JSON array.`, description, errMsg)
+Return ONLY the JSON array.`, description, formattedFeedback.Summary, strings.Join(formattedFeedback.ErrorLines, "\n"))
 
 	logFn("[SelfRepair] Requesting LLM repair...\n")
 	return callLLMForFix(ctx, endpoint, apiKey, model, prompt)
