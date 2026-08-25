@@ -51,7 +51,7 @@ type seqToolExecState struct {
 // one at a time, with permission checks, security checks, error recovery,
 // quality verification, and audit logging.
 func (state *seqToolExecState) executeSequentialToolBlock(sequentialTasks []toolTask) {
-	for _, st := range sequentialTasks {
+	for i, st := range sequentialTasks {
 		// P1-3: Check call budget
 		if !state.callBudget.CanCall(st.skillName) {
 			budgetMsg := fmt.Sprintf("⚠️ 工具调用预算已用尽 (读取: %d/%d, 写入: %d/%d, 总计: %d/%d)",
@@ -313,6 +313,14 @@ func (state *seqToolExecState) executeSequentialToolBlock(sequentialTasks []tool
 						"type":       "project_created",
 						"project_id": autoPID,
 					})
+					// Inject project_id into remaining sequential tasks so they
+					// target the same project instead of creating new ones.
+					for j := i + 1; j < len(sequentialTasks); j++ {
+						if _, exists := sequentialTasks[j].skillInput["project_id"]; !exists {
+							sequentialTasks[j].skillInput["project_id"] = autoPID
+							log.Printf("[Agent] injected project_id=%s into task[%d] %s", autoPID, j, sequentialTasks[j].skillName)
+						}
+					}
 				}
 			}
 			if path, ok := st.skillInput["path"].(string); ok {
