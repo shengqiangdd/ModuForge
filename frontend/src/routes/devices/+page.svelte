@@ -246,7 +246,9 @@
             <span
               class="saved-chip-del"
               role="button"
+              tabindex="0"
               onclick={(e) => { e.stopPropagation(); onDeleteSavedId(sd.id, sd.address); }}
+              onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); onDeleteSavedId(sd.id, sd.address); } }}
             >×</span>
           </button>
         {/each}

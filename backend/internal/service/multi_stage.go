@@ -19,6 +19,7 @@ import (
 	"github.com/moduforge/backend/internal/builder"
 	"github.com/moduforge/backend/internal/domain"
 	"github.com/moduforge/backend/internal/knowledge"
+	"github.com/moduforge/backend/internal/quality"
 )
 
 // MultiStageBuild is the enhanced build pipeline for free models.
@@ -383,6 +384,24 @@ func (s *AIService) MultiStageBuild(
 				log.Printf("[MultiStage] Sanitized dangerous commands in %s", path)
 			}
 		}
+	}
+
+	// ===== Quality Lint Check =====
+	var genFiles []quality.GeneratedFile
+	for path, content := range allFiles {
+		genFiles = append(genFiles, quality.GeneratedFile{Path: path, Content: content})
+	}
+	lintIssues := runQualityLint(genFiles)
+	if len(lintIssues) > 0 {
+		lintMsg := fmt.Sprintf("⚠️ 发现 %d 个质量问题:", len(lintIssues))
+		for _, issue := range lintIssues[:min(len(lintIssues), 5)] {
+			lintMsg += fmt.Sprintf("\n- %s: %s (%s)", issue.File, issue.Message, issue.Severity)
+		}
+		safeSSE(map[string]interface{}{
+			"type":    "step",
+			"step":    "think",
+			"content": lintMsg,
+		})
 	}
 
 	// ===== Save all files to project =====
@@ -822,6 +841,11 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func runQualityLint(files []quality.GeneratedFile) []quality.LintIssue {
+	linter := quality.NewMagiskLinter()
+	return linter.Lint(files)
 }
 
 // findPaidModelForEndpoint returns the best paid model for a given endpoint URL.
