@@ -204,6 +204,8 @@ type AgentRunner struct {
 
 	// Evolution: experience store for learning from past runs
 	experienceStore *evolution.ExperienceStore
+	reviewStore     *evolution.ReviewStore
+	promptOptimizer *evolution.PromptOptimizer
 
 	// bgCancel cancels the background context used by long-lived goroutines
 	bgCancel context.CancelFunc
@@ -246,6 +248,8 @@ func NewAgentRunner(registry *SkillRegistry, apiKey, endpoint, model string, db 
 		diffCache:        NewDifferentialCache(bgCtx, 2*time.Minute),
 		tokenOptimizer:   NewTokenOptimizer(bgCtx, ""),
 		experienceStore:  evolution.NewExperienceStore(filepath.Join(".", "data", "evolution")),
+		reviewStore:      evolution.NewReviewStore(filepath.Join(".", "data", "evolution")),
+		promptOptimizer:  evolution.NewPromptOptimizer(filepath.Join(".", "data", "evolution")),
 		bgCancel:         bgCancel,
 	}
 	go r.startSessionCacheCleanup()
@@ -858,6 +862,39 @@ You are running WITHOUT a project context. This means:
 			Timestamp:    time.Now(),
 			Source:       fmt.Sprintf("agent_run:%s", sessionID),
 		})
+	}
+
+	// Generate review report
+	if r.reviewStore != nil {
+		buildSuccess := buildModuleCalled || answerSent
+		detectedLang := "" // TODO: track language detection from project context
+		issues := []string{}
+		if !buildSuccess {
+			issues = append(issues, "build_failed")
+		}
+		if detectedLang == "" {
+			issues = append(issues, "no_language_detected")
+		}
+		report := r.reviewStore.GenerateReview(
+			sessionID,
+			task,
+			buildSuccess && answerSent,
+			time.Since(startTime),
+			0, // tokens used - not tracked here
+			issues,
+		)
+		r.reviewStore.SaveReview(report)
+
+		// Periodically analyze for prompt optimizations
+		if r.promptOptimizer != nil && r.experienceStore != nil {
+			exps := r.experienceStore.GetAll()
+			if len(exps) >= 5 {
+				suggestions := r.promptOptimizer.AnalyzeAndSuggest(exps)
+				for _, sug := range suggestions {
+					r.promptOptimizer.SaveSuggestion(sug)
+				}
+			}
+		}
 	}
 
 	if iterCancel != nil {
