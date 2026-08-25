@@ -122,38 +122,76 @@ func (s *BuildModuleSkill) Execute(ctx context.Context, input map[string]interfa
 	// ========== Phase 1.5: Sync source files from DB/S3 to disk ==========
 	log.WriteString("\n── Syncing source files to disk... ──\n")
 	if s.db != nil && projectID != "" {
+		// First pass: collect all relative paths and detect common prefix
+		type fileEntry struct {
+			path    string
+			relPath string
+		}
+		var files []fileEntry
 		rows, err := s.db.Query(`SELECT path FROM project_files WHERE project_id=?`, projectID)
 		if err == nil {
-			defer rows.Close()
-			synced := 0
 			for rows.Next() {
 				var path string
 				if err := rows.Scan(&path); err != nil {
 					continue
 				}
-				content, err := readFileContent(ctx, s.storage, s.db, projectID, path)
-				if err != nil {
-					continue
-				}
-				// Strip leading slash to get relative path for joining
 				relPath := strings.TrimPrefix(path, "/")
-				fullPath := filepath.Join(projectPath, relPath)
-				// DB/S3 is source of truth - always overwrite disk with content
-				dir := filepath.Dir(fullPath)
-				if err := os.MkdirAll(dir, 0755); err != nil {
-					continue
-				}
-				if err := os.WriteFile(fullPath, []byte(content), 0644); err != nil {
-					continue
-				}
-				synced++
+				files = append(files, fileEntry{path: path, relPath: relPath})
 			}
-			if synced > 0 {
-				log.WriteString(fmt.Sprintf("  ✅ Synced %d files from %s to disk\n", synced, storageLabel(s.storage)))
-			} else {
-				log.WriteString("  ✅ All files already present on disk\n")
+			rows.Close()
+		}
+
+		// Detect common top-level directory (e.g., all files under "hello-world/")
+		effectivePath := projectPath
+		commonPrefix := ""
+		if len(files) > 0 {
+			parts := strings.Split(files[0].relPath, "/")
+			if len(parts) > 1 {
+				commonPrefix = parts[0]
+				for _, fe := range files {
+					fp := strings.Split(fe.relPath, "/")
+					if len(fp) == 0 || fp[0] != commonPrefix {
+						commonPrefix = ""
+						break
+					}
+				}
+			}
+			if commonPrefix != "" && commonPrefix != "." {
+				effectivePath = filepath.Join(projectPath, commonPrefix)
+				log.WriteString(fmt.Sprintf("  📁 Detected module root: %s/\n", commonPrefix))
+				os.MkdirAll(effectivePath, 0755)
 			}
 		}
+
+		// Second pass: write files, stripping the common prefix if detected
+		synced := 0
+		for _, fe := range files {
+			content, err := readFileContent(ctx, s.storage, s.db, projectID, fe.path)
+			if err != nil {
+				continue
+			}
+			// Strip common prefix from relPath if detected
+			writeRelPath := fe.relPath
+			if commonPrefix != "" {
+				writeRelPath = strings.TrimPrefix(fe.relPath, commonPrefix+"/")
+			}
+			fullPath := filepath.Join(effectivePath, writeRelPath)
+			dir := filepath.Dir(fullPath)
+			if err := os.MkdirAll(dir, 0755); err != nil {
+				continue
+			}
+			if err := os.WriteFile(fullPath, []byte(content), 0644); err != nil {
+				continue
+			}
+			synced++
+		}
+		if synced > 0 {
+			log.WriteString(fmt.Sprintf("  ✅ Synced %d files from %s to disk\n", synced, storageLabel(s.storage)))
+		} else {
+			log.WriteString("  ✅ All files already present on disk\n")
+		}
+		// Use effectivePath for subsequent phases
+		projectPath = effectivePath
 	}
 
 	// ========== Phase 2: Source Compilation ==========
