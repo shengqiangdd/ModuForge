@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/moduforge/backend/internal/saferead"
 )
 
 // ModuleExcludePatterns defines directories and files to exclude from module zip.
@@ -185,7 +187,7 @@ func WrapWebroot(zipPath string) error {
 			if err != nil {
 				return fmt.Errorf("open entry %s: %w", f.Name, err)
 			}
-			content, err := io.ReadAll(rc)
+			content, err := saferead.SafeReadAll(rc)
 			rc.Close()
 			if err != nil {
 				return fmt.Errorf("read entry %s: %w", f.Name, err)

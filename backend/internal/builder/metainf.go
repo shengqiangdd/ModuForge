@@ -4,9 +4,10 @@ import (
 	"archive/zip"
 	"bytes"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
+
+	"github.com/moduforge/backend/internal/saferead"
 )
 
 // Standard update-binary for Magisk/KernelSU/APatch module installation.
@@ -77,7 +78,7 @@ func EnsureMetaInf(zipPath string) error {
 			if err != nil {
 				return fmt.Errorf("open entry %s: %w", f.Name, err)
 			}
-			content, err := io.ReadAll(rc)
+			content, err := saferead.SafeReadAll(rc)
 			rc.Close()
 			if err != nil {
 				return fmt.Errorf("read entry %s: %w", f.Name, err)
@@ -198,7 +199,7 @@ func InjectMetaInfToBytes(zipData []byte) ([]byte, error) {
 		if err != nil {
 			return nil, fmt.Errorf("open entry %s: %w", f.Name, err)
 		}
-		content, err := io.ReadAll(rc)
+		content, err := saferead.SafeReadAll(rc)
 		rc.Close()
 		if err != nil {
 			return nil, fmt.Errorf("read entry %s: %w", f.Name, err)
