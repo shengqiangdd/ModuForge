@@ -169,6 +169,10 @@ func (h *ProjectHandler) GetFile(c fiber.Ctx) error {
 	if decoded, err := url.PathUnescape(path); err == nil {
 		path = decoded
 	}
+	// Normalize path: ensure leading slash to match DB storage
+	if path != "" && path[0] != '/' {
+		path = "/" + path
+	}
 	userID := c.Locals("uid")
 	uid := ""
 	if userID != nil {
