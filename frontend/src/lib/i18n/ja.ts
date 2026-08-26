@@ -252,4 +252,45 @@ export const ja: Record<string, string> = {
   'common.cancel': 'キャンセル',
   'common.confirm': '確認',
   'common.close': '閉じる',
+
+  // Phase 15: Performance Profiler
+  'profiler.title': 'パフォーマンスプロファイラー',
+  'profiler.refresh': '更新',
+  'profiler.reset': 'リセット',
+  'profiler.memory': 'メモリプロファイル',
+  'profiler.memory.alloc': '割り当て済み',
+  'profiler.memory.total_alloc': '合計割り当て',
+  'profiler.memory.sys': 'システム',
+  'profiler.memory.num_gc': 'GC回数',
+  'profiler.metrics': 'パフォーマンス指標',
+  'profiler.metrics.count': '回数',
+  'profiler.metrics.avg': '平均',
+  'profiler.metrics.min': '最小',
+  'profiler.metrics.max': '最大',
+  'profiler.no_data': 'パフォーマンスデータなし',
+
+  // Phase 15: Cache Monitor
+  'cache.title': 'キャッシュモニター',
+  'cache.hit_rate': 'ヒット率',
+  'cache.hits': 'ヒット',
+  'cache.misses': 'ミス',
+  'cache.evictions': '排除',
+  'cache.clear': 'キャッシュクリア',
+  'cache.total_size': '合計サイズ',
+  'cache.item_count': 'アイテム数',
+
+  // Phase 15: Security
+  'security.title': 'セキュリティ監査',
+  'security.check': 'セキュリティチェック',
+  'security.score': 'セキュリティスコア',
+  'security.issues': '問題',
+  'security.suggestions': '提案',
+  'security.no_issues': 'セキュリティ問題なし',
+
+  // Phase 15: Errors
+  'errors.network': 'ネットワークエラー',
+  'errors.unauthorized': '未認証',
+  'errors.not_found': '見つかりません',
+  'errors.server_error': 'サーバーエラー',
+  'errors.unknown': '不明なエラー',
 };

@@ -252,4 +252,45 @@ export const en: Record<string, string> = {
   'settings.export.zip_desc': 'Download full project ZIP package',
   'settings.export.zip_success': 'ZIP exported successfully',
   'settings.export.zip_error': 'Export failed',
+
+  // Phase 15: Performance Profiler
+  'profiler.title': 'Performance Profiler',
+  'profiler.refresh': 'Refresh',
+  'profiler.reset': 'Reset',
+  'profiler.memory': 'Memory Profile',
+  'profiler.memory.alloc': 'Allocated',
+  'profiler.memory.total_alloc': 'Total Alloc',
+  'profiler.memory.sys': 'System',
+  'profiler.memory.num_gc': 'GC Count',
+  'profiler.metrics': 'Performance Metrics',
+  'profiler.metrics.count': 'Count',
+  'profiler.metrics.avg': 'Avg',
+  'profiler.metrics.min': 'Min',
+  'profiler.metrics.max': 'Max',
+  'profiler.no_data': 'No performance data yet',
+
+  // Phase 15: Cache Monitor
+  'cache.title': 'Cache Monitor',
+  'cache.hit_rate': 'Hit Rate',
+  'cache.hits': 'Hits',
+  'cache.misses': 'Misses',
+  'cache.evictions': 'Evictions',
+  'cache.clear': 'Clear Cache',
+  'cache.total_size': 'Total Size',
+  'cache.item_count': 'Item Count',
+
+  // Phase 15: Security
+  'security.title': 'Security Audit',
+  'security.check': 'Security Check',
+  'security.score': 'Security Score',
+  'security.issues': 'Issues',
+  'security.suggestions': 'Suggestions',
+  'security.no_issues': 'No security issues found',
+
+  // Phase 15: Errors
+  'errors.network': 'Network error',
+  'errors.unauthorized': 'Unauthorized',
+  'errors.not_found': 'Not found',
+  'errors.server_error': 'Server error',
+  'errors.unknown': 'Unknown error',
 };

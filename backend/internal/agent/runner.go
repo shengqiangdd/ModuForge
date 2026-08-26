@@ -17,6 +17,7 @@ import (
 	"github.com/moduforge/backend/internal/cache"
 	"github.com/moduforge/backend/internal/evolution"
 	"github.com/moduforge/backend/internal/monitoring"
+	"github.com/moduforge/backend/internal/performance"
 	"github.com/moduforge/backend/internal/rag"
 	"github.com/moduforge/backend/internal/service"
 )
@@ -238,12 +239,18 @@ type AgentRunner struct {
 	alertManager  *monitoring.AlertManager
 	logAggregator *monitoring.LogAggregator
 
+	// Phase 15: performance profiling
+	profiler *performance.Profiler
+
 	// bgCancel cancels the background context used by long-lived goroutines
 	bgCancel context.CancelFunc
 }
 
 // Stop cancels background goroutines (cleanup loops, cache tickers).
 func (r *AgentRunner) Stop() {
+	if r.profiler != nil {
+		r.profiler.Stop()
+	}
 	if r.alertManager != nil {
 		r.alertManager.Stop()
 	}
@@ -253,6 +260,11 @@ func (r *AgentRunner) Stop() {
 	if r.bgCancel != nil {
 		r.bgCancel()
 	}
+}
+
+// Profiler returns the performance profiler instance.
+func (r *AgentRunner) Profiler() *performance.Profiler {
+	return r.profiler
 }
 
 // FeedbackCollector returns the feedback collector instance.
@@ -311,6 +323,7 @@ func NewAgentRunner(registry *SkillRegistry, apiKey, endpoint, model string, db 
 		aiCache:              cache.NewAICache(),
 		alertManager:         monitoring.NewAlertManager(),
 		logAggregator:        monitoring.NewLogAggregator(10000),
+		profiler:             performance.NewProfiler(),
 		bgCancel:             bgCancel,
 	}
 	// Wire cache stats into perf monitor

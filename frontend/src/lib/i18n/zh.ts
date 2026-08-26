@@ -252,4 +252,45 @@ export const zh: Record<string, string> = {
   'settings.export.zip_desc': '下载项目的完整 ZIP 包',
   'settings.export.zip_success': 'ZIP 导出成功',
   'settings.export.zip_error': '导出失败',
+
+  // Phase 15: Performance Profiler
+  'profiler.title': '性能分析器',
+  'profiler.refresh': '刷新',
+  'profiler.reset': '重置',
+  'profiler.memory': '内存概况',
+  'profiler.memory.alloc': '已分配',
+  'profiler.memory.total_alloc': '总分配',
+  'profiler.memory.sys': '系统',
+  'profiler.memory.num_gc': 'GC 次数',
+  'profiler.metrics': '性能指标',
+  'profiler.metrics.count': '次数',
+  'profiler.metrics.avg': '平均',
+  'profiler.metrics.min': '最小',
+  'profiler.metrics.max': '最大',
+  'profiler.no_data': '暂无性能数据',
+
+  // Phase 15: Cache Monitor
+  'cache.title': '缓存监控',
+  'cache.hit_rate': '命中率',
+  'cache.hits': '命中',
+  'cache.misses': '未命中',
+  'cache.evictions': '淘汰',
+  'cache.clear': '清除缓存',
+  'cache.total_size': '总大小',
+  'cache.item_count': '条目数',
+
+  // Phase 15: Security
+  'security.title': '安全审计',
+  'security.check': '安全检查',
+  'security.score': '安全评分',
+  'security.issues': '问题',
+  'security.suggestions': '建议',
+  'security.no_issues': '未发现安全问题',
+
+  // Phase 15: Errors
+  'errors.network': '网络错误',
+  'errors.unauthorized': '未授权',
+  'errors.not_found': '未找到',
+  'errors.server_error': '服务器错误',
+  'errors.unknown': '未知错误',
 };

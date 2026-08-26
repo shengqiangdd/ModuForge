@@ -252,4 +252,45 @@ export const ko: Record<string, string> = {
   'common.cancel': '취소',
   'common.confirm': '확인',
   'common.close': '닫기',
+
+  // Phase 15: Performance Profiler
+  'profiler.title': '성능 프로파일러',
+  'profiler.refresh': '새로고침',
+  'profiler.reset': '초기화',
+  'profiler.memory': '메모리 프로파일',
+  'profiler.memory.alloc': '할당됨',
+  'profiler.memory.total_alloc': '총 할당',
+  'profiler.memory.sys': '시스템',
+  'profiler.memory.num_gc': 'GC 횟수',
+  'profiler.metrics': '성능 지표',
+  'profiler.metrics.count': '횟수',
+  'profiler.metrics.avg': '평균',
+  'profiler.metrics.min': '최소',
+  'profiler.metrics.max': '최대',
+  'profiler.no_data': '성능 데이터 없음',
+
+  // Phase 15: Cache Monitor
+  'cache.title': '캐시 모니터',
+  'cache.hit_rate': '적중률',
+  'cache.hits': '적중',
+  'cache.misses': '실패',
+  'cache.evictions': '제거',
+  'cache.clear': '캐시 초기화',
+  'cache.total_size': '총 크기',
+  'cache.item_count': '항목 수',
+
+  // Phase 15: Security
+  'security.title': '보안 감사',
+  'security.check': '보안 검사',
+  'security.score': '보안 점수',
+  'security.issues': '문제',
+  'security.suggestions': '제안',
+  'security.no_issues': '보안 문제 없음',
+
+  // Phase 15: Errors
+  'errors.network': '네트워크 오류',
+  'errors.unauthorized': '인증되지 않음',
+  'errors.not_found': '찾을 수 없음',
+  'errors.server_error': '서버 오류',
+  'errors.unknown': '알 수 없는 오류',
 };

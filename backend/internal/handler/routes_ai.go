@@ -175,4 +175,9 @@ func registerAIRoutes(ctx *routeContext) {
 	ctx.r("POST", "/monitoring/alerts/:id/resolve", aiH.HandleResolveAlert)
 	ctx.r("GET", "/monitoring/logs/stats", aiH.HandleGetLogStats)
 	ctx.r("GET", "/monitoring/logs/search", aiH.HandleSearchLogs)
+
+	// Phase 15: Performance Profiling
+	ctx.r("GET", "/profiler/metrics", aiH.HandleGetProfilerMetrics)
+	ctx.r("GET", "/profiler/memory", aiH.HandleGetMemoryProfile)
+	ctx.r("POST", "/profiler/reset", aiH.HandleResetProfiler)
 }
