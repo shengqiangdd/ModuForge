@@ -180,4 +180,9 @@ func registerAIRoutes(ctx *routeContext) {
 	ctx.r("GET", "/profiler/metrics", aiH.HandleGetProfilerMetrics)
 	ctx.r("GET", "/profiler/memory", aiH.HandleGetMemoryProfile)
 	ctx.r("POST", "/profiler/reset", aiH.HandleResetProfiler)
+
+	// Phase 16: Performance
+	perf := ctx.api.Group("/system")
+	perf.Get("/info", aiH.HandleGetSystemInfo)
+	perf.Get("/health", aiH.HandleHealthCheck)
 }
