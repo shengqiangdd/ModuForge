@@ -211,6 +211,11 @@ type AgentRunner struct {
 	// Phase 3: feedback loop for closed-loop evolution
 	feedbackLoop *FeedbackLoop
 
+	// Phase 4: frontier capabilities
+	testGenerator      *TestGenerator
+	collaborativeAgent *CollaborativeAgent
+	fineTuneLoop       *FineTuneLoop
+
 	// bgCancel cancels the background context used by long-lived goroutines
 	bgCancel context.CancelFunc
 }
@@ -226,36 +231,39 @@ func NewAgentRunner(registry *SkillRegistry, apiKey, endpoint, model string, db 
 	// Background context for long-lived goroutines; cancel via Stop().
 	bgCtx, bgCancel := context.WithCancel(context.Background())
 	r := &AgentRunner{
-		registry:         registry,
-		apiKey:           apiKey,
-		endpoint:         endpoint,
-		model:            model,
-		db:               db,
-		convStore:        service.NewConversationStore(),
-		toolDefCache:     make(map[string][]ToolDef),
-		fileHashCache:    NewFileHashCache(),
-		auditLog:         NewAuditLog(""),
-		permChecker:      NewPermissionChecker(),
-		securityEngine:   NewSecurityEngine(),
-		sessionPersist:   NewSessionPersistence(""),
-		depGraph:         NewDependencyGraph(),
-		perfMetrics:      NewPerformanceMetrics(),
-		sessionMemory:    NewSessionMemory(""),
-		buildHealer:      NewBuildHealer(),
-		atomicWriter:     NewAtomicWriter(""),
-		enhancedPlan:     nil,
-		fileDepGraph:     nil,
-		prefixCache:      NewPrefixCache(100, 5*time.Minute),
-		semanticCache:    NewSemanticCache(500, 0.85),
-		contextCondenser: NewContextCondenser(30, 6, 1),
-		sessionLearner:   NewSessionLearner(100),
-		diffCache:        NewDifferentialCache(bgCtx, 2*time.Minute),
-		tokenOptimizer:   NewTokenOptimizer(bgCtx, ""),
-		experienceStore:  evolution.NewExperienceStore(filepath.Join(".", "data", "evolution")),
-		reviewStore:      evolution.NewReviewStore(filepath.Join(".", "data", "evolution")),
-		promptOptimizer:  evolution.NewPromptOptimizer(filepath.Join(".", "data", "evolution")),
-		feedbackLoop:     NewFeedbackLoop(filepath.Join(".", "data", "evolution")),
-		bgCancel:         bgCancel,
+		registry:           registry,
+		apiKey:             apiKey,
+		endpoint:           endpoint,
+		model:              model,
+		db:                 db,
+		convStore:          service.NewConversationStore(),
+		toolDefCache:       make(map[string][]ToolDef),
+		fileHashCache:      NewFileHashCache(),
+		auditLog:           NewAuditLog(""),
+		permChecker:        NewPermissionChecker(),
+		securityEngine:     NewSecurityEngine(),
+		sessionPersist:     NewSessionPersistence(""),
+		depGraph:           NewDependencyGraph(),
+		perfMetrics:        NewPerformanceMetrics(),
+		sessionMemory:      NewSessionMemory(""),
+		buildHealer:        NewBuildHealer(),
+		atomicWriter:       NewAtomicWriter(""),
+		enhancedPlan:       nil,
+		fileDepGraph:       nil,
+		prefixCache:        NewPrefixCache(100, 5*time.Minute),
+		semanticCache:      NewSemanticCache(500, 0.85),
+		contextCondenser:   NewContextCondenser(30, 6, 1),
+		sessionLearner:     NewSessionLearner(100),
+		diffCache:          NewDifferentialCache(bgCtx, 2*time.Minute),
+		tokenOptimizer:     NewTokenOptimizer(bgCtx, ""),
+		experienceStore:    evolution.NewExperienceStore(filepath.Join(".", "data", "evolution")),
+		reviewStore:        evolution.NewReviewStore(filepath.Join(".", "data", "evolution")),
+		promptOptimizer:    evolution.NewPromptOptimizer(filepath.Join(".", "data", "evolution")),
+		feedbackLoop:       NewFeedbackLoop(filepath.Join(".", "data", "evolution")),
+		testGenerator:      NewTestGenerator(),
+		collaborativeAgent: NewCollaborativeAgent(),
+		fineTuneLoop:       NewFineTuneLoop(filepath.Join(".", "data", "fine_tune")),
+		bgCancel:           bgCancel,
 	}
 	go r.startSessionCacheCleanup()
 	return r
@@ -906,6 +914,30 @@ You are running WITHOUT a project context. This means:
 	// Auto-trigger build_module if files were written but build_module never called
 	r.autoTriggerBuildIfNeeded(ctx, w, sessionID, cfg, anyWriteCalled, buildModuleCalled)
 
+	// Phase 4: Auto-generate tests for Go files written during this run
+	if r.testGenerator != nil && anyWriteCalled && cfg.ProjectDir != "" {
+		filepath.Walk(cfg.ProjectDir, func(path string, info os.FileInfo, err error) error {
+			if err != nil || info.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+				return nil
+			}
+			content, readErr := os.ReadFile(path)
+			if readErr != nil {
+				return nil
+			}
+			if result, genErr := r.testGenerator.GenerateTests(path, string(content)); genErr == nil {
+				testContent := generateTestFile(result.File, result.Tests)
+				if writeErr := os.WriteFile(result.TestFile, []byte(testContent), 0644); writeErr == nil {
+					w.WriteSSE(map[string]interface{}{
+						"type":    "step",
+						"step":    "test_generation",
+						"content": fmt.Sprintf("已生成 %d 个测试用例到 %s", len(result.Tests), result.TestFile),
+					})
+				}
+			}
+			return nil
+		})
+	}
+
 	// Exhausted iterations — send answer if we haven't already
 	sendFinalAnswer(w, cfg, lastLLMResp, answerSent)
 
@@ -1020,6 +1052,24 @@ You are running WITHOUT a project context. This means:
 			FixStrategy: fixStrategy,
 		})
 	}
+
+	// Phase 4: Record training sample for fine-tuning (implicit feedback)
+	if r.fineTuneLoop != nil {
+		r.fineTuneLoop.RecordSample(TrainingSample{
+			ID:        fmt.Sprintf("sample_%d", time.Now().UnixNano()),
+			Prompt:    task,
+			Rating:    3, // neutral rating for implicit feedback
+			Timestamp: time.Now(),
+			Source:    "implicit",
+		})
+	}
+
+	// Phase 4: Push feedback request for explicit user rating
+	w.WriteSSE(map[string]interface{}{
+		"type":    "feedback_request",
+		"task_id": sessionID,
+		"prompt":  task,
+	})
 
 	if iterCancel != nil {
 		iterCancel()

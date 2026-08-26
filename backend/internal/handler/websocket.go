@@ -1,11 +1,13 @@
 package handler
 
 import (
+	"encoding/json"
 	"log/slog"
 	"time"
 
 	"github.com/gofiber/contrib/v3/websocket"
 	"github.com/gofiber/fiber/v3"
+	"github.com/moduforge/backend/internal/agent"
 	"github.com/moduforge/backend/internal/service"
 )
 
@@ -58,6 +60,9 @@ func RegisterWSRoute(api fiber.Router, jwtSecret string) {
 			c.Close()
 		}()
 
+		// Phase 4: Initialize autocomplete engine for real-time code completions
+		autocompleteEngine := agent.NewAutocompleteEngine()
+
 		// Send periodic pings to keep the connection alive
 		ticker := time.NewTicker(30 * time.Second)
 		defer ticker.Stop()
@@ -78,12 +83,34 @@ func RegisterWSRoute(api fiber.Router, jwtSecret string) {
 
 		// Read loop — block until client disconnects
 		for {
-			_, _, err := c.ReadMessage()
+			msgType, msg, err := c.ReadMessage()
 			if err != nil {
 				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseNormalClosure) {
 					slog.Warn("ws read error", "user_id", userID, "error", err)
 				}
 				break
+			}
+
+			// Phase 4: Handle autocomplete requests
+			if msgType == websocket.TextMessage {
+				var data map[string]interface{}
+				if jsonErr := json.Unmarshal(msg, &data); jsonErr == nil {
+					if msgTypeVal, ok := data["type"].(string); ok && msgTypeVal == "autocomplete" {
+						prefix, _ := data["prefix"].(string)
+						ctx, _ := data["context"].(string)
+
+						completions := autocompleteEngine.GetCompletions(prefix, ctx)
+
+						result := map[string]interface{}{
+							"type":        "autocomplete_result",
+							"completions": completions,
+						}
+						if writeErr := c.WriteJSON(result); writeErr != nil {
+							slog.Warn("ws autocomplete send error", "user_id", userID, "error", writeErr)
+						}
+						continue
+					}
+				}
 			}
 		}
 	})
