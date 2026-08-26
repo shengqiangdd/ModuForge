@@ -77,8 +77,8 @@ func (v *CodeQualityValidator) Validate(code string, language string) *QualityRe
 	v.checkComplexity(code, language, result)
 
 	// 计算最终分数
+	deduction := 0.0
 	if len(result.Issues) > 0 {
-		deduction := 0.0
 		for _, issue := range result.Issues {
 			switch issue.Severity {
 			case "critical":
