@@ -35,9 +35,14 @@
     'devices': () => import('./routes/devices/+page.svelte'),
     'glossary': () => import('./routes/glossary/+page.svelte'),
     'crash': () => import('./routes/crash/+page.svelte'),
+    'perf': () => import('$lib/components/PerfDashboard.svelte'),
+    'arch': () => import('$lib/components/ArchReport.svelte'),
+    'git-ops': () => import('$lib/components/GitPanel.svelte'),
+    'prompts-mgr': () => import('$lib/components/PromptManager.svelte'),
+    'ensemble': () => import('$lib/components/EnsemblePanel.svelte'),
   };
 
-  type Route = 'auth' | 'projects' | 'editor' | 'builds' | 'tests' | 'settings' | 'market' | 'market-publish' | 'dashboard' | 'ai' | 'analytics' | 'mcp' | 'devices' | 'crash' | 'glossary';
+  type Route = 'auth' | 'projects' | 'editor' | 'builds' | 'tests' | 'settings' | 'market' | 'market-publish' | 'dashboard' | 'ai' | 'analytics' | 'mcp' | 'devices' | 'crash' | 'glossary' | 'perf' | 'arch' | 'git-ops' | 'prompts-mgr' | 'ensemble';
   interface Project { id: string; name: string; module_type: string; description: string; created_at: string; updated_at: string; }
 
   // ─── Global state ───
@@ -106,6 +111,7 @@
       'market': '/market', 'market-publish': '/market/publish', 'dashboard': '/dashboard',
       'projects': '/projects', 'settings': '/settings', 'ai': '/ai', 'analytics': '/analytics',
       'mcp': '/mcp', 'devices': '/devices', 'glossary': '/glossary',
+      'perf': '/perf', 'arch': '/arch', 'git-ops': '/git-ops', 'prompts-mgr': '/prompts-mgr', 'ensemble': '/ensemble',
     };
     if (paths[route]) history.pushState(null, '', paths[route]);
     else if (route === 'editor' && id) history.pushState(null, '', `/projects/${id}`);

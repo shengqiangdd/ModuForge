@@ -3,7 +3,7 @@
   import NotificationBell from '$lib/components/NotificationBell.svelte';
   import LocaleSwitcher from '$lib/components/LocaleSwitcher.svelte';
 
-  type Route = 'auth' | 'projects' | 'editor' | 'builds' | 'tests' | 'settings' | 'market' | 'market-publish' | 'dashboard' | 'ai' | 'analytics' | 'mcp' | 'devices' | 'crash' | 'glossary';
+  type Route = 'auth' | 'projects' | 'editor' | 'builds' | 'tests' | 'settings' | 'market' | 'market-publish' | 'dashboard' | 'ai' | 'analytics' | 'mcp' | 'devices' | 'crash' | 'glossary' | 'perf' | 'arch' | 'git-ops' | 'prompts-mgr' | 'ensemble';
 
   interface Props {
     current: Route;
@@ -45,6 +45,11 @@
     { id: 'market', icon: 'storefront', label: $t('nav.market') },
     { id: 'crash', icon: 'bug_report', label: '崩溃分析' },
     { id: 'settings', icon: 'settings', label: $t('nav.settings') },
+    { id: 'perf', icon: 'speed', label: '性能监控' },
+    { id: 'arch', icon: 'architecture', label: '架构分析' },
+    { id: 'git-ops', icon: 'commit', label: 'Git 操作' },
+    { id: 'prompts-mgr', icon: 'smart_toy', label: '提示词模板' },
+    { id: 'ensemble', icon: 'group_work', label: '多模型协同' },
   ]);
 </script>
 
