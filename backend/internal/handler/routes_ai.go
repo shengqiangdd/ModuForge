@@ -168,4 +168,11 @@ func registerAIRoutes(ctx *routeContext) {
 	// Phase 11: Cache
 	ctx.r("GET", "/cache/stats", aiH.HandleGetCacheStats)
 	ctx.r("POST", "/cache/clear", aiH.HandleClearCache)
+
+	// Phase 13: Monitoring and Logging
+	ctx.r("GET", "/monitoring/alerts", aiH.HandleGetAlerts)
+	ctx.r("GET", "/monitoring/alerts/history", aiH.HandleGetAlertHistory)
+	ctx.r("POST", "/monitoring/alerts/:id/resolve", aiH.HandleResolveAlert)
+	ctx.r("GET", "/monitoring/logs/stats", aiH.HandleGetLogStats)
+	ctx.r("GET", "/monitoring/logs/search", aiH.HandleSearchLogs)
 }

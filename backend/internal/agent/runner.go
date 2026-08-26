@@ -16,6 +16,7 @@ import (
 
 	"github.com/moduforge/backend/internal/cache"
 	"github.com/moduforge/backend/internal/evolution"
+	"github.com/moduforge/backend/internal/monitoring"
 	"github.com/moduforge/backend/internal/rag"
 	"github.com/moduforge/backend/internal/service"
 )
@@ -233,12 +234,22 @@ type AgentRunner struct {
 	// Phase 11: AI response cache
 	aiCache *cache.AICache
 
+	// Phase 13: monitoring and logging
+	alertManager  *monitoring.AlertManager
+	logAggregator *monitoring.LogAggregator
+
 	// bgCancel cancels the background context used by long-lived goroutines
 	bgCancel context.CancelFunc
 }
 
 // Stop cancels background goroutines (cleanup loops, cache tickers).
 func (r *AgentRunner) Stop() {
+	if r.alertManager != nil {
+		r.alertManager.Stop()
+	}
+	if r.logAggregator != nil {
+		r.logAggregator.Stop()
+	}
 	if r.bgCancel != nil {
 		r.bgCancel()
 	}
@@ -298,6 +309,8 @@ func NewAgentRunner(registry *SkillRegistry, apiKey, endpoint, model string, db 
 		feedbackCollector:    NewFeedbackCollector(nil),
 		codeQualityValidator: NewCodeQualityValidator(nil),
 		aiCache:              cache.NewAICache(),
+		alertManager:         monitoring.NewAlertManager(),
+		logAggregator:        monitoring.NewLogAggregator(10000),
 		bgCancel:             bgCancel,
 	}
 	// Wire cache stats into perf monitor
@@ -338,6 +351,16 @@ func (r *AgentRunner) AICache() *cache.AICache {
 // SetAICache replaces the AI response cache.
 func (r *AgentRunner) SetAICache(c *cache.AICache) {
 	r.aiCache = c
+}
+
+// AlertManager returns the alert manager instance.
+func (r *AgentRunner) AlertManager() *monitoring.AlertManager {
+	return r.alertManager
+}
+
+// LogAggregator returns the log aggregator instance.
+func (r *AgentRunner) LogAggregator() *monitoring.LogAggregator {
+	return r.logAggregator
 }
 
 // GetStats implements CacheStatsProvider for PerfMonitor integration.
