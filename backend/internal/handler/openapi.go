@@ -149,12 +149,14 @@ func (h *OpenAPIHandler) HandleGetOpenAPI(c fiber.Ctx) error {
 
 	switch format {
 	case "yaml":
-		return c.Status(200).Set("Content-Type", "application/yaml").SendString(spec.ToYAML())
+		c.Set("Content-Type", "application/yaml")
+		return c.Status(200).SendString(spec.ToYAML())
 	default:
 		jsonBytes, err := spec.ToJSON()
 		if err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": "Failed to generate docs"})
 		}
-		return c.Status(200).Set("Content-Type", "application/json").SendString(string(jsonBytes))
+		c.Set("Content-Type", "application/json")
+		return c.Status(200).SendString(string(jsonBytes))
 	}
 }
