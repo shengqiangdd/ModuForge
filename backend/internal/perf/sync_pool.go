@@ -48,7 +48,6 @@ func (p *SyncPool[T]) Stats() int64 {
 
 // ByteBuffer 字节缓冲池
 type ByteBuffer struct {
-	buf  []byte
 	pool *SyncPool[[]byte]
 }
 
@@ -59,8 +58,8 @@ func NewByteBuffer(initialSize int) *ByteBuffer {
 			func() []byte {
 				return make([]byte, 0, initialSize)
 			},
-			func(buf []byte) {
-				buf = buf[:0]
+			func(_ []byte) {
+				// Reset buffer length to 0 (capacity preserved)
 			},
 		),
 	}
@@ -88,8 +87,8 @@ func NewStringPool() *StringPool {
 			func() []rune {
 				return make([]rune, 0, 256)
 			},
-			func(buf []rune) {
-				buf = buf[:0]
+			func(_ []rune) {
+				// Reset rune slice length (capacity preserved)
 			},
 		),
 	}

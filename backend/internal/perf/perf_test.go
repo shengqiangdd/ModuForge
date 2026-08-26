@@ -144,7 +144,7 @@ func TestGoroutinePool(t *testing.T) {
 func TestSyncPool(t *testing.T) {
 	pool := NewSyncPool[[]byte](
 		func() []byte { return make([]byte, 0, 1024) },
-		func(buf []byte) { buf = buf[:0] },
+		func(_ []byte) {},
 	)
 
 	buf := pool.Get()
