@@ -236,4 +236,9 @@ func registerAIRoutes(ctx *routeContext) {
 	code.Get("/collaboration/sessions", aiH.HandleGetActiveSessions)
 	code.Post("/api-docs", aiH.HandleGenerateAPIDoc)
 	code.Post("/duplication", aiH.HandleDetectDuplication)
+
+	// Phase 27: Advanced Analytics and Rules
+	code.Post("/project/dependencies", aiH.HandleAnalyzeDependenciesNew)
+	code.Post("/project/complexity", aiH.HandleAnalyzeComplexity)
+	code.Post("/project/custom-rules", aiH.HandleCheckCustomRules)
 }
