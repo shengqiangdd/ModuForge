@@ -214,4 +214,7 @@ func registerAIRoutes(ctx *routeContext) {
 
 	// Phase 22: Quality Reports
 	code.Post("/quality-report", aiH.HandleGenerateQualityReport)
+
+	// Phase 23: Code Completion
+	code.Post("/completions", aiH.HandleGetCompletions)
 }
