@@ -6,7 +6,6 @@ import (
 	"regexp"
 	"strings"
 	"sync"
-	"unicode"
 
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
