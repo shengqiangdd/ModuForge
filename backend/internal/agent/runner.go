@@ -221,6 +221,10 @@ type AgentRunner struct {
 	archAnalyzer      *ArchAnalyzer
 	promptEngine      *PromptEngine
 
+	// Phase 6: real-time monitoring, collaborative sessions, git integration
+	perfMonitor   *PerfMonitor
+	collabManager *CollabSessionManager
+
 	// bgCancel cancels the background context used by long-lived goroutines
 	bgCancel context.CancelFunc
 }
@@ -271,6 +275,8 @@ func NewAgentRunner(registry *SkillRegistry, apiKey, endpoint, model string, db 
 		ensembleGenerator:  NewEnsembleGenerator(nil), // caller set later
 		archAnalyzer:       NewArchAnalyzer(),
 		promptEngine:       NewPromptEngine(),
+		perfMonitor:        NewPerfMonitor(),
+		collabManager:      NewCollabSessionManager(),
 		bgCancel:           bgCancel,
 	}
 	go r.startSessionCacheCleanup()
@@ -569,6 +575,14 @@ You are running WITHOUT a project context. This means:
 	var lastLLMResp *LLMResponse
 	startTime := time.Now()
 	_ = checkpoints // reserved for undo support
+
+	// Phase 6: Record request metrics
+	defer func() {
+		if r.perfMonitor != nil {
+			duration := time.Since(startTime)
+			r.perfMonitor.RecordRequest(duration, false, 0, cfg.LLMModel)
+		}
+	}()
 
 	runPerfMetrics := NewPerformanceMetrics()
 	toolCache := r.getSessionCache(sessionID)
