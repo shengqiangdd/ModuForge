@@ -226,4 +226,14 @@ func registerAIRoutes(ctx *routeContext) {
 	code.Post("/diff", aiH.HandleDiffCode)
 	code.Get("/runtime-profile", aiH.HandleRuntimeProfile)
 	code.Post("/security-scan", aiH.HandleSecurityScan)
+
+	// Phase 26: Collaboration, API Docs, Duplication
+	code.Post("/collaboration/create", aiH.HandleCreateCollaboration)
+	code.Post("/collaboration/join", aiH.HandleJoinCollaboration)
+	code.Post("/collaboration/leave", aiH.HandleLeaveCollaboration)
+	code.Post("/collaboration/cursor", aiH.HandleUpdateCursor)
+	code.Post("/collaboration/change", aiH.HandleApplyCollaborationChange)
+	code.Get("/collaboration/sessions", aiH.HandleGetActiveSessions)
+	code.Post("/api-docs", aiH.HandleGenerateAPIDoc)
+	code.Post("/duplication", aiH.HandleDetectDuplication)
 }
