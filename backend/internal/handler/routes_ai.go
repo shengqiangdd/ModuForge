@@ -199,4 +199,16 @@ func registerAIRoutes(ctx *routeContext) {
 	// Phase 20: Code Review and Generation
 	code.Post("/review", aiH.HandleReviewCode)
 	code.Post("/optimize", aiH.HandleOptimizeGeneration)
+
+	// Phase 21: Templates and Snippets
+	templates := ctx.api.Group("/templates")
+	templates.Get("", aiH.HandleListTemplates)
+	templates.Get("/:id", aiH.HandleGetTemplate)
+	templates.Post("/generate", aiH.HandleGenerateFromTemplate)
+
+	snippets := ctx.api.Group("/snippets")
+	snippets.Get("", aiH.HandleListSnippets)
+	snippets.Get("/search", aiH.HandleSearchSnippets)
+	snippets.Get("/:id", aiH.HandleGetSnippet)
+	snippets.Post("/:id/use", aiH.HandleUseSnippet)
 }
