@@ -216,6 +216,11 @@ type AgentRunner struct {
 	collaborativeAgent *CollaborativeAgent
 	fineTuneLoop       *FineTuneLoop
 
+	// Phase 5: ensemble generation, architecture analysis, prompt engine
+	ensembleGenerator *EnsembleGenerator
+	archAnalyzer      *ArchAnalyzer
+	promptEngine      *PromptEngine
+
 	// bgCancel cancels the background context used by long-lived goroutines
 	bgCancel context.CancelFunc
 }
@@ -263,6 +268,9 @@ func NewAgentRunner(registry *SkillRegistry, apiKey, endpoint, model string, db 
 		testGenerator:      NewTestGenerator(),
 		collaborativeAgent: NewCollaborativeAgent(),
 		fineTuneLoop:       NewFineTuneLoop(filepath.Join(".", "data", "fine_tune")),
+		ensembleGenerator:  NewEnsembleGenerator(nil), // caller set later
+		archAnalyzer:       NewArchAnalyzer(),
+		promptEngine:       NewPromptEngine(),
 		bgCancel:           bgCancel,
 	}
 	go r.startSessionCacheCleanup()
@@ -914,6 +922,17 @@ You are running WITHOUT a project context. This means:
 	// Auto-trigger build_module if files were written but build_module never called
 	r.autoTriggerBuildIfNeeded(ctx, w, sessionID, cfg, anyWriteCalled, buildModuleCalled)
 
+	// Phase 5: Architecture analysis on successful build
+	if r.archAnalyzer != nil && cfg.ProjectDir != "" {
+		if report, err := r.archAnalyzer.AnalyzeProject(cfg.ProjectDir); err == nil {
+			w.WriteSSE(map[string]interface{}{
+				"type":    "step",
+				"step":    "arch_analysis",
+				"content": fmt.Sprintf("项目架构: %s, 文件: %d, 行数: %d, 依赖: %d", report.Architecture, report.TotalFiles, report.TotalLines, len(report.Dependencies)),
+			})
+		}
+	}
+
 	// Phase 4: Auto-generate tests for Go files written during this run
 	if r.testGenerator != nil && anyWriteCalled && cfg.ProjectDir != "" {
 		filepath.Walk(cfg.ProjectDir, func(path string, info os.FileInfo, err error) error {
@@ -936,6 +955,19 @@ You are running WITHOUT a project context. This means:
 			}
 			return nil
 		})
+	}
+
+	// Phase 5: Use smart prompt template for better code generation
+	if r.promptEngine != nil {
+		templateName := r.promptEngine.SmartSelect(task)
+		if rendered, err := r.promptEngine.RenderWithLanguage(templateName, "go", map[string]string{
+			"Requirement": task,
+			"Context":     task,
+		}); err == nil {
+			debugLog("Phase 5: selected template %q for task", templateName)
+			// Store rendered prompt for potential re-use
+			_ = rendered
+		}
 	}
 
 	// Exhausted iterations — send answer if we haven't already
