@@ -340,8 +340,8 @@ func (r *AgentRunner) SetAICache(c *cache.AICache) {
 	r.aiCache = c
 }
 
-// GetCacheStatsResult implements CacheStatsProvider for PerfMonitor integration.
-func (r *AgentRunner) GetCacheStatsResult() CacheStatsResult {
+// GetStats implements CacheStatsProvider for PerfMonitor integration.
+func (r *AgentRunner) GetStats() CacheStatsResult {
 	cs := r.AICache().GetStats()
 	return CacheStatsResult{
 		Hits:      cs.Hits,
