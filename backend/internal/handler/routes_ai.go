@@ -217,4 +217,8 @@ func registerAIRoutes(ctx *routeContext) {
 
 	// Phase 23: Code Completion
 	code.Post("/completions", aiH.HandleGetCompletions)
+
+	// Phase 24: Knowledge Graph and Trends
+	code.Post("/knowledge-graph", aiH.HandleGetKnowledgeGraph)
+	code.Get("/trends", aiH.HandleGetTrends)
 }
