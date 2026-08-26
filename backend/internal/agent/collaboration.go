@@ -97,12 +97,3 @@ func (ca *CollaborativeAgent) ExecuteTask(task CollaborativeTask) CollaborativeT
 	return result
 }
 
-// splitTask splits a complex task into subtasks.
-func splitTaskCollab(task string) []CollaborativeTask {
-	// Simple splitting logic
-	return []CollaborativeTask{
-		{ID: "design", Description: "设计架构", Status: "pending"},
-		{ID: "implement", Description: "实现代码", Status: "pending"},
-		{ID: "test", Description: "编写测试", Status: "pending"},
-	}
-}
