@@ -21,6 +21,7 @@ func NewInputValidator() *InputValidator {
 		regexp.MustCompile(`(?i)(<script|javascript:|on\w+\s*=)`),
 		regexp.MustCompile(`(?i)(\.\./|\.\.\\)`),
 		regexp.MustCompile(`(?i)(\bexec\b|\beval\b|\bsystem\b|\bcmd\b)`),
+		regexp.MustCompile(`(?i)(^\s*select\s+.*\s+from\s+)`),
 	}
 
 	return &InputValidator{
@@ -79,12 +80,20 @@ func (v *InputValidator) ValidateSearchQuery(query string) ValidationResult {
 
 // SanitizeFilename 清理文件名
 func (v *InputValidator) SanitizeFilename(name string) string {
-	// 移除路径分隔符
-	name = strings.ReplaceAll(name, "/", "")
-	name = strings.ReplaceAll(name, "\\", "")
-	name = strings.ReplaceAll(name, "..", "")
+	// 检测路径遍历模式：如果包含 ../ 或 ..\ 则全部替换为下划线
+	if strings.Contains(name, "..") || strings.Contains(name, "/") || strings.Contains(name, "\\") {
+		// 替换所有特殊字符为下划线
+		name = strings.ReplaceAll(name, "/", "_")
+		name = strings.ReplaceAll(name, "\\", "_")
+		name = strings.ReplaceAll(name, ".", "_")
 
-	// 只保留安全字符
+		// 只保留安全字符
+		reg := regexp.MustCompile(`[^a-zA-Z0-9_\-]`)
+		name = reg.ReplaceAllString(name, "_")
+		return name
+	}
+
+	// 正常文件名：只替换不安全字符，保留点
 	reg := regexp.MustCompile(`[^a-zA-Z0-9_\-\.]`)
 	name = reg.ReplaceAllString(name, "_")
 

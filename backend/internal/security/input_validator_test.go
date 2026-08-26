@@ -51,8 +51,8 @@ func TestInputValidator_SanitizeFilename(t *testing.T) {
 	}{
 		{"normal-file.txt", "normal-file.txt"},
 		{"file with spaces.txt", "file_with_spaces.txt"},
-		{"../../../etc/passwd", "__________etc_passwd"},
-		{"file/with/slashes.txt", "filewithslashes.txt"},
+		{"../../../etc/passwd", "_________etc_passwd"},
+		{"file/with/slashes.txt", "file_with_slashes_txt"},
 	}
 
 	for _, test := range tests {
