@@ -225,6 +225,10 @@ type AgentRunner struct {
 	perfMonitor   *PerfMonitor
 	collabManager *CollabSessionManager
 
+	// Phase 10: feedback collection and code quality validation
+	feedbackCollector  *FeedbackCollector
+	codeQualityValidator *CodeQualityValidator
+
 	// bgCancel cancels the background context used by long-lived goroutines
 	bgCancel context.CancelFunc
 }
@@ -234,6 +238,16 @@ func (r *AgentRunner) Stop() {
 	if r.bgCancel != nil {
 		r.bgCancel()
 	}
+}
+
+// FeedbackCollector returns the feedback collector instance.
+func (r *AgentRunner) FeedbackCollector() *FeedbackCollector {
+	return r.feedbackCollector
+}
+
+// CodeQualityValidator returns the code quality validator instance.
+func (r *AgentRunner) CodeQualityValidator() *CodeQualityValidator {
+	return r.codeQualityValidator
 }
 
 func NewAgentRunner(registry *SkillRegistry, apiKey, endpoint, model string, db *sql.DB) *AgentRunner {
@@ -275,9 +289,11 @@ func NewAgentRunner(registry *SkillRegistry, apiKey, endpoint, model string, db 
 		ensembleGenerator:  NewEnsembleGenerator(nil), // caller set later
 		archAnalyzer:       NewArchAnalyzer(),
 		promptEngine:       NewPromptEngine(),
-		perfMonitor:        NewPerfMonitor(),
-		collabManager:      NewCollabSessionManager(),
-		bgCancel:           bgCancel,
+		perfMonitor:          NewPerfMonitor(),
+		collabManager:        NewCollabSessionManager(),
+		feedbackCollector:    NewFeedbackCollector(nil),
+		codeQualityValidator: NewCodeQualityValidator(nil),
+		bgCancel:             bgCancel,
 	}
 	go r.startSessionCacheCleanup()
 	return r

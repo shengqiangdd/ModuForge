@@ -158,4 +158,10 @@ func registerAIRoutes(ctx *routeContext) {
 	ctx.r("GET", "/ai/sessions/:session_id/export", aiH.ExportSession)
 	ctx.r("GET", "/ai/sessions/search", aiH.SearchSessions)
 	ctx.r("POST", "/ai/diff", aiH.ComputeDiff)
+
+	// Phase 10: Feedback and Quality
+	ctx.r("POST", "/feedback", agentH.HandleSubmitFeedback)
+	ctx.r("GET", "/feedback/stats", agentH.HandleGetFeedbackStats)
+	ctx.r("GET", "/feedback/recent", agentH.HandleGetRecentFeedbacks)
+	ctx.r("POST", "/quality/validate", agentH.HandleValidateCode)
 }
