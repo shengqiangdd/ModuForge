@@ -211,4 +211,7 @@ func registerAIRoutes(ctx *routeContext) {
 	snippets.Get("/search", aiH.HandleSearchSnippets)
 	snippets.Get("/:id", aiH.HandleGetSnippet)
 	snippets.Post("/:id/use", aiH.HandleUseSnippet)
+
+	// Phase 22: Quality Reports
+	code.Post("/quality-report", aiH.HandleGenerateQualityReport)
 }
