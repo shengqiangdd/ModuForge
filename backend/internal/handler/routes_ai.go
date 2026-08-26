@@ -117,6 +117,23 @@ func registerAIRoutes(ctx *routeContext) {
 	ctx.r("GET", "/agent/sessions", agentH.ListSessions)
 	ctx.r("GET", "/agent/sessions/:id", agentH.GetSession)
 
+	// Phase 7: Performance monitoring, architecture, prompts, git, ensemble
+	ctx.r("GET", "/perf/summary", agentH.GetPerfSummary)
+	ctx.r("GET", "/perf/history", agentH.GetPerfHistory)
+	ctx.r("GET", "/perf/models", agentH.GetModelStats)
+
+	ctx.r("POST", "/arch/analyze", agentH.AnalyzeProject)
+
+	ctx.r("GET", "/prompts/list", agentH.ListPromptTemplates)
+	ctx.r("POST", "/prompts/select", agentH.SelectPromptTemplate)
+
+	ctx.r("GET", "/git/status", agentH.GetGitStatus)
+	ctx.r("GET", "/git/log", agentH.GetGitLog)
+	ctx.r("POST", "/git/commit", agentH.GitCommit)
+	ctx.r("POST", "/git/rollback", agentH.GitRollback)
+
+	ctx.r("POST", "/ensemble/generate", agentH.EnsembleGenerate)
+
 	// Build progress
 	ctx.r("GET", "/builds/:id/progress", aiH.StreamBuildProgress)
 

@@ -1153,3 +1153,107 @@ func detectPotentialIssues(task string) []string {
 
 	return issues
 }
+
+// ===== Phase 4-6 API Proxy Methods =====
+
+// GetPerfSummary returns the performance monitoring summary.
+func (r *AgentRunner) GetPerfSummary() map[string]interface{} {
+	if r.perfMonitor == nil {
+		return map[string]interface{}{"error": "perf monitor not initialized"}
+	}
+	return r.perfMonitor.GetSummary()
+}
+
+// GetPerfHistory returns the last N performance snapshots.
+func (r *AgentRunner) GetPerfHistory(n int) []PerfSnapshot {
+	if r.perfMonitor == nil {
+		return nil
+	}
+	return r.perfMonitor.GetHistory(n)
+}
+
+// GetModelStats returns LLM model performance stats.
+func (r *AgentRunner) GetModelStats() map[string]map[string]interface{} {
+	if r.ensembleGenerator == nil {
+		return nil
+	}
+	return r.ensembleGenerator.GetModelStats()
+}
+
+// AnalyzeProject performs architecture analysis.
+func (r *AgentRunner) AnalyzeProject(projectDir string) (*ArchReport, error) {
+	if r.archAnalyzer == nil {
+		return nil, fmt.Errorf("arch analyzer not initialized")
+	}
+	return r.archAnalyzer.AnalyzeProject(projectDir)
+}
+
+// ListPromptTemplates returns available prompt templates.
+func (r *AgentRunner) ListPromptTemplates(category string) []map[string]interface{} {
+	if r.promptEngine == nil {
+		return nil
+	}
+	templates := r.promptEngine.ListByCategory(category)
+	var result []map[string]interface{}
+	for _, t := range templates {
+		result = append(result, map[string]interface{}{
+			"name":        t.Name,
+			"description": t.Description,
+			"category":    t.Category,
+			"variables":   t.Variables,
+		})
+	}
+	return result
+}
+
+// SelectPromptTemplate selects the best template for a task.
+func (r *AgentRunner) SelectPromptTemplate(task string) string {
+	if r.promptEngine == nil {
+		return "code_generate"
+	}
+	return r.promptEngine.SmartSelect(task)
+}
+
+// GetGitStatus returns the git working tree status.
+func (r *AgentRunner) GetGitStatus() (interface{}, error) {
+	gitOps := NewGitOps(".")
+	if !gitOps.IsRepo() {
+		return nil, fmt.Errorf("not a git repository")
+	}
+	return gitOps.Status()
+}
+
+// GetGitLog returns recent git commits.
+func (r *AgentRunner) GetGitLog(n int) ([]GitCommit, error) {
+	gitOps := NewGitOps(".")
+	return gitOps.Log(n)
+}
+
+// GitCommit creates a new git commit.
+func (r *AgentRunner) GitCommit(message string, files []string) (string, error) {
+	gitOps := NewGitOps(".")
+	return gitOps.Commit(message, files)
+}
+
+// GitRollback reverts to a specific commit.
+func (r *AgentRunner) GitRollback(commit string, hard bool) error {
+	gitOps := NewGitOps(".")
+	return gitOps.Rollback(commit, hard)
+}
+
+// EnsembleGenerate runs the same prompt across multiple models.
+func (r *AgentRunner) EnsembleGenerate(prompt string, models []string) (interface{}, error) {
+	if r.ensembleGenerator == nil {
+		return nil, fmt.Errorf("ensemble generator not initialized")
+	}
+	result := r.ensembleGenerator.GenerateWithEnsemble(context.Background(), prompt, models, 4096)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	return map[string]interface{}{
+		"model":       result.Model,
+		"content":     result.Content,
+		"quality":     result.Quality,
+		"duration_ms": result.Duration.Milliseconds(),
+	}, nil
+}
