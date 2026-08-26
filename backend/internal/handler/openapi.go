@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/moduforge/backend/internal/docs"
 )
 
 // OpenAPIHandler serves the OpenAPI specification.
@@ -138,4 +139,22 @@ func (h *OpenAPIHandler) ServeSwaggerUI(c fiber.Ctx) error {
 </html>`
 	c.Set("Content-Type", "text/html")
 	return c.SendString(html)
+}
+
+// HandleGetOpenAPI 获取OpenAPI文档（基于代码生成）
+func (h *OpenAPIHandler) HandleGetOpenAPI(c fiber.Ctx) error {
+	spec := docs.GenerateModuForgeDocs()
+
+	format := c.Query("format", "json")
+
+	switch format {
+	case "yaml":
+		return c.Status(200).Set("Content-Type", "application/yaml").SendString(spec.ToYAML())
+	default:
+		jsonBytes, err := spec.ToJSON()
+		if err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": "Failed to generate docs"})
+		}
+		return c.Status(200).Set("Content-Type", "application/json").SendString(string(jsonBytes))
+	}
 }

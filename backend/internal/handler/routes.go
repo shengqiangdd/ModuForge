@@ -126,6 +126,7 @@ func RegisterRoutes(api fiber.Router, db *database.DB, cfg *config.Config) {
 	api.Get("/openapi.json", openapiH.ServeJSON)
 	api.Get("/openapi.yaml", openapiH.ServeYAML)
 	api.Get("/docs", openapiH.ServeSwaggerUI)
+	api.Get("/docs/openapi", openapiH.HandleGetOpenAPI)
 
 	// Auth public (stricter rate limit)
 	rateAuthStrict := middleware.RateLimit(rateLimiter, 15, 10)
