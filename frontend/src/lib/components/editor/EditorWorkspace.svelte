@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { client, authFetch } from '$lib/api/client';
   import CodeEditor from '$lib/components/CodeEditor.svelte';
   import Terminal from '$lib/components/Terminal.svelte';
@@ -10,6 +10,7 @@
   import { focusTrap } from '$lib/utils/focusTrap';
   import { loadShortcuts, matchShortcut, shortcutLabel } from '$lib/stores/shortcuts';
   import { debounce } from '$lib/utils/performance';
+  import { ws } from '$lib/ws';
   import FileTree from './FileTree.svelte';
   import EditorToolbar from './EditorToolbar.svelte';
   import EditorTabs from './EditorTabs.svelte';
@@ -146,6 +147,12 @@
   let dragOver = $state(false);
   let uploadProgress = $state<string | null>(null);
 
+  // Phase 9: Collaborative editing
+  let collabSession = $state<any>(null);
+  let cursors = $state<Record<string, { line: number; column: number; file?: string }>>({});
+  let collabUsers = $state<string[]>([]);
+  let collabCleanup: (() => void)[] = [];
+
   async function handleDrop(e: DragEvent) {
     e.preventDefault();
     dragOver = false;
@@ -253,8 +260,37 @@
       } finally {
         loading = false;
       }
+
+      // Phase 9: Join collaborative editing session
+      if (projectId && ws.isConnected) {
+        ws.send({ type: 'collab.join', session_id: projectId });
+        collabSession = { session_id: projectId };
+
+        const unsubCursor = ws.on('collab.cursor', (data: any) => {
+          if (data.user_id && data.position) {
+            cursors = { ...cursors, [data.user_id]: data.position };
+          }
+        });
+        const unsubEdit = ws.on('collab.edit', (data: any) => {
+          // Apply remote edit — handled by editor if needed
+        });
+        const unsubUsers = ws.on('collab.users', (data: any) => {
+          collabUsers = data.users || [];
+        });
+        collabCleanup.push(unsubCursor, unsubEdit, unsubUsers);
+      }
     })();
     return () => document.removeEventListener('keydown', handleKeydown);
+  });
+
+  onDestroy(() => {
+    // Phase 9: Leave collaborative editing session
+    if (collabSession) {
+      ws.send({ type: 'collab.leave', session_id: collabSession.session_id });
+      collabSession = null;
+    }
+    collabCleanup.forEach(fn => fn());
+    collabCleanup = [];
   });
 
   function openFileSearch() {

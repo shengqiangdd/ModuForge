@@ -26,6 +26,20 @@ type TrainingSample struct {
 	Source     string    `json:"source"` // "user_feedback", "implicit"
 }
 
+// FineTuneSample is an enhanced training sample with run context.
+type FineTuneSample struct {
+	ID           string    `json:"id"`
+	Prompt       string    `json:"prompt"`
+	Response     string    `json:"response"`
+	Language     string    `json:"language"`
+	Success      bool      `json:"success"`
+	Tokens       int       `json:"tokens"`
+	Latency      int64     `json:"latency_ms"`
+	UserFeedback string    `json:"user_feedback"`
+	Timestamp    time.Time `json:"timestamp"`
+	Source       string    `json:"source"`
+}
+
 // NewFineTuneLoop creates a new fine-tuning loop.
 func NewFineTuneLoop(dataDir string) *FineTuneLoop {
 	return &FineTuneLoop{
@@ -49,6 +63,45 @@ func (ftl *FineTuneLoop) RecordSample(sample TrainingSample) {
 
 	// Persist to disk
 	ftl.persistSamples()
+}
+
+// RecordSampleWithContext records an enhanced training sample with run context.
+func (ftl *FineTuneLoop) RecordSampleWithContext(sample *FineTuneSample) {
+	ftl.mu.Lock()
+	defer ftl.mu.Unlock()
+
+	if sample.Timestamp.IsZero() {
+		sample.Timestamp = time.Now()
+	}
+	if sample.Source == "" {
+		sample.Source = "implicit"
+	}
+
+	// Convert to basic TrainingSample for storage
+	ftl.samples = append(ftl.samples, TrainingSample{
+		ID:         sample.ID,
+		Prompt:     sample.Prompt,
+		Completion: sample.Response,
+		Rating:     ratingFromSuccess(sample.Success),
+		Timestamp:  sample.Timestamp,
+		Source:     sample.Source,
+	})
+
+	// Keep only recent samples
+	if len(ftl.samples) > ftl.maxSamples {
+		ftl.samples = ftl.samples[len(ftl.samples)-ftl.maxSamples:]
+	}
+
+	// Persist to disk
+	ftl.persistSamples()
+}
+
+// ratingFromSuccess converts a boolean success to a rating (1-5 scale).
+func ratingFromSuccess(success bool) int {
+	if success {
+		return 4
+	}
+	return 2
 }
 
 // GetSamples returns training samples for export.

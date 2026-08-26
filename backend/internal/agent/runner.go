@@ -269,7 +269,7 @@ func NewAgentRunner(registry *SkillRegistry, apiKey, endpoint, model string, db 
 		reviewStore:        evolution.NewReviewStore(filepath.Join(".", "data", "evolution")),
 		promptOptimizer:    evolution.NewPromptOptimizer(filepath.Join(".", "data", "evolution")),
 		feedbackLoop:       NewFeedbackLoop(filepath.Join(".", "data", "evolution")),
-		testGenerator:      NewTestGenerator(),
+		testGenerator:      NewTestGenerator(nil),
 		collaborativeAgent: NewCollaborativeAgent(),
 		fineTuneLoop:       NewFineTuneLoop(filepath.Join(".", "data", "fine_tune")),
 		ensembleGenerator:  NewEnsembleGenerator(nil), // caller set later
@@ -957,7 +957,7 @@ You are running WITHOUT a project context. This means:
 			if readErr != nil {
 				return nil
 			}
-			if result, genErr := r.testGenerator.GenerateTests(path, string(content)); genErr == nil {
+			if result, genErr := r.testGenerator.GenerateTestsForFile(path, string(content)); genErr == nil {
 				testContent := generateTestFile(result.File, result.Tests)
 				if writeErr := os.WriteFile(result.TestFile, []byte(testContent), 0644); writeErr == nil {
 					w.WriteSSE(map[string]interface{}{
@@ -1099,14 +1099,24 @@ You are running WITHOUT a project context. This means:
 		})
 	}
 
-	// Phase 4: Record training sample for fine-tuning (implicit feedback)
+	// Phase 4+9: Record training sample for fine-tuning (enhanced with run context)
 	if r.fineTuneLoop != nil {
-		r.fineTuneLoop.RecordSample(TrainingSample{
-			ID:        fmt.Sprintf("sample_%d", time.Now().UnixNano()),
-			Prompt:    task,
-			Rating:    3, // neutral rating for implicit feedback
-			Timestamp: time.Now(),
-			Source:    "implicit",
+		runSuccess := answerSent && perfSummary["error_count"].(int) == 0
+		var responseText string
+		if lastLLMResp != nil {
+			responseText = lastLLMResp.Content
+		}
+		r.fineTuneLoop.RecordSampleWithContext(&FineTuneSample{
+			ID:           fmt.Sprintf("sample_%d", time.Now().UnixNano()),
+			Prompt:       task,
+			Response:     responseText,
+			Language:     cfg.LLMModel,
+			Success:      runSuccess,
+			Tokens:       perfSummary["tool_call_count"].(int),
+			Latency:      time.Since(startTime).Milliseconds(),
+			UserFeedback: "",
+			Timestamp:    time.Now(),
+			Source:       "implicit",
 		})
 	}
 
@@ -1255,5 +1265,27 @@ func (r *AgentRunner) EnsembleGenerate(prompt string, models []string) (interfac
 		"content":     result.Content,
 		"quality":     result.Quality,
 		"duration_ms": result.Duration.Milliseconds(),
+	}, nil
+}
+
+// GenerateTestsForCode 为指定代码生成测试
+func (r *AgentRunner) GenerateTestsForCode(ctx context.Context, code string, language string) (*TestGenResult, error) {
+	gen := NewTestGenerator(r)
+	funcs, err := gen.ExtractFunctions(code, language)
+	if err != nil {
+		return nil, fmt.Errorf("extract functions: %w", err)
+	}
+
+	testCode, err := gen.GenerateTests(code, language, funcs)
+	if err != nil {
+		return nil, fmt.Errorf("generate tests: %w", err)
+	}
+
+	coverage := gen.EstimateCoverage(funcs, testCode)
+
+	return &TestGenResult{
+		Code:     testCode,
+		Coverage: coverage,
+		Funcs:    funcs,
 	}, nil
 }

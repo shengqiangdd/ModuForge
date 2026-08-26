@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log"
 	"log/slog"
 	"net/url"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/moduforge/backend/internal/agent"
 	"github.com/moduforge/backend/internal/builder"
 	"github.com/moduforge/backend/internal/domain"
 	"github.com/moduforge/backend/internal/service"
@@ -60,6 +62,20 @@ func (h *ProjectHandler) Create(c fiber.Ctx) error {
 	if err != nil {
 		return ErrorResponse(c, 400, err.Error(), ErrCodeConflict)
 	}
+
+	// Phase 9: Auto-analyze project architecture on creation
+	if h.db != nil {
+		var projectPath string
+		h.db.QueryRow(`SELECT COALESCE(storage_path,'') FROM projects WHERE id=?`, project.ID).Scan(&projectPath)
+		if projectPath != "" {
+			analyzer := agent.NewArchAnalyzer()
+			analysis, err := analyzer.AnalyzeProject(projectPath)
+			if err == nil && analysis != nil {
+				log.Printf("Architecture analysis for %s: %s (issues: %d)", req.Name, analysis.Architecture, len(analysis.Issues))
+			}
+		}
+	}
+
 	return c.Status(201).JSON(project)
 }
 

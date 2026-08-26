@@ -4,9 +4,11 @@ import (
 	"bufio"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/moduforge/backend/internal/agent"
 	"github.com/moduforge/backend/internal/service"
 )
 
@@ -50,6 +52,29 @@ func (h *AIHandler) GenerateModule(c fiber.Ctx) error {
 	} else if req.ProjectID != "" && uid != "" && h.db != nil {
 		if ctx := h.autoLoadProjectContext(c.Context(), req.ProjectID, uid); ctx != "" {
 			description = fmt.Sprintf("%s\n\n## Project Context:\n%s", description, ctx)
+		}
+	}
+
+	// Phase 9: Smart context injection — add architecture analysis to description
+	if req.ProjectID != "" && h.db != nil {
+		var projectPath string
+		h.db.Conn.QueryRow(`SELECT COALESCE(storage_path,'') FROM projects WHERE id=?`, req.ProjectID).Scan(&projectPath)
+		if projectPath != "" {
+			analyzer := agent.NewArchAnalyzer()
+			analysis, err := analyzer.AnalyzeProject(projectPath)
+			if err == nil && analysis != nil {
+				var ctxParts []string
+				ctxParts = append(ctxParts, fmt.Sprintf("Project Architecture: %s\nCoupling: %.2f\nCohesion: %.2f",
+					analysis.Architecture, analysis.Coupling, analysis.Cohesion))
+				if len(analysis.Suggestions) > 0 {
+					suggestions := analysis.Suggestions
+					if len(suggestions) > 3 {
+						suggestions = suggestions[:3]
+					}
+					ctxParts = append(ctxParts, fmt.Sprintf("Suggestions:\n- %s", strings.Join(suggestions, "\n- ")))
+				}
+				description += "\n\n## Architecture Context\n" + strings.Join(ctxParts, "\n")
+			}
 		}
 	}
 
@@ -150,6 +175,37 @@ func (h *AIHandler) Chat(c fiber.Ctx) error {
 	} else if req.ProjectID != "" && uid != "" && h.db != nil {
 		// Auto-load project files as context
 		contextInfo = h.autoLoadProjectContext(c.Context(), req.ProjectID, uid)
+	}
+
+	// Phase 9: Smart context injection — add architecture analysis to context
+	if req.ProjectID != "" && h.db != nil {
+		var projectPath string
+		h.db.Conn.QueryRow(`SELECT COALESCE(storage_path,'') FROM projects WHERE id=?`, req.ProjectID).Scan(&projectPath)
+		if projectPath != "" {
+			analyzer := agent.NewArchAnalyzer()
+			analysis, err := analyzer.AnalyzeProject(projectPath)
+			if err == nil && analysis != nil {
+				var ctxParts []string
+				ctxParts = append(ctxParts, fmt.Sprintf("Project Architecture: %s\nCoupling: %.2f\nCohesion: %.2f",
+					analysis.Architecture, analysis.Coupling, analysis.Cohesion))
+
+				// Add improvement suggestions (max 3)
+				if len(analysis.Suggestions) > 0 {
+					suggestions := analysis.Suggestions
+					if len(suggestions) > 3 {
+						suggestions = suggestions[:3]
+					}
+					ctxParts = append(ctxParts, fmt.Sprintf("Suggestions:\n- %s", strings.Join(suggestions, "\n- ")))
+				}
+
+				archContext := strings.Join(ctxParts, "\n")
+				if contextInfo != "" {
+					contextInfo += "\n\n## Architecture Context\n" + archContext
+				} else {
+					contextInfo = "## Architecture Context\n" + archContext
+				}
+			}
+		}
 	}
 
 	// Resolve LLM provider from request or fallback to global config
