@@ -69,15 +69,14 @@ func (sm *SecurityMiddleware) SecurityHeaders(c fiber.Ctx) error {
 // InputSanitize 输入清理中间件
 func (sm *SecurityMiddleware) InputSanitize(c fiber.Ctx) error {
 	// 检查查询参数
-	for key, values := range c.Queries() {
-		for _, value := range values {
-			result := sm.validator.ValidateSearchQuery(value)
-			if !result.Valid {
-				log.Printf("Blocked suspicious query param: %s=%s", key, value)
-				return c.Status(400).JSON(fiber.Map{
-					"error": "Invalid input detected",
-				})
-			}
+	queries := c.Queries()
+	for key, value := range queries {
+		result := sm.validator.ValidateSearchQuery(value)
+		if !result.Valid {
+			log.Printf("Blocked suspicious query param: %s=%s", key, value)
+			return c.Status(400).JSON(fiber.Map{
+				"error": "Invalid input detected",
+			})
 		}
 	}
 
