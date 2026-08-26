@@ -164,4 +164,8 @@ func registerAIRoutes(ctx *routeContext) {
 	ctx.r("GET", "/feedback/stats", aiH.HandleGetFeedbackStats)
 	ctx.r("GET", "/feedback/recent", aiH.HandleGetRecentFeedbacks)
 	ctx.r("POST", "/quality/validate", aiH.HandleValidateCode)
+
+	// Phase 11: Cache
+	ctx.r("GET", "/cache/stats", aiH.HandleGetCacheStats)
+	ctx.r("POST", "/cache/clear", aiH.HandleClearCache)
 }

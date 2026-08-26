@@ -39,6 +39,21 @@ type BuildStats struct {
 	SuccessRate   float64 `json:"success_rate"`
 }
 
+// CacheStatsProvider is an interface for providing cache statistics to PerfMonitor.
+type CacheStatsProvider interface {
+	GetStats() CacheStatsResult
+}
+
+// CacheStatsResult holds cache statistics.
+type CacheStatsResult struct {
+	Hits      int64   `json:"Hits"`
+	Misses    int64   `json:"Misses"`
+	Evictions int64   `json:"Evictions"`
+	TotalSize int64   `json:"TotalSize"`
+	ItemCount int64   `json:"ItemCount"`
+	HitRate   float64 `json:"HitRate"`
+}
+
 // PerfMonitor tracks real-time performance metrics.
 type PerfMonitor struct {
 	mu               sync.RWMutex
@@ -55,6 +70,7 @@ type PerfMonitor struct {
 	modelUsage       map[string]int64
 	activeSessions   int
 	subscribers      []chan PerfSnapshot
+	cacheProvider    CacheStatsProvider
 }
 
 // NewPerfMonitor creates a new performance monitor.
@@ -118,6 +134,13 @@ func (pm *PerfMonitor) SetActiveSessions(count int) {
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
 	pm.activeSessions = count
+}
+
+// SetCacheStatsProvider sets the cache stats provider for the performance monitor.
+func (pm *PerfMonitor) SetCacheStatsProvider(p CacheStatsProvider) {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+	pm.cacheProvider = p
 }
 
 // TakeSnapshot captures the current performance state.
@@ -218,7 +241,7 @@ func (pm *PerfMonitor) GetSummary() map[string]interface{} {
 	pm.mu.RLock()
 	defer pm.mu.RUnlock()
 
-	return map[string]interface{}{
+	result := map[string]interface{}{
 		"uptime_seconds":  time.Since(pm.startTime).Seconds(),
 		"total_requests":  pm.totalRequests,
 		"total_errors":    pm.totalErrors,
@@ -228,6 +251,18 @@ func (pm *PerfMonitor) GetSummary() map[string]interface{} {
 		"tool_calls":      pm.toolCalls,
 		"model_usage":     pm.modelUsage,
 	}
+
+	// Phase 11: Add cache statistics if provider is set
+	if pm.cacheProvider != nil {
+		cs := pm.cacheProvider.GetStats()
+		result["cache_hits"] = cs.Hits
+		result["cache_misses"] = cs.Misses
+		result["cache_hit_rate"] = cs.HitRate
+		result["cache_evictions"] = cs.Evictions
+		result["cache_item_count"] = cs.ItemCount
+	}
+
+	return result
 }
 
 // ToJSON serializes the snapshot to JSON.

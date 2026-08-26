@@ -1,5 +1,6 @@
 <script>
   import { onMount, onDestroy } from 'svelte';
+  import CacheMonitor from './CacheMonitor.svelte';
   
   let summary = $state(null);
   let history = $state([]);
@@ -141,6 +142,11 @@
         </div>
       </div>
     {/if}
+
+    <!-- Phase 11: Cache Monitor -->
+    <div class="mt-6">
+      <CacheMonitor />
+    </div>
   {/if}
 </div>
 

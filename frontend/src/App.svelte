@@ -40,9 +40,10 @@
     'git-ops': () => import('$lib/components/GitPanel.svelte'),
     'prompts-mgr': () => import('$lib/components/PromptManager.svelte'),
     'ensemble': () => import('$lib/components/EnsemblePanel.svelte'),
+    'cache': () => import('$lib/components/CacheMonitor.svelte'),
   };
 
-  type Route = 'auth' | 'projects' | 'editor' | 'builds' | 'tests' | 'settings' | 'market' | 'market-publish' | 'dashboard' | 'ai' | 'analytics' | 'mcp' | 'devices' | 'crash' | 'glossary' | 'perf' | 'arch' | 'git-ops' | 'prompts-mgr' | 'ensemble';
+  type Route = 'auth' | 'projects' | 'editor' | 'builds' | 'tests' | 'settings' | 'market' | 'market-publish' | 'dashboard' | 'ai' | 'analytics' | 'mcp' | 'devices' | 'crash' | 'glossary' | 'perf' | 'arch' | 'git-ops' | 'prompts-mgr' | 'ensemble' | 'cache';
   interface Project { id: string; name: string; module_type: string; description: string; created_at: string; updated_at: string; }
 
   // ─── Global state ───

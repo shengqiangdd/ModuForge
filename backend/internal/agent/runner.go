@@ -14,6 +14,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/moduforge/backend/internal/cache"
 	"github.com/moduforge/backend/internal/evolution"
 	"github.com/moduforge/backend/internal/rag"
 	"github.com/moduforge/backend/internal/service"
@@ -229,6 +230,9 @@ type AgentRunner struct {
 	feedbackCollector  *FeedbackCollector
 	codeQualityValidator *CodeQualityValidator
 
+	// Phase 11: AI response cache
+	aiCache *cache.AICache
+
 	// bgCancel cancels the background context used by long-lived goroutines
 	bgCancel context.CancelFunc
 }
@@ -293,8 +297,11 @@ func NewAgentRunner(registry *SkillRegistry, apiKey, endpoint, model string, db 
 		collabManager:        NewCollabSessionManager(),
 		feedbackCollector:    NewFeedbackCollector(nil),
 		codeQualityValidator: NewCodeQualityValidator(nil),
+		aiCache:              cache.NewAICache(),
 		bgCancel:             bgCancel,
 	}
+	// Wire cache stats into perf monitor
+	r.perfMonitor.SetCacheStatsProvider(r)
 	go r.startSessionCacheCleanup()
 	return r
 }
@@ -318,6 +325,32 @@ func (r *AgentRunner) SetMemoryV2Store(store *service.MemoryV2Store) {
 
 func (r *AgentRunner) SetFileHashCache(cache *fileHashCache) {
 	r.fileHashCache = cache
+}
+
+// AICache returns the AI response cache.
+func (r *AgentRunner) AICache() *cache.AICache {
+	if r.aiCache == nil {
+		r.aiCache = cache.NewAICache()
+	}
+	return r.aiCache
+}
+
+// SetAICache replaces the AI response cache.
+func (r *AgentRunner) SetAICache(c *cache.AICache) {
+	r.aiCache = c
+}
+
+// GetCacheStatsResult implements CacheStatsProvider for PerfMonitor integration.
+func (r *AgentRunner) GetCacheStatsResult() CacheStatsResult {
+	cs := r.AICache().GetStats()
+	return CacheStatsResult{
+		Hits:      cs.Hits,
+		Misses:    cs.Misses,
+		Evictions: cs.Evictions,
+		TotalSize: cs.TotalSize,
+		ItemCount: cs.ItemCount,
+		HitRate:   cs.HitRate,
+	}
 }
 
 // ═══════════════════════════════════════════════════════════════════
