@@ -13,16 +13,16 @@ type TestGenerator struct {
 }
 
 // TestResult represents the result of test generation.
-type TestResult struct {
+type TestGenResult struct {
 	File     string
 	TestFile string
-	Tests    []TestCase
+	Tests    []TestGenCase
 	Coverage float64
 	Errors   []string
 }
 
 // TestCase represents a single test case.
-type TestCase struct {
+type TestGenCase struct {
 	Name     string
 	Function string
 	Input    string
@@ -36,7 +36,7 @@ func NewTestGenerator() *TestGenerator {
 }
 
 // GenerateTests generates unit tests for a Go file.
-func (tg *TestGenerator) GenerateTests(filePath string, content string) (*TestResult, error) {
+func (tg *TestGenerator) GenerateTests(filePath string, content string) (*TestGenResult, error) {
 	tg.mu.Lock()
 	defer tg.mu.Unlock()
 
@@ -47,7 +47,7 @@ func (tg *TestGenerator) GenerateTests(filePath string, content string) (*TestRe
 	}
 
 	// Generate test cases for each function
-	var testCases []TestCase
+	var testCases []TestGenCase
 	for _, fn := range functions {
 		cases := tg.generateTestCases(fn, content)
 		testCases = append(testCases, cases...)
@@ -56,7 +56,7 @@ func (tg *TestGenerator) GenerateTests(filePath string, content string) (*TestRe
 	// Generate test file content
 	testPath := strings.TrimSuffix(filePath, ".go") + "_test.go"
 
-	return &TestResult{
+	return &TestGenResult{
 		File:     filePath,
 		TestFile: testPath,
 		Tests:    testCases,
@@ -80,12 +80,12 @@ func extractFunctions(content string) []string {
 }
 
 // generateTestCases generates test cases for a function.
-func (tg *TestGenerator) generateTestCases(funcSig string, content string) []TestCase {
+func (tg *TestGenerator) generateTestCases(funcSig string, content string) []TestGenCase {
 	// Extract function name
 	name := extractFuncName(funcSig)
 
 	// Generate basic test cases
-	return []TestCase{
+	return []TestGenCase{
 		{
 			Name:     fmt.Sprintf("Test%s_Basic", name),
 			Function: name,
@@ -114,7 +114,7 @@ func extractFuncName(sig string) string {
 }
 
 // generateTestFile generates the content of a test file.
-func generateTestFile(filePath string, cases []TestCase) string {
+func generateTestFile(filePath string, cases []TestGenCase) string {
 	pkg := filepath.Base(filepath.Dir(filePath))
 
 	var sb strings.Builder
@@ -132,7 +132,7 @@ func generateTestFile(filePath string, cases []TestCase) string {
 }
 
 // estimateCoverage estimates test coverage based on test cases.
-func estimateCoverage(cases []TestCase) float64 {
+func estimateCoverage(cases []TestGenCase) float64 {
 	if len(cases) == 0 {
 		return 0
 	}
