@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"strconv"
+
 	"github.com/gofiber/fiber/v3"
 )
 
@@ -21,7 +23,7 @@ func (h *AgentHandler) GetGitLog(c fiber.Ctx) error {
 	if h.runner == nil {
 		return c.Status(503).JSON(fiber.Map{"error": "agent not ready"})
 	}
-	n := c.QueryInt("n", 20)
+	n, _ := strconv.Atoi(c.Query("n", "20"))
 	logs, err := h.runner.GetGitLog(n)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
