@@ -6,6 +6,10 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"unicode"
+
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 )
 
 // TestGenerator generates unit tests for generated code.
@@ -270,7 +274,8 @@ func (tg *TestGenerator) generateGoTests(code string, funcs []FunctionInfo) (str
 	sb.WriteString("import \"testing\"\n\n")
 
 	for _, fn := range funcs {
-		testName := "Test" + strings.Title(fn.Name)
+		c := cases.Title(language.English)
+		testName := "Test" + c.String(fn.Name)
 		sb.WriteString(fmt.Sprintf("func %s(t *testing.T) {\n", testName))
 		sb.WriteString(fmt.Sprintf("\t// TODO: implement test for %s\n", fn.Name))
 		sb.WriteString(fmt.Sprintf("\tt.Run(\"%s\", func(t *testing.T) {\n", fn.Name))
@@ -289,7 +294,7 @@ func (tg *TestGenerator) generateJSTests(code string, funcs []FunctionInfo) (str
 
 	for _, fn := range funcs {
 		sb.WriteString(fmt.Sprintf("  describe('%s', () => {\n", fn.Name))
-		sb.WriteString(fmt.Sprintf("    it('should work correctly', () => {\n"))
+		sb.WriteString("    it('should work correctly', () => {\n")
 		sb.WriteString(fmt.Sprintf("      // TODO: implement test for %s\n", fn.Name))
 		sb.WriteString("    });\n")
 		sb.WriteString("  });\n\n")
