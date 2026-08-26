@@ -221,4 +221,9 @@ func registerAIRoutes(ctx *routeContext) {
 	// Phase 24: Knowledge Graph and Trends
 	code.Post("/knowledge-graph", aiH.HandleGetKnowledgeGraph)
 	code.Get("/trends", aiH.HandleGetTrends)
+
+	// Phase 25: Version, Performance, Security
+	code.Post("/diff", aiH.HandleDiffCode)
+	code.Get("/runtime-profile", aiH.HandleRuntimeProfile)
+	code.Post("/security-scan", aiH.HandleSecurityScan)
 }
