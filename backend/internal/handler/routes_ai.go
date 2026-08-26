@@ -186,8 +186,9 @@ func registerAIRoutes(ctx *routeContext) {
 	perf.Get("/info", aiH.HandleGetSystemInfo)
 	perf.Get("/health", aiH.HandleHealthCheck)
 
-	// Phase 17: Code Analysis
+	// Phase 17-18: Code Analysis
 	code := ctx.api.Group("/code")
 	code.Post("/analyze", aiH.HandleAnalyzeCode)
+	code.Post("/dependencies", aiH.HandleAnalyzeDependencies)
 	code.Get("/metrics", aiH.HandleGetCodeMetrics)
 }

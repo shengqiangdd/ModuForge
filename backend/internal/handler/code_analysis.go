@@ -23,15 +23,12 @@ func (h *AIHandler) HandleAnalyzeCode(c fiber.Ctx) error {
 		return BadRequest(c, "Code is required")
 	}
 
-	if req.Language != "go" {
-		return c.Status(200).JSON(fiber.Map{
-			"message":  "AST analysis currently supports Go only",
-			"language": req.Language,
-		})
+	if req.Language == "" {
+		req.Language = "go"
 	}
 
-	analyzer := code.NewASTAnalyzer()
-	result, err := analyzer.Analyze(req.Code)
+	analyzer := code.NewMultiLangAnalyzer()
+	result, err := analyzer.Analyze(req.Code, req.Language)
 	if err != nil {
 		return c.Status(200).JSON(fiber.Map{
 			"error": err.Error(),
@@ -43,6 +40,32 @@ func (h *AIHandler) HandleAnalyzeCode(c fiber.Ctx) error {
 		"valid":  true,
 		"result": result,
 	})
+}
+
+// HandleAnalyzeDependencies 分析依赖关系
+func (h *AIHandler) HandleAnalyzeDependencies(c fiber.Ctx) error {
+	type request struct {
+		Files    map[string]string `json:"files"`
+		Language string            `json:"language"`
+	}
+
+	var req request
+	if err := json.Unmarshal(c.Body(), &req); err != nil {
+		return BadRequest(c, "Invalid request body")
+	}
+
+	if len(req.Files) == 0 {
+		return BadRequest(c, "Files are required")
+	}
+
+	if req.Language == "" {
+		req.Language = "go"
+	}
+
+	analyzer := code.NewDependencyAnalyzer()
+	graph := analyzer.AnalyzeDependencies(req.Files, req.Language)
+
+	return c.Status(200).JSON(graph)
 }
 
 // HandleGetCodeMetrics 获取代码度量
