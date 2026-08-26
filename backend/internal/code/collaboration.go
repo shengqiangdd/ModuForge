@@ -208,7 +208,6 @@ func randomString(n int) string {
 	b := make([]byte, n)
 	for i := range b {
 		b[i] = letters[time.Now().UnixNano()%int64(len(letters))]
-		time.Sleep(1)
 	}
 	return string(b)
 }
