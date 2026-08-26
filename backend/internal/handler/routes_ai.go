@@ -191,4 +191,8 @@ func registerAIRoutes(ctx *routeContext) {
 	code.Post("/analyze", aiH.HandleAnalyzeCode)
 	code.Post("/dependencies", aiH.HandleAnalyzeDependencies)
 	code.Get("/metrics", aiH.HandleGetCodeMetrics)
+
+	// Phase 19: Refactoring and Search
+	code.Post("/refactor", aiH.HandleGetRefactorSuggestions)
+	code.Post("/search", aiH.HandleSearchCode)
 }
