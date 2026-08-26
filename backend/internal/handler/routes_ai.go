@@ -241,4 +241,12 @@ func registerAIRoutes(ctx *routeContext) {
 	code.Post("/project/dependencies", aiH.HandleAnalyzeDependenciesNew)
 	code.Post("/project/complexity", aiH.HandleAnalyzeComplexity)
 	code.Post("/project/custom-rules", aiH.HandleCheckCustomRules)
+
+	// Phase 28: Performance & Algorithm Optimization
+	code.Post("/cache/put", aiH.CachePut)
+	code.Get("/cache/get", aiH.CacheGet)
+	code.Get("/cache/stats", aiH.CacheStats)
+	code.Post("/bloom", aiH.HandleBloomFilterDemo)
+	code.Post("/trie", aiH.HandleTrieSearch)
+	code.Post("/pool", aiH.HandleGoroutinePoolDemo)
 }
