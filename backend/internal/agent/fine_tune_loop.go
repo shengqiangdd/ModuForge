@@ -78,8 +78,11 @@ func (ftl *FineTuneLoop) ExportForTraining(outputPath string) error {
 // persistSamples persists samples to disk.
 func (ftl *FineTuneLoop) persistSamples() {
 	path := filepath.Join(ftl.dataDir, "training_samples.json")
-	data, _ := json.MarshalIndent(ftl.samples, "", "  ")
-	os.WriteFile(path, data, 0644)
+	data, err := json.MarshalIndent(ftl.samples, "", "  ")
+	if err != nil {
+		return
+	}
+	_ = os.WriteFile(path, data, 0644)
 }
 
 // GetMetrics returns fine-tuning loop metrics.
