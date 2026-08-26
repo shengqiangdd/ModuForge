@@ -21,13 +21,13 @@ func TestAICache_SetAndGet(t *testing.T) {
 	}
 
 	// 不同的prompt应该未命中
-	cached, ok = ac.GetCachedResponse("Different prompt", model)
+	_, ok = ac.GetCachedResponse("Different prompt", model)
 	if ok {
 		t.Error("Expected cache miss for different prompt")
 	}
 
 	// 不同的model应该未命中
-	cached, ok = ac.GetCachedResponse(prompt, "different-model")
+	_, ok = ac.GetCachedResponse(prompt, "different-model")
 	if ok {
 		t.Error("Expected cache miss for different model")
 	}

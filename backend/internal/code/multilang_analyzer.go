@@ -74,9 +74,7 @@ func (m *MultiLangAnalyzer) analyzeGo(code string) (*MultiLangResult, error) {
 	}
 
 	functions := make([]FunctionInfo, 0)
-	for _, f := range result.Functions {
-		functions = append(functions, f)
-	}
+	functions = append(functions, result.Functions...)
 
 	return &MultiLangResult{
 		Language:   "go",
