@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"strconv"
+
 	"github.com/gofiber/fiber/v3"
 	"github.com/moduforge/backend/internal/agent"
 )
@@ -45,7 +47,7 @@ func (h *AIHandler) HandleGetFeedbackStats(c fiber.Ctx) error {
 
 // HandleGetRecentFeedbacks 获取最近的反馈
 func (h *AIHandler) HandleGetRecentFeedbacks(c fiber.Ctx) error {
-	limit := c.QueryInt("n", 20)
+	limit, _ := strconv.Atoi(c.Query("n", "20"))
 	feedbacks := h.runner.FeedbackCollector().GetRecentFeedbacks(limit)
 	return c.Status(200).JSON(feedbacks)
 }
