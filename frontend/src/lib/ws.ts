@@ -201,6 +201,18 @@ class WSClient {
   }
 
   // Clean up all listeners (call on app teardown)
+  send(data: unknown) {
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      try {
+        this.ws.send(JSON.stringify(data));
+      } catch (e) {
+        console.error('[WS] send failed:', e);
+      }
+    } else {
+      console.warn('[WS] send: not connected');
+    }
+  }
+
   removeAllListeners() {
     this.listeners.clear();
   }
