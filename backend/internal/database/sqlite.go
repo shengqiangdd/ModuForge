@@ -15,7 +15,7 @@ type DB struct {
 }
 
 func NewSQLiteDB(dbPath string) (*DB, error) {
-	conn, err := sql.Open("sqlite3", dbPath+"?_journal_mode=WAL&_busy_timeout=30000&_foreign_keys=ON&_loc=ON&_txlock=immediate")
+	conn, err := sql.Open("sqlite3", dbPath+"?_journal_mode=WAL&_busy_timeout=30000&_foreign_keys=ON&_loc=auto&_txlock=immediate")
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite: %w", err)
 	}

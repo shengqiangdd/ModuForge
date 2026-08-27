@@ -11,7 +11,7 @@ import (
 
 // Init 初始化 SQLite 数据库，执行迁移
 func Init(cfg *config.Config) (*sql.DB, error) {
-	db, err := sql.Open("sqlite3", cfg.DatabasePath+"?_journal_mode=WAL&_busy_timeout=30000&_foreign_keys=ON&_loc=ON&_txlock=immediate")
+	db, err := sql.Open("sqlite3", cfg.DatabasePath+"?_journal_mode=WAL&_busy_timeout=30000&_foreign_keys=ON&_loc=auto&_txlock=immediate")
 	if err != nil {
 		return nil, fmt.Errorf("open: %w", err)
 	}
