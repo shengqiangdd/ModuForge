@@ -250,9 +250,11 @@
 
   function pollStatus() {
     if (pollTimer) clearInterval(pollTimer);
+    let consecutiveErrors = 0;
+    let fetching = false; // guard: prevent concurrent fetches
     pollTimer = setInterval(async () => {
-      if (!taskId) return;
-      let consecutiveErrors = 0;
+      if (!taskId || fetching) return;
+      fetching = true;
       try {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 10000);
@@ -292,6 +294,8 @@
       } catch {
         // Transient network/timeout errors must NOT kill the polling loop — only give up after many consecutive failures.
         if (++consecutiveErrors >= 6) { clearInterval(pollTimer!); pollTimer = null; building = false; saveBuildState(); }
+      } finally {
+        fetching = false;
       }
     }, 500);
   }

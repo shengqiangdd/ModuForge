@@ -18,7 +18,10 @@ export function getToasts(): Toast[] {
 }
 
 export function subscribe(fn: () => void): () => void {
-  _listeners.push(fn);
+  // Prevent duplicate subscriptions from the same callback reference
+  if (!_listeners.includes(fn)) {
+    _listeners.push(fn);
+  }
   return () => { _listeners = _listeners.filter(l => l !== fn); };
 }
 
@@ -27,6 +30,10 @@ function notify() {
 }
 
 export function toast(message: string, type: ToastType = 'info', duration = 3000) {
+  // Deduplicate: skip if the most recent toast has the same message and type
+  const last = _toasts[_toasts.length - 1];
+  if (last && last.message === message && last.type === type) return;
+
   const id = Math.random().toString(36).slice(2);
   // Enforce max toast limit — drop oldest
   if (_toasts.length >= MAX_TOASTS) {
