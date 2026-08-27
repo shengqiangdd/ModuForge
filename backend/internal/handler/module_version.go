@@ -7,10 +7,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/moduforge/backend/internal/agent/skills"
 	"github.com/moduforge/backend/internal/domain"
 	"github.com/moduforge/backend/internal/storage"
 )
@@ -30,27 +30,22 @@ func (h *ModuleVersionHandler) SetS3(adapter *storage.S3Adapter) {
 }
 
 // s3ObjectKey returns the S3 object key for a project file.
+// Uses the shared implementation from skills/fileutil.go for consistency.
 func (h *ModuleVersionHandler) s3ObjectKey(projectID, path string) string {
-	return projectID + "/" + strings.TrimPrefix(path, "/")
+	return skills.S3ObjectKey(projectID, path)
 }
 
-// readContent returns file content: S3 first (authoritative), DB content fallback.
+// readContent returns file content from S3 only.
 func (h *ModuleVersionHandler) readContent(ctx context.Context, projectID, path string) (string, error) {
-	if h.s3 != nil {
-		data, err := h.s3.Read(ctx, h.s3ObjectKey(projectID, path))
-		if err == nil {
-			return string(data), nil
-		}
-		slog.Warn("s3 read failed, falling back to db content", "project", projectID, "path", path, "error", err)
+	if h.s3 == nil {
+		return "", fmt.Errorf("s3 not configured")
 	}
-	var content string
-	err := h.db.QueryRowContext(ctx,
-		`SELECT COALESCE(content,'') FROM project_files WHERE project_id=? AND path=?`, projectID, path,
-	).Scan(&content)
+	data, err := h.s3.Read(ctx, h.s3ObjectKey(projectID, path))
 	if err != nil {
-		return "", err
+		slog.Warn("s3 read failed", "project", projectID, "path", path, "error", err)
+		return "", fmt.Errorf("s3 read failed: %w", err)
 	}
-	return content, nil
+	return string(data), nil
 }
 
 // saveContent persists file content: S3 (authoritative) + DB metadata.
@@ -59,23 +54,20 @@ func (h *ModuleVersionHandler) saveContent(ctx context.Context, projectID, path,
 	sha := storage.ComputeSHA256([]byte(content))
 	size := int64(len(content))
 
-	if h.s3 != nil {
-		if err := h.s3.Write(ctx, h.s3ObjectKey(projectID, path), []byte(content)); err != nil {
-			return fmt.Errorf("s3 write failed: %w", err)
-		}
-		_, err := h.db.ExecContext(ctx,
-			`INSERT INTO project_files (project_id, path, content, created_at, updated_at, sha256, file_size, mtime)
-			 VALUES (?, ?, NULL, ?, ?, ?, ?, ?)
-			 ON CONFLICT(project_id, path) DO UPDATE SET content=NULL, updated_at=datetime('now'), sha256=?, file_size=?, mtime=?`,
-			projectID, path, now, now, sha, size, now, sha, size, now)
-		return err
+	// Write content to S3 (sole source of truth)
+	if h.s3 == nil {
+		return fmt.Errorf("s3 not configured")
+	}
+	if err := h.s3.Write(ctx, h.s3ObjectKey(projectID, path), []byte(content)); err != nil {
+		return fmt.Errorf("s3 write failed: %w", err)
 	}
 
+	// Update DB metadata only (no content column)
 	_, err := h.db.ExecContext(ctx,
-		`INSERT INTO project_files (project_id, path, content, created_at, updated_at, sha256, file_size, mtime)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-		 ON CONFLICT(project_id, path) DO UPDATE SET content=?, updated_at=datetime('now'), sha256=?, file_size=?, mtime=?`,
-		projectID, path, content, now, now, sha, size, now, content, sha, size, now)
+		`INSERT INTO project_files (project_id, path, created_at, updated_at, sha256, file_size, mtime)
+		 VALUES (?, ?, ?, ?, ?, ?, ?)
+		 ON CONFLICT(project_id, path) DO UPDATE SET updated_at=datetime('now'), sha256=?, file_size=?, mtime=?`,
+		projectID, path, now, now, sha, size, now, sha, size, now)
 	return err
 }
 

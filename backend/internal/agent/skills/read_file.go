@@ -6,8 +6,6 @@ import (
 	"database/sql"
 	"fmt"
 	"log/slog"
-	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -67,56 +65,14 @@ func (s *ReadFileSkill) Execute(ctx context.Context, input map[string]interface{
 		return "", fmt.Errorf("path is required")
 	}
 
-	// S3 storage path: read from S3 directly, fall back to DB on failure
-	if s.storage != nil {
-		content, err := s.storage.Read(ctx, s.storagePath(projectID, path))
-		if err != nil {
-			// S3 read failed — fall back to DB content column (same as project service)
-			slog.Warn("s3 read failed in read_file skill, falling back to db", "path", path, "error", err)
-		} else if len(content) > 0 {
-			// Differential-cache also applies to S3 reads (production path).
-			if s.fileHash != nil && startLine == 0 && endLine == 0 {
-				h := sha256.Sum256(content)
-				hash := fmt.Sprintf("%x", h)
-				prev := s.fileHash.Get(path)
-				totalLines := len(strings.Split(string(content), "\n"))
-				if prev != "" && prev == hash && totalLines > 500 {
-					return fmt.Sprintf(
-						"File: %s (%d lines) — UNCHANGED since last read (sha256:%s).\n"+
-							"Content is identical to what you already have in context. "+
-							"No need to re-analyze. Use start_line/end_line to read any specific section if required.",
-						path, totalLines, hash[:12],
-					), nil
-				}
-				s.fileHash.Set(path, hash)
-			}
-			return s.formatContent(path, string(content), startLine, endLine), nil
-		}
-		// content is empty or S3 failed — fall through to legacy disk/DB path below
+	// S3 is the sole source of truth for file content
+	if s.storage == nil {
+		return "", fmt.Errorf("s3 not configured")
 	}
-
-	// Legacy path: try disk first, then DB
-	basePath := ResolveProjectPath(s.db, s.projectPath, projectID)
-	fullPath := filepath.Join(basePath, path)
-	fromDB := false
-
-	// Try to read from disk
-	content, err := os.ReadFile(fullPath)
+	content, err := s.storage.Read(ctx, S3ObjectKey(projectID, path))
 	if err != nil {
-		// Fallback: read from database
-		if s.db != nil && projectID != "" {
-			var dbContent string
-			err := s.db.QueryRow(
-				`SELECT content FROM project_files WHERE project_id=? AND path=?`, projectID, path,
-			).Scan(&dbContent)
-			if err != nil {
-				return "", fmt.Errorf("file not found on disk or in database: %s", path)
-			}
-			content = []byte(dbContent)
-			fromDB = true
-		} else {
-			return "", fmt.Errorf("file not found: %s (disk: %v)", path, err)
-		}
+		slog.Warn("s3 read failed in read_file skill", "path", path, "error", err)
+		return "", fmt.Errorf("s3 read failed: %w", err)
 	}
 
 	// Differential-cache: if the file hash is unchanged from the last read AND
@@ -125,7 +81,7 @@ func (s *ReadFileSkill) Execute(ctx context.Context, input map[string]interface{
 	// "unchanged", telling the model to use start_line/end_line for detail.
 	// Small files are cheap to re-read, so we always return them in full to
 	// avoid any risk of stale-context confusion.
-	if s.fileHash != nil && !fromDB && startLine == 0 && endLine == 0 {
+	if s.fileHash != nil && startLine == 0 && endLine == 0 {
 		h := sha256.Sum256(content)
 		hash := fmt.Sprintf("%x", h)
 		prev := s.fileHash.Get(path)
@@ -304,13 +260,6 @@ func getDefinitionPatterns(lang string) []*regexp.Regexp {
 	default:
 		return nil
 	}
-}
-
-// storagePath constructs the S3 path for a project file.
-// NOTE: the S3Adapter prepends its configured prefix ("projects"), so we pass
-// the project-relative key here — DO NOT prefix with "projects/" again.
-func (s *ReadFileSkill) storagePath(projectID, path string) string {
-	return S3ObjectKey(projectID, path)
 }
 
 func (s *ReadFileSkill) Metadata() registry.SkillMeta {

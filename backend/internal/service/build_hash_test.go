@@ -1,4 +1,3 @@
-
 package service
 
 import (
@@ -10,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/moduforge/backend/internal/config"
+	"github.com/moduforge/backend/internal/storage"
 )
 
 // TestComputeFilesHashS3FastPath verifies that in S3 mode, computeFilesHash
@@ -46,8 +46,8 @@ func TestComputeFilesHashS3FastPath(t *testing.T) {
 		{"service.sh", "cccc"},
 	}
 	for _, f := range files {
-		if _, err := db.Exec(`INSERT INTO project_files (project_id, path, content, sha256) VALUES (?, ?, NULL, ?)`,
-			"p1", f.path, f.sha); err != nil {
+		if _, err := db.Exec(`INSERT INTO project_files (project_id, path, sha256, file_size, mtime, created_at, updated_at) VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
+			"p1", f.path, f.sha, 100, "2026-01-01T00:00:00Z"); err != nil {
 			t.Fatalf("insert %s: %v", f.path, err)
 		}
 	}
@@ -115,9 +115,9 @@ func TestComputeFilesHashLegacyFallback(t *testing.T) {
 	}
 
 	// Seed: one row WITHOUT sha256 (legacy), one WITH
-	if _, err := db.Exec(`INSERT INTO project_files (project_id, path, content, sha256) VALUES
-		('p1', 'module.prop', NULL, 'aaaa'),
-		('p1', 'customize.sh', NULL, '')`); err != nil {
+	if _, err := db.Exec(`INSERT INTO project_files (project_id, path, sha256, file_size, mtime, created_at, updated_at) VALUES
+		('p1', 'module.prop', 'aaaa', 100, '2026-01-01T00:00:00Z', datetime('now'), datetime('now')),
+		('p1', 'customize.sh', '', 100, '2026-01-01T00:00:00Z', datetime('now'), datetime('now'))`); err != nil {
 		t.Fatalf("insert: %v", err)
 	}
 
@@ -178,6 +178,10 @@ func (a *failReadAdapter) Exists(ctx context.Context, path string) (bool, error)
 	return false, nil
 }
 
+func (a *failReadAdapter) Stat(ctx context.Context, path string) (*storage.FileInfo, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+
 func (a *failReadAdapter) List(ctx context.Context, prefix string) ([]string, error) {
 	return nil, nil
 }
@@ -222,6 +226,17 @@ func (a *memReadAdapter) Delete(ctx context.Context, path string) error {
 func (a *memReadAdapter) Exists(ctx context.Context, path string) (bool, error) {
 	_, ok := a.contents[path]
 	return ok, nil
+}
+
+func (a *memReadAdapter) Stat(ctx context.Context, path string) (*storage.FileInfo, error) {
+	c, ok := a.contents[path]
+	if !ok {
+		return nil, nil
+	}
+	return &storage.FileInfo{
+		Path: path,
+		Size: int64(len(c)),
+	}, nil
 }
 
 func (a *memReadAdapter) List(ctx context.Context, prefix string) ([]string, error) {
