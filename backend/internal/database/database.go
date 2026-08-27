@@ -11,10 +11,16 @@ import (
 
 // Init 初始化 SQLite 数据库，执行迁移
 func Init(cfg *config.Config) (*sql.DB, error) {
-	db, err := sql.Open("sqlite3", cfg.DatabasePath+"?_journal_mode=WAL&_busy_timeout=5000&_loc=auto")
+	db, err := sql.Open("sqlite3", cfg.DatabasePath+"?_journal_mode=WAL&_busy_timeout=30000&_foreign_keys=ON&_loc=ON&_txlock=immediate")
 	if err != nil {
 		return nil, fmt.Errorf("open: %w", err)
 	}
+
+	// SQLite only allows ONE writer at a time. MaxOpenConns(1) prevents
+	// "database is locked" errors from concurrent write attempts.
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
+	db.SetConnMaxLifetime(0)
 
 	// 性能优化
 	for _, pragma := range []string{

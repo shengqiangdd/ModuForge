@@ -15,15 +15,16 @@ type DB struct {
 }
 
 func NewSQLiteDB(dbPath string) (*DB, error) {
-	conn, err := sql.Open("sqlite3", dbPath+"?_journal_mode=WAL&_busy_timeout=10000&_foreign_keys=ON&_loc=auto")
+	conn, err := sql.Open("sqlite3", dbPath+"?_journal_mode=WAL&_busy_timeout=30000&_foreign_keys=ON&_loc=ON&_txlock=immediate")
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite: %w", err)
 	}
 
-	// SQLite with WAL mode supports concurrent readers.
-	// MaxOpenConns > 1 allows concurrent reads while writes are serialized by SQLite.
-	conn.SetMaxOpenConns(10)
-	conn.SetMaxIdleConns(4)
+	// SQLite only allows ONE writer at a time. MaxOpenConns(1) serializes
+	// all access to prevent "database is locked" errors. Reads within the
+	// same connection still work fine in WAL mode.
+	conn.SetMaxOpenConns(1)
+	conn.SetMaxIdleConns(1)
 	conn.SetConnMaxLifetime(0)
 
 	db := &DB{Conn: conn}
