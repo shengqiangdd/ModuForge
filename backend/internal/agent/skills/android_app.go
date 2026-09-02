@@ -125,6 +125,7 @@ func (s *AndroidAppSkill) Execute(ctx context.Context, input map[string]interfac
 	log.WriteString(fmt.Sprintf("Generated Android APP project: %s\n", appName))
 	log.WriteString(fmt.Sprintf("Package: %s\n", packageName))
 	log.WriteString(fmt.Sprintf("Module ID: %s\n", moduleID))
+	log.WriteString(fmt.Sprintf("Description: %s\n", description))
 	log.WriteString(fmt.Sprintf("Features: %s\n", strings.Join(features, ", ")))
 	log.WriteString(fmt.Sprintf("Files generated: %d\n", len(generated)))
 	log.WriteString("\nGenerated files:\n")
@@ -657,12 +658,12 @@ func (s *AndroidAppSkill) ensureAPKInstallInCustomize(customizePath, moduleID st
 	}
 
 	// Append APK installation block
-	apkBlock := fmt.Sprintf(`
+	apkBlock := `
 # ---- Install companion APK ----
 if [ -f "$MODPATH/app/app.apk" ]; then
     ui_print "- Installing companion APK..."
     pm install -r "$MODPATH/app/app.apk" || ui_print "  ⚠️ APK install failed (non-fatal)"
 fi
-`)
+`
 	os.WriteFile(customizePath, []byte(content+apkBlock), 0755)
 }
