@@ -71,12 +71,18 @@ func (s *BuildAndroidAppSkill) Execute(ctx context.Context, input map[string]int
 	// Ensure Gradle wrapper exists
 	s.ensureGradleWrapper(gradleProjectDir)
 
+	// Try using full Gradle installation first, fall back to gradlew
+	gradleBin := "/opt/gradle-8.5/bin/gradle"
+	if _, err := os.Stat(gradleBin); os.IsNotExist(err) {
+		gradleBin = filepath.Join(gradleProjectDir, "gradlew")
+	}
+
 	// Run Gradle assembleDebug
 	log.WriteString("\n── Compiling APK ──\n")
 	buildCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 
-	cmd := exec.CommandContext(buildCtx, "./gradlew", "assembleDebug", "--no-daemon", "--stacktrace")
+	cmd := exec.CommandContext(buildCtx, gradleBin, "assembleDebug", "--no-daemon", "--stacktrace")
 	cmd.Dir = gradleProjectDir
 	cmd.Env = append(os.Environ(),
 		"ANDROID_HOME=/opt/android-sdk",
