@@ -166,8 +166,12 @@ func (s *AndroidAppSkill) settingsGradle(appName string) string {
         gradlePluginPortal()
     }
 }
-dependencyResolution {
+dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories {
+        google()
+        mavenCentral()
+    }
 }
 
 rootProject.name = "%s"
@@ -264,7 +268,7 @@ func (s *AndroidAppSkill) androidManifest(packageName, appName string) string {
 
     <application
         android:allowBackup="true"
-        android:icon="@mipmap/ic_launcher"
+        android:icon="@drawable/ic_launcher_foreground"
         android:label="@string/app_name"
         android:supportsRtl="true"
         android:theme="@style/Theme.%s">
@@ -612,7 +616,10 @@ func (s *AndroidAppSkill) themesXML() string {
 	return `<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <style name="Theme.ModuleApp" parent="Theme.Material3.DayNight.NoActionBar">
-        <item name="colorSeed">@color/seed</item>
+        <item name="colorPrimary">@color/seed</item>
+        <item name="colorOnPrimary">@android:color/white</item>
+        <item name="colorPrimaryContainer">@color/seed</item>
+        <item name="colorSecondary">@color/seed</item>
     </style>
 </resources>
 `
