@@ -58,7 +58,8 @@ func (s *BuildAndroidAppSkill) Execute(ctx context.Context, input map[string]int
 	gradleProjectDir := filepath.Join(projectPath, appDir)
 
 	// Check if app project exists
-	buildGradleKts := filepath.Join(gradleProjectDir, "app", "build.gradle.kts")
+	// android_app tool creates project structure at appDir/ directly (e.g., app/build.gradle.kts)
+	buildGradleKts := filepath.Join(gradleProjectDir, "build.gradle.kts")
 	if _, err := os.Stat(buildGradleKts); os.IsNotExist(err) {
 		return "", fmt.Errorf("app project not found at %s — run android_app skill first", buildGradleKts)
 	}
