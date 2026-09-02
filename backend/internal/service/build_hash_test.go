@@ -31,6 +31,10 @@ func TestComputeFilesHashS3FastPath(t *testing.T) {
 		path TEXT NOT NULL,
 		content TEXT,
 		sha256 TEXT,
+		file_size INTEGER DEFAULT 0,
+		mtime TEXT,
+		created_at TEXT,
+		updated_at TEXT,
 		PRIMARY KEY (project_id, path)
 	)`); err != nil {
 		t.Fatalf("create table: %v", err)
@@ -109,6 +113,10 @@ func TestComputeFilesHashLegacyFallback(t *testing.T) {
 		path TEXT NOT NULL,
 		content TEXT,
 		sha256 TEXT,
+		file_size INTEGER DEFAULT 0,
+		mtime TEXT,
+		created_at TEXT,
+		updated_at TEXT,
 		PRIMARY KEY (project_id, path)
 	)`); err != nil {
 		t.Fatalf("create table: %v", err)
