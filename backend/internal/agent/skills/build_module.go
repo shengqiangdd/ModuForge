@@ -412,6 +412,26 @@ func (s *BuildModuleSkill) compileSources(projectPath string) compileResult {
 		}
 	}
 
+	// Compile Android APP (APK) if app/build.gradle.kts exists
+	apkGradleFile := filepath.Join(projectPath, "app", "build.gradle.kts")
+	if _, err := os.Stat(apkGradleFile); err == nil {
+		hasSources = true
+		log.WriteString("  📱 Compiling Android APP (APK)...\n")
+		res := s.compileAndroidApp(projectPath)
+		log.WriteString(res)
+		result.sourceResults["android_app"] = res
+		if strings.Contains(res, "❌") {
+			result.buildSuccess = false
+			result.errors = append(result.errors, CompileError{
+				SourceType: "android_app",
+				Message:    "Android APP build failed",
+				ErrorType:  "unknown",
+			})
+		} else if strings.Contains(res, "⚠️") {
+			result.warnings = append(result.warnings, res)
+		}
+	}
+
 	if !hasSources {
 		log.WriteString("  ℹ️ No compiled sources found (shell-only module)\n")
 	}
@@ -445,6 +465,67 @@ func (s *BuildModuleSkill) validateShellScripts(projectPath string) bool {
 func (s *BuildModuleSkill) hasFile(projectPath, name string) bool {
 	_, err := os.Stat(filepath.Join(projectPath, name))
 	return err == nil
+}
+
+// compileAndroidApp builds an Android APK from the app/ subdirectory.
+func (s *BuildModuleSkill) compileAndroidApp(projectPath string) string {
+	// Check if APK already exists — skip rebuild if so
+	apkDst := filepath.Join(projectPath, "app", "app.apk")
+	if _, err := os.Stat(apkDst); err == nil {
+		apkInfo, _ := os.Stat(apkDst)
+		apkSizeMB := float64(apkInfo.Size()) / 1024 / 1024
+		return fmt.Sprintf("  ✅ Android APP already built (APK: %.1f MB) — skipping rebuild\n", apkSizeMB)
+	}
+
+	buildCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+
+	gradleProjectDir := filepath.Join(projectPath, "app")
+
+	// Ensure gradlew exists
+	gradlew := filepath.Join(gradleProjectDir, "gradlew")
+	if _, err := os.Stat(gradlew); os.IsNotExist(err) {
+		return "  ⚠️ gradlew not found in app/ — run android_app skill first\n"
+	}
+
+	cmd := exec.CommandContext(buildCtx, "./gradlew", "assembleDebug", "--no-daemon")
+	cmd.Dir = gradleProjectDir
+	cmd.Env = append(os.Environ(),
+		"ANDROID_HOME=/opt/android-sdk",
+		"ANDROID_SDK_ROOT=/opt/android-sdk",
+		"JAVA_HOME=/usr/lib/jvm/java-17-openjdk",
+		"GRADLE_OPTS=-Xmx1536m",
+	)
+
+	output, err := cmd.CombinedOutput()
+	outputStr := string(output)
+
+	if err != nil {
+		if buildCtx.Err() == context.DeadlineExceeded {
+			return fmt.Sprintf("  ❌ Android APP build timed out after %v\n", 10*time.Minute)
+		}
+		return fmt.Sprintf("  ❌ Android APP build failed:\n%s\n", outputStr)
+	}
+
+	// Copy APK to module root/app/
+	apkSrc := filepath.Join(gradleProjectDir, "app", "build", "outputs", "apk", "debug", "app-debug.apk")
+	apkDst := filepath.Join(projectPath, "app", "app.apk")
+
+	if _, err := os.Stat(apkSrc); os.IsNotExist(err) {
+		return "  ⚠️ APK output not found (build succeeded but APK missing)\n"
+	}
+
+	apkData, err := os.ReadFile(apkSrc)
+	if err != nil {
+		return fmt.Sprintf("  ❌ Failed to read APK: %v\n", err)
+	}
+	os.MkdirAll(filepath.Dir(apkDst), 0755)
+	if err := os.WriteFile(apkDst, apkData, 0644); err != nil {
+		return fmt.Sprintf("  ❌ Failed to copy APK to module: %v\n", err)
+	}
+
+	apkSizeMB := float64(len(apkData)) / 1024 / 1024
+	return fmt.Sprintf("  ✅ Android APP built successfully (APK: %.1f MB)\n", apkSizeMB)
 }
 
 // removeExisting deletes an existing file.
