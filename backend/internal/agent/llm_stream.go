@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -214,6 +215,9 @@ func extractTextToolCalls(content string) []LLMToolCall {
 		}
 	}
 	if len(toolCalls) == 0 {
+		toolCalls = extractXMLToolCalls(content)
+	}
+	if len(toolCalls) == 0 {
 		toolCalls = extractInlineToolCalls(content)
 	}
 	return toolCalls
@@ -310,6 +314,203 @@ func smartSplitArgs(s string) []string {
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════
+// XML Tool Call Extraction
+// ═══════════════════════════════════════════════════════════════════
+
+func extractXMLToolCalls(content string) []LLMToolCall {
+	var toolCalls []LLMToolCall
+
+	// Try bracket format first ([tool_call start]...[tool_call end])
+	bracketCalls := extractBracketToolCalls(content)
+	if len(bracketCalls) > 0 {
+		toolCalls = append(toolCalls, bracketCalls...)
+		return toolCalls
+	}
+
+	// Fall back to HTML-like tag format
+	toolCalls = extractTAGToolCalls(content)
+	return toolCalls
+}
+
+func extractBracketToolCalls(content string) []LLMToolCall {
+	var toolCalls []LLMToolCall
+	const tagStart = "[tool_call start]"
+	const tagEnd = "[tool_call end]"
+
+	remaining := content
+	for {
+		startPos := strings.Index(remaining, tagStart)
+		if startPos < 0 {
+			break
+		}
+		afterStart := remaining[startPos+len(tagStart):]
+		endPos := strings.Index(afterStart, tagEnd)
+		if endPos < 0 {
+			break
+		}
+		body := strings.TrimSpace(afterStart[:endPos])
+
+		fnPlaceholder := "[function_name]"
+		fnClose := "[/function_name]"
+		fnIdx := strings.Index(body, fnPlaceholder)
+		if fnIdx < 0 {
+			remaining = remaining[startPos+len(tagStart)+endPos:]
+			continue
+		}
+		funcName := strings.TrimSpace(body[fnIdx+len(fnPlaceholder) : strings.Index(body[fnIdx:], fnClose)+fnIdx])
+		if funcName == "" {
+			remaining = remaining[startPos+len(tagStart)+endPos:]
+			continue
+		}
+
+		paramsPlaceholder := "[parameters]"
+		paramsClose := "[/parameters]"
+		paramsIdx := strings.Index(body, paramsPlaceholder)
+		var paramsMap map[string]interface{}
+		if paramsIdx >= 0 {
+			paramsBody := strings.TrimSpace(body[paramsIdx+len(paramsPlaceholder) : strings.Index(body[paramsIdx:], paramsClose)+paramsIdx])
+			paramsMap = parseXMLParamPairs(paramsBody)
+		} else {
+			paramsMap = make(map[string]interface{})
+		}
+
+		if len(paramsMap) > 0 || funcName != "" {
+			argsBytes, _ := json.Marshal(paramsMap)
+			toolCalls = append(toolCalls, LLMToolCall{
+				ID:   fmt.Sprintf("xml_%d", len(toolCalls)),
+				Type: "function",
+				Function: ToolCallFunction{
+					Name:      funcName,
+					Arguments: string(argsBytes),
+				},
+			})
+		}
+
+		remaining = afterStart[endPos+len(tagEnd):]
+	}
+	return toolCalls
+}
+
+func extractTAGToolCalls(content string) []LLMToolCall {
+	var toolCalls []LLMToolCall
+	const tagStart = "<tool_call>"
+	const tagEnd = "</tool_call>"
+
+	remaining := content
+	for {
+		startPos := strings.Index(remaining, tagStart)
+		if startPos < 0 {
+			break
+		}
+		afterStart := remaining[startPos+len(tagStart):]
+		endPos := strings.Index(afterStart, tagEnd)
+		if endPos < 0 {
+			break
+		}
+		body := strings.TrimSpace(afterStart[:endPos])
+
+		funcName := ""
+
+		// Try Format A: <function_name>name</function_name>
+		fnTagOpen := "<function_name>"
+		fnTagClose := "</function_name>"
+		fnIdx := strings.Index(body, fnTagOpen)
+		if fnIdx >= 0 {
+			fnEnd := strings.Index(body[fnIdx:], fnTagClose)
+			if fnEnd > 0 {
+				funcName = strings.TrimSpace(body[fnIdx+len(fnTagOpen) : fnIdx+fnEnd])
+			}
+		}
+
+		// Try Format B: <function=name> or <function="name">
+		if funcName == "" {
+			fnAttrRe := regexp.MustCompile(`<function\s*=\s*["']?([a-zA-Z_][a-zA-Z0-9_]*)["']?\s*/?>`)
+			if m := fnAttrRe.FindStringSubmatch(body); len(m) >= 2 {
+				funcName = strings.TrimSpace(m[1])
+			}
+		}
+
+		if funcName == "" {
+			remaining = remaining[startPos+len(tagStart)+endPos:]
+			continue
+		}
+
+		paramsMap := make(map[string]interface{})
+
+		// Format 1: MiMo v2.5 style  key=value  (e.g. parameter=pattern)
+		paramAttrRe := regexp.MustCompile(`<([a-zA-Z_][a-zA-Z0-9_]*)\s*=\s*["']?([^"\s>]+)["']?\s*>\s*(.*?)\s*</`)
+		if matches := paramAttrRe.FindAllStringSubmatch(body, -1); len(matches) > 0 {
+			for _, m := range matches {
+				if len(m) >= 4 {
+					paramsMap[m[2]] = strings.TrimSpace(m[3])
+				}
+			}
+		}
+
+		// Format 2: Standard XML <key>value</key> tags
+		if len(paramsMap) == 0 {
+			paramsMap = parseXMLEntryTags(body)
+		}
+
+		if len(paramsMap) > 0 || funcName != "" {
+			argsBytes, _ := json.Marshal(paramsMap)
+			toolCalls = append(toolCalls, LLMToolCall{
+				ID:   fmt.Sprintf("xml_%d", len(toolCalls)),
+				Type: "function",
+				Function: ToolCallFunction{
+					Name:      funcName,
+					Arguments: string(argsBytes),
+				},
+			})
+		}
+
+		remaining = afterStart[endPos+len(tagEnd):]
+	}
+	return toolCalls
+}
+
+func parseXMLParamPairs(body string) map[string]interface{} {
+	result := make(map[string]interface{})
+	lines := strings.Split(body, "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		openIdx := strings.Index(line, "[")
+		if openIdx < 0 {
+			continue
+		}
+		contentAfterOpen := line[openIdx:]
+		slashIdx := strings.Index(contentAfterOpen, "[/")
+		if slashIdx < 0 {
+			continue
+		}
+		key := strings.TrimSpace(contentAfterOpen[:slashIdx])
+		valEnd := strings.Index(line[slashIdx+2:], "]")
+		if valEnd < 0 {
+			continue
+		}
+		val := strings.TrimSpace(line[slashIdx+2 : slashIdx+2+valEnd])
+		result[key] = val
+	}
+	return result
+}
+
+// parseXMLEntryTags parses <key>value</key> pairs from an XML parameter block.
+func parseXMLEntryTags(body string) map[string]interface{} {
+	result := make(map[string]interface{})
+	re := regexp.MustCompile(`<([a-zA-Z_][a-zA-Z0-9_]*)>(.*?)</[a-zA-Z_][a-zA-Z0-9_]*>`)
+	matches := re.FindAllStringSubmatch(body, -1)
+	for _, m := range matches {
+		if len(m) >= 3 {
+			result[m[1]] = strings.TrimSpace(m[2])
+		}
+	}
+	return result
+}
+
 // Tool Call Repair
 // ═══════════════════════════════════════════════════════════════════
 
