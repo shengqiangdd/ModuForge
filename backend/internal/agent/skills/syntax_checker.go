@@ -308,7 +308,7 @@ func (s *SyntaxCheckerSkill) checkShell(ctx context.Context, projectPath string)
 		output, err := cmd.CombinedOutput()
 		if err != nil {
 			relPath, _ := filepath.Rel(projectPath, shellFile)
-		 errors := parseShellSyntaxOutput(relPath, string(output))
+			errors := parseShellSyntaxOutput(relPath, string(output))
 			result.Errors = append(result.Errors, errors...)
 		}
 	}
