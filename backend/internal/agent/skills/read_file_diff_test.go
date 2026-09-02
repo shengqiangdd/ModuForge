@@ -3,11 +3,14 @@ package skills
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/moduforge/backend/internal/storage"
 )
 
 // memHashCache is a simple in-memory FileHashCacheI for tests.
@@ -38,6 +41,85 @@ func (c *memHashCache) Invalidate(path string) {
 	delete(c.hashes, path)
 }
 
+// localFSAdapter is a simple StorageAdapter that reads from local filesystem.
+// Used for testing without S3.
+type localFSAdapter struct {
+	basePath string
+}
+
+func newLocalFSAdapter(basePath string) *localFSAdapter {
+	return &localFSAdapter{basePath: basePath}
+}
+
+func (a *localFSAdapter) Write(ctx context.Context, path string, content []byte) error {
+	fullPath := filepath.Join(a.basePath, path)
+	dir := filepath.Dir(fullPath)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
+	return os.WriteFile(fullPath, content, 0644)
+}
+
+func (a *localFSAdapter) Read(ctx context.Context, path string) ([]byte, error) {
+	fullPath := filepath.Join(a.basePath, path)
+	return os.ReadFile(fullPath)
+}
+
+func (a *localFSAdapter) ReadStream(ctx context.Context, path string) (io.ReadCloser, error) {
+	fullPath := filepath.Join(a.basePath, path)
+	return os.Open(fullPath)
+}
+
+func (a *localFSAdapter) Delete(ctx context.Context, path string) error {
+	fullPath := filepath.Join(a.basePath, path)
+	return os.Remove(fullPath)
+}
+
+func (a *localFSAdapter) Exists(ctx context.Context, path string) (bool, error) {
+	fullPath := filepath.Join(a.basePath, path)
+	_, err := os.Stat(fullPath)
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	return err == nil, err
+}
+
+func (a *localFSAdapter) Stat(ctx context.Context, path string) (*storage.FileInfo, error) {
+	fullPath := filepath.Join(a.basePath, path)
+	info, err := os.Stat(fullPath)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &storage.FileInfo{
+		Path:  path,
+		Size:  info.Size(),
+		MTime: info.ModTime().Format("2006-01-02T15:04:05Z"),
+	}, nil
+}
+
+func (a *localFSAdapter) List(ctx context.Context, prefix string) ([]string, error) {
+	var paths []string
+	fullPrefix := filepath.Join(a.basePath, prefix)
+	err := filepath.Walk(fullPrefix, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() {
+			relPath, _ := filepath.Rel(a.basePath, path)
+			paths = append(paths, relPath)
+		}
+		return nil
+	})
+	return paths, err
+}
+
+func (a *localFSAdapter) Close() error {
+	return nil
+}
+
 // writeLargeFile creates a file with more than 500 lines.
 func writeLargeFile(t *testing.T, dir string) string {
 	t.Helper()
@@ -60,6 +142,7 @@ func TestReadFileDifferentialCache_Unchanged(t *testing.T) {
 	cache := newMemHashCache()
 
 	s := NewReadFileSkill(nil)
+	s.storage = newLocalFSAdapter(dir)
 	s.projectPath = dir
 	s.SetFileHashCache(cache)
 
@@ -108,6 +191,7 @@ func TestReadFileDifferentialCache_ChangedContent(t *testing.T) {
 	cache := newMemHashCache()
 
 	s := NewReadFileSkill(nil)
+	s.storage = newLocalFSAdapter(dir)
 	s.projectPath = dir
 	s.SetFileHashCache(cache)
 
@@ -150,6 +234,7 @@ func TestReadFileDifferentialCache_SmallFileAlwaysFull(t *testing.T) {
 	cache := newMemHashCache()
 
 	s := NewReadFileSkill(nil)
+	s.storage = newLocalFSAdapter(dir)
 	s.projectPath = dir
 	s.SetFileHashCache(cache)
 
@@ -183,6 +268,7 @@ func TestReadFileDifferentialCache_InvalidateForcesReread(t *testing.T) {
 	cache := newMemHashCache()
 
 	s := NewReadFileSkill(nil)
+	s.storage = newLocalFSAdapter(dir)
 	s.projectPath = dir
 	s.SetFileHashCache(cache)
 
