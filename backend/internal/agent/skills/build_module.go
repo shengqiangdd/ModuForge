@@ -482,13 +482,18 @@ func (s *BuildModuleSkill) compileAndroidApp(projectPath string) string {
 
 	gradleProjectDir := filepath.Join(projectPath, "app")
 
-	// Ensure gradlew exists
-	gradlew := filepath.Join(gradleProjectDir, "gradlew")
-	if _, err := os.Stat(gradlew); os.IsNotExist(err) {
-		return "  ⚠️ gradlew not found in app/ — run android_app skill first\n"
+	// Try using full Gradle installation first, fall back to gradlew
+	gradleBin := "/opt/gradle-8.5/bin/gradle"
+	if _, err := os.Stat(gradleBin); os.IsNotExist(err) {
+		// Fall back to gradlew
+		gradlew := filepath.Join(gradleProjectDir, "gradlew")
+		if _, err := os.Stat(gradlew); os.IsNotExist(err) {
+			return "  ⚠️ Neither gradle nor gradlew found — run android_app skill first\n"
+		}
+		gradleBin = gradlew
 	}
 
-	cmd := exec.CommandContext(buildCtx, "./gradlew", "assembleDebug", "--no-daemon")
+	cmd := exec.CommandContext(buildCtx, gradleBin, "assembleDebug", "--no-daemon")
 	cmd.Dir = gradleProjectDir
 	cmd.Env = append(os.Environ(),
 		"ANDROID_HOME=/opt/android-sdk",
