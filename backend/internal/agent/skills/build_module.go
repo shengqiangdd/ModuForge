@@ -509,7 +509,7 @@ func (s *BuildModuleSkill) compileAndroidApp(projectPath string) string {
 
 	// Copy APK to module root/app/
 	apkSrc := filepath.Join(gradleProjectDir, "app", "build", "outputs", "apk", "debug", "app-debug.apk")
-	apkDst := filepath.Join(projectPath, "app", "app.apk")
+	apkDst = filepath.Join(projectPath, "app", "app.apk")
 
 	if _, err := os.Stat(apkSrc); os.IsNotExist(err) {
 		return "  ⚠️ APK output not found (build succeeded but APK missing)\n"
