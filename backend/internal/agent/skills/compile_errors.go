@@ -32,6 +32,7 @@ type sourceInfo struct {
 	hasCpp   bool
 	hasGo    bool
 	goModDir string
+	hasShell bool
 }
 
 // compileResult holds aggregated compilation results.

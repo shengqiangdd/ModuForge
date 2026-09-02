@@ -4,12 +4,12 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"github.com/moduforge/backend/internal/agent/registry"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
-	"github.com/moduforge/backend/internal/agent/registry"
 )
 
 // SyntaxCheckerSkill performs pre-build syntax validation on source files.
@@ -22,11 +22,11 @@ type SyntaxCheckerSkill struct {
 
 // SyntaxResult holds the result of a syntax check.
 type SyntaxResult struct {
-	Language string         `json:"language"`
-	Passed   bool           `json:"passed"`
-	Errors   []SyntaxError  `json:"errors"`
-	Warnings []string       `json:"warnings"`
-	Hints    []string       `json:"hints"` // agent-facing fix suggestions
+	Language string        `json:"language"`
+	Passed   bool          `json:"passed"`
+	Errors   []SyntaxError `json:"errors"`
+	Warnings []string      `json:"warnings"`
+	Hints    []string      `json:"hints"` // agent-facing fix suggestions
 }
 
 // SyntaxError holds a single syntax error.
@@ -47,9 +47,9 @@ func (s *SyntaxCheckerSkill) Name() string {
 }
 
 func (s *SyntaxCheckerSkill) Description() string {
-	return `Pre-build syntax validation for Go, Rust, C/C++ source files.
-Input: {"project_id": "...", "language": "go|rust|cpp|auto"} or {}.
-Runs lightweight syntax checks (go vet, cargo check, gcc -fsyntax-only) before full build.
+	return `Pre-build syntax validation for Go, Rust, C/C++, Shell source files.
+Input: {"project_id": "...", "language": "go|rust|cpp|shell|auto"} or {}.
+Runs lightweight syntax checks (go vet, cargo check, gcc -fsyntax-only, bash -n) before full build.
 Returns structured errors with line numbers and fix hints for the agent.`
 }
 
@@ -72,6 +72,9 @@ func (s *SyntaxCheckerSkill) Execute(ctx context.Context, input map[string]inter
 		if sources.hasCpp {
 			results = append(results, s.checkCpp(ctx, projectPath))
 		}
+		if sources.hasShell {
+			results = append(results, s.checkShell(ctx, projectPath))
+		}
 	} else {
 		switch language {
 		case "go":
@@ -80,8 +83,10 @@ func (s *SyntaxCheckerSkill) Execute(ctx context.Context, input map[string]inter
 			results = append(results, s.checkRust(ctx, projectPath))
 		case "cpp", "c":
 			results = append(results, s.checkCpp(ctx, projectPath))
+		case "shell", "sh", "bash":
+			results = append(results, s.checkShell(ctx, projectPath))
 		default:
-			return "", fmt.Errorf("unsupported language: %s (use go, rust, cpp, or auto)", language)
+			return "", fmt.Errorf("unsupported language: %s (use go, rust, cpp, shell, or auto)", language)
 		}
 	}
 
@@ -118,6 +123,16 @@ func (s *SyntaxCheckerSkill) detectLanguages(projectPath string) sourceInfo {
 				info.goModDir = filepath.Dir(path)
 			} else if strings.HasSuffix(path, ".go") {
 				info.hasGo = true
+			}
+		}
+		if !info.hasShell {
+			switch ext {
+			case ".sh", ".bash":
+				info.hasShell = true
+			}
+			// Also check for known shell script names without extension
+			if name == "customize.sh" || name == "service.sh" || name == "post-fs-data.sh" || name == "uninstall.sh" {
+				info.hasShell = true
 			}
 		}
 		return nil
@@ -264,6 +279,97 @@ func (s *SyntaxCheckerSkill) checkCpp(ctx context.Context, projectPath string) S
 	}
 
 	return result
+}
+
+// checkShell runs bash -n on shell scripts to validate syntax.
+func (s *SyntaxCheckerSkill) checkShell(ctx context.Context, projectPath string) SyntaxResult {
+	result := SyntaxResult{Language: "shell", Hints: []string{}}
+
+	var shellFiles []string
+	filepath.Walk(projectPath, func(path string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() {
+			return nil
+		}
+		ext := strings.ToLower(filepath.Ext(path))
+		name := info.Name()
+		if ext == ".sh" || ext == ".bash" || name == "customize.sh" || name == "service.sh" || name == "post-fs-data.sh" || name == "uninstall.sh" {
+			shellFiles = append(shellFiles, path)
+		}
+		return nil
+	})
+
+	if len(shellFiles) == 0 {
+		return result
+	}
+
+	for _, shellFile := range shellFiles {
+		// Try bash -n first (syntax check only, no execution)
+		cmd := exec.CommandContext(ctx, "bash", "-n", shellFile)
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			relPath, _ := filepath.Rel(projectPath, shellFile)
+		 errors := parseShellSyntaxOutput(relPath, string(output))
+			result.Errors = append(result.Errors, errors...)
+		}
+	}
+
+	result.Errors = dedupSyntaxErrors(result.Errors)
+	result.Passed = len(result.Errors) == 0
+
+	for _, e := range result.Errors {
+		hint := generateShellFixHint(e)
+		if hint != "" {
+			result.Hints = append(result.Hints, hint)
+		}
+	}
+
+	return result
+}
+
+// parseShellSyntaxOutput parses bash -n error output.
+func parseShellSyntaxOutput(filePath, output string) []SyntaxError {
+	var errors []SyntaxError
+	lines := strings.Split(output, "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		// bash -n output format: "filename: lineN: syntax error near ..."
+		lineNum := 0
+		msg := line
+		if idx := strings.Index(line, ":"); idx > 0 {
+			rest := line[idx+1:]
+			if idx2 := strings.Index(rest, ":"); idx2 > 0 {
+				numStr := strings.TrimSpace(rest[:idx2])
+				if n, err := fmt.Sscanf(numStr, "%d", &lineNum); err == nil && n == 1 {
+					msg = strings.TrimSpace(rest[idx2+1:])
+				}
+			}
+		}
+		errors = append(errors, SyntaxError{
+			File:    filePath,
+			Line:    lineNum,
+			Message: msg,
+			Type:    "syntax",
+		})
+	}
+	return errors
+}
+
+// generateShellFixHint generates a fix hint for a shell syntax error.
+func generateShellFixHint(e SyntaxError) string {
+	msg := strings.ToLower(e.Message)
+	switch {
+	case strings.Contains(msg, "syntax error near"):
+		return fmt.Sprintf("Fix: Check syntax near line %d — look for unclosed quotes, missing delimiters, or invalid characters", e.Line)
+	case strings.Contains(msg, "unterminated"):
+		return fmt.Sprintf("Fix: Unterminated string/heredoc near line %d — ensure all quotes and heredocs are properly closed", e.Line)
+	case strings.Contains(msg, "unexpected"):
+		return fmt.Sprintf("Fix: Unexpected token near line %d — check for missing semicolons, fi/done/esac, or wrong syntax", e.Line)
+	default:
+		return fmt.Sprintf("Fix: Shell syntax error at line %d — review the script syntax", e.Line)
+	}
 }
 
 // formatResults formats all check results into a readable string.

@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"github.com/moduforge/backend/internal/agent/registry"
+	"github.com/moduforge/backend/internal/storage"
 	"log"
 	"os"
 	"os/exec"
@@ -11,8 +13,6 @@ import (
 	"regexp"
 	"strings"
 	"time"
-	"github.com/moduforge/backend/internal/agent/registry"
-	"github.com/moduforge/backend/internal/storage"
 )
 
 // SecurityChecker interface for command validation.
@@ -24,7 +24,7 @@ type SecurityChecker interface {
 type BashSkill struct {
 	projectPath    string
 	db             *sql.DB
-	securityEngine SecurityChecker // typed interface instead of interface{}
+	securityEngine SecurityChecker        // typed interface instead of interface{}
 	storage        storage.StorageAdapter // optional S3 storage backend
 }
 
@@ -125,6 +125,16 @@ func (s *BashSkill) validateCommand(command string) error {
 		return fmt.Errorf("empty command")
 	}
 
+	// Normalize multi-line commands: replace newlines with spaces for validation
+	// This allows shell scripts with for/while/if loops to pass validation
+	cmd = strings.ReplaceAll(cmd, "\n", " ")
+	cmd = strings.ReplaceAll(cmd, "\r", " ")
+	// Collapse multiple spaces
+	for strings.Contains(cmd, "  ") {
+		cmd = strings.ReplaceAll(cmd, "  ", " ")
+	}
+	cmd = strings.TrimSpace(cmd)
+
 	// ── Blacklist: dangerous patterns that are NEVER allowed ──
 	dangerousPatterns := []struct {
 		pattern string
@@ -187,6 +197,26 @@ func (s *BashSkill) validateCommand(command string) error {
 
 	// ── Whitelist: only safe command prefixes are allowed ──
 	// Split into sub-commands and check EVERY one (prevents "ls; rm -rf /" bypass)
+	// Special case: if the command looks like a shell script (contains shell patterns),
+	// allow it without strict whitelist checking. This enables Magisk module development.
+	shellPatterns := []string{
+		"for ", "while ", "if ", "case ", "function ",
+		"do\n", "done\n", "then\n", "else\n", "fi\n", "esac\n",
+		"#!/", "#!/bin/sh", "#!/system/bin/sh",
+		"MODDIR=", "MODPATH=", "ui_print",
+	}
+	for _, pattern := range shellPatterns {
+		if strings.Contains(cmd, pattern) {
+			// Allow shell scripts but still check blacklist
+			for _, dp := range dangerousPatterns {
+				if matched, _ := regexp.MatchString(dp.pattern, cmd); matched {
+					return fmt.Errorf("🚫 命令被安全策略阻止: %s", dp.reason)
+				}
+			}
+			return nil
+		}
+	}
+
 	subCmds := splitSubCommands(cmd)
 	for _, sub := range subCmds {
 		sub = strings.TrimSpace(sub)
@@ -266,6 +296,26 @@ var safePrefixes = []string{
 	"eslint ", "prettier ", "biome ",
 	"jest ", "vitest ", "mocha ", "pytest ", "go test",
 	"cargo test",
+	// Shell (safe read-only / syntax check)
+	"bash -n ", "bash --no-exec ", "sh -n ",
+	"shellcheck ",
+	// Shell built-ins (safe when used in scripts)
+	"for ", "while ", "if ", "case ", "function ",
+	"do", "done", "then", "else", "elif", "fi", "esac",
+	"echo ", "printf ", "read ", "test ", "[", "[[",
+	"source ", ". ",
+	"exit ", "return ", "break ", "continue ",
+	"export ", "local ", "declare ", "typeset ",
+	"set ", "unset ", "shift ",
+	"trap ", "wait ", "exec ",
+	// Magisk module tools
+	"unzip -t ",
+	"ui_print ",
+	"set_perm ", "set_perm_recursive ",
+	"mkdir -p ",
+	"cp -r ",
+	"rm -rf ",
+	"chcon ",
 }
 
 // isAllowedPrefix checks if a command name is in the whitelist.
