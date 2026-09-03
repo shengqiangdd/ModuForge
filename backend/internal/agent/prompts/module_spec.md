@@ -319,3 +319,164 @@ webroot/
 - [ ] Go 文件每个都有 `package` 声明且 import 的包被使用
 - [ ] Rust 文件 `Cargo.toml` 的 `[package]` name 与模块 id 一致
 - [ ] 二进制交叉编译目标架构与 `$ARCH` 匹配
+
+---
+
+## 12. Android APP 伴侣
+
+模块可携带一个 Android APP（APK），为用户提供图形化管理和监控界面。
+
+### 12.1 何时需要 APP
+
+以下场景建议为模块配套 APP：
+- 需要开关控制（启用/禁用模块功能）
+- 需要参数配置（设置阈值、频率、路径等）
+- 需要状态监控（运行状态、日志查看、性能指标）
+- 需要数据可视化（Dashboard、图表、统计信息）
+- 用户明确提到"界面"、"UI"、"APP"、"设置页面"、"控制面板"
+
+使用 `android_app` skill 生成完整项目，使用 `build_android_app` 编译 APK。
+
+### 12.2 APP 与模块的通信方式
+
+APP 通过 `SharedPreferences (MODE_WORLD_READABLE)` 与模块共享数据：
+
+- APP 写入配置：`getSharedPreferences("module_config", Context.MODE_WORLD_READABLE)`
+- 模块读取配置：`/data/adb/modules/<module_id>/shared_prefs/module_config.xml`
+- 共享的 key 示例：`module_enabled`（布尔）、`module_status`（字符串）、`last_update_time`（长整数）
+
+#### 数据流向
+
+```
+APP ──写入──> /data/adb/modules/<id>/shared_prefs/module_config.xml ──读取──> 模块脚本
+APP <──读取── /data/adb/modules/<id>/shared_prefs/module_status.xml <──写入── 模块脚本
+```
+
+#### 常用 SharedPreferences Key
+
+| Key | 类型 | 方向 | 说明 |
+|-----|------|------|------|
+| `module_enabled` | Boolean | APP→模块 | 模块启用状态 |
+| `threshold` | Int | APP→模块 | 阈值参数 |
+| `mode` | String | APP→模块 | 运行模式 |
+| `module_status` | String | 模块→APP | 运行状态 |
+| `cpu_usage` | String | 模块→APP | CPU 使用率 |
+| `memory_usage` | String | 模块→APP | 内存使用量 |
+| `last_update_time` | Long | 模块→APP | 最后更新时间戳 |
+
+### 12.3 APK 在模块中的放置位置
+
+```
+module_root/
+  app/
+    app.apk          # 编译后的 APK，由 build_android_app 自动生成
+  customize.sh       # 安装时自动安装 APK
+```
+
+### 12.4 customize.sh 中安装 APK 的最佳实践
+
+```bash
+# ---- 安装伴侣 APK（非致命） ----
+if [ -f "$MODPATH/app/app.apk" ]; then
+    ui_print "- 安装伴侣应用..."
+    # 获取包名（从 APK 中提取）
+    PACKAGE_NAME=$(pm list packages -f "$MODPATH/app/app.apk" 2>/dev/null | head -1 | cut -d= -f1 | cut -d: -f2)
+    
+    if [ -n "$PACKAGE_NAME" ]; then
+        # 先卸载旧版本（避免签名冲突）
+        pm uninstall "$PACKAGE_NAME" 2>/dev/null
+        # 安装新版本
+        if pm install -r "$MODPATH/app/app.apk" 2>/dev/null; then
+            ui_print "  ✅ 伴侣应用安装成功"
+            # 设置 APP 数据目录权限（支持 MODE_WORLD_READABLE）
+            if [ -d "/data/data/$PACKAGE_NAME/shared_prefs" ]; then
+                chmod 777 "/data/data/$PACKAGE_NAME/shared_prefs"
+                ui_print "  ✅ 共享目录权限已设置"
+            fi
+        else
+            ui_print "  ⚠️ 伴侣应用安装失败（非致命）"
+        fi
+    else
+        ui_print "  ⚠️ 无法获取包名，跳过安装"
+    fi
+fi
+```
+
+**注意：**
+- APK 安装失败不应中断模块安装（用 `if` 判断容错）
+- APK 放在 `app/` 目录下，打包时自动包含在 ZIP 中
+- APP 需要 Android 8.0+ (API 26+)
+- 安装后需设置 `shared_prefs` 目录权限为 777，否则 APP 无法读写
+
+### 12.5 模块端读取 APP 配置 (service.sh)
+
+```bash
+#!/system/bin/sh
+# service.sh - 读取 APP 配置
+
+MODDIR=${0%/*}
+CONFIG_FILE="/data/adb/modules/<module_id>/shared_prefs/module_config.xml"
+
+# 读取配置
+if [ -f "$CONFIG_FILE" ]; then
+    ENABLED=$(grep -o 'boolean name="module_enabled"[^/]*' "$CONFIG_FILE" | grep -o 'value="[^"]*"' | cut -d'"' -f2)
+    THRESHOLD=$(grep -o 'int name="threshold"[^/]*' "$CONFIG_FILE" | grep -o 'value="[^"]*"' | cut -d'"' -f2)
+    MODE=$(grep -o 'string name="mode"[^<]*' "$CONFIG_FILE" | sed 's/.*>\([^<]*\)<.*/\1/')
+fi
+
+# 默认值
+ENABLED=${ENABLED:-"true"}
+THRESHOLD=${THRESHOLD:-80}
+MODE=${MODE:-"balanced"}
+
+echo "Module enabled: $ENABLED, Threshold: $THRESHOLD, Mode: $MODE"
+```
+
+### 12.6 模块端写入状态供 APP 读取
+
+```bash
+#!/system/bin/sh
+# 写入状态供 APP 读取
+
+MODDIR=${0%/*}
+STATUS_FILE="/data/adb/modules/<module_id>/shared_prefs/module_status.xml"
+
+# 收集状态信息
+CPU_USAGE=$(cat /proc/stat | head -1 | awk '{print $2+$4, $2+$4+$5}' | awk '{printf "%.1f%%", $1/$2*100}')
+MEM_TOTAL=$(free -m | awk '/Mem:/ {print $2}')
+MEM_USED=$(free -m | awk '/Mem:/ {print $3}')
+MEMORY_USAGE="${MEM_USED}MB/${MEM_TOTAL}MB"
+BATTERY=$(cat /sys/class/power_supply/battery/capacity 2>/dev/null || echo "N/A")
+UPTIME=$(cat /proc/uptime | awk '{print $1}')
+
+# 写入状态文件
+cat > "$STATUS_FILE" << EOF
+<?xml version='1.0' encoding='utf-8' standalone='yes' ?>
+<map>
+    <string name="module_status">running</string>
+    <long name="last_update_time" value="$(date +%s)000" />
+    <string name="cpu_usage">${CPU_USAGE}</string>
+    <string name="memory_usage">${MEMORY_USAGE}</string>
+    <string name="battery_level">${BATTERY}%</string>
+    <string name="uptime">${UPTIME}s</string>
+</map>
+EOF
+```
+
+### 12.7 APP 架构选择
+
+| 场景 | 架构 | 说明 |
+|------|------|------|
+| 简单设置 | 单 Activity + SharedPreferences | 只有开关、输入框 |
+| 监控仪表盘 | Activity + Handler 定时刷新 | 实时显示 CPU/内存等 |
+| 多功能管理 | Activity + Fragment + ViewPager2 | 多个页面切换 |
+| 后台服务 | Activity + Foreground Service | 需要常驻后台+通知 |
+
+### 12.8 常见问题排查
+
+| 问题 | 可能原因 | 解决方案 |
+|------|---------|---------|
+| APP 无法读取模块状态 | shared_prefs 目录权限不对 | customize.sh 中设置 chmod 777 |
+| APP 无法写入配置 | 未使用 MODE_WORLD_READABLE | 检查 getSharedPreferences 参数 |
+| 前台服务通知不显示 | 未创建 NotificationChannel | Android 8.0+ 需要创建 Channel |
+| APK 安装失败 | 签名冲突或版本不兼容 | 先卸载旧版本，检查 minSdkVersion |

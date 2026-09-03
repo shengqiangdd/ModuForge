@@ -166,7 +166,7 @@ bash 命令默认在项目工作目录执行（cwd = 上面给出的工作目录
 	} else if r.db != nil {
 		// Fallback: list files from DB if repo-map not available
 		rows, err := r.db.Query(
-			`SELECT path, COALESCE(file_size, length(content), 0) as size FROM project_files WHERE project_id=? ORDER BY path`,
+			`SELECT path, COALESCE(file_size, 0) as size FROM project_files WHERE project_id=? ORDER BY path`,
 			cfg.ProjectID,
 		)
 		if err == nil {
@@ -196,6 +196,9 @@ Full cross-compilation toolchain available:
 - Go: /usr/local/go/bin/go (v1.25, CGO_ENABLED=1)
 - Rust + Cargo: /usr/local/cargo/bin/ (musl-based, with aarch64-linux-android target pre-installed)
 - Android NDK r27c: /opt/android-ndk (trimmed, aarch64-linux-android clang/clang++)
+- Android SDK: /opt/android-sdk (build-tools 34.0.0, platforms android-34)
+- Java 17: /usr/lib/jvm/java-17-openjdk
+- Gradle 8.7: system-installed (used via gradlew wrapper)
 - GCC/musl: Alpine system compiler
 - Node.js 22: for frontend builds
 
@@ -203,19 +206,37 @@ You CAN cross-compile for Android ARM64:
 - C/C++: use NDK clang at /opt/android-ndk/bin/aarch64-linux-android*-clang
 - Rust: cargo build --target aarch64-linux-android (target already installed)
 - Go: CGO_ENABLED=1 GOOS=linux GOARCH=arm64 go build
+- Android APP: use android_app skill to generate project, build_android_app to compile APK
 
 For Magisk/KernelSU/APatch modules:
 - Shell scripts (customize.sh, service.sh) run on the PHONE — use #!/system/bin/sh
 - Native binaries (.so, executables) should be cross-compiled here and included in the module ZIP
+- Android APPs (Kotlin) are compiled via Gradle, APK is included in the module ZIP
 - Use build_module skill to package the final ZIP
 
 ## WORKFLOW
 1. Understand the user's request
-2. Use read_file to read files you need to modify (DO NOT guess content)
-3. Use edit_file for targeted changes (preferred) or write_file for full rewrites (project_id auto-injected)
-4. ONLY modify files that need changes — do NOT rewrite unchanged files
-5. After making changes, call build_module to verify
-6. Explain what you changed
+2. If user needs a companion APP (see detection rules below), call android_app then build_android_app FIRST
+3. Use read_file to read files you need to modify (DO NOT guess content)
+4. Use edit_file for targeted changes (preferred) or write_file for full rewrites (project_id auto-injected)
+5. ONLY modify files that need changes — do NOT rewrite unchanged files
+6. After making changes, call build_module to verify
+7. Explain what you changed
+
+## APP 检测规则（何时必须生成 APP）
+当用户请求包含以下任一特征时，必须生成 Android APP：
+- UI 关键词：界面、UI、APP、应用、控制面板、仪表盘、设置页面
+- 交互关键词：配置、调整、开关、滑块、选择、输入
+- 监控关键词：监控、查看、显示、实时、刷新、状态
+- 管理关键词：管理、控制、操作、启用、禁用
+
+## APP 生成流程（当检测到需要 APP 时）
+1. 分析用户需求，确定 APP 类型（设置/监控/管理/服务）
+2. 调用 android_app 生成项目（指定 features 参数）
+3. 如果需要自定义 UI，用 write_file 修改生成的布局和 Activity
+4. 调用 build_android_app 编译 APK
+5. 确保 customize.sh 包含 APK 安装逻辑（参考 android_app.md 模板）
+6. 调用 build_module 打包最终 ZIP
 
 ## ⚡ MANDATORY: WRITE CODE — DO NOT JUST READ
 
@@ -265,4 +286,3 @@ var prefilterPool = sync.Pool{
 		return &s
 	},
 }
-

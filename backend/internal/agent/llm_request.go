@@ -373,18 +373,15 @@ func buildLLMRequestBody(messages []map[string]interface{}, tools []ToolDef, cfg
 	if maxTokens <= 0 {
 		maxTokens = resolveModelMaxTokens(model)
 	}
-	// Adaptive contextLimit: use model's actual max_tokens as the context window,
-	// not hardcoded tier limits. This allows models like laguna-s-2.1-free (256K)
-	// to use their full capability.
-	contextLimit := maxTokens
-	if contextLimit <= 0 {
-		// Fallback to tier-based limits only when no max_tokens is configured
-		contextLimit = 16000
-		if modelTier == TierMid {
-			contextLimit = 32000
-		} else if modelTier == TierStrong {
-			contextLimit = 128000
-		}
+	// Context window limit: use tier-based limits for context window,
+	// NOT maxTokens (which is max OUTPUT tokens, not context window).
+	// This ensures models with small output limits but large context windows
+	// (like mimo-v2.5 with 8K output but 32K+ context) can use their full context.
+	contextLimit := 16000
+	if modelTier == TierMid {
+		contextLimit = 32000
+	} else if modelTier == TierStrong {
+		contextLimit = 128000
 	}
 	// Reserve space for system prompt + tools + output
 	reservedTokens := 8000

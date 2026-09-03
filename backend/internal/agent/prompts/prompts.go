@@ -105,6 +105,15 @@ func Load(mode string) (*Prompt, error) {
 		}
 	}
 
+	// Load Android APP guide for act mode (injected after module spec)
+	androidAppGuide := ""
+	if strings.ToLower(mode) == "act" {
+		guideContent, err := loadFileWithOverride("android_app.md")
+		if err == nil && guideContent != "" {
+			androidAppGuide = guideContent
+		}
+	}
+
 	// Assemble full prompt
 	var sb strings.Builder
 	sb.WriteString(p.Base)
@@ -114,6 +123,11 @@ func Load(mode string) (*Prompt, error) {
 	if moduleSpec != "" {
 		sb.WriteString("\n\n")
 		sb.WriteString(moduleSpec)
+	}
+
+	if androidAppGuide != "" {
+		sb.WriteString("\n\n")
+		sb.WriteString(androidAppGuide)
 	}
 
 	if p.Tools != "" {
