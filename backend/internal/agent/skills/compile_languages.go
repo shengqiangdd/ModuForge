@@ -259,7 +259,19 @@ func (s *BuildModuleSkill) compileGo(projectPath string) string {
 
 	// projectPath is always the project root — use it directly instead of
 	// computing from goModDir (which breaks when goModDir nesting depth varies)
-	binDst := filepath.Join(projectPath, "system", "bin", "androwui")
+	// Read module ID from module.prop for binary name
+	binName := "module_binary" // fallback
+	moduleProp := filepath.Join(projectPath, "module.prop")
+	if data, err := os.ReadFile(moduleProp); err == nil {
+		for _, line := range strings.Split(string(data), "\n") {
+			if strings.HasPrefix(line, "id=") {
+				binName = strings.TrimPrefix(line, "id=")
+				binName = strings.TrimSpace(binName)
+				break
+			}
+		}
+	}
+	binDst := filepath.Join(projectPath, "system", "bin", binName)
 	os.MkdirAll(filepath.Dir(binDst), 0755)
 
 	// Use context with timeout to prevent hanging compilations
