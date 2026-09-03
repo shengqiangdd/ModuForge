@@ -440,21 +440,54 @@ func (s *BuildModuleSkill) compileSources(projectPath string) compileResult {
 	return result
 }
 
-// validateShellScripts validates shell script syntax in the project.
+// validateShellScripts validates shell script syntax and security in the project.
 func (s *BuildModuleSkill) validateShellScripts(projectPath string) bool {
 	allPass := true
 	scripts := []string{"customize.sh", "service.sh", "post-fs-data.sh", "uninstall.sh", "action.sh"}
 
+	// Security patterns to check
+	securityIssues := []struct {
+		pattern string
+		desc    string
+		severity string
+	}{
+		{`chmod\s+(-R\s+)?777\s`, "chmod 777 (world-writable)", "warning"},
+		{`chmod\s+(-R\s+)?666\s`, "chmod 666 (world-readable/writable)", "warning"},
+		{`rm\s+-rf\s+/`, "recursive delete root", "error"},
+		{`\$\{0%/\*\}`, "MODDIR pattern (use MODPATH instead)", "info"},
+	}
+
 	for _, script := range scripts {
 		fullPath := filepath.Join(projectPath, script)
-		if _, err := os.Stat(fullPath); os.IsNotExist(err) {
+		data, err := os.ReadFile(fullPath)
+		if err != nil {
 			continue
 		}
+		content := string(data)
 
+		// Syntax check
 		cmd := exec.Command("bash", "-n", fullPath)
 		if output, err := cmd.CombinedOutput(); err != nil {
 			fmt.Printf("  ❌ %s: %s\n", script, strings.TrimSpace(string(output)))
 			allPass = false
+		}
+
+		// Security checks for service.sh
+		if script == "service.sh" {
+			// Check for chmod 777/666
+			if strings.Contains(content, "chmod 777") || strings.Contains(content, "chmod 666") {
+				fmt.Printf("  ⚠️ %s: 使用 chmod 777/666 (建议改为 755/644)\n", script)
+			}
+
+			// Check for include_prop usage
+			if !strings.Contains(content, "include_prop") {
+				fmt.Printf("  ⚠️ %s: 未使用 include_prop (建议使用 Magisk 标准方式读取配置)\n", script)
+			}
+
+			// Check for manual XML parsing
+			if strings.Contains(content, "grep.*value=") && strings.Contains(content, "cut -d") {
+				fmt.Printf("  ⚠️ %s: 手动解析 XML (建议使用 include_prop)\n", script)
+			}
 		}
 	}
 
