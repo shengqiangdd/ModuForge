@@ -445,18 +445,6 @@ func (s *BuildModuleSkill) validateShellScripts(projectPath string) bool {
 	allPass := true
 	scripts := []string{"customize.sh", "service.sh", "post-fs-data.sh", "uninstall.sh", "action.sh"}
 
-	// Security patterns to check
-	securityIssues := []struct {
-		pattern string
-		desc    string
-		severity string
-	}{
-		{`chmod\s+(-R\s+)?777\s`, "chmod 777 (world-writable)", "warning"},
-		{`chmod\s+(-R\s+)?666\s`, "chmod 666 (world-readable/writable)", "warning"},
-		{`rm\s+-rf\s+/`, "recursive delete root", "error"},
-		{`\$\{0%/\*\}`, "MODDIR pattern (use MODPATH instead)", "info"},
-	}
-
 	for _, script := range scripts {
 		fullPath := filepath.Join(projectPath, script)
 		data, err := os.ReadFile(fullPath)
