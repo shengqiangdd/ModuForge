@@ -452,6 +452,7 @@ func (s *BuildModuleSkill) validateShellScripts(projectPath string) bool {
 			continue
 		}
 		content := string(data)
+		originalContent := content
 
 		// Syntax check
 		cmd := exec.Command("bash", "-n", fullPath)
@@ -460,21 +461,30 @@ func (s *BuildModuleSkill) validateShellScripts(projectPath string) bool {
 			allPass = false
 		}
 
-		// Security checks for service.sh
+		// Security fixes for service.sh
 		if script == "service.sh" {
-			// Check for chmod 777/666
-			if strings.Contains(content, "chmod 777") || strings.Contains(content, "chmod 666") {
-				fmt.Printf("  ⚠️ %s: 使用 chmod 777/666 (建议改为 755/644)\n", script)
+			// Fix chmod 777 -> 755 (directory permissions)
+			if strings.Contains(content, "chmod 777") {
+				content = strings.ReplaceAll(content, "chmod 777", "chmod 755")
+				fmt.Printf("  🔧 %s: fixed chmod 777 -> 755\n", script)
+			}
+
+			// Fix chmod 666 -> 644 (file permissions)
+			if strings.Contains(content, "chmod 666") {
+				content = strings.ReplaceAll(content, "chmod 666", "chmod 644")
+				fmt.Printf("  🔧 %s: fixed chmod 666 -> 644\n", script)
+			}
+
+			// Write back if changed
+			if content != originalContent {
+				if err := os.WriteFile(fullPath, []byte(content), 0644); err != nil {
+					fmt.Printf("  ⚠️ %s: failed to write security fixes: %v\n", script, err)
+				}
 			}
 
 			// Check for include_prop usage
 			if !strings.Contains(content, "include_prop") {
 				fmt.Printf("  ⚠️ %s: 未使用 include_prop (建议使用 Magisk 标准方式读取配置)\n", script)
-			}
-
-			// Check for manual XML parsing
-			if strings.Contains(content, "grep.*value=") && strings.Contains(content, "cut -d") {
-				fmt.Printf("  ⚠️ %s: 手动解析 XML (建议使用 include_prop)\n", script)
 			}
 		}
 	}
