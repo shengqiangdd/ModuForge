@@ -41,9 +41,12 @@
     'prompts-mgr': () => import('$lib/components/PromptManager.svelte'),
     'ensemble': () => import('$lib/components/EnsemblePanel.svelte'),
     'cache': () => import('$lib/components/CacheMonitor.svelte'),
+    'template-gallery': () => import('./routes/template-gallery/+page.svelte'),
+    'doc-generator': () => import('./routes/doc-generator/+page.svelte'),
+    'compat-check': () => import('./routes/compat-check/+page.svelte'),
   };
 
-  type Route = 'auth' | 'projects' | 'editor' | 'builds' | 'tests' | 'settings' | 'market' | 'market-publish' | 'dashboard' | 'ai' | 'analytics' | 'mcp' | 'devices' | 'crash' | 'glossary' | 'perf' | 'arch' | 'git-ops' | 'prompts-mgr' | 'ensemble' | 'cache';
+  type Route = 'auth' | 'projects' | 'editor' | 'builds' | 'tests' | 'settings' | 'market' | 'market-publish' | 'dashboard' | 'ai' | 'analytics' | 'mcp' | 'devices' | 'crash' | 'glossary' | 'perf' | 'arch' | 'git-ops' | 'prompts-mgr' | 'ensemble' | 'cache' | 'template-gallery' | 'doc-generator' | 'compat-check';
   interface Project { id: string; name: string; module_type: string; description: string; created_at: string; updated_at: string; }
 
   // ─── Global state ───
@@ -113,6 +116,7 @@
       'projects': '/projects', 'settings': '/settings', 'ai': '/ai', 'analytics': '/analytics',
       'mcp': '/mcp', 'devices': '/devices', 'glossary': '/glossary',
       'perf': '/perf', 'arch': '/arch', 'git-ops': '/git-ops', 'prompts-mgr': '/prompts-mgr', 'ensemble': '/ensemble',
+      'template-gallery': '/template-gallery', 'doc-generator': '/doc-generator', 'compat-check': '/compat-check',
     };
     if (paths[route]) history.pushState(null, '', paths[route]);
     else if (route === 'editor' && id) history.pushState(null, '', `/projects/${id}`);

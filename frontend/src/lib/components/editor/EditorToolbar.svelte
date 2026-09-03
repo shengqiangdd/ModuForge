@@ -86,6 +86,10 @@
     <a href="/projects/{projectId}/build" class="flex items-center justify-center w-8 h-8 rounded-lg bg-[var(--color-surface)] text-[var(--color-text-secondary)] hover:bg-[var(--color-border)] transition-colors no-underline" title="构建模块">
       <span class="material-symbols-outlined !text-[16px]">build</span>
     </a>
+    <a href="/projects/{projectId}/build?target=android" class="flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-medium bg-[var(--color-surface)] text-[var(--color-text-secondary)] hover:bg-[var(--color-border)] transition-colors no-underline whitespace-nowrap" title="构建 APK">
+      <span class="material-symbols-outlined !text-[14px]">android</span>
+      <span class="hidden lg:inline">APK</span>
+    </a>
     <button
       class="flex items-center justify-center w-8 h-8 rounded-lg transition-colors"
       style={showTerminal ? 'background: var(--color-primary); color: white' : 'background: var(--color-surface); color: var(--color-text-secondary)'}

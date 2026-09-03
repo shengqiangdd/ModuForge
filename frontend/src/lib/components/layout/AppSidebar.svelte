@@ -3,7 +3,7 @@
   import NotificationBell from '$lib/components/NotificationBell.svelte';
   import LocaleSwitcher from '$lib/components/LocaleSwitcher.svelte';
 
-  type Route = 'auth' | 'projects' | 'editor' | 'builds' | 'tests' | 'settings' | 'market' | 'market-publish' | 'dashboard' | 'ai' | 'analytics' | 'mcp' | 'devices' | 'crash' | 'glossary' | 'perf' | 'arch' | 'git-ops' | 'prompts-mgr' | 'ensemble';
+  type Route = 'auth' | 'projects' | 'editor' | 'builds' | 'tests' | 'settings' | 'market' | 'market-publish' | 'dashboard' | 'ai' | 'analytics' | 'mcp' | 'devices' | 'crash' | 'glossary' | 'perf' | 'arch' | 'git-ops' | 'prompts-mgr' | 'ensemble' | 'template-gallery' | 'doc-generator' | 'compat-check';
 
   interface Props {
     current: Route;
@@ -43,6 +43,9 @@
     { id: 'glossary', icon: 'menu_book', label: '术语表' },
     { id: 'devices', icon: 'devices', label: $t('nav.devices') },
     { id: 'market', icon: 'storefront', label: $t('nav.market') },
+    { id: 'template-gallery', icon: 'widgets', label: '模板库' },
+    { id: 'doc-generator', icon: 'description', label: '文档生成' },
+    { id: 'compat-check', icon: 'verified', label: '兼容检查' },
     { id: 'crash', icon: 'bug_report', label: '崩溃分析' },
     { id: 'settings', icon: 'settings', label: $t('nav.settings') },
     { id: 'perf', icon: 'speed', label: '性能监控' },

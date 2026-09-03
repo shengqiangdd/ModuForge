@@ -10,6 +10,7 @@
   import { css } from '@codemirror/lang-css';
   import { json } from '@codemirror/lang-json';
   import { xml } from '@codemirror/lang-xml';
+  import { java } from '@codemirror/lang-java';
   import { indentWithTab } from '@codemirror/commands';
   import { history, historyKeymap, redo, undo, toggleComment } from '@codemirror/commands';
 
@@ -51,6 +52,8 @@
       case 'css': return css();
       case 'json': return json();
       case 'xml': return xml();
+      case 'kotlin': return java(); // CodeMirror's Java parser handles Kotlin adequately
+      case 'java': return java();
       case 'shell': return [];
       case 'elixir': return [];
       default: return javascript();

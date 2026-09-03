@@ -20,6 +20,8 @@ export function getFileLanguage(path: string): string {
   if (path.endsWith('.css')) return 'css';
   if (path.endsWith('.xml') || path.endsWith('.conf')) return 'xml';
   if (path.endsWith('.js') || path.endsWith('.mjs')) return 'javascript';
+  if (path.endsWith('.kt') || path.endsWith('.kts') || path.endsWith('.gradle') || path.endsWith('.gradle.kts')) return 'kotlin';
+  if (path.endsWith('.java')) return 'java';
   if (path.endsWith('.prop') || path.endsWith('.properties')) return 'shell';
   if (path.endsWith('.md')) return 'markdown';
   return 'shell';
@@ -33,6 +35,9 @@ export function getFileIcon(path: string): string {
   if (path.endsWith('.css')) return 'palette';
   if (path.endsWith('.xml') || path.endsWith('.conf')) return 'settings';
   if (path.endsWith('.js')) return 'javascript';
+  if (path.endsWith('.kt') || path.endsWith('.kts')) return 'android';
+  if (path.endsWith('.java')) return 'coffee';
+  if (path.endsWith('.gradle') || path.endsWith('.gradle.kts')) return 'build';
   if (path.endsWith('.md')) return 'description';
   return 'insert_drive_file';
 }

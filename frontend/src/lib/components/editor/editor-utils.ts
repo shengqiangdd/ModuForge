@@ -10,6 +10,7 @@ const languageMap: Record<string, string> = {
   js: 'javascript', jsx: 'javascript', ts: 'javascript', tsx: 'javascript',
   py: 'python', html: 'html', htm: 'html', css: 'css', scss: 'css',
   json: 'json', xml: 'xml', yaml: 'json', yml: 'json', sh: 'shell', bash: 'shell',
+  kt: 'kotlin', kts: 'kotlin', java: 'java', gradle: 'kotlin', 'gradle.kts': 'kotlin',
 };
 
 const iconMap: Record<string, string> = {
@@ -17,16 +18,18 @@ const iconMap: Record<string, string> = {
   py: 'python', html: 'html', htm: 'html', css: 'css', scss: 'css',
   json: 'data_object', xml: 'code', yaml: 'code', yml: 'code',
   sh: 'terminal', bash: 'terminal',
+  kt: 'android', kts: 'android', java: 'coffee', gradle: 'build', 'gradle.kts': 'build',
   md: 'description', txt: 'description', log: 'description',
   png: 'image', jpg: 'image', jpeg: 'image', gif: 'image', svg: 'image',
   zip: 'folder_zip', tar: 'folder_zip', gz: 'folder_zip',
-  prop: 'settings', mk: 'build',
+  prop: 'settings', mk: 'build', xml: 'code', apk: 'android',
 };
 
 const colorMap: Record<string, string> = {
   js: '#f7df1e', jsx: '#61dafb', ts: '#3178c6', tsx: '#61dafb',
   py: '#3776ab', html: '#e34f26', css: '#1572b6',
   json: '#292929', sh: '#4eaa25', bash: '#4eaa25',
+  kt: '#7F52FF', kts: '#7F52FF', java: '#f89820', gradle: '#02303A', 'gradle.kts': '#02303A',
   md: '#ffffff', prop: '#8b5cf6',
 };
 

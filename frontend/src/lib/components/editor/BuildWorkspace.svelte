@@ -199,7 +199,7 @@
       if (res.ok) {
         toast('构建缓存已清除', 'info', 3000);
         cacheStatus = null;
-        loadCacheStatus();
+        await loadCacheStatus();
       } else {
         toast('清除缓存失败', 'error', 5000);
       }
