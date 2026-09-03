@@ -1,3 +1,4 @@
+# Cache bust: 1788278610
 # ============================================================
 # ModuForge — Multi-stage Build (Go + Rust + Android NDK)
 # ============================================================
@@ -7,7 +8,7 @@
 FROM node:22-alpine AS frontend-builder
 WORKDIR /app
 COPY frontend/package.json frontend/package-lock.json ./
-RUN --mount=type=cache,target=/root/.npm npm ci --include=dev
+RUN --mount=type=cache,target=/root/.npm npm install --include=dev
 COPY frontend/ .
 RUN --mount=type=cache,target=/app/node_modules/.cache npm run build
 
@@ -35,7 +36,8 @@ LABEL org.opencontainers.image.source="https://github.com/moduforge/ModuForge"
 # --- Runtime deps + gcompat (NDK glibc compatibility on Alpine) ---
 # android-tools provides adb (needed by the ADB module); without it every ADB
 # feature fails with "adb: executable file not found in $PATH".
-RUN apk add --no-cache wget ca-certificates tzdata openssl curl bash xz zip unzip cmake make gcompat gcc musl-dev android-tools \
+# openjdk17 is needed for Android APK compilation (Gradle/Android SDK).
+RUN apk add --no-cache wget ca-certificates tzdata openssl curl bash xz zip unzip cmake make gcompat gcc musl-dev android-tools openjdk17 \
     && addgroup -S moduforge && adduser -S moduforge -G moduforge -u 1000
 
 # --- Go toolchain (for cross-compiling Go source to Android binaries) ---
@@ -82,6 +84,32 @@ RUN mkdir -p /opt/android-ndk && cd /tmp \
              /opt/android-ndk/sysroot/usr/lib/x86_64-linux-android \
              /opt/android-ndk/sysroot/usr/lib/i686-linux-android
 
+# --- Android SDK (for APK compilation with Gradle) ---
+ENV ANDROID_HOME=/opt/android-sdk ANDROID_SDK_ROOT=/opt/android-sdk
+ENV PATH="${ANDROID_HOME}/cmdline-tools/latest/bin:${ANDROID_HOME}/build-tools/34.0.0:${ANDROID_HOME}/platform-tools:${PATH}"
+RUN mkdir -p ${ANDROID_HOME}/cmdline-tools && cd /tmp \
+    && wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O sdk-tools.zip \
+    && unzip -q sdk-tools.zip -d sdk-tmp \
+    && mv sdk-tmp/cmdline-tools ${ANDROID_HOME}/cmdline-tools/latest \
+    && rm -rf sdk-tools.zip sdk-tmp \
+    && yes | sdkmanager --licenses > /dev/null 2>&1 || true \
+    && sdkmanager --install \
+        "build-tools;34.0.0" \
+        "platforms;android-34" \
+        "platform-tools" \
+    > /dev/null 2>&1 \
+    && rm -rf ${ANDROID_HOME}/cmdline-tools/latest/.promisor
+
+# --- Gradle 8.7 (for Android APK builds) ---
+ENV GRADLE_HOME=/opt/gradle
+ENV PATH="${GRADLE_HOME}/bin:${PATH}"
+RUN mkdir -p /opt/gradle && cd /tmp \
+    && wget -q https://services.gradle.org/distributions/gradle-8.7-bin.zip -O gradle.zip \
+    && unzip -q gradle.zip -d /opt \
+    && mv /opt/gradle-8.7 /opt/gradle \
+    && rm -f gradle.zip \
+    && echo "Gradle installed"
+
 # --- Copy backend binary ---
 COPY --from=backend-builder --chown=moduforge:moduforge /server /app/server
 
@@ -106,9 +134,13 @@ ENV PORT=:8080 \
     PROJECTS_DIR=/data/projects \
     GIN_MODE=release \
     DIST_DIR=/app/dist \
-    PATH="/usr/local/cargo/bin:${PATH}" \
+    PATH="/usr/local/cargo/bin:${ANDROID_HOME}/cmdline-tools/latest/bin:${ANDROID_HOME}/build-tools/34.0.0:${ANDROID_HOME}/platform-tools:${GRADLE_HOME}/bin:${PATH}" \
     CARGO_HOME="/usr/local/cargo" \
-    RUSTUP_HOME="/usr/local/rustup"
+    RUSTUP_HOME="/usr/local/rustup" \
+    ANDROID_HOME="/opt/android-sdk" \
+    ANDROID_SDK_ROOT="/opt/android-sdk" \
+    GRADLE_HOME="/opt/gradle" \
+    JAVA_HOME="/usr/lib/jvm/java-17-openjdk"
 
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD wget --no-verbose --tries=1 --spider http://localhost:${PORT}/health || exit 1
