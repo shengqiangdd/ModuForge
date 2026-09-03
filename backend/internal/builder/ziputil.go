@@ -51,6 +51,9 @@ var ModuleExcludePatterns = []string{
 	// Note: *.apk is NOT excluded here because app/app.apk is needed in module zip
 	// for companion app installation via customize.sh
 	"*.dex",
+	// Android build cache
+	"*.flat",
+	"*_blame_folder/",
 	// IDE & editor
 	".idea/",
 	".vscode/",
