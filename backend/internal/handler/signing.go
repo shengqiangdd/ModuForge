@@ -113,37 +113,22 @@ func (h *SigningHandler) loadPublicKey() (*rsa.PublicKey, error) {
 	return rsaPub, nil
 }
 
-// computeModuleHash computes SHA-256 hash of all project files
+// computeModuleHash computes SHA-256 hash of all project files from S3
 func (h *SigningHandler) computeModuleHash(ctx context.Context, projectID string) (string, error) {
 	h256 := sha256.New()
-	if h.fr != nil {
-		files, err := h.fr.ReadAll(ctx, projectID)
-		if err != nil {
-			return "", err
-		}
-		for _, f := range files {
-			content, err := h.fr.ReadOne(ctx, projectID, f.Path)
-			if err != nil {
-				continue
-			}
-			h256.Write([]byte(f.Path))
-			h256.Write([]byte(content))
-		}
-		return hex.EncodeToString(h256.Sum(nil)), nil
+	if h.fr == nil {
+		return "", fmt.Errorf("s3 not configured")
 	}
-	rows, err := h.db.Query(
-		`SELECT path, content FROM project_files WHERE project_id=? ORDER BY path`, projectID)
+	files, err := h.fr.ReadAll(ctx, projectID)
 	if err != nil {
 		return "", err
 	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var path, content string
-		if err := rows.Scan(&path, &content); err != nil {
+	for _, f := range files {
+		content, err := h.fr.ReadOne(ctx, projectID, f.Path)
+		if err != nil {
 			continue
 		}
-		h256.Write([]byte(path))
+		h256.Write([]byte(f.Path))
 		h256.Write([]byte(content))
 	}
 	return hex.EncodeToString(h256.Sum(nil)), nil
@@ -211,12 +196,12 @@ func (h *SigningHandler) SignModule(c fiber.Ctx) error {
 	fp := sha256.Sum256(pubASN1)
 
 	return c.JSON(fiber.Map{
-		"module_id":    projectID,
-		"file_hash":    fileHash,
-		"signature":    signatureHex,
-		"fingerprint":  hex.EncodeToString(fp[:]),
-		"signed_at":    time.Now().Format(time.RFC3339),
-		"algorithm":    "RSA-2048-SHA256",
+		"module_id":   projectID,
+		"file_hash":   fileHash,
+		"signature":   signatureHex,
+		"fingerprint": hex.EncodeToString(fp[:]),
+		"signed_at":   time.Now().Format(time.RFC3339),
+		"algorithm":   "RSA-2048-SHA256",
 	})
 }
 
@@ -253,11 +238,11 @@ func (h *SigningHandler) VerifyModule(c fiber.Ctx) error {
 	// Check if files have changed
 	if currentHash != storedHash {
 		return c.JSON(fiber.Map{
-			"valid":           false,
-			"signed":          true,
-			"error":           "文件已被修改，签名无效",
-			"stored_hash":     storedHash,
-			"current_hash":    currentHash,
+			"valid":        false,
+			"signed":       true,
+			"error":        "文件已被修改，签名无效",
+			"stored_hash":  storedHash,
+			"current_hash": currentHash,
 		})
 	}
 
@@ -286,10 +271,10 @@ func (h *SigningHandler) VerifyModule(c fiber.Ctx) error {
 	}
 
 	return c.JSON(fiber.Map{
-		"valid":      valid,
-		"signed":     true,
-		"file_hash":  currentHash,
-		"message":    msg,
+		"valid":     valid,
+		"signed":    true,
+		"file_hash": currentHash,
+		"message":   msg,
 	})
 }
 

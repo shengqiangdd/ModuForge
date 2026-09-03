@@ -70,6 +70,31 @@ func (h *TagsHandler) Create(c fiber.Ctx) error {
 	return c.Status(201).JSON(fiber.Map{"ok": true})
 }
 
+func (h *TagsHandler) Update(c fiber.Ctx) error {
+	id, err := strconv.ParseInt(c.Params("id"), 10, 64)
+	if err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid id"})
+	}
+	var req struct {
+		Name  string `json:"name"`
+		Color string `json:"color"`
+	}
+	if err := c.Bind().JSON(&req); err != nil {
+		return BadRequest(c, "invalid request")
+	}
+	if req.Name == "" {
+		return ValidationError(c, "name required")
+	}
+	if req.Color == "" {
+		req.Color = "#6366f1"
+	}
+	_, err = h.db.Exec("UPDATE module_tags SET name = ?, color = ? WHERE id = ?", req.Name, req.Color, id)
+	if err != nil {
+		return InternalError(c, err.Error())
+	}
+	return c.JSON(fiber.Map{"ok": true})
+}
+
 func (h *TagsHandler) Delete(c fiber.Ctx) error {
 	id, err := strconv.ParseInt(c.Params("id"), 10, 64)
 	if err != nil {

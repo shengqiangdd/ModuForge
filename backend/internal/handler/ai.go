@@ -85,47 +85,26 @@ func (h *AIHandler) autoLoadProjectContext(ctx context.Context, projectID, uid s
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("Project: %s\n", name))
 	fileCount := 0
-	if h.fr != nil {
-		files, err := h.fr.ReadAll(ctx, projectID)
+	if h.fr == nil {
+		return ""
+	}
+	files, err := h.fr.ReadAll(ctx, projectID)
+	if err != nil {
+		return ""
+	}
+	for _, f := range files {
+		content, err := h.fr.ReadOne(ctx, projectID, f.Path)
 		if err != nil {
-			return ""
+			continue
 		}
-		for _, f := range files {
-			content, err := h.fr.ReadOne(ctx, projectID, f.Path)
-			if err != nil {
-				continue
-			}
-			// Skip empty or oversized files
-			if content == "" || len(content) > 10240 {
-				continue
-			}
-			sb.WriteString(fmt.Sprintf("\n--- %s ---\n%s\n", f.Path, content))
-			fileCount++
-			if fileCount >= 50 {
-				break
-			}
+		// Skip empty or oversized files
+		if content == "" || len(content) > 10240 {
+			continue
 		}
-	} else {
-		rows, err := db.Query(`SELECT path, content FROM project_files WHERE project_id=? ORDER BY path`, projectID)
-		if err != nil {
-			return ""
-		}
-		defer rows.Close()
-
-		for rows.Next() {
-			var path, content string
-			if err := rows.Scan(&path, &content); err != nil {
-				continue
-			}
-			// Skip empty or oversized files
-			if content == "" || len(content) > 10240 {
-				continue
-			}
-			sb.WriteString(fmt.Sprintf("\n--- %s ---\n%s\n", path, content))
-			fileCount++
-			if fileCount >= 50 {
-				break
-			}
+		sb.WriteString(fmt.Sprintf("\n--- %s ---\n%s\n", f.Path, content))
+		fileCount++
+		if fileCount >= 50 {
+			break
 		}
 	}
 	if fileCount == 0 {

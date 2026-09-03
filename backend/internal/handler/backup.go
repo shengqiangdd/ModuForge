@@ -207,6 +207,20 @@ func (h *BackupHandler) DeleteSchedule(c fiber.Ctx) error {
 	return c.JSON(fiber.Map{"ok": true})
 }
 
+func (h *BackupHandler) ListHistory(c fiber.Ctx) error {
+	uid := userIDFromLocals(c)
+	if uid == "" {
+		return Unauthorized(c, "unauthorized")
+	}
+	limit, _ := strconv.Atoi(c.Query("limit", "50"))
+	offset, _ := strconv.Atoi(c.Query("offset", "0"))
+	history, err := h.svc.ListHistory(uid, limit, offset)
+	if err != nil {
+		return InternalError(c, err.Error())
+	}
+	return c.JSON(fiber.Map{"history": history})
+}
+
 func (h *BackupHandler) RunSchedule(c fiber.Ctx) error {
 	id, err := strconv.ParseInt(c.Params("id"), 10, 64)
 	if err != nil {

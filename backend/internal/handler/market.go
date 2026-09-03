@@ -509,16 +509,26 @@ func (h *MarketHandler) GetInstallStats(c fiber.Ctx) error {
 	if days > 365 {
 		days = 365
 	}
+
+	// Resolve module_id from slug
+	var moduleID string
+	err := h.db.QueryRow("SELECT id FROM market_modules WHERE slug = ?", slug).Scan(&moduleID)
+	if err != nil {
+		// Module not found — return empty stats
+		return c.JSON(fiber.Map{"stats": []interface{}{}})
+	}
+
+	// Query module_versions (actual install/version records) instead of crash_logs
 	query := ""
 	switch period {
 	case "week":
-		query = "SELECT strftime('%Y-%W', created_at) AS period, COUNT(*) FROM crash_logs WHERE module_slug = ? AND created_at >= datetime('now', ? || ' days') GROUP BY period ORDER BY period"
+		query = "SELECT strftime('%Y-%W', created_at) AS period, COUNT(*) FROM module_versions WHERE module_id = ? AND created_at >= datetime('now', ? || ' days') GROUP BY period ORDER BY period"
 	case "month":
-		query = "SELECT strftime('%Y-%m', created_at) AS period, COUNT(*) FROM crash_logs WHERE module_slug = ? AND created_at >= datetime('now', ? || ' days') GROUP BY period ORDER BY period"
+		query = "SELECT strftime('%Y-%m', created_at) AS period, COUNT(*) FROM module_versions WHERE module_id = ? AND created_at >= datetime('now', ? || ' days') GROUP BY period ORDER BY period"
 	default:
-		query = "SELECT date(created_at) AS period, COUNT(*) FROM crash_logs WHERE module_slug = ? AND created_at >= datetime('now', ? || ' days') GROUP BY period ORDER BY period"
+		query = "SELECT date(created_at) AS period, COUNT(*) FROM module_versions WHERE module_id = ? AND created_at >= datetime('now', ? || ' days') GROUP BY period ORDER BY period"
 	}
-	rows, err := h.db.Query(query, slug, -days)
+	rows, err := h.db.Query(query, moduleID, -days)
 	if err != nil {
 		return InternalError(c, err.Error())
 	}

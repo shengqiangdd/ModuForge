@@ -207,6 +207,13 @@ func (h *AIAnalyticsHandler) Timeline(c fiber.Ctx) error {
 		days = 30
 	}
 
+	type TimelineEntry struct {
+		Date       string `json:"date"`
+		CallCount  int64  `json:"call_count"`
+		TokenUsage int64  `json:"token_usage"`
+	}
+
+	// Primary: query ai_usage_daily (populated by agent runner & streaming chat)
 	query := `
 		SELECT
 			date,
@@ -228,18 +235,41 @@ func (h *AIAnalyticsHandler) Timeline(c fiber.Ctx) error {
 	}
 	defer rows.Close()
 
-	type TimelineEntry struct {
-		Date        string `json:"date"`
-		CallCount   int64  `json:"call_count"`
-		TokenUsage  int64  `json:"token_usage"`
-	}
-
 	var timeline []TimelineEntry
 	for rows.Next() {
 		var t TimelineEntry
 		rows.Scan(&t.Date, &t.CallCount, &t.TokenUsage)
 		timeline = append(timeline, t)
 	}
+
+	// Fallback: if ai_usage_daily is empty, aggregate from ai_conversations
+	if len(timeline) == 0 {
+		fallbackQuery := `
+			SELECT
+				date(created_at) as date,
+				COUNT(*) as call_count,
+				COALESCE(SUM(token_usage), 0) as token_usage
+			FROM ai_conversations
+			WHERE created_at >= date('now', '-' || ? || ' days')
+		`
+		fallbackArgs := []interface{}{days}
+		if userID != "" {
+			fallbackQuery += " AND user_id = ?"
+			fallbackArgs = append(fallbackArgs, userID)
+		}
+		fallbackQuery += " GROUP BY date(created_at) ORDER BY date ASC"
+
+		fallbackRows, err := h.db.Query(fallbackQuery, fallbackArgs...)
+		if err == nil {
+			defer fallbackRows.Close()
+			for fallbackRows.Next() {
+				var t TimelineEntry
+				fallbackRows.Scan(&t.Date, &t.CallCount, &t.TokenUsage)
+				timeline = append(timeline, t)
+			}
+		}
+	}
+
 	if timeline == nil {
 		timeline = []TimelineEntry{}
 	}

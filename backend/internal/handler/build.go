@@ -320,3 +320,21 @@ func (h *BuildHandler) PublishToRelease(c fiber.Ctx) error {
 		"release": releaseInfo,
 	})
 }
+
+// DeleteBatch removes multiple build records by IDs.
+func (h *BuildHandler) DeleteBatch(c fiber.Ctx) error {
+	var req struct {
+		IDs []string `json:"ids"`
+	}
+	if err := c.Bind().JSON(&req); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
+	}
+	if len(req.IDs) == 0 {
+		return c.Status(400).JSON(fiber.Map{"error": "no IDs provided"})
+	}
+	n, err := h.svc.DeleteBuilds(c.Context(), req.IDs)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(fiber.Map{"ok": true, "deleted": n})
+}

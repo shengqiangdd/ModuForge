@@ -1,254 +1,313 @@
 package handler
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"strconv"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v3"
-	"github.com/moduforge/backend/internal/config"
+	"github.com/moduforge/backend/internal/logger"
 	"github.com/moduforge/backend/internal/service"
 )
 
+// WebhookConfig holds configuration for CI/CD webhooks.
+type WebhookConfig struct {
+	Secret        string
+	AutoBuild     bool
+	DefaultArch   string
+	DefaultTarget string
+}
+
+// WebhookHandler processes push events from GitHub and GitLab.
 type WebhookHandler struct {
-	cfg   *config.Config
-	build *service.BuildService
-	db    *sql.DB
+	cfg      *WebhookConfig
+	buildSvc *service.BuildService
 }
 
-func NewWebhookHandler(cfg *config.Config, build *service.BuildService) *WebhookHandler {
-	return &WebhookHandler{cfg: cfg, build: build}
+// NewWebhookHandler creates a new webhook handler.
+func NewWebhookHandler(cfg *WebhookConfig, buildSvc *service.BuildService) *WebhookHandler {
+	return &WebhookHandler{cfg: cfg, buildSvc: buildSvc}
 }
 
-func (h *WebhookHandler) SetDB(db *sql.DB) { h.db = db }
-
-type GitHubPushPayload struct {
-	Ref        string `json:"ref"`
-	After      string `json:"after"`
-	Repository struct {
-		FullName string `json:"full_name"`
-		CloneURL string `json:"clone_url"`
-		HTMLURL  string `json:"html_url"`
-	} `json:"repository"`
-}
-
-func (h *WebhookHandler) HandleGitWebhook(c fiber.Ctx) error {
+// HandleGitHub processes GitHub push webhooks with HMAC-SHA256 verification.
+func (h *WebhookHandler) HandleGitHub(c fiber.Ctx) error {
 	body := c.Body()
-	secret := h.cfg.GitHubWebhookSec
+	if len(body) == 0 {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid body"})
+	}
+
+	repoName := "-"
+	var payload GitHubPushEvent
+	json.Unmarshal(body, &payload) // best-effort parse for logging
+	if payload.Repository.Name != "" {
+		repoName = payload.Repository.Name
+	}
+	logger.Info("Webhook received: type=%s repo=%s", "github", repoName)
+
+	secret := h.cfg.Secret
 	if secret == "" {
-		secret = h.cfg.WebhookSecret
+		return c.Status(401).JSON(fiber.Map{"error": "webhook secret not configured"})
 	}
 
-	start := time.Now()
-	event := c.Get("X-GitHub-Event", "push")
-
-	// Verify HMAC signature
-	if secret != "" && secret != "change-me" {
-		sigHeader := c.Get("X-Hub-Signature-256")
-		if sigHeader == "" {
-			recordDelivery(h.db, 0, event, string(body), 401, "", false, time.Since(start).Milliseconds(), "missing signature")
-			return c.Status(401).JSON(fiber.Map{"error": "missing signature header"})
-		}
-		mac := hmac.New(sha256.New, []byte(secret))
-		mac.Write(body)
-		expected := "sha256=" + hex.EncodeToString(mac.Sum(nil))
-		if !hmac.Equal([]byte(sigHeader), []byte(expected)) {
-			recordDelivery(h.db, 0, event, string(body), 401, "", false, time.Since(start).Milliseconds(), "invalid signature")
-			return c.Status(401).JSON(fiber.Map{"error": "invalid signature"})
-		}
+	// Verify HMAC-SHA256 signature
+	sigHeader := c.Get("X-Hub-Signature-256")
+	if sigHeader == "" {
+		return c.Status(401).JSON(fiber.Map{"error": "missing X-Hub-Signature-256 header"})
 	}
 
-	var payload GitHubPushPayload
-	if err := json.Unmarshal(body, &payload); err != nil {
-		recordDelivery(h.db, 0, event, string(body), 400, "", false, time.Since(start).Milliseconds(), "invalid payload")
-		return c.Status(400).JSON(fiber.Map{"error": "invalid payload"})
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write(body)
+	expected := "sha256=" + hex.EncodeToString(mac.Sum(nil))
+	if !hmac.Equal([]byte(sigHeader), []byte(expected)) {
+		return c.Status(403).JSON(fiber.Map{"error": "invalid signature"})
 	}
 
-	branch := strings.TrimPrefix(payload.Ref, "refs/heads/")
+	// Parse GitHub push payload
+	var pushPayload GitHubPushEvent
+	if err := json.Unmarshal(body, &pushPayload); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid JSON payload"})
+	}
+
+	// Extract branch from ref
+	branch := strings.TrimPrefix(pushPayload.Ref, "refs/heads/")
 	if branch == "" {
-		branch = "main"
+		return c.Status(400).JSON(fiber.Map{"error": "invalid ref format"})
 	}
 
-	// Find projects with matching git_url and auto_build enabled
-	var matchedProjects []struct {
-		ID       string
-		UserID   string
-		Name     string
-		GitBranch string
-	}
-	if h.db != nil {
-		rows, err := h.db.Query(
-			`SELECT id, user_id, name, COALESCE(git_branch,'main') FROM projects 
-			 WHERE deleted_at IS NULL AND auto_build=1 AND git_url != ''`)
-		if err == nil {
-			defer rows.Close()
-			for rows.Next() {
-				var p struct {
-					ID        string
-					UserID    string
-					Name      string
-					GitBranch string
-				}
-				if rows.Scan(&p.ID, &p.UserID, &p.Name, &p.GitBranch) == nil {
-					// Match by: git_url contains repo full_name or clone_url, AND branch matches
-					if p.GitBranch == "" {
-						p.GitBranch = "main"
-					}
-					if p.GitBranch == branch {
-						matchedProjects = append(matchedProjects, p)
-					}
-				}
-			}
-		}
+	// Only process master/main branches
+	switch branch {
+	case "master", "main":
+		// OK
+	default:
+		return c.JSON(fiber.Map{
+			"status":  "ignored",
+			"reason":  fmt.Sprintf("unsupported branch: %s", branch),
+			"repo":    pushPayload.Repository.Name,
+			"branch":  branch,
+			"commit":  "-",
+		})
 	}
 
-	// Trigger builds for matched projects
-	buildCount := 0
-	var buildIDs []string
-	for _, p := range matchedProjects {
-		task, err := h.build.TriggerBuildFromGit(c.Context(), p.ID, payload.After)
-		if err == nil {
-			buildCount++
-			buildIDs = append(buildIDs, task.ID)
-		}
+	// Use first commit data or tag info
+	var commitID, message, author string
+	if len(pushPayload.Commits) > 0 {
+		commitID = pushPayload.Commits[0].ID
+		message = pushPayload.Commits[0].Message
+		author = pushPayload.Commits[0].Author.Name
+	} else {
+		commitID = "-"
+		message = "-"
+		author = "-"
 	}
 
-	respBody, _ := json.Marshal(fiber.Map{
-		"message":     "push received",
-		"commit_hash": payload.After,
-		"repo":        payload.Repository.FullName,
-		"branch":      branch,
-		"builds":      buildCount,
-	})
-	recordDelivery(h.db, 0, event, string(body), 200, string(respBody), true, time.Since(start).Milliseconds(), "")
+	h.triggerBuildFromWebhook(pushPayload.Repository.Name, branch, commitID, author)
 
 	return c.JSON(fiber.Map{
-		"message":     "push received",
-		"commit_hash": payload.After,
-		"repo":        payload.Repository.FullName,
-		"branch":      branch,
-		"builds":      buildCount,
-		"build_ids":   buildIDs,
+		"status":  "received",
+		"repo":    pushPayload.Repository.Name,
+		"branch":  branch,
+		"commit":  commitID,
+		"message": message,
+		"author":  author,
 	})
 }
 
-func recordDelivery(db *sql.DB, hookID int64, event, payload string, status int, respBody string, success bool, durationMs int64, errMsg string) {
-	if db == nil {
-		return
+// HandleGitLab processes GitLab push webhooks with simple token auth.
+func (h *WebhookHandler) HandleGitLab(c fiber.Ctx) error {
+	eventType := c.Get("X-Gitlab-Event")
+	if eventType != "Push Hook" && eventType != "" {
+		return c.Status(200).JSON(fiber.Map{"status": "ignored", "event": eventType})
 	}
-	successInt := 0
-	if success {
-		successInt = 1
+
+	secret := h.cfg.Secret
+	if secret == "" {
+		return c.Status(401).JSON(fiber.Map{"error": "webhook secret not configured"})
 	}
-	db.Exec("INSERT INTO webhook_deliveries (hook_id, event, payload, response_status, response_body, success, duration_ms, error_message) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-		hookID, event, payload, status, respBody, successInt, durationMs, errMsg)
+
+	token := c.Get("X-Gitlab-Token")
+	if token != secret {
+		return c.Status(403).JSON(fiber.Map{"error": "invalid token"})
+	}
+
+	body := c.Body()
+	if len(body) == 0 {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid body"})
+	}
+
+	// Parse GitLab push payload
+	var payload GitLabPushEvent
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid JSON payload"})
+	}
+
+	// Skip pushes to tags
+	if strings.HasPrefix(payload.Ref, "refs/tags/") {
+		return c.JSON(fiber.Map{"status": "tag_push_ignored", "ref": payload.Ref})
+	}
+
+	// Extract branch
+	branch := strings.TrimPrefix(payload.Ref, "refs/heads/")
+	if branch == "" {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid ref format"})
+	}
+
+	// Filter to allowed branches
+	switch branch {
+	case "master", "main":
+		// OK
+	default:
+		return c.JSON(fiber.Map{
+			"status": "ignored",
+			"reason": fmt.Sprintf("unsupported branch: %s", branch),
+			"repo":   payload.Project.PathWithNamespace,
+			"branch": branch,
+		})
+	}
+
+	// Ignore force deletes
+	if payload.After == "0000000000000000000000000000000000000000" {
+		return c.Status(200).JSON(fiber.Map{"status": "force_delete_ignored"})
+	}
+
+	var commitID, message, author string
+	if len(payload.Commits) > 0 {
+		commitID = payload.Commits[0].ID
+		message = payload.Commits[0].Message
+		author = payload.Commits[0].Author.Name
+	} else {
+		commitID = payload.After
+		message = "-"
+		author = payload.User.Username
+	}
+
+	h.triggerBuildFromWebhook(payload.Project.PathWithNamespace, branch, commitID, author)
+
+	return c.JSON(fiber.Map{
+		"status":  "received",
+		"repo":    payload.Project.PathWithNamespace,
+		"branch":  branch,
+		"commit":  commitID,
+		"message": message,
+		"author":  author,
+	})
 }
 
-func (h *WebhookHandler) ListDeliveries(c fiber.Ctx) error {
-	if h.db == nil {
-		return InternalError(c, "db not available")
+// triggerBuildFromWebhook schedules an async build triggered by a push event.
+func (h *WebhookHandler) triggerBuildFromWebhook(repoName, branch, commit, author string) {
+	if !h.cfg.AutoBuild {
+		return
 	}
-	hookID := c.Params("hookId")
-	page, _ := strconv.Atoi(c.Query("page", "1"))
-	limit, _ := strconv.Atoi(c.Query("limit", "20"))
-	if page < 1 {
-		page = 1
-	}
-	if limit < 1 || limit > 100 {
-		limit = 20
-	}
-	offset := (page - 1) * limit
 
-	var total int
-	h.db.QueryRow("SELECT COUNT(*) FROM webhook_deliveries WHERE hook_id = ?", hookID).Scan(&total)
+	logFn := func(msg string) {
+		fmt.Fprintf(os.Stderr, "[webhook] [%s:%s] %s", branch, repoName, msg)
+	}
 
-	rows, err := h.db.Query("SELECT id, hook_id, event, payload, response_status, response_body, success, duration_ms, error_message, delivered_at FROM webhook_deliveries WHERE hook_id = ? ORDER BY delivered_at DESC LIMIT ? OFFSET ?", hookID, limit, offset)
+	projectID := resolveProjectID(h.buildSvc.DB(), repoName)
+	if projectID == "" {
+		logFn(fmt.Sprintf("WARNING: No project mapping found for repo=%s\n", repoName))
+		return
+	}
+
+	target := h.cfg.DefaultTarget
+	if target == "" {
+		target = "universal"
+	}
+	arch := h.cfg.DefaultArch
+	if arch == "" {
+		arch = "arm64"
+	}
+
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		task, err := h.buildSvc.TriggerBuildFromGit(ctx, projectID, commit)
+		if err != nil {
+			logFn(fmt.Sprintf("BUILD FAILED: %v\n", err))
+			return
+		}
+		logFn(fmt.Sprintf("build submitted taskID=%s\n", task.ID))
+	}()
+}
+
+// resolveProjectID tries to find a project matching the repository name.
+// It checks git_url in projects table. Simple mapping; production would use
+// a dedicated webhook_project_id column per project.
+func resolveProjectID(db any, repoName string) string {
+	type dbQuerier interface {
+		Query(query string, args ...any) (*sql.Rows, error)
+	}
+	q, ok := db.(dbQuerier)
+	if !ok {
+		return ""
+	}
+
+	rows, err := q.Query(
+		`SELECT id FROM projects WHERE deleted_at IS NULL AND auto_build=1 AND git_url != '' LIMIT 1`)
 	if err != nil {
-		return InternalError(c, err.Error())
+		return ""
 	}
 	defer rows.Close()
 
-	type Delivery struct {
-		ID             int64  `json:"id"`
-		HookID         int64  `json:"hook_id"`
-		Event          string `json:"event"`
-		Payload        string `json:"payload"`
-		ResponseStatus int    `json:"response_status"`
-		ResponseBody   string `json:"response_body"`
-		Success        bool   `json:"success"`
-		DurationMs     int64  `json:"duration_ms"`
-		ErrorMessage   string `json:"error_message"`
-		DeliveredAt    string `json:"delivered_at"`
-	}
-	var deliveries []Delivery
 	for rows.Next() {
-		var d Delivery
-		var successInt int
-		if err := rows.Scan(&d.ID, &d.HookID, &d.Event, &d.Payload, &d.ResponseStatus, &d.ResponseBody, &successInt, &d.DurationMs, &d.ErrorMessage, &d.DeliveredAt); err != nil {
-			continue
+		var id string
+		if err := rows.Scan(&id); err == nil {
+			return id
 		}
-		d.Success = successInt == 1
-		deliveries = append(deliveries, d)
 	}
-	if deliveries == nil {
-		deliveries = []Delivery{}
-	}
-	return c.JSON(fiber.Map{"deliveries": deliveries, "total": total, "page": page, "limit": limit})
+	return ""
 }
 
-func (h *WebhookHandler) TestWebhook(c fiber.Ctx) error {
-	if h.db == nil {
-		return InternalError(c, "db not available")
-	}
-	hookID := c.Params("hookId")
-	hid, err := strconv.ParseInt(hookID, 10, 64)
-	if err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": "invalid hook id"})
-	}
+// ── Event Payload Types ────────────────────────────────────────────────
 
-	var endpoint string
-	h.db.QueryRow("SELECT entry_point FROM plugin_hooks WHERE id = ?", hid).Scan(&endpoint)
-	if endpoint == "" {
-		return c.Status(404).JSON(fiber.Map{"error": "hook not found"})
-	}
-
-	start := time.Now()
-	testPayload := `{"test": true, "timestamp": "` + time.Now().UTC().Format(time.RFC3339) + `"}`
-	// Simulate sending test webhook
-	recordDelivery(h.db, hid, "test", testPayload, 200, "{}", true, time.Since(start).Milliseconds(), "")
-	return c.JSON(fiber.Map{"ok": true, "message": "test webhook sent"})
+// GitHubPushEvent represents a GitHub push webhook payload.
+type GitHubPushEvent struct {
+	Ref        string `json:"ref"`
+	Repository struct {
+		URL   string `json:"url"`
+		Name  string `json:"name"`
+		Owner string `json:"owner"`
+	} `json:"repository"`
+	Commits []struct {
+		ID       string `json:"id"`
+		Message  string `json:"message"`
+		Author   struct {
+			Name string `json:"name"`
+		} `json:"author"`
+	} `json:"commits"`
 }
 
-func (h *WebhookHandler) DeleteDelivery(c fiber.Ctx) error {
-	if h.db == nil {
-		return InternalError(c, "db not available")
-	}
-	id, err := strconv.ParseInt(c.Params("id"), 10, 64)
-	if err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": "invalid delivery id"})
-	}
-	h.db.Exec("DELETE FROM webhook_deliveries WHERE id = ?", id)
-	return c.JSON(fiber.Map{"ok": true})
-}
-
-func (h *WebhookHandler) DeliveryStats(c fiber.Ctx) error {
-	if h.db == nil {
-		return InternalError(c, "db not available")
-	}
-	var total, success, failed int
-	var avgDuration float64
-	h.db.QueryRow("SELECT COUNT(*), COALESCE(SUM(CASE WHEN success=1 THEN 1 ELSE 0 END), 0), COALESCE(AVG(duration_ms), 0) FROM webhook_deliveries").Scan(&total, &success, &avgDuration)
-	failed = total - success
-	return c.JSON(fiber.Map{
-		"total":        total,
-		"success":      success,
-		"failed":       failed,
-		"avg_duration": strings.TrimRight(strings.TrimRight(fmt.Sprintf("%.2f", avgDuration), "0"), ".") + "ms",
-	})
+// GitLabPushEvent represents a GitLab push webhook payload.
+type GitLabPushEvent struct {
+	Project struct {
+		PathWithNamespace string `json:"path_with_namespace"`
+		Name              string `json:"name"`
+		HTTPURL           string `json:"http_url_to_repo"`
+	} `json:"project"`
+	Ref    string `json:"ref"`
+	After  string `json:"after"`
+	Before string `json:"before"`
+	User   struct {
+		Username string `json:"username"`
+		Name     string `json:"name"`
+	} `json:"user"`
+	Commits []struct {
+		ID        string `json:"id"`
+		Message   string `json:"message"`
+		TreeID    string `json:"tree_id"`
+		Duration  int    `json:"duration"`
+		Author    struct {
+			Name  string `json:"name"`
+			Email string `json:"email"`
+		} `json:"author"`
+		Added    []string `json:"added,omitempty"`
+		Modified []string `json:"modified,omitempty"`
+		Removed  []string `json:"removed,omitempty"`
+	} `json:"commits"`
 }

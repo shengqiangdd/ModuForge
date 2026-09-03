@@ -2,12 +2,45 @@ package handler
 
 import (
 	"context"
+	
+	"os"
+	"path/filepath"
+	
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/gofiber/fiber/v3/middleware/cors"
+	"github.com/moduforge/backend/internal/builder"
+	
 	"github.com/moduforge/backend/internal/service"
 )
 
+// securityHeaders sets security-related HTTP headers on every response.
+func securityHeaders(c fiber.Ctx) error {
+	c.Set("X-Content-Type-Options", "nosniff")
+	c.Set("X-Frame-Options", "DENY")
+	c.Set("X-XSS-Protection", "1; mode=block")
+	c.Set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'")
+	c.Set("Referrer-Policy", "strict-origin-when-cross-origin")
+	return c.Next()
+}
+
 func registerCoreRoutes(ctx *routeContext, authH *AuthHandler) {
+	// Security headers
+	ctx.api.Use(securityHeaders)
+
+	// CORS
+	ctx.api.Use(cors.New(cors.Config{
+		AllowOrigins:     []string{"*"},
+		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "PATCH"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization"},
+		AllowCredentials: false,
+		MaxAge:           86400,
+	}))
+
+	// Rate limiting (100 requests per minute)
+	rateLimiter := NewRateLimiter(100, 60000)
+	ctx.api.Use(rateLimiter.Handler())
+
 	api := ctx.api
 	db := ctx.db
 	cfg := ctx.cfg
@@ -26,6 +59,7 @@ func registerCoreRoutes(ctx *routeContext, authH *AuthHandler) {
 	// Handlers
 	projectH := NewProjectHandlerWithDB(projectSvc, db.Conn)
 	buildH := NewBuildHandler(buildSvc)
+	buildSSEH := NewBuildSSEHandler(buildSvc)
 	buildScheduleSvc := service.NewBuildScheduleService(db.Conn, buildSvc)
 	buildScheduleH := NewBuildScheduleHandler(buildScheduleSvc)
 	buildScheduleSvc.StartScheduler(context.Background())
@@ -59,6 +93,8 @@ func registerCoreRoutes(ctx *routeContext, authH *AuthHandler) {
 	signerSvc := service.NewSignerService("data/keys")
 	signerH := NewSignerHandler(signerSvc)
 	crashH := NewCrashHandler(db.Conn)
+	docGenH := NewDocGeneratorHandler()
+	compatCheckH := NewCompatCheckHandler()
 
 	repoSvc := service.NewRepoService()
 	repoH := NewRepoHandler(repoSvc)
@@ -71,6 +107,43 @@ func registerCoreRoutes(ctx *routeContext, authH *AuthHandler) {
 	api.Get("/templates/market/categories", templateMarketH.GetCategories)
 	api.Get("/templates/:name", templateH.Get)
 	api.Post("/templates/recommend", templateH.Recommend)
+
+	// Doc Generator
+	ctx.r("POST", "/doc-generator/generate", docGenH.Generate)
+
+	// Compatibility Check
+	ctx.r("POST", "/compat-check/check", compatCheckH.Check)
+
+	// Android project generation
+	ctx.r("POST", "/android/generate", func(c fiber.Ctx) error {
+		var req struct {
+			Name     string `json:"name"`
+			Language string `json:"language"` // "kotlin" or "java"
+		}
+		if err := c.Bind().JSON(&req); err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": "invalid request"})
+		}
+		if req.Name == "" {
+			req.Name = "MyApp"
+		}
+		if req.Language == "" {
+			req.Language = "kotlin"
+		}
+		// Generate in project directory if project ID provided
+		projectID := c.Query("project_id")
+		if projectID == "" {
+			return c.Status(400).JSON(fiber.Map{"error": "project_id is required"})
+		}
+		projectDir := filepath.Join(cfg.StoragePath, "projects", projectID)
+		if err := os.MkdirAll(projectDir, 0755); err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
+		logFn := func(msg string) {}
+		if err := builder.GenerateAndroidProject(projectDir, req.Name, req.Language, logFn); err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
+		return c.JSON(fiber.Map{"ok": true, "message": "Android project generated", "language": req.Language})
+	})
 
 	// Repo
 	api.Post("/repo/fetch", ctx.rateRepo, repoH.Fetch)
@@ -171,6 +244,7 @@ func registerCoreRoutes(ctx *routeContext, authH *AuthHandler) {
 	ctx.r("POST", "/projects/:id/build", buildH.Create)
 	ctx.r("GET", "/projects/:id/builds", buildH.ListByProject)
 	ctx.r("DELETE", "/projects/:id/builds/failed", buildH.DeleteFailed)
+	ctx.r("POST", "/projects/:id/builds/delete", buildH.DeleteBatch)
 	ctx.r("DELETE", "/projects/:id/builds/:buildId", buildH.Delete)
 	ctx.r("DELETE", "/projects/:id/build-cache", buildH.ClearBuildCache)
 	ctx.r("GET", "/projects/:id/build/cache", buildH.GetBuildCacheStatus)
@@ -179,6 +253,7 @@ func registerCoreRoutes(ctx *routeContext, authH *AuthHandler) {
 	ctx.r("GET", "/projects/:id/build-schedules", buildScheduleH.List)
 	ctx.r("PUT", "/projects/:id/build-schedules/:scheduleId", buildScheduleH.Toggle)
 	ctx.r("DELETE", "/projects/:id/build-schedules/:scheduleId", buildScheduleH.Delete)
+	ctx.r("GET", "/projects/:id/build/sse", buildSSEH.Stream)
 	ctx.r("GET", "/builds/:id", buildH.Get)
 	ctx.r("GET", "/builds/:id/logs", buildH.StreamLogs)
 	ctx.r("GET", "/builds/:id/download", buildH.Download)
@@ -231,6 +306,7 @@ func registerCoreRoutes(ctx *routeContext, authH *AuthHandler) {
 	// Backup & Restore
 	backupSvc := service.NewBackupService(db.Conn, cfg.StoragePath+"/backups")
 	backupH := NewBackupHandler(backupSvc)
+	ctx.r("GET", "/backup/history", backupH.ListHistory)
 	ctx.r("POST", "/backup/export", backupH.ExportDatabase)
 	ctx.r("POST", "/backup/import", backupH.ImportDatabase)
 	ctx.r("POST", "/projects/:id/export", backupH.ExportProject)
@@ -242,6 +318,7 @@ func registerCoreRoutes(ctx *routeContext, authH *AuthHandler) {
 	ctx.r("GET", "/notifications", notifH.List)
 	ctx.r("GET", "/notifications/unread-count", notifH.UnreadCount)
 	ctx.r("POST", "/notifications/:id/read", notifH.MarkRead)
+	ctx.r("PUT", "/notifications/:id/read", notifH.MarkRead)
 	ctx.r("POST", "/notifications/read-all", notifH.MarkAllRead)
 	ctx.r("DELETE", "/notifications/:id", notifH.Delete)
 
@@ -250,6 +327,7 @@ func registerCoreRoutes(ctx *routeContext, authH *AuthHandler) {
 	activityH := NewActivityHandler(activitySvc)
 	ctx.r("GET", "/projects/:id/activities", activityH.GetProjectActivities)
 	ctx.r("GET", "/activities", activityH.GetUserActivities)
+	ctx.r("GET", "/activity", activityH.GetUserActivities)
 	ctx.r("GET", "/activity/export", activityH.Export)
 
 	// Crash protected
@@ -257,6 +335,11 @@ func registerCoreRoutes(ctx *routeContext, authH *AuthHandler) {
 	ctx.r("GET", "/crash/stats", crashH.Stats)
 	ctx.r("DELETE", "/crash/logs/:id", crashH.Delete)
 	ctx.r("DELETE", "/crash/logs", crashH.ClearAll)
+
+	// Badges (stub — fire-and-forget from frontend)
+	ctx.r("GET", "/badges/my", func(c fiber.Ctx) error {
+		return c.JSON(fiber.Map{"badges": []interface{}{}})
+	})
 
 	// Search history
 	searchH := NewSearchHistoryHandler(db.Conn)
@@ -292,6 +375,8 @@ func registerCoreRoutes(ctx *routeContext, authH *AuthHandler) {
 	ctx.r("DELETE", "/recycle-bin", recycleH.ClearAll)
 
 	// Module system
+	ctx.r("GET", "/module-versions", moduleVersionH.ListAllVersions)
+	ctx.r("POST", "/module-versions/rollback/:id", moduleVersionH.RollbackByVersionID)
 	ctx.r("POST", "/projects/:id/versions", moduleVersionH.CreateVersion)
 	ctx.r("GET", "/projects/:id/versions", moduleVersionH.ListVersions)
 	ctx.r("POST", "/projects/:id/versions/:version/rollback", moduleVersionH.RollbackVersion)
@@ -311,6 +396,21 @@ func registerCoreRoutes(ctx *routeContext, authH *AuthHandler) {
 	ctx.r("POST", "/projects/:id/scan-vulns-ai", vulnH.ScanModuleVulnerabilities)
 	ctx.r("GET", "/projects/:id/vulnerabilities", vulnH.GetModuleVulnerabilities)
 
+	// ── CI/CD Webhook handlers ──────────────────────────────────────────
+	whCfg := &WebhookConfig{
+		Secret:        "",
+		AutoBuild:     true,
+		DefaultArch:   "arm64",
+		DefaultTarget: "universal",
+	}
+	whH := NewWebhookHandler(whCfg, buildSvc)
+	ctx.r("POST", "/webhooks/github", whH.HandleGitHub)
+	ctx.r("POST", "/webhooks/gitlab", whH.HandleGitLab)
+
+	// ── Prometheus metrics ──────────────────────────────────────────────
+	metH := NewMetricsHandler()
+	ctx.r("GET", "/metrics", metH.Handle)
+
 	// ── ADMIN ──
 	ctx.rAdmin("GET", "/admin/email-config", settingsH.GetEmailConfig)
 	ctx.rAdmin("PUT", "/admin/email-config", settingsH.UpdateEmailConfig)
@@ -319,9 +419,20 @@ func registerCoreRoutes(ctx *routeContext, authH *AuthHandler) {
 	ctx.r("GET", "/settings/agent", settingsH.GetAgentConfig)
 	ctx.r("PUT", "/settings/agent", settingsH.UpdateAgentConfig)
 
+	// Tool execution policies
+	api.Get("/tool-policies", GetToolPolicies(db.Conn))
+	api.Post("/tool-policies", CreateOrUpdateToolPolicy(db.Conn))
+	api.Delete("/tool-policies/:server/:tool", DeleteToolPolicy(db.Conn))
+	api.Get("/tool-policies/global", GetGlobalToolPolicy(db.Conn))
+	api.Put("/tool-policies/global", SetGlobalToolPolicy(db.Conn))
+
 	tagsH := NewTagsHandler(db.Conn)
 	analyticsSvc := service.NewAnalyticsService(db.Conn)
 	analyticsH := NewAnalyticsHandler(analyticsSvc)
+	ctx.r("GET", "/tags", tagsH.List)
+	ctx.r("POST", "/tags", tagsH.Create)
+	ctx.r("PUT", "/tags/:id", tagsH.Update)
+	ctx.r("DELETE", "/tags/:id", tagsH.Delete)
 	ctx.rAdmin("POST", "/admin/tags", tagsH.Create)
 	ctx.rAdmin("DELETE", "/admin/tags/:id", tagsH.Delete)
 	ctx.rAdmin("GET", "/admin/analytics/build-stats", analyticsH.BuildStats)
@@ -331,6 +442,14 @@ func registerCoreRoutes(ctx *routeContext, authH *AuthHandler) {
 	ctx.rAdmin("POST", "/admin/cache/clear", func(c fiber.Ctx) error {
 		count := cache.Clear()
 		return c.JSON(fiber.Map{"status": "ok", "message": "缓存已清除", "entries": count})
+	})
+
+	// Clear ALL build caches (separate from AI cache)
+	ctx.rAdmin("DELETE", "/admin/build-caches", func(c fiber.Ctx) error {
+		if err := buildSvc.ClearAllBuildCaches(); err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
+		return c.JSON(fiber.Map{"ok": true, "message": "构建缓存已清除"})
 	})
 	ctx.rAdmin("GET", "/admin/cache/status", func(c fiber.Ctx) error {
 		return c.JSON(fiber.Map{"entries": cache.Size(), "ttl": cache.ttl.String()})

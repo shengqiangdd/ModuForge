@@ -38,8 +38,13 @@ func registerMarketRoutes(ctx *routeContext) {
 	ctx.api.Get("/analytics/module-stats", analyticsH.ModuleStats)
 	ctx.api.Get("/tags", tagsH.List)
 
-	// Dashboard
+	// Dashboard widgets
 	ctx.api.Get("/dashboard/widget-types", dashboardH.GetWidgetTypes)
+	ctx.r("GET", "/dashboard/widgets", dashboardH.ListWidgets)
+	ctx.r("POST", "/dashboard/widgets", dashboardH.AddWidget)
+	ctx.r("PUT", "/dashboard/widgets/reorder", dashboardH.ReorderWidgets)
+	ctx.r("PUT", "/dashboard/widgets/:id", dashboardH.UpdateWidget)
+	ctx.r("DELETE", "/dashboard/widgets/:id", dashboardH.DeleteWidget)
 
 	// ── Protected ──
 	ctx.r("POST", "/market/module/:slug/star", marketH.StarModule)

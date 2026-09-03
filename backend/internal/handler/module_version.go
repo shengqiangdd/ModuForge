@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"time"
 
 	"github.com/gofiber/fiber/v3"
@@ -355,6 +356,89 @@ func (h *ModuleVersionHandler) VersionDiff(c fiber.Ctx) error {
 		"diffs":     diffs,
 		"total":     len(diffs),
 	})
+}
+
+// GET /module-versions — List all versions across all projects (top-level)
+func (h *ModuleVersionHandler) ListAllVersions(c fiber.Ctx) error {
+	rows, err := h.db.Query(
+		`SELECT pv.id, pv.project_id, p.name, pv.version, pv.changelog, pv.file_count, pv.total_size, pv.file_hash, pv.created_at
+		 FROM project_versions pv
+		 LEFT JOIN projects p ON p.id = pv.project_id
+		 ORDER BY pv.created_at DESC LIMIT 100`,
+	)
+	if err != nil {
+		return InternalError(c, "查询版本失败")
+	}
+	defer rows.Close()
+
+	type VersionInfo struct {
+		ID        int64  `json:"id"`
+		ProjectID string `json:"project_id"`
+		ModuleName string `json:"module_name"`
+		Version   string `json:"version"`
+		Changelog string `json:"changelog"`
+		FileCount int    `json:"file_count"`
+		TotalSize int    `json:"total_size"`
+		FileHash  string `json:"file_hash"`
+		CreatedAt string `json:"created_at"`
+	}
+
+	var versions []VersionInfo
+	for rows.Next() {
+		var v VersionInfo
+		if err := rows.Scan(&v.ID, &v.ProjectID, &v.ModuleName, &v.Version, &v.Changelog, &v.FileCount, &v.TotalSize, &v.FileHash, &v.CreatedAt); err == nil {
+			versions = append(versions, v)
+		}
+	}
+	if versions == nil {
+		versions = []VersionInfo{}
+	}
+	return c.JSON(versions)
+}
+
+// POST /module-versions/rollback/:id — Rollback by version ID (top-level)
+func (h *ModuleVersionHandler) RollbackByVersionID(c fiber.Ctx) error {
+	versionID, err := strconv.ParseInt(c.Params("id"), 10, 64)
+	if err != nil {
+		return BadRequest(c, "invalid version id")
+	}
+
+	var projectID, version, snapshot string
+	err = h.db.QueryRow(
+		"SELECT project_id, version, snapshot FROM project_versions WHERE id=?",
+		versionID,
+	).Scan(&projectID, &version, &snapshot)
+	if err != nil {
+		return NotFound(c, "版本不存在")
+	}
+
+	uid := c.Locals("uid")
+	if uid == nil {
+		return Unauthorized(c, "未授权")
+	}
+
+	type FileSnapshot struct {
+		Path    string `json:"path"`
+		Content string `json:"content"`
+	}
+	var snapshots []FileSnapshot
+	if err := json.Unmarshal([]byte(snapshot), &snapshots); err != nil {
+		return InternalError(c, "版本快照数据损坏")
+	}
+
+	// Clear current files
+	h.db.Exec("DELETE FROM project_files WHERE project_id=?", projectID)
+
+	// Restore files from snapshot
+	restored := 0
+	for _, fs := range snapshots {
+		if err := h.saveContent(c.Context(), projectID, fs.Path, fs.Content); err != nil {
+			continue
+		}
+		restored++
+	}
+
+	return c.JSON(fiber.Map{"message": "回滚成功", "version": version, "files_restored": restored})
 }
 
 // ModuleVersionLister is the interface needed from market service
