@@ -69,7 +69,7 @@ func (s *DeviceTestSkill) Execute(ctx context.Context, input map[string]interfac
 		return "", fmt.Errorf("project_id is required")
 	}
 	deviceSerial := fmt.Sprintf("%v", input["device_serial"]) // optional
-	action := fmt.Sprintf("%v", input["action"])               // install|verify|logs|full (default: full)
+	action := fmt.Sprintf("%v", input["action"])              // install|verify|logs|full (default: full)
 	if action == "" {
 		action = "full"
 	}

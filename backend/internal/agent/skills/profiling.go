@@ -3,8 +3,8 @@ package skills
 import (
 	"context"
 	"fmt"
-	"strings"
 	"github.com/moduforge/backend/internal/agent/registry"
+	"strings"
 )
 
 // ProfilingSkill provides performance profiling guidance for different languages.
@@ -43,10 +43,10 @@ type PerformanceIssue struct {
 }
 
 type ProfilingTool struct {
-	Name        string `json:"name"`
-	Purpose     string `json:"purpose"`
-	Command     string `json:"command"`
-	Language    string `json:"language"`
+	Name     string `json:"name"`
+	Purpose  string `json:"purpose"`
+	Command  string `json:"command"`
+	Language string `json:"language"`
 }
 
 func (s *ProfilingSkill) Execute(ctx context.Context, input map[string]interface{}) (string, error) {
@@ -82,13 +82,13 @@ func (s *ProfilingSkill) Metadata() registry.SkillMeta {
 
 func analyzePerformance(path string, lines []string, language, target string) ProfilingResult {
 	r := ProfilingResult{
-		FilePath: path,
-		Language: language,
-		Target:   target,
-		Hotspots: make([]PerformanceIssue, 0),
-		Tools:    make([]ProfilingTool, 0),
+		FilePath:    path,
+		Language:    language,
+		Target:      target,
+		Hotspots:    make([]PerformanceIssue, 0),
+		Tools:       make([]ProfilingTool, 0),
 		Suggestions: make([]string, 0),
-		Score:    100,
+		Score:       100,
 	}
 
 	// Detect hotspots based on language
@@ -366,8 +366,8 @@ func scanShellPerformance(lines []string) []PerformanceIssue {
 			issues = append(issues, PerformanceIssue{
 				Type: "io", Severity: "medium", Line: i + 1,
 				Description: "Performance issue: cat with command substitution",
-				Impact: "Spawns subprocess per iteration",
-				Fix: "Use built-in parameter expansion or read with while loop",
+				Impact:      "Spawns subprocess per iteration",
+				Fix:         "Use built-in parameter expansion or read with while loop",
 			})
 		}
 		// grep without -q
@@ -375,8 +375,8 @@ func scanShellPerformance(lines []string) []PerformanceIssue {
 			issues = append(issues, PerformanceIssue{
 				Type: "io", Severity: "low", Line: i + 1,
 				Description: "Performance issue: grep without -q flag",
-				Impact: "Output goes to stdout even when only checking exit code",
-				Fix: "Add -q flag: grep -q pattern file",
+				Impact:      "Output goes to stdout even when only checking exit code",
+				Fix:         "Add -q flag: grep -q pattern file",
 			})
 		}
 		// find in loop
@@ -384,8 +384,8 @@ func scanShellPerformance(lines []string) []PerformanceIssue {
 			issues = append(issues, PerformanceIssue{
 				Type: "io", Severity: "high", Line: i + 1,
 				Description: "Performance issue: find in loop",
-				Impact: "Recursive directory traversal per iteration",
-				Fix: "Use find -exec or xargs for batch processing",
+				Impact:      "Recursive directory traversal per iteration",
+				Fix:         "Use find -exec or xargs for batch processing",
 			})
 		}
 	}

@@ -3,9 +3,9 @@ package skills
 import (
 	"context"
 	"fmt"
+	"github.com/moduforge/backend/internal/agent/registry"
 	"math"
 	"strings"
-	"github.com/moduforge/backend/internal/agent/registry"
 )
 
 // CodeQualitySkill measures code quality metrics: cyclomatic complexity,
@@ -23,29 +23,29 @@ func (s *CodeQualitySkill) Description() string {
 }
 
 type QualityMetrics struct {
-	FilePath           string            `json:"file_path"`
-	TotalLines         int               `json:"total_lines"`
-	BlankLines         int               `json:"blank_lines"`
-	CommentLines       int               `json:"comment_lines"`
-	CodeLines          int               `json:"code_lines"`
-	AvgFunctionLength  float64           `json:"avg_function_length"`
-	MaxFunctionLength  int               `json:"max_function_length"`
-	MaxCyclomatic      int               `json:"max_cyclomatic_complexity"`
-	AvgCyclomatic      float64           `json:"avg_cyclomatic_complexity"`
-	DuplicationBlocks  int               `json:"duplication_blocks"`
-	Functions          []FunctionMetrics `json:"functions"`
-	NamingIssues       []string          `json:"naming_issues"`
-	Score              int               `json:"score"`
-	Grade              string            `json:"grade"`
-	Issues             []string          `json:"issues"`
-	Suggestions        []string          `json:"suggestions"`
+	FilePath          string            `json:"file_path"`
+	TotalLines        int               `json:"total_lines"`
+	BlankLines        int               `json:"blank_lines"`
+	CommentLines      int               `json:"comment_lines"`
+	CodeLines         int               `json:"code_lines"`
+	AvgFunctionLength float64           `json:"avg_function_length"`
+	MaxFunctionLength int               `json:"max_function_length"`
+	MaxCyclomatic     int               `json:"max_cyclomatic_complexity"`
+	AvgCyclomatic     float64           `json:"avg_cyclomatic_complexity"`
+	DuplicationBlocks int               `json:"duplication_blocks"`
+	Functions         []FunctionMetrics `json:"functions"`
+	NamingIssues      []string          `json:"naming_issues"`
+	Score             int               `json:"score"`
+	Grade             string            `json:"grade"`
+	Issues            []string          `json:"issues"`
+	Suggestions       []string          `json:"suggestions"`
 }
 
 type FunctionMetrics struct {
-	Name      string `json:"name"`
-	Line      int    `json:"line"`
-	Length    int    `json:"length"`
-	Complexity int   `json:"complexity"`
+	Name       string `json:"name"`
+	Line       int    `json:"line"`
+	Length     int    `json:"length"`
+	Complexity int    `json:"complexity"`
 }
 
 func (s *CodeQualitySkill) Execute(ctx context.Context, input map[string]interface{}) (string, error) {
@@ -77,10 +77,10 @@ func (s *CodeQualitySkill) Metadata() registry.SkillMeta {
 
 func analyzeCodeQuality(path string, lines []string, language string) QualityMetrics {
 	m := QualityMetrics{
-		FilePath: path,
-		TotalLines: len(lines),
-		Functions: make([]FunctionMetrics, 0),
-		Issues:    make([]string, 0),
+		FilePath:    path,
+		TotalLines:  len(lines),
+		Functions:   make([]FunctionMetrics, 0),
+		Issues:      make([]string, 0),
 		Suggestions: make([]string, 0),
 	}
 

@@ -3,9 +3,9 @@ package skills
 import (
 	"context"
 	"fmt"
+	"github.com/moduforge/backend/internal/agent/registry"
 	"regexp"
 	"strings"
-	"github.com/moduforge/backend/internal/agent/registry"
 )
 
 // SecurityScanSkill performs static security scanning on source code.
@@ -24,8 +24,8 @@ func (s *SecurityScanSkill) Description() string {
 }
 
 type SecurityFinding struct {
-	Severity    string `json:"severity"`    // critical, high, medium, low, info
-	Category    string `json:"category"`    // injection, secrets, crypto, xss, ssrf, path_traversal, insecure
+	Severity    string `json:"severity"` // critical, high, medium, low, info
+	Category    string `json:"category"` // injection, secrets, crypto, xss, ssrf, path_traversal, insecure
 	Line        int    `json:"line"`
 	Column      int    `json:"column"`
 	Description string `json:"description"`
@@ -145,10 +145,10 @@ func scanUniversalInsecurePatterns(lines []string) []SecurityFinding {
 // ── Go-specific Security ──
 
 var goInsecurePatterns = []struct {
-	name    string
-	pattern *regexp.Regexp
+	name     string
+	pattern  *regexp.Regexp
 	severity string
-	cwe     string
+	cwe      string
 }{
 	{"sql_injection", regexp.MustCompile(`fmt\.(Sprintf|Fprintf)\s*\(\s*"[^"]*SELECT[^"]*%s`), "high", "CWE-89"},
 	{"sql_injection_insert", regexp.MustCompile(`fmt\.(Sprintf|Fprintf)\s*\(\s*"[^"]*INSERT[^"]*%s`), "high", "CWE-89"},

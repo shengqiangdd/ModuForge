@@ -5,9 +5,9 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"github.com/moduforge/backend/internal/agent/registry"
 	"log"
 	"strings"
-	"github.com/moduforge/backend/internal/agent/registry"
 )
 
 // SelfEvolvingSkill learns from execution history and auto-improves its prompts

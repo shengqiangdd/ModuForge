@@ -128,14 +128,14 @@ func extractTypeName(line, kind string) string {
 func extractGoFunctionName(line string) string {
 	// func MyFunc() or func (r *Receiver) MyFunc()
 	line = strings.TrimPrefix(line, "func ")
-	
+
 	// Skip receiver
 	if strings.HasPrefix(line, "(") {
 		if idx := strings.Index(line, ")"); idx > 0 {
 			line = strings.TrimSpace(line[idx+1:])
 		}
 	}
-	
+
 	// Extract name before (
 	if idx := strings.Index(line, "("); idx > 0 {
 		return strings.TrimSpace(line[:idx])

@@ -47,11 +47,11 @@ type Change struct {
 }
 
 type RefactorResult struct {
-	File        string              `json:"file"`
-	IssueType   string              `json:"issue_type"`
+	File        string               `json:"file"`
+	IssueType   string               `json:"issue_type"`
 	Suggestions []RefactorSuggestion `json:"suggestions"`
-	AutoFixable bool                `json:"auto_fixable"`
-	Confidence  float64             `json:"confidence"`
+	AutoFixable bool                 `json:"auto_fixable"`
+	Confidence  float64              `json:"confidence"`
 }
 
 func (s *SmartRefactorSkill) Execute(ctx context.Context, input map[string]interface{}) (string, error) {
@@ -122,43 +122,43 @@ func (s *SmartRefactorSkill) analyzeCompileErrors(filePath, errorMsg, context st
 	// Common compile error patterns
 	if strings.Contains(errorMsg, "undefined") {
 		suggestions = append(suggestions, RefactorSuggestion{
-			RootCause: "Reference to undefined variable, function, or type",
-			Issue:     errorMsg,
-			Solution:  "Check for typos, missing imports, or incorrect package references",
+			RootCause:   "Reference to undefined variable, function, or type",
+			Issue:       errorMsg,
+			Solution:    "Check for typos, missing imports, or incorrect package references",
 			CodeChanges: []Change{},
-			Risk:      "low",
-			Impact:    "Fixes compilation error",
-			References: []string{"Go spec: Declarations and scope"},
+			Risk:        "low",
+			Impact:      "Fixes compilation error",
+			References:  []string{"Go spec: Declarations and scope"},
 		})
 	} else if strings.Contains(errorMsg, "cannot use") {
 		suggestions = append(suggestions, RefactorSuggestion{
-			RootCause: "Type mismatch in assignment or function call",
-			Issue:     errorMsg,
-			Solution:  "Ensure types match or add type conversion",
+			RootCause:   "Type mismatch in assignment or function call",
+			Issue:       errorMsg,
+			Solution:    "Ensure types match or add type conversion",
 			CodeChanges: []Change{},
-			Risk:      "low",
-			Impact:    "Fixes type compatibility",
-			References: []string{"Go spec: Types"},
+			Risk:        "low",
+			Impact:      "Fixes type compatibility",
+			References:  []string{"Go spec: Types"},
 		})
 	} else if strings.Contains(errorMsg, "not enough arguments") {
 		suggestions = append(suggestions, RefactorSuggestion{
-			RootCause: "Missing function arguments",
-			Issue:     errorMsg,
-			Solution:  "Add missing arguments or check function signature",
+			RootCause:   "Missing function arguments",
+			Issue:       errorMsg,
+			Solution:    "Add missing arguments or check function signature",
 			CodeChanges: []Change{},
-			Risk:      "low",
-			Impact:    "Fixes function call",
-			References: []string{"Go spec: Function calls"},
+			Risk:        "low",
+			Impact:      "Fixes function call",
+			References:  []string{"Go spec: Function calls"},
 		})
 	} else {
 		suggestions = append(suggestions, RefactorSuggestion{
-			RootCause: "Unknown compile error",
-			Issue:     errorMsg,
-			Solution:  "Review error message and check Go documentation",
+			RootCause:   "Unknown compile error",
+			Issue:       errorMsg,
+			Solution:    "Review error message and check Go documentation",
 			CodeChanges: []Change{},
-			Risk:      "medium",
-			Impact:    "Unknown",
-			References: []string{},
+			Risk:        "medium",
+			Impact:      "Unknown",
+			References:  []string{},
 		})
 	}
 
@@ -170,43 +170,43 @@ func (s *SmartRefactorSkill) analyzeRuntimeErrors(filePath, errorMsg, context st
 
 	if strings.Contains(errorMsg, "nil pointer") {
 		suggestions = append(suggestions, RefactorSuggestion{
-			RootCause: "Dereferencing nil pointer",
-			Issue:     errorMsg,
-			Solution:  "Add nil check before dereferencing",
+			RootCause:   "Dereferencing nil pointer",
+			Issue:       errorMsg,
+			Solution:    "Add nil check before dereferencing",
 			CodeChanges: []Change{},
-			Risk:      "low",
-			Impact:    "Prevents panic",
-			References: []string{"Go wiki: Nil pointer dereference"},
+			Risk:        "low",
+			Impact:      "Prevents panic",
+			References:  []string{"Go wiki: Nil pointer dereference"},
 		})
 	} else if strings.Contains(errorMsg, "index out of range") {
 		suggestions = append(suggestions, RefactorSuggestion{
-			RootCause: "Array/slice index out of bounds",
-			Issue:     errorMsg,
-			Solution:  "Add bounds checking before access",
+			RootCause:   "Array/slice index out of bounds",
+			Issue:       errorMsg,
+			Solution:    "Add bounds checking before access",
 			CodeChanges: []Change{},
-			Risk:      "low",
-			Impact:    "Prevents panic",
-			References: []string{"Go spec: Indexes"},
+			Risk:        "low",
+			Impact:      "Prevents panic",
+			References:  []string{"Go spec: Indexes"},
 		})
 	} else if strings.Contains(errorMsg, "goroutine") {
 		suggestions = append(suggestions, RefactorSuggestion{
-			RootCause: "Goroutine leak or race condition",
-			Issue:     errorMsg,
-			Solution:  "Review goroutine lifecycle and synchronization",
+			RootCause:   "Goroutine leak or race condition",
+			Issue:       errorMsg,
+			Solution:    "Review goroutine lifecycle and synchronization",
 			CodeChanges: []Change{},
-			Risk:      "medium",
-			Impact:    "Fixes concurrency issue",
-			References: []string{"Go wiki: Race detector"},
+			Risk:        "medium",
+			Impact:      "Fixes concurrency issue",
+			References:  []string{"Go wiki: Race detector"},
 		})
 	} else {
 		suggestions = append(suggestions, RefactorSuggestion{
-			RootCause: "Unknown runtime error",
-			Issue:     errorMsg,
-			Solution:  "Add logging and error handling",
+			RootCause:   "Unknown runtime error",
+			Issue:       errorMsg,
+			Solution:    "Add logging and error handling",
 			CodeChanges: []Change{},
-			Risk:      "medium",
-			Impact:    "Unknown",
-			References: []string{},
+			Risk:        "medium",
+			Impact:      "Unknown",
+			References:  []string{},
 		})
 	}
 
@@ -217,13 +217,13 @@ func (s *SmartRefactorSkill) analyzePerformanceIssues(filePath, errorMsg, contex
 	suggestions := []RefactorSuggestion{}
 
 	suggestions = append(suggestions, RefactorSuggestion{
-		RootCause: "Performance bottleneck identified",
-		Issue:     errorMsg,
-		Solution:  "Profile code and optimize hot paths",
+		RootCause:   "Performance bottleneck identified",
+		Issue:       errorMsg,
+		Solution:    "Profile code and optimize hot paths",
 		CodeChanges: []Change{},
-		Risk:      "medium",
-		Impact:    "Improves performance",
-		References: []string{"Go wiki: Profiling"},
+		Risk:        "medium",
+		Impact:      "Improves performance",
+		References:  []string{"Go wiki: Profiling"},
 	})
 
 	return suggestions
@@ -234,33 +234,33 @@ func (s *SmartRefactorSkill) analyzeSecurityIssues(filePath, errorMsg, context s
 
 	if strings.Contains(errorMsg, "injection") {
 		suggestions = append(suggestions, RefactorSuggestion{
-			RootCause: "Potential injection vulnerability",
-			Issue:     errorMsg,
-			Solution:  "Validate and sanitize user input",
+			RootCause:   "Potential injection vulnerability",
+			Issue:       errorMsg,
+			Solution:    "Validate and sanitize user input",
 			CodeChanges: []Change{},
-			Risk:      "high",
-			Impact:    "Prevents security vulnerability",
-			References: []string{"OWASP Top 10"},
+			Risk:        "high",
+			Impact:      "Prevents security vulnerability",
+			References:  []string{"OWASP Top 10"},
 		})
 	} else if strings.Contains(errorMsg, "hardcoded") {
 		suggestions = append(suggestions, RefactorSuggestion{
-			RootCause: "Hardcoded sensitive data",
-			Issue:     errorMsg,
-			Solution:  "Move secrets to environment variables or secure storage",
+			RootCause:   "Hardcoded sensitive data",
+			Issue:       errorMsg,
+			Solution:    "Move secrets to environment variables or secure storage",
 			CodeChanges: []Change{},
-			Risk:      "high",
-			Impact:    "Improves security",
-			References: []string{"OWASP: Secrets Management"},
+			Risk:        "high",
+			Impact:      "Improves security",
+			References:  []string{"OWASP: Secrets Management"},
 		})
 	} else {
 		suggestions = append(suggestions, RefactorSuggestion{
-			RootCause: "Potential security issue",
-			Issue:     errorMsg,
-			Solution:  "Review code for security best practices",
+			RootCause:   "Potential security issue",
+			Issue:       errorMsg,
+			Solution:    "Review code for security best practices",
 			CodeChanges: []Change{},
-			Risk:      "medium",
-			Impact:    "Improves security",
-			References: []string{"OWASP Top 10"},
+			Risk:        "medium",
+			Impact:      "Improves security",
+			References:  []string{"OWASP Top 10"},
 		})
 	}
 
@@ -270,13 +270,13 @@ func (s *SmartRefactorSkill) analyzeSecurityIssues(filePath, errorMsg, context s
 func (s *SmartRefactorSkill) createGenericSuggestion(errorMsg string) []RefactorSuggestion {
 	return []RefactorSuggestion{
 		{
-			RootCause: "Unable to determine root cause automatically",
-			Issue:     errorMsg,
-			Solution:  "Manual review required",
+			RootCause:   "Unable to determine root cause automatically",
+			Issue:       errorMsg,
+			Solution:    "Manual review required",
 			CodeChanges: []Change{},
-			Risk:      "medium",
-			Impact:    "Unknown",
-			References: []string{},
+			Risk:        "medium",
+			Impact:      "Unknown",
+			References:  []string{},
 		},
 	}
 }

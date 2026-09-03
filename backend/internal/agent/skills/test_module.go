@@ -4,9 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/moduforge/backend/internal/agent/registry"
 	"regexp"
 	"strings"
-	"github.com/moduforge/backend/internal/agent/registry"
 )
 
 type TestModuleSkill struct{}

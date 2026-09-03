@@ -108,14 +108,14 @@ func analyzeGoDependencies(content string) string {
 
 func extractGoImports(content string) map[string]int {
 	imports := make(map[string]int)
-	
+
 	// Find import block
 	lines := strings.Split(content, "\n")
 	inImport := false
-	
+
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
-		
+
 		if trimmed == "import (" {
 			inImport = true
 			continue
@@ -124,7 +124,7 @@ func extractGoImports(content string) map[string]int {
 			inImport = false
 			continue
 		}
-		
+
 		if inImport {
 			// Extract import path
 			line = strings.TrimPrefix(trimmed, "\"")
@@ -137,19 +137,19 @@ func extractGoImports(content string) map[string]int {
 			}
 		}
 	}
-	
+
 	return imports
 }
 
 func extractGoFunctionCalls(content string) map[string][]string {
 	calls := make(map[string][]string)
 	lines := strings.Split(content, "\n")
-	
+
 	currentFunc := ""
-	
+
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
-		
+
 		// Detect function definition
 		if strings.HasPrefix(trimmed, "func ") {
 			// Extract function name
@@ -162,7 +162,7 @@ func extractGoFunctionCalls(content string) map[string][]string {
 				currentFunc = fnName
 			}
 		}
-		
+
 		// Detect function calls (simplified)
 		if currentFunc != "" && strings.Contains(line, "(") && !strings.HasPrefix(trimmed, "func ") {
 			// Try to extract function name
@@ -180,17 +180,17 @@ func extractGoFunctionCalls(content string) map[string][]string {
 			}
 		}
 	}
-	
+
 	return calls
 }
 
 func extractGoTypeDependencies(content string) map[string]string {
 	typeDeps := make(map[string]string)
 	lines := strings.Split(content, "\n")
-	
+
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
-		
+
 		// struct fields using other types
 		if strings.Contains(trimmed, " ") && !strings.HasPrefix(trimmed, "//") && !strings.HasPrefix(trimmed, "func ") {
 			// Simple heuristic: look for Type references in struct fields
@@ -206,21 +206,21 @@ func extractGoTypeDependencies(content string) map[string]string {
 			}
 		}
 	}
-	
+
 	return typeDeps
 }
 
 func detectGoCircularDependencies(content string) []string {
 	var circular []string
-	
+
 	// Simple check: look for package A importing B and B importing A
 	lines := strings.Split(content, "\n")
 	inImport := false
 	imports := []string{}
-	
+
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
-		
+
 		if trimmed == "import (" {
 			inImport = true
 			continue
@@ -229,7 +229,7 @@ func detectGoCircularDependencies(content string) []string {
 			inImport = false
 			continue
 		}
-		
+
 		if inImport {
 			line = strings.TrimPrefix(trimmed, "\"")
 			line = strings.TrimSuffix(line, "\"")
@@ -241,7 +241,7 @@ func detectGoCircularDependencies(content string) []string {
 			}
 		}
 	}
-	
+
 	// Check for mutual imports (simplified)
 	for i := 0; i < len(imports); i++ {
 		for j := i + 1; j < len(imports); j++ {
@@ -250,7 +250,7 @@ func detectGoCircularDependencies(content string) []string {
 			}
 		}
 	}
-	
+
 	return circular
 }
 
@@ -292,7 +292,7 @@ func analyzeRustDependencies(content string) string {
 
 	structPattern := regexp.MustCompile(`struct\s+(\w+)`)
 	fieldPattern := regexp.MustCompile(`(\w+)\s*:\s*(\w+)`)
-	
+
 	currentStruct := ""
 	for _, line := range lines {
 		if matches := structPattern.FindStringSubmatch(line); len(matches) > 1 {
@@ -349,7 +349,7 @@ func analyzePythonDependencies(content string) string {
 
 	decoratorPattern := regexp.MustCompile(`@(\w+)`)
 	funcPattern := regexp.MustCompile(`def\s+(\w+)`)
-	
+
 	currentDecorator := ""
 	for _, line := range lines {
 		if matches := decoratorPattern.FindStringSubmatch(line); len(matches) > 1 {

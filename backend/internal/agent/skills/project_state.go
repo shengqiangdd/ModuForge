@@ -38,11 +38,11 @@ func (s *ContextManagerSkill) trackFile(sessionID string, input map[string]inter
 	}
 
 	result := map[string]interface{}{
-		"action":     "track_file",
-		"success":    true,
-		"path":       filePath,
+		"action":      "track_file",
+		"success":     true,
+		"path":        filePath,
 		"file_action": action,
-		"project_id": projectID,
+		"project_id":  projectID,
 	}
 
 	b, _ := json.MarshalIndent(result, "", "  ")

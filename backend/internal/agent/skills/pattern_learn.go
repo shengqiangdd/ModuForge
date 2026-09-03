@@ -5,9 +5,9 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"github.com/moduforge/backend/internal/agent/registry"
 	"regexp"
 	"strings"
-	"github.com/moduforge/backend/internal/agent/registry"
 )
 
 // PatternLearningSkill learns from successful module patterns and applies them

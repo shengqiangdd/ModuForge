@@ -118,6 +118,22 @@ func init() {
 		}
 		return skill
 	})
+
+	// Android APP generation & build
+	registry.RegisterFactory("android_app", func(d *registry.Deps) registry.Skill {
+		skill := NewAndroidAppSkillWithDB(d.StoragePath+"/projects", d.DB)
+		if st := getStorage(d); st != nil {
+			skill.WithStorage(st)
+		}
+		return skill
+	})
+	registry.RegisterFactory("build_android_app", func(d *registry.Deps) registry.Skill {
+		skill := NewBuildAndroidAppSkillWithDB(d.StoragePath+"/projects", d.DB)
+		if st := getStorage(d); st != nil {
+			skill.WithStorage(st)
+		}
+		return skill
+	})
 	registry.RegisterFactory("syntax_checker", func(d *registry.Deps) registry.Skill {
 		return NewSyntaxCheckerSkill(d.StoragePath+"/projects", d.DB)
 	})
@@ -204,5 +220,10 @@ func init() {
 	// Profiling (performance guidance)
 	registry.RegisterFactory("profiling", func(d *registry.Deps) registry.Skill {
 		return NewProfilingSkill()
+	})
+
+	// Perf Monitor (performance hotspot analysis)
+	registry.RegisterFactory("perf_monitor", func(d *registry.Deps) registry.Skill {
+		return NewPerfMonitorSkill()
 	})
 }

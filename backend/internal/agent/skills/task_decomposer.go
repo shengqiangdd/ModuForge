@@ -35,7 +35,7 @@ type DecompositionTask struct {
 	Description string   `json:"description"`
 	Depends     []int    `json:"depends"`
 	Files       []string `json:"files"`
-	Priority    string   `json:"priority"` // P0, P1, P2
+	Priority    string   `json:"priority"`  // P0, P1, P2
 	Estimated   string   `json:"estimated"` // e.g., "5 min", "30 min"
 }
 

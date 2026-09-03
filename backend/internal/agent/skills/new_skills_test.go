@@ -86,7 +86,7 @@ func TestSecurityScanSkill_CppGets(t *testing.T) {
 	result, err := s.Execute(context.Background(), map[string]interface{}{
 		"content":  "char buf[100];\ngets(buf);\n",
 		"language": "c++",
-		"path:":     "unsafe.c",
+		"path:":    "unsafe.c",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -168,7 +168,7 @@ func TestCodeQualitySkill_RustNaming(t *testing.T) {
 	result, err := s.Execute(context.Background(), map[string]interface{}{
 		"content":  "fn CamelCase() {\n}\n",
 		"language": "rust",
-		"path:":     "lib.rs",
+		"path:":    "lib.rs",
 	})
 	if err != nil {
 		t.Fatal(err)

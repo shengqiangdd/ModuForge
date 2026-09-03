@@ -294,7 +294,9 @@ func reviewShell(content string) []ReviewIssue {
 	// Security: Unquoted variables
 	reVarRef := regexp.MustCompile(`\$\w+`)
 	for i, line := range lines {
-		if strings.HasPrefix(strings.TrimSpace(line), "#") { continue }
+		if strings.HasPrefix(strings.TrimSpace(line), "#") {
+			continue
+		}
 		matches := reVarRef.FindAllStringIndex(line, -1)
 		for _, m := range matches {
 			end := m[1]
