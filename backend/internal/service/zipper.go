@@ -341,47 +341,25 @@ func (s *ZipperService) ExportModuleZip(projectID string) (string, error) {
 	var files []ModuleFile
 	hasModuleProp := false
 
-	if s.fr != nil {
-		fileList, err := s.fr.ReadAll(context.Background(), projectID)
+	if s.fr == nil {
+		return "", fmt.Errorf("s3 not configured")
+	}
+	fileList, err := s.fr.ReadAll(context.Background(), projectID)
+	if err != nil {
+		return "", fmt.Errorf("read project files: %w", err)
+	}
+	for _, f := range fileList {
+		content, err := s.fr.ReadOne(context.Background(), projectID, f.Path)
 		if err != nil {
-			return "", fmt.Errorf("read project files: %w", err)
+			continue
 		}
-		for _, f := range fileList {
-			content, err := s.fr.ReadOne(context.Background(), projectID, f.Path)
-			if err != nil {
-				continue
+		if f.Path == "module.prop" {
+			hasModuleProp = true
+			if !strings.Contains(content, "id=") || !strings.Contains(content, "name=") || !strings.Contains(content, "version=") {
+				return "", fmt.Errorf("module.prop must contain id, name, and version fields")
 			}
-			if f.Path == "module.prop" {
-				hasModuleProp = true
-				if !strings.Contains(content, "id=") || !strings.Contains(content, "name=") || !strings.Contains(content, "version=") {
-					return "", fmt.Errorf("module.prop must contain id, name, and version fields")
-				}
-			}
-			files = append(files, ModuleFile{Path: f.Path, Content: content})
 		}
-	} else {
-		rows, err := s.db.Query(
-			"SELECT path, content FROM project_files WHERE project_id = ? ORDER BY path",
-			projectID,
-		)
-		if err != nil {
-			return "", fmt.Errorf("read project files: %w", err)
-		}
-		defer rows.Close()
-
-		for rows.Next() {
-			var path, content string
-			if err := rows.Scan(&path, &content); err != nil {
-				continue
-			}
-			if path == "module.prop" {
-				hasModuleProp = true
-				if !strings.Contains(content, "id=") || !strings.Contains(content, "name=") || !strings.Contains(content, "version=") {
-					return "", fmt.Errorf("module.prop must contain id, name, and version fields")
-				}
-			}
-			files = append(files, ModuleFile{Path: path, Content: content})
-		}
+		files = append(files, ModuleFile{Path: f.Path, Content: content})
 	}
 
 	if !hasModuleProp {

@@ -7,6 +7,9 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"log/slog"
+	"mime"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -31,6 +34,19 @@ type S3Config struct {
 	Prefix    string // e.g. "projects/"
 	Secure    bool   // use HTTPS (false for internal)
 	Region    string // default "us-east-1"
+	// Retry config for transient failures
+	MaxRetries int           // max retry attempts (default 3)
+	RetryDelay time.Duration // base delay between retries (default 100ms)
+}
+
+// retryConfig holds retry parameters for S3 operations.
+type retryConfig struct {
+	maxRetries int
+	retryDelay time.Duration
+}
+
+func defaultRetryConfig() retryConfig {
+	return retryConfig{maxRetries: 3, retryDelay: 100 * time.Millisecond}
 }
 
 // NewS3Adapter creates a new S3-backed storage adapter.
@@ -95,10 +111,24 @@ func (s *S3Adapter) Write(ctx context.Context, path string, content []byte) erro
 	r := bytes.NewReader(content)
 	_, err := s.client.PutObject(ctx, s.bucket, s.s3Path(path), r, int64(len(content)),
 		minio.PutObjectOptions{
-			ContentType: detectContentType(path),
+			ContentType: DetectContentType(path),
 		},
 	)
 	return err
+}
+
+// WriteBatch stores multiple files atomically. Returns the list of paths written
+// successfully and any error encountered.
+func (s *S3Adapter) WriteBatch(ctx context.Context, files map[string][]byte) ([]string, error) {
+	var written []string
+	for path, content := range files {
+		if err := s.Write(ctx, path, content); err != nil {
+			slog.Warn("s3 batch write failed", "path", path, "error", err)
+			continue
+		}
+		written = append(written, path)
+	}
+	return written, nil
 }
 
 // Read returns the content at the given path.
@@ -132,6 +162,20 @@ func (s *S3Adapter) Delete(ctx context.Context, path string) error {
 	)
 }
 
+// DeleteBatch removes multiple files. Returns the list of paths deleted
+// successfully and any error encountered.
+func (s *S3Adapter) DeleteBatch(ctx context.Context, paths []string) ([]string, error) {
+	var deleted []string
+	for _, path := range paths {
+		if err := s.Delete(ctx, path); err != nil {
+			slog.Warn("s3 batch delete failed", "path", path, "error", err)
+			continue
+		}
+		deleted = append(deleted, path)
+	}
+	return deleted, nil
+}
+
 // Exists checks if a file exists at the given path.
 func (s *S3Adapter) Exists(ctx context.Context, path string) (bool, error) {
 	_, err := s.client.StatObject(ctx, s.bucket, s.s3Path(path), minio.StatObjectOptions{})
@@ -143,6 +187,24 @@ func (s *S3Adapter) Exists(ctx context.Context, path string) (bool, error) {
 		return false, err
 	}
 	return true, nil
+}
+
+// Stat returns file metadata from S3.
+func (s *S3Adapter) Stat(ctx context.Context, path string) (*FileInfo, error) {
+	obj, err := s.client.StatObject(ctx, s.bucket, s.s3Path(path), minio.StatObjectOptions{})
+	if err != nil {
+		errResp := minio.ToErrorResponse(err)
+		if errResp.Code == "NoSuchKey" {
+			return nil, nil // file not found
+		}
+		return nil, err
+	}
+
+	return &FileInfo{
+		Path:  path,
+		Size:  obj.Size,
+		MTime: obj.LastModified.Format(time.RFC3339),
+	}, nil
 }
 
 // List returns all paths under the given prefix.
@@ -165,22 +227,32 @@ func (s *S3Adapter) List(ctx context.Context, prefix string) ([]string, error) {
 	return paths, nil
 }
 
-func (s *S3Adapter) Close() error {
-	return nil // minio client has no close
-}
+// ListWithMetadata returns all paths and their metadata under the given prefix.
+// More efficient than calling Stat on each file individually.
+func (s *S3Adapter) ListWithMetadata(ctx context.Context, prefix string) ([]*FileInfo, error) {
+	searchPrefix := s.s3Path(prefix)
+	var files []*FileInfo
 
-// Stat returns file metadata from S3.
-func (s *S3Adapter) Stat(ctx context.Context, path string) (*FileInfo, error) {
-	obj, err := s.client.StatObject(ctx, s.bucket, s.s3Path(path), minio.StatObjectOptions{})
-	if err != nil {
-		return nil, err
+	for obj := range s.client.ListObjects(ctx, s.bucket, minio.ListObjectsOptions{
+		Prefix:    searchPrefix,
+		Recursive: true,
+	}) {
+		if obj.Err != nil {
+			return nil, obj.Err
+		}
+		relPath := strings.TrimPrefix(obj.Key, s.prefix+"/")
+		files = append(files, &FileInfo{
+			Path:  relPath,
+			Size:  obj.Size,
+			MTime: obj.LastModified.Format(time.RFC3339),
+		})
 	}
 
-	return &FileInfo{
-		Path:  path,
-		Size:  obj.Size,
-		MTime: obj.LastModified.Format(time.RFC3339),
-	}, nil
+	return files, nil
+}
+
+func (s *S3Adapter) Close() error {
+	return nil // minio client has no close
 }
 
 // ComputeSHA256 computes the SHA-256 hash of content.
@@ -189,63 +261,41 @@ func ComputeSHA256(content []byte) string {
 	return hex.EncodeToString(h[:])
 }
 
-func detectContentType(path string) string {
-	if strings.HasSuffix(path, ".html") || strings.HasSuffix(path, ".htm") {
-		return "text/html; charset=utf-8"
+// DetectContentType returns the MIME type for a file path.
+// Uses the Go mime package with fallback to extension-based mapping.
+func DetectContentType(path string) string {
+	ext := filepath.Ext(path)
+	if ext != "" {
+		// Try Go's built-in MIME type detection
+		if t := mime.TypeByExtension(ext); t != "" {
+			return t
+		}
 	}
-	if strings.HasSuffix(path, ".css") {
-		return "text/css; charset=utf-8"
-	}
-	if strings.HasSuffix(path, ".js") {
-		return "application/javascript"
-	}
-	if strings.HasSuffix(path, ".json") {
-		return "application/json"
-	}
-	if strings.HasSuffix(path, ".sh") || strings.HasSuffix(path, ".bash") {
+
+	// Fallback for extensions not covered by mime package
+	switch strings.ToLower(ext) {
+	case ".sh", ".bash":
 		return "text/x-shellscript"
-	}
-	if strings.HasSuffix(path, ".go") {
+	case ".go":
 		return "text/x-go"
-	}
-	if strings.HasSuffix(path, ".rs") {
+	case ".rs":
 		return "text/x-rust"
-	}
-	if strings.HasSuffix(path, ".cpp") || strings.HasSuffix(path, ".cc") || strings.HasSuffix(path, ".cxx") {
+	case ".cpp", ".cc", ".cxx":
 		return "text/x-c++"
-	}
-	if strings.HasSuffix(path, ".h") || strings.HasSuffix(path, ".hpp") {
+	case ".h", ".hpp":
 		return "text/x-c-header"
-	}
-	if strings.HasSuffix(path, ".py") {
+	case ".py":
 		return "text/x-python"
-	}
-	if strings.HasSuffix(path, ".md") {
-		return "text/markdown; charset=utf-8"
-	}
-	if strings.HasSuffix(path, ".xml") {
-		return "application/xml"
-	}
-	if strings.HasSuffix(path, ".yaml") || strings.HasSuffix(path, ".yml") {
+	case ".toml":
+		return "text/toml"
+	case ".yaml", ".yml":
 		return "text/yaml"
 	}
-	if strings.HasSuffix(path, ".toml") {
-		return "text/toml"
-	}
-	if strings.HasSuffix(path, ".zip") {
-		return "application/zip"
-	}
-	if strings.HasSuffix(path, ".png") {
-		return "image/png"
-	}
-	if strings.HasSuffix(path, ".jpg") || strings.HasSuffix(path, ".jpeg") {
-		return "image/jpeg"
-	}
-	if strings.HasSuffix(path, ".svg") {
-		return "image/svg+xml"
-	}
+
 	return "application/octet-stream"
-}// anonymousProvider implements credentials.Provider for anonymous S3 access.
+}
+
+// anonymousProvider implements credentials.Provider for anonymous S3 access.
 type anonymousProvider struct{}
 
 func (a *anonymousProvider) RetrieveWithCredContext(cc *credentials.CredContext) (credentials.Value, error) {

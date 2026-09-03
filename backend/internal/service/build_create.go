@@ -130,58 +130,34 @@ func (s *BuildService) runBuild(taskID, projectID, filesHash, arch string) {
 	var fileCount int
 	scanFiles := make(map[string]string)
 
-	if s.fr != nil {
-		// S3-first: export all project files from the object store.
-		files, err := s.fr.ReadAll(ctx, projectID)
+	if s.fr == nil {
+		s.failBuild(ctx, taskID, "s3 not configured\n")
+		return
+	}
+
+	// S3-first: export all project files from the object store.
+	files, err := s.fr.ReadAll(ctx, projectID)
+	if err != nil {
+		s.failBuild(ctx, taskID, fmt.Sprintf("Error reading files: %v\n", err))
+		return
+	}
+	for _, f := range files {
+		content, err := s.fr.ReadOne(ctx, projectID, f.Path)
 		if err != nil {
-			s.failBuild(ctx, taskID, fmt.Sprintf("Error reading files: %v\n", err))
-			return
+			continue
 		}
-		for _, f := range files {
-			content, err := s.fr.ReadOne(ctx, projectID, f.Path)
-			if err != nil {
-				continue
-			}
-			fullPath := filepath.Join(projectDir, filepath.Clean(f.Path))
-			if !strings.HasPrefix(fullPath, projectDir+string(os.PathSeparator)) && fullPath != projectDir {
-				continue
-			}
-			if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
-				continue
-			}
-			if err := os.WriteFile(fullPath, []byte(content), 0644); err != nil {
-				continue
-			}
-			scanFiles[f.Path] = content
-			fileCount++
+		fullPath := filepath.Join(projectDir, filepath.Clean(f.Path))
+		if !strings.HasPrefix(fullPath, projectDir+string(os.PathSeparator)) && fullPath != projectDir {
+			continue
 		}
-	} else {
-		rows, err := s.db.QueryContext(ctx,
-			`SELECT path, content FROM project_files WHERE project_id=?`, projectID)
-		if err != nil {
-			s.failBuild(ctx, taskID, fmt.Sprintf("Error reading files: %v\n", err))
-			return
+		if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
+			continue
 		}
-		for rows.Next() {
-			var path, content string
-			if err := rows.Scan(&path, &content); err != nil {
-				continue
-			}
-			fullPath := filepath.Join(projectDir, filepath.Clean(path))
-			// Prevent path traversal: ensure fullPath is within projectDir
-			if !strings.HasPrefix(fullPath, projectDir+string(os.PathSeparator)) && fullPath != projectDir {
-				continue
-			}
-			if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
-				continue
-			}
-			if err := os.WriteFile(fullPath, []byte(content), 0644); err != nil {
-				continue
-			}
-			scanFiles[path] = content
-			fileCount++
+		if err := os.WriteFile(fullPath, []byte(content), 0644); err != nil {
+			continue
 		}
-		rows.Close()
+		scanFiles[f.Path] = content
+		fileCount++
 	}
 
 	if fileCount == 0 {
@@ -226,13 +202,16 @@ func (s *BuildService) runBuild(taskID, projectID, filesHash, arch string) {
 		fmt.Sprintf("Collecting %d files...\nValidating module structure...\nPackaging...\n", fileCount),
 		taskID)
 
-	// Build using the real builder with arch support
-	b := builder.NewBuilder(s.cfg)
+	// Build using the real builder with arch support (+ SSE broadcast)
+	b := builder.NewBuilderWithBroadcast(s.cfg, func(phase string, detail string) {
+		BroadcastProgress(projectID, phase, detail)
+	})
 	logFn := func(msg string) {
 		s.db.ExecContext(ctx,
 			`UPDATE build_tasks SET log=log || ? WHERE id=?`, msg, taskID)
 	}
-	buildResult, err := b.BuildWithResult(ctx, projectDir, target, taskID, arch, logFn)
+	buildResult, err := b.BuildWithResultAndProgress(ctx, projectDir, target, taskID, arch, logFn, func(phase, detail string) {
+	})
 	if err != nil {
 		s.failBuild(ctx, taskID, fmt.Sprintf("Build failed: %v\n", err))
 		return

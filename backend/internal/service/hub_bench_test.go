@@ -67,12 +67,12 @@ func BenchmarkProjectServiceConcurrentOwnership(b *testing.B) {
 	}
 
 	db.Exec(`CREATE TABLE projects (id TEXT PRIMARY KEY, user_id TEXT, name TEXT, created_at TEXT, deleted_at TEXT)`)
-	db.Exec(`CREATE TABLE project_files (id INTEGER PRIMARY KEY AUTOINCREMENT, project_id TEXT, path TEXT, content TEXT, created_at TEXT, updated_at TEXT)`)
+	db.Exec(`CREATE TABLE project_files (id INTEGER PRIMARY KEY AUTOINCREMENT, project_id TEXT, path TEXT, created_at TEXT, updated_at TEXT, sha256 TEXT DEFAULT '', file_size INTEGER DEFAULT 0, mtime TEXT DEFAULT '')`)
 	db.Exec(`INSERT INTO projects (id, user_id, name, created_at) VALUES ('bench-project', 'bench-user', 'bench', datetime('now'))`)
 	for i := 0; i < 50; i++ {
 		path := fmt.Sprintf("file_%d.go", i)
-		db.Exec(`INSERT INTO project_files (project_id, path, content, created_at, updated_at) VALUES (?, ?, ?, datetime('now'), datetime('now'))`,
-			"bench-project", path, "package main\n\nfunc main() {}\n")
+		db.Exec(`INSERT INTO project_files (project_id, path, sha256, file_size, mtime, created_at, updated_at) VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
+			"bench-project", path, "dummy_sha256", 100, "2026-01-01T00:00:00Z")
 	}
 
 	svc := NewProjectService(db, "")

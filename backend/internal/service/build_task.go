@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 
 	"github.com/moduforge/backend/internal/domain"
 )
@@ -124,4 +125,24 @@ func (s *BuildService) GetArtifact(ctx context.Context, id string) (*string, err
 		return nil, fmt.Errorf("artifact not ready")
 	}
 	return t.ArtifactPath, nil
+}
+
+// DeleteBuilds removes multiple build tasks by IDs.
+func (s *BuildService) DeleteBuilds(ctx context.Context, ids []string) (int64, error) {
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	// Build placeholders
+	placeholders := make([]string, len(ids))
+	args := make([]interface{}, len(ids))
+	for i, id := range ids {
+		placeholders[i] = "?"
+		args[i] = id
+	}
+	query := "DELETE FROM build_tasks WHERE id IN (" + strings.Join(placeholders, ",") + ")"
+	result, err := s.db.ExecContext(ctx, query, args...)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }

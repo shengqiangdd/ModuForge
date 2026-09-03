@@ -291,6 +291,57 @@ func (s *BackupService) ListSchedules(userID string) ([]BackupSchedule, error) {
 	return schedules, nil
 }
 
+type BackupHistoryItem struct {
+	ID           int64   `json:"id"`
+	ScheduleID   *int64  `json:"schedule_id"`
+	ScheduleName string  `json:"schedule_name"`
+	Status       string  `json:"status"`
+	SizeBytes    int64   `json:"size_bytes"`
+	StartedAt    string  `json:"started_at"`
+	FinishedAt   *string `json:"finished_at"`
+}
+
+func (s *BackupService) ListHistory(userID string, limit, offset int) ([]BackupHistoryItem, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	rows, err := s.db.Query(
+		`SELECT h.id, h.schedule_id, h.schedule_name, h.status, h.size_bytes, h.started_at, h.finished_at
+		 FROM backup_history h
+		 LEFT JOIN backup_schedules bs ON h.schedule_id = bs.id
+		 WHERE bs.user_id = ? OR h.schedule_id IS NULL
+		 ORDER BY h.started_at DESC LIMIT ? OFFSET ?`,
+		userID, limit, offset,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []BackupHistoryItem
+	for rows.Next() {
+		var item BackupHistoryItem
+		var schedID sql.NullInt64
+		var schedName, finishedAt sql.NullString
+		if err := rows.Scan(&item.ID, &schedID, &schedName, &item.Status, &item.SizeBytes, &item.StartedAt, &finishedAt); err != nil {
+			continue
+		}
+		if schedID.Valid {
+			item.ScheduleID = &schedID.Int64
+		}
+		if schedName.Valid {
+			item.ScheduleName = schedName.String
+		}
+		if finishedAt.Valid {
+			item.FinishedAt = &finishedAt.String
+		}
+		items = append(items, item)
+	}
+	if items == nil {
+		items = []BackupHistoryItem{}
+	}
+	return items, nil
+}
+
 func (s *BackupService) DeleteSchedule(scheduleID int64) error {
 	_, err := s.db.Exec("DELETE FROM backup_schedules WHERE id = ?", scheduleID)
 	if err != nil {

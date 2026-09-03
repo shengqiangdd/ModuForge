@@ -246,7 +246,7 @@ func (s *AIService) MultiStageBuild(
 				continue
 			}
 
-			// Step 3: Synthesize code from intent
+			// Step 3: Synthesize code from intent (V2 — generates executable logic)
 			logFn := func(msg string) error {
 				log.Printf("[MultiStage] %s", msg)
 				return nil
@@ -262,8 +262,26 @@ func (s *AIService) MultiStageBuild(
 					safeSSE(map[string]interface{}{"type": "file_saved", "path": cf.Path, "stage": "core"})
 				}
 			}
+
+			// Step 4: Per-file validation (catch errors early)
+			if strings.HasSuffix(fileInfo.Path, ".go") {
+				tmpFile := filepath.Join(projectDir, fileInfo.Path)
+				if content, ok := allFiles[fileInfo.Path]; ok {
+					os.MkdirAll(filepath.Dir(tmpFile), 0755)
+					os.WriteFile(tmpFile, []byte(content), 0644)
+				}
+				if err := builder.ValidateGoSyntax(ctx, tmpFile, func(msg string) {
+					log.Printf("[MultiStage] %s", msg)
+				}); err != nil {
+					log.Printf("[MultiStage] ⚠️  Per-file validation failed for %s: %v — attempting auto-repair", fileInfo.Path, err)
+					// Try to fix with paid model
+					if repaired := s.autoRepairSingleFile(ctx, projectDir, fileInfo.Path, endpoint, apiKey, model); repaired {
+						log.Printf("[MultiStage] ✅ Auto-repaired %s", fileInfo.Path)
+					}
+				}
+			}
 		}
-		log.Printf("[MultiStage] Stage 2: core files generated via Intent Compiler, total files now: %d", len(allFiles))
+		log.Printf("[MultiStage] Stage 2: core files generated via Intent Compiler V2, total files now: %d", len(allFiles))
 	}
 
 	// ===== Stage 3: Build System (Language-Aware) =====
@@ -1174,4 +1192,98 @@ func sanitizeShellScript(content string, path string) string {
 		result = append(result, line)
 	}
 	return strings.Join(result, "\n")
+}
+// autoRepairSingleFile sends a single Go file to the LLM for quick repair
+// when per-file validation detects issues. Uses the same model that generated it.
+func (s *AIService) autoRepairSingleFile(ctx context.Context, projectDir, filePath, endpoint, apiKey, model string) bool {
+	absPath := filepath.Join(projectDir, filePath)
+	content, err := os.ReadFile(absPath)
+	if err != nil {
+		return false
+	}
+
+	if len(content) > 30000 {
+		log.Printf("[autoRepair] File too large for single-file repair: %d bytes", len(content))
+		return false
+	}
+
+	repairPrompt := fmt.Sprintf(`Fix ALL Go syntax errors in this file. The file is part of a Magisk module daemon.
+Return the COMPLETE fixed file. Do NOT add comments about what was fixed.
+
+## Rules
+- Package main, func main()
+- Use only Go standard library (no cgo, no third-party)
+- All variables must be declared and used
+- Handle all errors
+- Types: int, int64, string, bool, float64, []byte, error, map, slice
+- Fix empty assignments (= ; → = 0)
+- Fix unterminated strings
+- Fix unbalanced braces
+- Fix missing package declaration
+
+## File to fix (%s):
+%s
+
+Return ONLY the complete fixed file code, nothing else.`, filePath, string(content))
+
+	fixedCode, err := s.callLLMForJSON(ctx, endpoint, apiKey, model, repairPrompt)
+	if err != nil {
+		log.Printf("[autoRepair] LLM repair failed: %v", err)
+		return false
+	}
+
+	// Extract code from response (may be wrapped in JSON)
+	fixedCode = extractCodeForRepair(fixedCode)
+	if fixedCode == "" || fixedCode == string(content) {
+		return false
+	}
+
+	// Write back
+	if err := os.WriteFile(absPath, []byte(fixedCode), 0644); err != nil {
+		return false
+	}
+
+	// Also update DB
+	if s.db != nil {
+		s.db.ExecContext(ctx,
+			`INSERT OR REPLACE INTO project_files (project_id, path, content, updated_at) VALUES (?, ?, ?, datetime('now'))`,
+			strings.TrimPrefix(projectDir, filepath.Join("/data/storage/projects")),
+			filePath, fixedCode)
+	}
+
+	log.Printf("[autoRepair] ✅ Repaired %s (%d → %d bytes)", filePath, len(content), len(fixedCode))
+	return true
+}
+
+// extractCodeForRepair extracts Go code from LLM response.
+func extractCodeForRepair(response string) string {
+	// Try to extract from JSON
+	var result struct {
+		Files []struct {
+			Path    string `json:"path"`
+			Content string `json:"content"`
+		} `json:"files"`
+	}
+	if err := json.Unmarshal([]byte(response), &result); err == nil && len(result.Files) > 0 {
+		return result.Files[0].Content
+	}
+
+	// Try code fence extraction
+	for _, fence := range []string{"```go\n", "```\n", "```"} {
+		idx := strings.Index(response, fence)
+		if idx >= 0 {
+			start := idx + len(fence)
+			end := strings.Index(response[start:], "```")
+			if end > 0 {
+				return strings.TrimSpace(response[start : start+end])
+			}
+		}
+	}
+
+	// Fallback: return the response as-is if it looks like code
+	if strings.Contains(response, "package main") || strings.Contains(response, "func ") {
+		return response
+	}
+
+	return ""
 }

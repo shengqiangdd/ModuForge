@@ -5,53 +5,47 @@ import (
 	"database/sql"
 	"fmt"
 	"log/slog"
-	"strings"
 	"time"
 
+	"github.com/moduforge/backend/internal/agent/skills"
 	"github.com/moduforge/backend/internal/domain"
 	"github.com/moduforge/backend/internal/storage"
 )
 
-// FileContentRepo provides S3-first content access with DB fallback.
-// It is the shared helper for code paths that need project file contents
-// without going through ProjectService (build, zipper, analysis handlers,
-// agent skills). S3 is the authoritative truth source; the DB content column
-// is only a fallback for legacy data / no-S3 environments.
+// FileContentRepo provides S3-only content access.
+// S3 is the sole source of truth for file content; the DB only stores metadata
+// (sha256, file_size, mtime) for fast lookups and build cache validation.
 type FileContentRepo struct {
 	db *sql.DB
 	s3 storage.StorageAdapter
 }
 
-// NewFileContentRepo creates a repo with the given DB and optional S3 adapter.
+// NewFileContentRepo creates a repo with the given DB and S3 adapter.
 func NewFileContentRepo(db *sql.DB, s3 storage.StorageAdapter) *FileContentRepo {
 	return &FileContentRepo{db: db, s3: s3}
 }
 
 // S3ObjectKey returns the S3 object key (relative to the adapter prefix).
+// Uses the shared implementation from skills/fileutil.go for consistency.
 func (r *FileContentRepo) S3ObjectKey(projectID, path string) string {
-	return projectID + "/" + strings.TrimPrefix(path, "/")
+	return skills.S3ObjectKey(projectID, path)
 }
 
-// ReadOne returns the content of a single file (S3 first, DB fallback).
+// ReadOne returns the content of a single file from S3.
+// Returns an error if S3 is not configured or the file is not found.
 func (r *FileContentRepo) ReadOne(ctx context.Context, projectID, path string) (string, error) {
-	if r.s3 != nil {
-		data, err := r.s3.Read(ctx, r.S3ObjectKey(projectID, path))
-		if err == nil {
-			return string(data), nil
-		}
-		slog.Warn("s3 read failed, falling back to db content", "project", projectID, "path", path, "error", err)
+	if r.s3 == nil {
+		return "", fmt.Errorf("s3 not configured")
 	}
-	var content string
-	err := r.db.QueryRowContext(ctx,
-		`SELECT COALESCE(content,'') FROM project_files WHERE project_id=? AND path=?`, projectID, path,
-	).Scan(&content)
+	data, err := r.s3.Read(ctx, r.S3ObjectKey(projectID, path))
 	if err != nil {
-		return "", err
+		slog.Warn("s3 read failed", "project", projectID, "path", path, "error", err)
+		return "", fmt.Errorf("s3 read failed: %w", err)
 	}
-	return content, nil
+	return string(data), nil
 }
 
-// ReadAll returns all files (path+content) for a project, ordered by path.
+// ReadAll returns all files (metadata only, no content) for a project, ordered by path.
 func (r *FileContentRepo) ReadAll(ctx context.Context, projectID string) ([]domain.ProjectFile, error) {
 	rows, err := r.db.QueryContext(ctx,
 		`SELECT id, project_id, path, created_at, updated_at, COALESCE(sha256,''), COALESCE(file_size,0), COALESCE(mtime,'')
@@ -72,7 +66,7 @@ func (r *FileContentRepo) ReadAll(ctx context.Context, projectID string) ([]doma
 	return files, nil
 }
 
-// ReadAllContent returns a map[path]content for a project (S3 first, DB fallback).
+// ReadAllContent returns a map[path]content for a project from S3.
 func (r *FileContentRepo) ReadAllContent(ctx context.Context, projectID string) (map[string]string, error) {
 	files, err := r.ReadAll(ctx, projectID)
 	if err != nil {
@@ -82,6 +76,7 @@ func (r *FileContentRepo) ReadAllContent(ctx context.Context, projectID string) 
 	for _, f := range files {
 		content, err := r.ReadOne(ctx, projectID, f.Path)
 		if err != nil {
+			slog.Warn("failed to read file from S3", "project", projectID, "path", f.Path, "error", err)
 			continue
 		}
 		result[f.Path] = content
@@ -89,9 +84,11 @@ func (r *FileContentRepo) ReadAllContent(ctx context.Context, projectID string) 
 	return result, nil
 }
 
-// Write persists content: S3 (authoritative) + DB metadata (content NULL).
-// Falls back to DB content column when S3 is not configured.
+// Write persists content to S3 and updates DB metadata (no content in DB).
 func (r *FileContentRepo) Write(ctx context.Context, projectID, path, content string) error {
+	if r.s3 == nil {
+		return fmt.Errorf("s3 not configured")
+	}
 	if r.db == nil {
 		return fmt.Errorf("db not available")
 	}
@@ -99,23 +96,17 @@ func (r *FileContentRepo) Write(ctx context.Context, projectID, path, content st
 	sha := storage.ComputeSHA256([]byte(content))
 	size := int64(len(content))
 
-	if r.s3 != nil {
-		if err := r.s3.Write(ctx, r.S3ObjectKey(projectID, path), []byte(content)); err != nil {
-			return fmt.Errorf("s3 write failed: %w", err)
-		}
-		_, err := r.db.ExecContext(ctx,
-			`INSERT INTO project_files (project_id, path, content, created_at, updated_at, sha256, file_size, mtime)
-			 VALUES (?, ?, NULL, datetime('now'), datetime('now'), ?, ?, ?)
-			 ON CONFLICT(project_id, path) DO UPDATE SET content=NULL, updated_at=datetime('now'), sha256=?, file_size=?, mtime=?`,
-			projectID, path, sha, size, now, sha, size, now)
-		return err
+	// Write content to S3
+	if err := r.s3.Write(ctx, r.S3ObjectKey(projectID, path), []byte(content)); err != nil {
+		return fmt.Errorf("s3 write failed: %w", err)
 	}
 
+	// Update DB metadata only (no content column)
 	_, err := r.db.ExecContext(ctx,
-		`INSERT INTO project_files (project_id, path, content, created_at, updated_at, sha256, file_size, mtime)
-		 VALUES (?, ?, ?, datetime('now'), datetime('now'), ?, ?, ?)
-		 ON CONFLICT(project_id, path) DO UPDATE SET content=?, updated_at=datetime('now'), sha256=?, file_size=?, mtime=?`,
-		projectID, path, content, sha, size, now, content, sha, size, now)
+		`INSERT INTO project_files (project_id, path, created_at, updated_at, sha256, file_size, mtime)
+		 VALUES (?, ?, datetime('now'), datetime('now'), ?, ?, ?)
+		 ON CONFLICT(project_id, path) DO UPDATE SET updated_at=datetime('now'), sha256=?, file_size=?, mtime=?`,
+		projectID, path, sha, size, now, sha, size, now)
 	return err
 }
 

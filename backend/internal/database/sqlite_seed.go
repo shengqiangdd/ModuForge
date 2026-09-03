@@ -144,5 +144,53 @@ func (db *DB) SeedMarketData() error {
 	}
 
 	log.Printf("[DB] Seeded %d market modules\n", len(seeds))
+
+	// Seed module_versions for each module
+	for _, s := range seeds {
+		db.Conn.Exec(`INSERT OR IGNORE INTO module_versions (module_id, version, changelog, created_at) VALUES (?, ?, ?, ?)`,
+			s.id, s.ver, "Initial release", now.Add(-30*24*time.Hour))
+		db.Conn.Exec(`INSERT OR IGNORE INTO module_versions (module_id, version, changelog, created_at) VALUES (?, ?, ?, ?)`,
+			s.id, "latest", "Latest stable version", now)
+	}
+
+	// Seed market_reviews
+	reviewSeeds := []struct {
+		moduleID, username, comment string
+		rating                     int
+	}{
+		{"mod_0001", "android_fan", "非常实用的系统属性调整工具，性能提升明显！", 5},
+		{"mod_0001", "root_user", "不错的模块，兼容性好", 4},
+		{"mod_0003", "music_lover", "音质提升显著，推荐给所有音乐爱好者", 5},
+		{"mod_0003", "audiophile", "DAC配置选项丰富", 4},
+		{"mod_0005", "privacy_advocate", "防火墙功能强大，广告拦截效果好", 5},
+		{"mod_0005", "network_admin", "网络管控很专业", 4},
+		{"mod_0008", "ad_blocker", "最好的hosts广告拦截模块", 5},
+		{"mod_0008", "web_dev", "自动更新功能很方便", 4},
+		{"mod_0004", "gamer_123", "游戏帧率有明显提升", 5},
+		{"mod_0006", "battery_expert", "续航提升约15%", 4},
+	}
+	for _, r := range reviewSeeds {
+		db.Conn.Exec(`INSERT OR IGNORE INTO market_reviews (id, module_id, uid, username, rating, comment, created_at) VALUES (?, ?, '', ?, ?, ?, ?)`,
+			fmt.Sprintf("rev_%s_%d", r.moduleID, r.rating), r.moduleID, r.username, r.rating, r.comment, now.Add(-time.Duration(30-r.rating)*24*time.Hour))
+	}
+
+	// Seed module_tags
+	tagSeeds := []struct {
+		name, color string
+	}{
+		{"performance", "#3b82f6"},
+		{"battery", "#22c55e"},
+		{"security", "#ef4444"},
+		{"audio", "#8b5cf6"},
+		{"display", "#f97316"},
+		{"utility", "#6366f1"},
+		{"system", "#06b6d4"},
+	}
+	for _, t := range tagSeeds {
+		db.Conn.Exec(`INSERT OR IGNORE INTO module_tags (name, color, usage_count) VALUES (?, ?, ?)`,
+			t.name, t.color, 5+len(t.name))
+	}
+
+	log.Printf("[DB] Seeded module versions, reviews, and tags")
 	return nil
 }

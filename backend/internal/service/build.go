@@ -8,6 +8,7 @@ import (
 	"log"
 	"path/filepath"
 	"regexp"
+	"sync"
 	"time"
 
 	"github.com/moduforge/backend/internal/config"
@@ -120,3 +121,49 @@ func (s *BuildService) computeFilesHash(ctx context.Context, projectID string) (
 
 // buildTimeout is the maximum time a build can run before being killed.
 const buildTimeout = 15 * time.Minute
+
+// ── SSE Build Progress ────────────────────────────────────────────────
+
+var (
+	// sseChannels maps projectID → list of subscriber channels.
+	sseChannels = make(map[string][]chan string)
+	sseMu       sync.RWMutex
+)
+
+// RegisterSSEChannel opens a buffered channel for SSE subscribers.
+func RegisterSSEChannel(projectID string) chan string {
+	ch := make(chan string, 20)
+	sseMu.Lock()
+	defer sseMu.Unlock()
+	sseChannels[projectID] = append(sseChannels[projectID], ch)
+	return ch
+}
+
+// UnregisterSSEChannel closes and removes a subscriber channel.
+func UnregisterSSEChannel(projectID string, ch chan string) {
+	sseMu.Lock()
+	defer sseMu.Unlock()
+	out := make([]chan string, 0, len(sseChannels[projectID]))
+	for _, c := range sseChannels[projectID] {
+		if c != ch {
+			out = append(out, c)
+		} else {
+			close(c)
+		}
+	}
+	sseChannels[projectID] = out
+}
+
+// BroadcastProgress sends an SSE event to every subscriber of projectID.
+func BroadcastProgress(projectID string, phase string, detail string) {
+	data := fmt.Sprintf(`{"phase":"%s","detail":"%s"}`, phase, detail)
+	sseMu.RLock()
+	defer sseMu.RUnlock()
+	for _, ch := range sseChannels[projectID] {
+		select {
+		case ch <- data:
+		default:
+			// drop if subscriber is slow
+		}
+	}
+}

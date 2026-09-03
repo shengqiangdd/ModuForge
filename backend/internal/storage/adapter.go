@@ -26,6 +26,10 @@ type StorageAdapter interface {
 	// Exists checks if a file exists at the given path.
 	Exists(ctx context.Context, path string) (bool, error)
 
+	// Stat returns file metadata (size, modification time) without reading content.
+	// Returns nil, nil if the file does not exist.
+	Stat(ctx context.Context, path string) (*FileInfo, error)
+
 	// List returns all paths under the given prefix.
 	List(ctx context.Context, prefix string) ([]string, error)
 

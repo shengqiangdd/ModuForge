@@ -12,13 +12,14 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/moduforge/backend/internal/agent/skills"
 	"github.com/moduforge/backend/internal/domain"
 	"github.com/moduforge/backend/internal/storage"
 )
 
 type ProjectService struct {
 	db          *sql.DB
-	storagePath string // e.g. "data/storage" — base path for project files on disk
+	storagePath string             // e.g. "data/storage" — base path for project files on disk
 	s3          *storage.S3Adapter // optional S3-compatible storage (SeaweedFS/MinIO)
 }
 
@@ -350,23 +351,18 @@ func (s *ProjectService) ListFiles(ctx context.Context, projectID, userID string
 	return files, nil
 }
 
-// readContent returns file content: S3 first (authoritative), falls back to DB content column.
+// readContent returns file content from S3 only.
+// Returns an error if S3 is not configured or the file is not found.
 func (s *ProjectService) readContent(ctx context.Context, projectID, path string) (string, error) {
-	if s.s3 != nil {
-		data, err := s.s3.Read(ctx, s.s3ObjectKey(projectID, path))
-		if err == nil {
-			return string(data), nil
-		}
-		slog.Warn("s3 read failed, falling back to db content", "project", projectID, "path", path, "error", err)
+	if s.s3 == nil {
+		return "", fmt.Errorf("s3 not configured")
 	}
-	var content string
-	err := s.db.QueryRowContext(ctx,
-		`SELECT COALESCE(content,'') FROM project_files WHERE project_id=? AND path=?`, projectID, path,
-	).Scan(&content)
+	data, err := s.s3.Read(ctx, s.s3ObjectKey(projectID, path))
 	if err != nil {
-		return "", fmt.Errorf("file not found")
+		slog.Warn("s3 read failed", "project", projectID, "path", path, "error", err)
+		return "", fmt.Errorf("s3 read failed: %w", err)
 	}
-	return content, nil
+	return string(data), nil
 }
 
 func (s *ProjectService) GetFile(ctx context.Context, projectID, path, userID string) (*domain.ProjectFile, error) {
@@ -476,8 +472,9 @@ func (s *ProjectService) SearchAll(ctx context.Context, userID, query string) ([
 
 // s3ObjectKey returns the S3 object key (relative to the adapter prefix)
 // for a project file. Layout: <projectID>/<path> under the "projects" prefix.
+// Uses the shared implementation from skills/fileutil.go for consistency.
 func (s *ProjectService) s3ObjectKey(projectID, path string) string {
-	return projectID + "/" + strings.TrimPrefix(path, "/")
+	return skills.S3ObjectKey(projectID, path)
 }
 
 // sanitizeProjectPath rejects path-traversal filenames before they reach
@@ -509,15 +506,15 @@ func (s *ProjectService) SaveFile(ctx context.Context, projectID, path, content,
 	sha := storage.ComputeSHA256([]byte(content))
 	size := int64(len(content))
 
-	// 1. Write to S3 first when configured (authoritative object store).
-	if s.s3 != nil {
-		if err := s.s3.Write(ctx, s.s3ObjectKey(projectID, path), []byte(content)); err != nil {
-			return nil, fmt.Errorf("s3 write failed: %w", err)
-		}
+	// 1. Write to S3 (sole source of truth for file content).
+	if s.s3 == nil {
+		return nil, fmt.Errorf("s3 not configured")
+	}
+	if err := s.s3.Write(ctx, s.s3ObjectKey(projectID, path), []byte(content)); err != nil {
+		return nil, fmt.Errorf("s3 write failed: %w", err)
 	}
 
-	// 2. Write to disk (S3-synced mirror; also authoritative for local builds
-	//    and serves as fallback when S3 is not configured).
+	// 2. Write to disk (S3-synced mirror for local builds).
 	fullPath := filepath.Join(s.diskPath(projectID), path)
 	if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
 		return nil, fmt.Errorf("mkdir: %w", err)
@@ -526,12 +523,12 @@ func (s *ProjectService) SaveFile(ctx context.Context, projectID, path, content,
 		return nil, fmt.Errorf("write file: %w", err)
 	}
 
-	// 3. Update database metadata (content column only used when S3 is off).
+	// 3. Update database metadata only (no content column).
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO project_files (project_id, path, content, created_at, updated_at, sha256, file_size, mtime)
-		 VALUES (?, ?, ?, datetime('now'), datetime('now'), ?, ?, ?)
-		 ON CONFLICT(project_id, path) DO UPDATE SET content=?, updated_at=datetime('now'), sha256=?, file_size=?, mtime=?`,
-		projectID, path, s.dbContent(content), sha, size, now, s.dbContent(content), sha, size, now)
+		`INSERT INTO project_files (project_id, path, created_at, updated_at, sha256, file_size, mtime)
+		 VALUES (?, ?, datetime('now'), datetime('now'), ?, ?, ?)
+		 ON CONFLICT(project_id, path) DO UPDATE SET updated_at=datetime('now'), sha256=?, file_size=?, mtime=?`,
+		projectID, path, sha, size, now, sha, size, now)
 	if err != nil {
 		return nil, fmt.Errorf("db update: %w", err)
 	}
@@ -544,16 +541,6 @@ func (s *ProjectService) SaveFile(ctx context.Context, projectID, path, content,
 		CreatedAt: now,
 		UpdatedAt: now,
 	}, nil
-}
-
-// dbContent returns the content value stored in the DB content column.
-// When S3 is configured the DB only stores metadata (content NULL) to avoid
-// duplicating large payloads; otherwise it falls back to the legacy column.
-func (s *ProjectService) dbContent(content string) any {
-	if s.s3 != nil {
-		return nil
-	}
-	return content
 }
 
 // DeleteFile removes a file from the database, disk, and S3.

@@ -21,7 +21,7 @@ func TestLint_NoIssues(t *testing.T) {
 	files := []GeneratedFile{
 		{
 			Path:    "module.prop",
-			Content: "id=test\nname=Test\nversion=1.0",
+			Content: "id=test\nname=Test\nversion=1.0\nversionCode=1",
 		},
 	}
 

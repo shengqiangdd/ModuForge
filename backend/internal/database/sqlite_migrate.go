@@ -178,7 +178,7 @@ func (db *DB) startWALCheckpoint() {
 	log.Println("[DB] WAL checkpoint scheduler started (15m interval)")
 }
 
-// migrateProjectFilesS3 adds S3 metadata columns to project_files.
+// migrateProjectFilesS3 adds S3 metadata columns to project_files and removes the content column.
 func (db *DB) migrateProjectFilesS3() {
 	// Check if columns exist using PRAGMA
 	rows, err := db.Conn.Query("PRAGMA table_info(project_files)")
@@ -191,6 +191,7 @@ func (db *DB) migrateProjectFilesS3() {
 	hasSHA256 := false
 	hasSize := false
 	hasMTime := false
+	hasContent := false
 
 	for rows.Next() {
 		var cid int
@@ -205,10 +206,13 @@ func (db *DB) migrateProjectFilesS3() {
 				hasSize = true
 			case "mtime":
 				hasMTime = true
+			case "content":
+				hasContent = true
 			}
 		}
 	}
 
+	// Add S3 metadata columns if missing
 	if !hasSHA256 {
 		db.Conn.Exec("ALTER TABLE project_files ADD COLUMN sha256 TEXT DEFAULT ''")
 	}
@@ -217,6 +221,65 @@ func (db *DB) migrateProjectFilesS3() {
 	}
 	if !hasMTime {
 		db.Conn.Exec("ALTER TABLE project_files ADD COLUMN mtime TEXT DEFAULT ''")
+	}
+
+	// Drop the content column if it exists (S3 is now the sole source of truth)
+	if hasContent {
+		log.Println("[DB] Dropping content column from project_files (S3 is now sole source of truth)")
+		tx, err := db.Conn.Begin()
+		if err != nil {
+			log.Printf("migrateProjectFilesS3: begin tx failed: %v", err)
+			return
+		}
+
+		// Create new table without content column
+		if _, err := tx.Exec(`CREATE TABLE project_files_new (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			project_id TEXT NOT NULL,
+			path TEXT NOT NULL,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			sha256 TEXT DEFAULT '',
+			file_size INTEGER DEFAULT 0,
+			mtime TEXT DEFAULT '',
+			FOREIGN KEY (project_id) REFERENCES projects(id),
+			UNIQUE(project_id, path)
+		)`); err != nil {
+			tx.Rollback()
+			log.Printf("migrateProjectFilesS3: create new table failed: %v", err)
+			return
+		}
+
+		// Copy data (excluding content column)
+		if _, err := tx.Exec(`INSERT INTO project_files_new (id, project_id, path, created_at, updated_at, sha256, file_size, mtime)
+			SELECT id, project_id, path, created_at, updated_at, sha256, file_size, mtime FROM project_files`); err != nil {
+			tx.Rollback()
+			log.Printf("migrateProjectFilesS3: copy data failed: %v", err)
+			return
+		}
+
+		// Drop old table and rename new
+		if _, err := tx.Exec(`DROP TABLE project_files`); err != nil {
+			tx.Rollback()
+			log.Printf("migrateProjectFilesS3: drop old table failed: %v", err)
+			return
+		}
+		if _, err := tx.Exec(`ALTER TABLE project_files_new RENAME TO project_files`); err != nil {
+			tx.Rollback()
+			log.Printf("migrateProjectFilesS3: rename table failed: %v", err)
+			return
+		}
+
+		// Recreate indexes
+		if _, err := tx.Exec(`CREATE INDEX IF NOT EXISTS idx_project_files_project ON project_files(project_id)`); err != nil {
+			log.Printf("migrateProjectFilesS3: recreate index failed: %v", err)
+		}
+
+		if err := tx.Commit(); err != nil {
+			log.Printf("migrateProjectFilesS3: commit failed: %v", err)
+			return
+		}
+		log.Println("[DB] Successfully dropped content column from project_files")
 	}
 }
 
@@ -293,7 +356,7 @@ func (db *DB) migrateUserIDTypes() {
 			continue
 		}
 
-		if _, err := tx.Exec("INSERT INTO "+newTable+" ("+colList+") SELECT "+colList+" FROM "+table); err != nil {
+		if _, err := tx.Exec("INSERT INTO " + newTable + " (" + colList + ") SELECT " + colList + " FROM " + table); err != nil {
 			tx.Rollback()
 			log.Printf("[DB] Could not copy data from %s to %s: %v", table, newTable, err)
 			continue

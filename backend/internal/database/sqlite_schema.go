@@ -69,9 +69,11 @@ func schemaMigrations() []string {
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			project_id TEXT NOT NULL,
 			path TEXT NOT NULL,
-			content TEXT,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			sha256 TEXT DEFAULT '',
+			file_size INTEGER DEFAULT 0,
+			mtime TEXT DEFAULT '',
 			FOREIGN KEY (project_id) REFERENCES projects(id),
 			UNIQUE(project_id, path)
 		)`,
@@ -420,6 +422,16 @@ func schemaMigrations() []string {
 			FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_backup_schedules_user ON backup_schedules(user_id)`,
+		`CREATE TABLE IF NOT EXISTS backup_history (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			schedule_id INTEGER,
+			schedule_name TEXT DEFAULT '',
+			status TEXT NOT NULL DEFAULT 'success',
+			size_bytes INTEGER DEFAULT 0,
+			started_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			finished_at DATETIME,
+			FOREIGN KEY (schedule_id) REFERENCES backup_schedules(id) ON DELETE SET NULL
+		)`,
 		`CREATE TABLE IF NOT EXISTS glossary (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			term TEXT NOT NULL UNIQUE,
