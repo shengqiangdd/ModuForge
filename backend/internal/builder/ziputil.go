@@ -55,6 +55,17 @@ var ModuleExcludePatterns = []string{
 	"*.flat",
 	"*_blame_folder/",
 	"app/build/",
+	// Android companion app source & build config (only keep app/app.apk)
+	"app/build.gradle.kts",
+	"app/gradle/",
+	"app/gradlew",
+	"app/src/",
+	// Root project build files
+	"build.gradle.kts",
+	"gradle.properties",
+	"local.properties",
+	"settings.gradle.kts",
+	"gradle/",
 	// IDE & editor
 	".idea/",
 	".vscode/",
