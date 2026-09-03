@@ -72,7 +72,7 @@ func (s *BuildAndroidAppSkill) Execute(ctx context.Context, input map[string]int
 	s.ensureGradleWrapper(gradleProjectDir)
 
 	// Try using full Gradle installation first, fall back to gradlew
-	gradleBin := "/opt/gradle-8.5/bin/gradle"
+	gradleBin := "/opt/gradle/gradle-8.7/bin/gradle"
 	if _, err := os.Stat(gradleBin); os.IsNotExist(err) {
 		gradleBin = filepath.Join(gradleProjectDir, "gradlew")
 	}

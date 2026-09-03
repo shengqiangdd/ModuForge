@@ -504,7 +504,7 @@ func (s *BuildModuleSkill) compileAndroidApp(projectPath string) string {
 	gradleProjectDir := filepath.Join(projectPath, "app")
 
 	// Try using full Gradle installation first, fall back to gradlew
-	gradleBin := "/opt/gradle-8.5/bin/gradle"
+	gradleBin := "/opt/gradle/gradle-8.7/bin/gradle"
 	if _, err := os.Stat(gradleBin); os.IsNotExist(err) {
 		// Fall back to gradlew
 		gradlew := filepath.Join(gradleProjectDir, "gradlew")

@@ -101,12 +101,11 @@ RUN mkdir -p ${ANDROID_HOME}/cmdline-tools && cd /tmp \
     && rm -rf ${ANDROID_HOME}/cmdline-tools/latest/.promisor
 
 # --- Gradle 8.7 (for Android APK builds) ---
-ENV GRADLE_HOME=/opt/gradle
+ENV GRADLE_HOME=/opt/gradle/gradle-8.7
 ENV PATH="${GRADLE_HOME}/bin:${PATH}"
 RUN mkdir -p /opt/gradle && cd /tmp \
     && wget -q https://services.gradle.org/distributions/gradle-8.7-bin.zip -O gradle.zip \
-    && unzip -q gradle.zip -d /opt \
-    && mv /opt/gradle-8.7 /opt/gradle \
+    && unzip -q gradle.zip -d /opt/gradle \
     && rm -f gradle.zip \
     && echo "Gradle installed"
 
