@@ -21,6 +21,14 @@ func PostProcessSourceFiles(projectDir string, files []string, lang string, logF
 
 		switch lang {
 		case "go":
+			// Skip post-processing for large Go files (>10KB) — they are
+			// almost certainly complete, user-authored code rather than
+			// truncated free-model output.  The regex-based fixes are
+			// destructive on well-formed Go source (they mangle struct tags,
+			// import blocks, and backtick raw strings).
+			if len(content) > 10*1024 {
+				continue
+			}
 			fixed = PostProcessGoCode(original)
 		case "c", "cpp":
 			fixed = PostProcessCCode(original)
@@ -162,7 +170,13 @@ func fixGoIncompleteComparisons(code string) string {
 // fixGoStringTruncation fixes strings that were truncated mid-string
 func fixGoStringTruncation(code string) string {
 	// Fix unclosed strings: "text\n should be "text"\n
-	re := regexp.MustCompile(`"([^"]*)\n`)
+	// IMPORTANT: Use [^"\x60\n]+ (exclude ", backtick, and \n) so that:
+	// 1. Already-closed strings like "encoding/json"\n are NOT matched
+	// 2. Backtick raw string literals like `json:"foo"` are NOT matched
+	// The old regex "([^"]*)\n matched the closing " of complete strings AND
+	// backtick-delimited strings, breaking compilation.
+	// \x60 is the backtick character.
+	re := regexp.MustCompile(`"([^"\x60\n]+)\n`)
 	code = re.ReplaceAllStringFunc(code, func(match string) string {
 		content := match[1 : len(match)-1]
 		return `"` + content + `"` + "\n"

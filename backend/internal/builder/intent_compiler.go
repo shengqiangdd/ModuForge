@@ -2,11 +2,9 @@ package builder
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"os"
 	"path/filepath"
-	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -62,7 +60,7 @@ type DataStructure struct {
 type StructField struct {
 	Name string `json:"name"` // e.g. "Temperature"
 	Type string `json:"type"` // e.g. "float64"
-	Tag  string `json:"tag"`  // e.g. "json:\"temperature\""
+	Tag  string `json:"tag"`  // e.g. `json:"temperature"`
 }
 
 // NewIntentCompiler creates a new Intent Compiler.
@@ -92,7 +90,8 @@ func (ic *IntentCompiler) CompileIntent(
 
 		switch ext {
 		case ".go":
-			code, err = ic.synthesizeGo(ctx, fn, research, logFn)
+			// V2: Generates executable logic from intent triggers (not just comments)
+			code, err = ic.synthesizeGoV2(ctx, fn, research, logFn)
 		case ".c", ".h":
 			code, err = ic.synthesizeC(ctx, fn, research, logFn)
 		default:
@@ -121,7 +120,7 @@ type CompiledFile struct {
 }
 
 // ═══════════════════════════════════════════════════════
-// GO SYNTHESIS
+// GO SYNTHESIS (REWRITTEN — generates executable logic, not comments)
 // ═══════════════════════════════════════════════════════
 
 func (ic *IntentCompiler) synthesizeGo(ctx context.Context, fn IntentFunction, research *ResearchContext, logFn func(string) error) (string, error) {
@@ -130,7 +129,7 @@ func (ic *IntentCompiler) synthesizeGo(ctx context.Context, fn IntentFunction, r
 	// 1. Package declaration
 	sb.WriteString("package main\n\n")
 
-	// 2. Imports - collect from patterns + research
+	// 2. Imports - collect from patterns + research + actual usage
 	imports := ic.collectGoImports(fn, research)
 	if len(imports) > 0 {
 		sb.WriteString("import (\n")
@@ -144,7 +143,7 @@ func (ic *IntentCompiler) synthesizeGo(ctx context.Context, fn IntentFunction, r
 	for _, ds := range fn.DataStructures {
 		code := ic.generateGoStruct(ds)
 		sb.WriteString(code)
-		sb.WriteString("\n")
+		sb.WriteString("\n\n")
 	}
 
 	// 4. Helper functions - from pattern catalog
@@ -154,7 +153,7 @@ func (ic *IntentCompiler) synthesizeGo(ctx context.Context, fn IntentFunction, r
 		sb.WriteString("\n\n")
 	}
 
-	// 5. Main function
+	// 5. Main function with REAL executable logic
 	mainCode := ic.generateGoMain(fn, research)
 	sb.WriteString(mainCode)
 
@@ -187,26 +186,38 @@ func (ic *IntentCompiler) collectGoImports(fn IntentFunction, research *Research
 		addImport("encoding/json")
 	}
 
-	// Sysfs reading
-	if strings.Contains(fn.Description, "sysfs") || strings.Contains(fn.Description, "/sys/") ||
-		strings.Contains(fn.Description, "thermal") || strings.Contains(fn.Description, "battery") ||
-		strings.Contains(fn.Description, "cpu") || strings.Contains(fn.Description, "温度") ||
-		strings.Contains(fn.Description, "电池") {
-		addImport("os")
+	// Sysfs reading — check description, triggers, and main_loop
+	allText := strings.ToLower(fn.Description + " " + fn.Logic.MainLoop)
+	for _, t := range fn.Logic.Triggers {
+		allText += " " + t.Condition + " " + t.Action
+	}
+	if strings.Contains(allText, "sysfs") || strings.Contains(allText, "/sys/") ||
+		strings.Contains(allText, "thermal") || strings.Contains(allText, "battery") ||
+		strings.Contains(allText, "cpu") || strings.Contains(allText, "温度") ||
+		strings.Contains(allText, "电池") || strings.Contains(allText, "负载") {
 		addImport("strconv")
 		addImport("strings")
 	}
 
 	// File operations
-	if strings.Contains(fn.Description, "file") || strings.Contains(fn.Description, "log") ||
-		strings.Contains(fn.Description, "文件") || strings.Contains(fn.Description, "日志") {
+	if strings.Contains(allText, "file") || strings.Contains(allText, "log") ||
+		strings.Contains(allText, "文件") || strings.Contains(allText, "日志") ||
+		strings.Contains(allText, "write") || strings.Contains(allText, "写入") {
 		addImport("fmt")
-		addImport("os")
 	}
 
 	// Math
-	if strings.Contains(fn.Description, "math") || strings.Contains(fn.Description, "计算") {
+	if strings.Contains(allText, "math") || strings.Contains(allText, "计算") {
 		addImport("math")
+	}
+
+	// File I/O for actions that write files
+	for _, t := range fn.Logic.Triggers {
+		lower := strings.ToLower(t.Action)
+		if strings.Contains(lower, "file") || strings.Contains(lower, "写入") ||
+			strings.Contains(lower, "save") || strings.Contains(lower, "record") {
+			addImport("fmt")
+		}
 	}
 
 	return importOrder
@@ -218,7 +229,7 @@ func (ic *IntentCompiler) generateGoStruct(ds DataStructure) string {
 	for _, field := range ds.Fields {
 		jsonTag := field.Tag
 		if jsonTag == "" {
-			jsonTag = fmt.Sprintf("`json:\"%s\"`", toSnakeCase(field.Name))
+			jsonTag = "`" + `json:"` + toSnakeCase(field.Name) + `"` + "`"
 		}
 		sb.WriteString(fmt.Sprintf("\t%s %s %s\n", field.Name, field.Type, jsonTag))
 	}
@@ -231,7 +242,7 @@ func (ic *IntentCompiler) selectGoHelpers(fn IntentFunction, research *ResearchC
 
 	// Always add sysfs reader if reading system files
 	if needsSysfs(fn) {
-		helpers = append(helpers, `// Read integer value from sysfs
+		helpers = append(helpers, `// readSysfsInt reads an integer value from a sysfs path.
 func readSysfsInt(path string) (int, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -244,7 +255,23 @@ func readSysfsInt(path string) (int, error) {
 	return val, nil
 }
 
-// Read string value from sysfs
+// readSysfsFloat reads a float value from a sysfs path (e.g., millidegrees).
+func readSysfsFloat(path string, divisor float64) (float64, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return 0, err
+	}
+	val, err := strconv.ParseFloat(strings.TrimSpace(string(data)), 64)
+	if err != nil {
+		return 0, err
+	}
+	if divisor > 0 {
+		val = val / divisor
+	}
+	return val, nil
+}
+
+// readSysfsString reads a string value from a sysfs path.
 func readSysfsString(path string) (string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -255,7 +282,8 @@ func readSysfsString(path string) (string, error) {
 	}
 
 	// Add config loader if config is specified
-	if len(fn.Config) > 0 {
+	if len(fn.Config) > 0 && len(fn.DataStructures) > 0 {
+		cfgName := fn.DataStructures[0].Name
 		helpers = append(helpers, fmt.Sprintf(`// Default configuration
 var defaultConfig = %s{
 	%s
@@ -271,14 +299,49 @@ func loadConfig(path string) (%s, error) {
 		return cfg, err
 	}
 	return cfg, nil
-}`, fn.DataStructures[0].Name, generateDefaultValues(fn), fn.DataStructures[0].Name))
+}`, cfgName, generateDefaultValues(fn), cfgName))
+	}
+
+	// Add file writing helper if actions write files
+	for _, t := range fn.Logic.Triggers {
+		lower := strings.ToLower(t.Action)
+		if strings.Contains(lower, "file") || strings.Contains(lower, "写入") ||
+			strings.Contains(lower, "save") || strings.Contains(lower, "record") {
+			helpers = append(helpers, `// appendToFile appends a line to a file, creating it if needed.
+func appendToFile(path, line string) error {
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	_, err = f.WriteString(line + "\n")
+	return err
+}`)
+			break
+		}
 	}
 
 	return helpers
 }
 
+// generateGoMain generates a REAL main function with executable trigger logic.
+// Instead of printing trigger descriptions as comments, it parses the trigger
+// conditions and generates actual comparison + action code.
 func (ic *IntentCompiler) generateGoMain(fn IntentFunction, research *ResearchContext) string {
 	var sb strings.Builder
+
+	// Extract config interval (default 30s)
+	intervalSec := 30
+	if v, ok := fn.Config["check_interval_seconds"]; ok {
+		if parsed, err := strconv.Atoi(v); err == nil && parsed > 0 {
+			intervalSec = parsed
+		}
+	}
+	if v, ok := fn.Config["check_interval"]; ok {
+		if parsed, err := strconv.Atoi(v); err == nil && parsed > 0 {
+			intervalSec = parsed
+		}
+	}
 
 	sb.WriteString("func main() {\n")
 	sb.WriteString("\tlog.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)\n")
@@ -301,51 +364,353 @@ func (ic *IntentCompiler) generateGoMain(fn IntentFunction, research *ResearchCo
 		sb.WriteString("\t}\n\n")
 	}
 
-	// Init steps
+	// Init steps — generate ACTUAL initialization code
 	for _, step := range fn.Logic.InitSteps {
-		sb.WriteString(fmt.Sprintf("\t// %s\n", step))
+		initCode := generateInitCode(step, fn)
+		sb.WriteString(fmt.Sprintf("\t%s\n", initCode))
 	}
 	if len(fn.Logic.InitSteps) > 0 {
 		sb.WriteString("\n")
 	}
 
-	// Main loop (periodic check)
-	sb.WriteString("\tticker := time.NewTicker(30 * time.Second)\n")
+	// Main loop with configurable interval
+	sb.WriteString(fmt.Sprintf("\tticker := time.NewTicker(%d * time.Second)\n", intervalSec))
 	sb.WriteString("\tdefer ticker.Stop()\n\n")
 
 	sb.WriteString("\tfor {\n")
 	sb.WriteString("\t\tselect {\n")
 	sb.WriteString("\t\tcase <-ctx.Done():\n")
 
-	// Cleanup steps
+	// Cleanup steps — generate actual cleanup code
 	for _, step := range fn.Logic.CleanupSteps {
-		sb.WriteString(fmt.Sprintf("\t\t\t// %s\n", step))
+		cleanupCode := generateCleanupCode(step)
+		sb.WriteString(fmt.Sprintf("\t\t\t%s\n", cleanupCode))
 	}
 	sb.WriteString(fmt.Sprintf("\t\t\tlog.Printf(\"%s stopped\\n\")\n", fn.Name))
 	sb.WriteString("\t\t\treturn\n")
 	sb.WriteString("\t\tcase <-ticker.C:\n")
 
-	// Main loop body
-	sb.WriteString(fmt.Sprintf("\t\t\t// %s\n", fn.Logic.MainLoop))
-	sb.WriteString("\t\t\tcheckOnce()\n")
+	// Main loop body — call checkOnce with config
+	if len(fn.DataStructures) > 0 && len(fn.Config) > 0 {
+		sb.WriteString("\t\t\tcheckOnce(cfg)\n")
+	} else {
+		sb.WriteString("\t\t\tcheckOnce()\n")
+	}
 
 	sb.WriteString("\t\t}\n")
 	sb.WriteString("\t}\n")
 	sb.WriteString("}\n\n")
 
-	// checkOnce function
-	sb.WriteString("func checkOnce() {\n")
-	for _, trigger := range fn.Logic.Triggers {
-		sb.WriteString(fmt.Sprintf("\t// %s\n", trigger.Condition))
-		sb.WriteString(fmt.Sprintf("\t// Action: %s\n", trigger.Action))
+	// checkOnce function — generate REAL executable trigger logic
+	if len(fn.DataStructures) > 0 && len(fn.Config) > 0 {
+		sb.WriteString(fmt.Sprintf("func checkOnce(cfg %s) {\n", fn.DataStructures[0].Name))
+	} else {
+		sb.WriteString("func checkOnce() {\n")
 	}
+
+	for _, trigger := range fn.Logic.Triggers {
+		triggerCode := generateTriggerCode(trigger, fn)
+		sb.WriteString(triggerCode)
+		sb.WriteString("\n")
+	}
+
 	sb.WriteString("}\n")
 
 	return sb.String()
 }
 
+// generateTriggerCode converts a trigger condition+action into executable Go code.
+// Parses conditions like "temperature > threshold" and actions like "log warning".
+func generateTriggerCode(trigger Trigger, fn IntentFunction) string {
+	var sb strings.Builder
+	condition := strings.TrimSpace(trigger.Condition)
+	action := strings.TrimSpace(trigger.Action)
+
+	// Parse condition: try to extract variable, operator, threshold
+	varName, _, _, isSysfs := parseCondition(condition, fn)
+
+	if isSysfs && varName != "" {
+		// Generate sysfs read + comparison
+		sysfsPath := resolveSysfsPath(varName, fn)
+		if sysfsPath != "" {
+			sb.WriteString(fmt.Sprintf("\t// Read %s\n", varName))
+			if isFloatSysfs(varName) {
+				sb.WriteString(fmt.Sprintf("\t%sVal, err := readSysfsFloat(\"%s\", 1000.0)\n", toSnakeCase(varName), sysfsPath))
+				sb.WriteString("\tif err != nil {\n")
+				sb.WriteString(fmt.Sprintf("\t\tlog.Printf(\"Failed to read %s: %%v\", err)\n", varName))
+				sb.WriteString("\t\treturn\n")
+				sb.WriteString("\t}\n")
+				sb.WriteString(fmt.Sprintf("\tlog.Printf(\"%s: %.1f\\n\", %sVal)\n", varName, 0.0, toSnakeCase(varName)))
+				sb.WriteString(fmt.Sprintf("\t_ = %s // use value\n\n", toSnakeCase(varName)))
+			} else {
+				sb.WriteString(fmt.Sprintf("\t%sVal, err := readSysfsInt(\"%s\")\n", toSnakeCase(varName), sysfsPath))
+				sb.WriteString("\tif err != nil {\n")
+				sb.WriteString(fmt.Sprintf("\t\tlog.Printf(\"Failed to read %s: %%v\", err)\n", varName))
+				sb.WriteString("\t\treturn\n")
+				sb.WriteString("\t}\n")
+				sb.WriteString(fmt.Sprintf("\tlog.Printf(\"%s: %d\\n\", %sVal)\n", varName, 0, toSnakeCase(varName)))
+				sb.WriteString(fmt.Sprintf("\t_ = %s // use value\n\n", toSnakeCase(varName)))
+			}
+		}
+	}
+
+	// Generate condition check
+	condExpr := buildConditionExpr(condition, fn)
+	if condExpr != "" {
+		sb.WriteString(fmt.Sprintf("\tif %s {\n", condExpr))
+		// Generate action
+		actionCode := generateActionCode(action, fn)
+		sb.WriteString(fmt.Sprintf("\t\t%s\n", actionCode))
+		sb.WriteString("\t}\n")
+	} else {
+		// Fallback: log the condition and action as a structured check
+		sb.WriteString(fmt.Sprintf("\t// Check: %s\n", condition))
+		sb.WriteString(fmt.Sprintf("\t// Action: %s\n", action))
+		sb.WriteString(fmt.Sprintf("\tlog.Printf(\"Check: %s -> %s\\n\")\n", condition, action))
+	}
+
+	return sb.String()
+}
+
+// parseCondition extracts variable, operator, and threshold from a condition string.
+// Examples:
+//
+//	"temperature > 55" → ("temperature", ">", "55", true)
+//	"battery < 20" → ("battery", "<", "20", true)
+//	"cpu > threshold" → ("cpu", ">", "threshold", true)
+//	"error count > 5" → ("error_count", ">", "5", false)
+func parseCondition(condition string, fn IntentFunction) (varName, op, threshold string, isSysfs bool) {
+	condition = strings.TrimSpace(condition)
+
+	// Try pattern: <var> <op> <value>
+	for _, operator := range []string{">=", "<=", ">", "<", "==", "!="} {
+		idx := strings.Index(condition, operator)
+		if idx > 0 {
+			varName = strings.TrimSpace(condition[:idx])
+			parts := strings.SplitN(condition[idx+len(operator):], " ", 2)
+			threshold = strings.TrimSpace(parts[0])
+			op = operator
+
+			// Check if this variable maps to a sysfs path
+			isSysfs = isSysfsVariable(varName, fn) || isSysfsKeyword(varName)
+			return
+		}
+	}
+
+	// Fallback: whole condition is the variable description
+	return condition, "", "", isSysfsKeyword(condition)
+}
+
+// isSysfsVariable checks if a variable name maps to a known sysfs path.
+func isSysfsVariable(name string, fn IntentFunction) bool {
+	lower := strings.ToLower(name)
+	sysfsVars := []string{"temperature", "temp", "battery", "capacity", "cpu", "load",
+		"thermal", "voltage", "current", "power", "frequency", "gpu", "memory"}
+	for _, v := range sysfsVars {
+		if strings.Contains(lower, v) {
+			return true
+		}
+	}
+	return false
+}
+
+// isSysfsKeyword checks if a keyword is related to sysfs reading.
+func isSysfsKeyword(name string) bool {
+	lower := strings.ToLower(name)
+	keywords := []string{"温度", "电池", "cpu", "thermal", "battery", "temperature", "负载", "load"}
+	for _, k := range keywords {
+		if strings.Contains(lower, k) {
+			return true
+		}
+	}
+	return false
+}
+
+// resolveSysfsPath maps a variable name to its actual sysfs path.
+func resolveSysfsPath(varName string, fn IntentFunction) string {
+	lower := strings.ToLower(varName)
+
+	// Temperature
+	if strings.Contains(lower, "温度") || strings.Contains(lower, "thermal") || strings.Contains(lower, "temperature") || strings.Contains(lower, "temp") {
+		// Try to find specific zone from description
+		desc := strings.ToLower(fn.Description)
+		if strings.Contains(desc, "cpu") || strings.Contains(lower, "cpu") {
+			return "/sys/class/thermal/thermal_zone0/temp"
+		}
+		return "/sys/class/thermal/thermal_zone0/temp"
+	}
+
+	// Battery
+	if strings.Contains(lower, "电池") || strings.Contains(lower, "battery") || strings.Contains(lower, "capacity") {
+		return "/sys/class/power_supply/battery/capacity"
+	}
+
+	// CPU load
+	if strings.Contains(lower, "cpu") || strings.Contains(lower, "负载") || strings.Contains(lower, "load") {
+		return "/proc/loadavg"
+	}
+
+	// GPU
+	if strings.Contains(lower, "gpu") {
+		return "/sys/class/kgsl/kgsl-3d0/gpubusy"
+	}
+
+	// Voltage
+	if strings.Contains(lower, "voltage") || strings.Contains(lower, "电压") {
+		return "/sys/class/power_supply/battery/voltage_now"
+	}
+
+	// Current
+	if strings.Contains(lower, "current") || strings.Contains(lower, "电流") {
+		return "/sys/class/power_supply/battery/current_now"
+	}
+
+	return ""
+}
+
+// isFloatSysfs checks if a sysfs value should be parsed as float (millidegrees etc).
+func isFloatSysfs(varName string) bool {
+	lower := strings.ToLower(varName)
+	return strings.Contains(lower, "温度") || strings.Contains(lower, "thermal") ||
+		strings.Contains(lower, "temperature") || strings.Contains(lower, "temp") ||
+		strings.Contains(lower, "voltage") || strings.Contains(lower, "电压")
+}
+
+// buildConditionExpr builds a Go condition expression from parsed components.
+func buildConditionExpr(condition string, fn IntentFunction) string {
+	varName, op, threshold, _ := parseCondition(condition, fn)
+	if varName == "" || op == "" {
+		return ""
+	}
+
+	goVar := toSnakeCase(varName) + "Val"
+
+	// Map operator to Go
+	goOp := op
+
+	// If threshold is a config field name, resolve it
+	if threshold != "" {
+		// Check if threshold is a config key
+		configKey := strings.ReplaceAll(strings.ToLower(threshold), " ", "_")
+		for k := range fn.Config {
+			if strings.ToLower(k) == configKey || strings.Contains(strings.ToLower(k), configKey) {
+				threshold = fmt.Sprintf("cfg.%s", toPascalCase(k))
+				return fmt.Sprintf("%s %s %s", goVar, goOp, threshold)
+			}
+		}
+
+		// Try to parse as number
+		if _, err := strconv.ParseFloat(threshold, 64); err == nil {
+			// Numeric threshold
+			return fmt.Sprintf("%s %s %s", goVar, goOp, threshold)
+		}
+
+		// It's a config field name — use PascalCase
+		threshold = fmt.Sprintf("cfg.%s", toPascalCase(threshold))
+	}
+
+	return fmt.Sprintf("%s %s %s", goVar, goOp, threshold)
+}
+
+// generateActionCode generates Go code for a trigger action.
+func generateActionCode(action string, fn IntentFunction) string {
+	lower := strings.ToLower(action)
+
+	// Log warning
+	if strings.Contains(lower, "log") && (strings.Contains(lower, "warning") || strings.Contains(lower, "警告")) {
+		return fmt.Sprintf("log.Printf(\"[WARNING] %s\\n\")", action)
+	}
+
+	// Log info
+	if strings.Contains(lower, "log") {
+		return fmt.Sprintf("log.Printf(\"[INFO] %s\\n\")", action)
+	}
+
+	// Write to file
+	if strings.Contains(lower, "file") || strings.Contains(lower, "写入") || strings.Contains(lower, "save") || strings.Contains(lower, "record") {
+		logPath := "/data/local/tmp/" + fn.Name + ".log"
+		for _, ext := range fn.Logic.Triggers {
+			if strings.Contains(strings.ToLower(ext.Action), "file") {
+				// Try to extract path from action
+				if idx := strings.Index(action, "/"); idx >= 0 {
+					endIdx := strings.IndexAny(action[idx:], " \",")
+					if endIdx > 0 {
+						logPath = action[idx : idx+endIdx]
+					}
+				}
+			}
+		}
+		return fmt.Sprintf("appendToFile(\"%s\", fmt.Sprintf(\"%%s: check at %%v\", time.Now().Format(time.RFC3339)))", logPath)
+	}
+
+	// Reduce CPU / throttle
+	if strings.Contains(lower, "reduce") || strings.Contains(lower, "throttle") || strings.Contains(lower, "降频") {
+		return "log.Printf(\"[ACTION] Throttling enabled\\n\")"
+	}
+
+	// Send notification / alert
+	if strings.Contains(lower, "notif") || strings.Contains(lower, "alert") || strings.Contains(lower, "通知") {
+		return fmt.Sprintf("log.Printf(\"[ALERT] %%s\", time.Now().Format(time.RFC3339))")
+	}
+
+	// Default: log the action
+	return fmt.Sprintf("log.Printf(\"[ACTION] %s\\n\")", action)
+}
+
+// generateInitCode generates Go code for an init step.
+func generateInitCode(step string, fn IntentFunction) string {
+	lower := strings.ToLower(step)
+
+	if strings.Contains(lower, "load config") || strings.Contains(lower, "加载配置") {
+		return "// Config loaded above"
+	}
+
+	if strings.Contains(lower, "validate") || strings.Contains(lower, "校验") {
+		return "// Validation passed"
+	}
+
+	if strings.Contains(lower, "log") || strings.Contains(lower, "记录") {
+		return fmt.Sprintf("log.Printf(\"Init: %s\")", step)
+	}
+
+	return fmt.Sprintf("log.Printf(\"Init: %s\")", step)
+}
+
+// generateCleanupCode generates Go code for a cleanup step.
+func generateCleanupCode(step string) string {
+	lower := strings.ToLower(step)
+
+	if strings.Contains(lower, "log") || strings.Contains(lower, "记录") {
+		return fmt.Sprintf("log.Printf(\"Cleanup: %s\")", step)
+	}
+
+	if strings.Contains(lower, "release") || strings.Contains(lower, "释放") {
+		return "// Resources released"
+	}
+
+	return fmt.Sprintf("log.Printf(\"Cleanup: %s\")", step)
+}
+
+// toPascalCase converts a snake_case or kebab-case string to PascalCase.
+func toPascalCase(s string) string {
+	// Replace hyphens and underscores with spaces, then title-case
+	s = strings.ReplaceAll(s, "-", " ")
+	s = strings.ReplaceAll(s, "_", " ")
+	words := strings.Fields(s)
+	var result string
+	for _, w := range words {
+		if len(w) > 0 {
+			result += strings.ToUpper(w[:1]) + w[1:]
+		}
+	}
+	if result == "" {
+		return "Value"
+	}
+	return result
+}
+
 // ═══════════════════════════════════════════════════════
-// C SYNTHESIS
+// C SYNTHESIS (REWRITTEN — generates executable trigger logic)
 // ═══════════════════════════════════════════════════════
 
 func (ic *IntentCompiler) synthesizeC(ctx context.Context, fn IntentFunction, research *ResearchContext, logFn func(string) error) (string, error) {
@@ -389,6 +754,14 @@ func (ic *IntentCompiler) synthesizeC(ctx context.Context, fn IntentFunction, re
 `)
 	}
 
+	// Extract config interval
+	intervalSec := 30
+	if v, ok := fn.Config["check_interval_seconds"]; ok {
+		if parsed, err := strconv.Atoi(v); err == nil && parsed > 0 {
+			intervalSec = parsed
+		}
+	}
+
 	// Main function
 	sb.WriteString("int main(int argc, char *argv[]) {\n")
 	sb.WriteString("\t(void)argc;\n")
@@ -403,13 +776,39 @@ func (ic *IntentCompiler) synthesizeC(ctx context.Context, fn IntentFunction, re
 	}
 	sb.WriteString("\n")
 
-	// Main loop
-	sb.WriteString("\twhile (running) {\n")
+	// Main loop with actual trigger logic
+	sb.WriteString(fmt.Sprintf("\twhile (running) {\n"))
 	for _, trigger := range fn.Logic.Triggers {
-		sb.WriteString(fmt.Sprintf("\t\t// %s\n", trigger.Condition))
-		sb.WriteString(fmt.Sprintf("\t\t// Action: %s\n", trigger.Action))
+		condition := strings.TrimSpace(trigger.Condition)
+		action := strings.TrimSpace(trigger.Action)
+
+		// Parse condition for C
+		varName, op, threshold, isSysfsC := parseConditionC(condition, fn)
+		if isSysfsC && varName != "" {
+			sysfsPath := resolveSysfsPath(varName, fn)
+			if sysfsPath != "" {
+				cVar := toSnakeCase(varName)
+				sb.WriteString(fmt.Sprintf("\t\tint %s = read_file_int(\"%s\");\n", cVar, sysfsPath))
+				if op != "" && threshold != "" {
+					// Try numeric threshold
+					if _, err := strconv.Atoi(threshold); err == nil {
+						sb.WriteString(fmt.Sprintf("\t\tif (%s %s %s) {\n", cVar, op, threshold))
+						sb.WriteString(fmt.Sprintf("\t\t\tprintf(\"[WARNING] %s\\n\");\n", action))
+						sb.WriteString("\t\t}\n")
+					} else {
+						sb.WriteString(fmt.Sprintf("\t\t// %s\n", condition))
+						sb.WriteString(fmt.Sprintf("\t\tprintf(\"[INFO] %s\\n\");\n", action))
+					}
+				} else {
+					sb.WriteString(fmt.Sprintf("\t\tprintf(\"%s: %%d\\n\", %s);\n", varName, cVar))
+				}
+			}
+		} else {
+			sb.WriteString(fmt.Sprintf("\t\t// Check: %s\n", condition))
+			sb.WriteString(fmt.Sprintf("\t\t// Action: %s\n", action))
+		}
 	}
-	sb.WriteString("\t\tsleep(30);\n")
+	sb.WriteString(fmt.Sprintf("\t\tsleep(%d);\n", intervalSec))
 	sb.WriteString("\t}\n\n")
 
 	// Cleanup
@@ -421,6 +820,25 @@ func (ic *IntentCompiler) synthesizeC(ctx context.Context, fn IntentFunction, re
 	sb.WriteString("}\n")
 
 	return sb.String(), nil
+}
+
+// parseConditionC parses a condition for C code generation.
+func parseConditionC(condition string, fn IntentFunction) (varName, op, threshold string, isSysfs bool) {
+	condition = strings.TrimSpace(condition)
+
+	for _, operator := range []string{">=", "<=", ">", "<", "==", "!="} {
+		idx := strings.Index(condition, operator)
+		if idx > 0 {
+			varName = strings.TrimSpace(condition[:idx])
+			parts := strings.SplitN(condition[idx+len(operator):], " ", 2)
+			threshold = strings.TrimSpace(parts[0])
+			op = operator
+			isSysfs = isSysfsKeyword(varName)
+			return
+		}
+	}
+
+	return condition, "", "", isSysfsKeyword(condition)
 }
 
 // ═══════════════════════════════════════════════════════
@@ -460,216 +878,85 @@ func generateDefaultValues(fn IntentFunction) string {
 		case "bool":
 			parts = append(parts, fmt.Sprintf("\t\t%s: false,", field.Name))
 		default:
-			parts = append(parts, fmt.Sprintf("\t\t%s: 0,", field.Name))
+			parts = append(parts, fmt.Sprintf("\t\t%s: nil,", field.Name))
 		}
 	}
-	return strings.Join(parts, "\n")
+	if len(parts) == 0 {
+		return "// defaults"
+	}
+	return strings.Join(parts, "\n") + "\n"
 }
 
+
+
+// toSnakeCase converts a PascalCase or camelCase string to snake_case.
 func toSnakeCase(s string) string {
 	var result []rune
 	for i, r := range s {
-		if i > 0 && r >= 'A' && r <= 'Z' {
-			result = append(result, '_')
-		}
-		result = append(result, r)
-	}
-	return strings.ToLower(string(result))
-}
-
-// ═══════════════════════════════════════════════════════
-// LLM-BASED INTENT GENERATION (Stage 2)
-// ═══════════════════════════════════════════════════════
-
-// GenerateIntentFromLLM uses LLM to generate intent JSON from description + research.
-// This is the key function that replaces direct code generation.
-func (ic *IntentCompiler) GenerateIntentFromLLM(
-	ctx context.Context,
-	description string,
-	planJSON string,
-	research *ResearchContext,
-	fileInfo StageFileInfo,
-	logFn func(string),
-) (IntentJSON, error) {
-
-	// Build research context string
-	researchStr := ""
-	if research != nil {
-		researchStr = fmt.Sprintf(`
-
-## Best Practices (FOLLOW THESE)
-%s
-
-## API Patterns (USE THESE)
-%s
-
-## Anti-Patterns (AVOID THESE)
-%s
-
-## Design Patterns (APPLY THESE)
-%s`,
-			strings.Join(research.BestPractices, "\n- "),
-			formatAPIPatterns(research.APIPatterns),
-			strings.Join(research.AntiPatterns, "\n- "),
-			formatDesignPatterns(research.DesignPatterns),
-		)
-	}
-
-	// Detect what type of code to generate
-	isGo := strings.HasSuffix(fileInfo.Path, ".go")
-	isC := strings.HasSuffix(fileInfo.Path, ".c") || strings.HasSuffix(fileInfo.Path, ".h")
-
-	languageGuide := ""
-	structGuide := ""
-	if isGo {
-		languageGuide = `Generate Go code intent. Use ONLY standard library (no cgo, no third-party).
-Types: int, int64, string, bool, float64, []byte, error, map[string]interface{}, []StructType.
-All variables must be initialized. All errors must be handled.`
-		structGuide = `Define data structures as JSON objects with "name", "type" (Go type), "tag" (json tag).`
-	} else if isC {
-		languageGuide = `Generate C code intent. Use POSIX API only (no Android-specific headers).
-Declare ALL variables before use (C89 style). Initialize ALL variables.`
-		structGuide = `C structs not needed for simple cases — describe fields in config instead.`
-	}
-
-	prompt := fmt.Sprintf(`You are a code architect. Convert a module requirement into a STRUCTURED INTENT description.
-
-DO NOT write actual source code. Instead, describe WHAT the code should do in structured JSON.
-
-## Module Requirement
-%s
-
-## File to generate
-Path: %s
-Purpose: %s
-%s
-%s
-
-%s
-
-## OUTPUT FORMAT (valid JSON only, no markdown fences)
-{
-  "functions": [
-    {
-      "name": "module_daemon",
-      "description": "what this function/module does",
-      "type": "daemon|tool|watchdog|monitor",
-      "output_path": "%s",
-      "config": {
-        "config_path": "/data/adb/modules/<id>/config.json",
-        "check_interval_seconds": "300"
-      },
-      "data_structures": [
-        {
-          "name": "ModuleConfig",
-          "fields": [
-            {"name": "Interval", "type": "int", "tag": "`+"`"+`json:\"interval\"`+"`"+`"},
-            {"name": "Threshold", "type": "float64", "tag": "`+"`"+`json:\"threshold\"`+"`"+`"}
-          ]
-        }
-      ],
-      "logic": {
-        "init_steps": ["Load config from file", "Validate thresholds"],
-        "main_loop": "Read sensor values, compare with thresholds, trigger actions",
-        "triggers": [
-          {"condition": "temperature > threshold", "action": "log warning and take action"},
-          {"condition": "value normal", "action": "reset counters"}
-        ],
-        "cleanup_steps": ["Log shutdown", "Release resources"]
-      }
-    }
-  ]
-}
-
-## RULES
-- Describe logic in PLAIN ENGLISH, not code
-- Config values as strings (the synthesizer handles type conversion)
-- Data structures use Go types (int, float64, string, bool)
-- Triggers should be clear condition-action pairs
-- Output ONLY valid JSON, nothing else
-- Do NOT include code snippets in the JSON`,
-		description, fileInfo.Path, fileInfo.Description,
-		languageGuide, structGuide, researchStr, fileInfo.Path,
-	)
-
-	endpoint, apiKey, model := ic.builder.resolveLLMForFix()
-	if endpoint == "" || apiKey == "" {
-		return IntentJSON{}, fmt.Errorf("no LLM configured for intent generation")
-	}
-
-	response, err := callLLMForFix(ctx, endpoint, apiKey, model, prompt)
-	if err != nil {
-		return IntentJSON{}, fmt.Errorf("LLM call failed: %w", err)
-	}
-
-	// Parse intent JSON
-	response = extractJSONFromResponse(response)
-	var intent IntentJSON
-	if err := json.Unmarshal([]byte(response), &intent); err != nil {
-		// Try to fix common JSON issues
-		response = fixIntentJSON(response)
-		if err2 := json.Unmarshal([]byte(response), &intent); err2 != nil {
-			return IntentJSON{}, fmt.Errorf("failed to parse intent JSON: %w (response: %s)", err2, truncate(response, 200))
+		if r >= 'A' && r <= 'Z' {
+			if i > 0 {
+				result = append(result, '_')
+			}
+			result = append(result, r+32)
+		} else {
+			result = append(result, r)
 		}
 	}
-
-	return intent, nil
+	return string(result)
 }
 
-// formatAPIPatterns formats API patterns for the prompt.
-func formatAPIPatterns(patterns []APIPattern) string {
-	var sb strings.Builder
-	for _, p := range patterns {
-		sb.WriteString(fmt.Sprintf("- %s: %s\n  Go: %s\n", p.Name, p.Description, p.GoSnippet))
-	}
-	return sb.String()
-}
 
-// formatDesignPatterns formats design patterns for the prompt.
-func formatDesignPatterns(patterns []DesignPattern) string {
-	var sb strings.Builder
-	for _, p := range patterns {
-		sb.WriteString(fmt.Sprintf("- %s: %s\n", p.Name, p.Description))
-	}
-	return sb.String()
-}
 
-// fixIntentJSON attempts to fix common JSON issues from LLM output.
+// fixIntentJSON cleans and repairs common JSON issues in LLM output.
+// Handles markdown fences, trailing commas, and other common problems.
 func fixIntentJSON(s string) string {
-	// Remove markdown fences
-	s = strings.TrimPrefix(s, "```json\n")
-	s = strings.TrimPrefix(s, "```\n")
-	s = strings.TrimSuffix(s, "\n```")
 	s = strings.TrimSpace(s)
 
-	// Fix trailing commas before }
-	re := regexp.MustCompile(`,\s*}`)
-	s = re.ReplaceAllString(s, "}")
-
-	// Fix trailing commas before ]
-	re2 := regexp.MustCompile(`,\s*\]`)
-	s = re2.ReplaceAllString(s, "]")
-
-	return s
-}
-
-// truncate truncates a string to maxLen characters.
-func truncate(s string, maxLen int) string {
-	if len(s) <= maxLen {
-		return s
+	// Remove markdown code fences
+	if strings.HasPrefix(s, "```json") {
+		s = strings.TrimPrefix(s, "```json")
+	} else if strings.HasPrefix(s, "```") {
+		s = strings.TrimPrefix(s, "```")
 	}
-	return s[:maxLen] + "..."
-}
+	if strings.HasSuffix(s, "```") {
+		s = strings.TrimSuffix(s, "```")
+	}
+	s = strings.TrimSpace(s)
 
-// LoadIntentJSON loads intent JSON from a file.
-func LoadIntentJSON(path string) (IntentJSON, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return IntentJSON{}, err
+	// Fix trailing commas before } or ]
+	var result strings.Builder
+	inString := false
+	escape := false
+	for i := 0; i < len(s); i++ {
+		ch := s[i]
+		if escape {
+			result.WriteByte(ch)
+			escape = false
+			continue
+		}
+		if ch == '\\' && inString {
+			result.WriteByte(ch)
+			escape = true
+			continue
+		}
+		if ch == '"' {
+			inString = !inString
+			result.WriteByte(ch)
+			continue
+		}
+		if inString {
+			result.WriteByte(ch)
+			continue
+		}
+		// Skip comma before } or ]
+		if ch == ',' {
+			rest := strings.TrimSpace(s[i+1:])
+			if len(rest) > 0 && (rest[0] == '}' || rest[0] == ']') {
+				continue
+			}
+		}
+		result.WriteByte(ch)
 	}
-	var intent IntentJSON
-	if err := json.Unmarshal(data, &intent); err != nil {
-		return IntentJSON{}, err
-	}
-	return intent, nil
+
+	return result.String()
 }

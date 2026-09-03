@@ -112,10 +112,10 @@ func TestExtractJSONString(t *testing.T) {
 }
 
 func TestTruncate(t *testing.T) {
-	if got := truncate("hello", 10); got != "hello" {
+	if got := truncateString("hello", 10); got != "hello" {
 		t.Errorf("truncate short = %q, want %q", got, "hello")
 	}
-	if got := truncate("hello world", 5); got != "hello..." {
+	if got := truncateString("hello world", 5); got != "hello..." {
 		t.Errorf("truncate long = %q, want %q", got, "hello...")
 	}
 }

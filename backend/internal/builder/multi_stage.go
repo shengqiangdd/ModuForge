@@ -130,7 +130,7 @@ func ShellStagePrompt(planJSON, description string) string {
 {"files":[{"path":"module.prop","content":"..."},{"path":"customize.sh","content":"..."}]}
 
 Return ONLY valid JSON. Full file contents with \\n for newlines in content field.`
-	return InjectRAGContext(prompt, description, 2)
+	return InjectRAGContext(prompt, description, 4)
 }
 
 // ═══════════════════════════════════════════════════════
@@ -355,7 +355,7 @@ Purpose: ` + fileInfo.Description + `
 {"files":[{"path":"` + fileInfo.Path + `","content":"..."}]}
 
 Return ONLY valid JSON. Full Go source code in content field with \\n for newlines.`
-	return InjectRAGContext(prompt, description, 2)
+	return InjectRAGContext(prompt, description, 4)
 }
 
 // CStagePrompt generates a C source file (Stage 2).
@@ -393,7 +393,7 @@ Purpose: ` + fileInfo.Description + `
 {"files":[{"path":"` + fileInfo.Path + `","content":"..."}]}
 
 Return ONLY valid JSON. Full C source code in content field with \\n for newlines.`
-	return InjectRAGContext(prompt, description, 2)
+	return InjectRAGContext(prompt, description, 4)
 }
 
 // BuildSystemPrompt generates build scripts (Stage 3).
@@ -461,7 +461,7 @@ No Go or C source files needed. build.sh should only package the shell scripts i
 {"files":[{"path":"build.sh","content":"..."},{"path":"go.mod","content":"..."}]}
 
 Return ONLY valid JSON. Full file contents with \\n for newlines.`
-	return InjectRAGContext(prompt, description, 2)
+	return InjectRAGContext(prompt, description, 4)
 }
 
 // InjectRAGContext retrieves relevant code examples from the knowledge base
@@ -587,5 +587,5 @@ func BuildSystemPromptWithLang(planJSON, sourceFilesJSON, description string, ha
 {"files":[{"path":"build.sh","content":"..."},{"path":"go.mod","content":"..."}]}
 
 Return ONLY valid JSON. Full file contents with \\n for newlines.`
-	return InjectRAGContext(prompt, description, 2)
+	return InjectRAGContext(prompt, description, 4)
 }

@@ -11,6 +11,9 @@ import (
 	"time"
 
 	"github.com/moduforge/backend/internal/config"
+	"github.com/moduforge/backend/internal/logger"
+	"github.com/moduforge/backend/internal/metrics"
+	"golang.org/x/sync/errgroup"
 )
 
 // targetToImage maps build targets to their container image names.
@@ -35,12 +38,26 @@ type BuildResult struct {
 	Arch            string             `json:"arch"`
 }
 
-type Builder struct {
-	cfg *config.Config
+// progressAccumulator holds intermediate compilation stats for parallel phases.
+type progressAccumulator struct {
+	RecompiledFiles []string
+	CacheHits       int
+	CacheMisses     int
 }
 
+type Builder struct {
+	cfg             *config.Config
+	progBroadcaster func(phase string, detail string) // optional SSE broadcast
+}
+
+// NewBuilder creates a Builder without SSE broadcasting.
 func NewBuilder(cfg *config.Config) *Builder {
 	return &Builder{cfg: cfg}
+}
+
+// NewBuilderWithBroadcast creates a Builder wired to an SSE broadcaster.
+func NewBuilderWithBroadcast(cfg *config.Config, broadcaster func(phase string, detail string)) *Builder {
+	return &Builder{cfg: cfg, progBroadcaster: broadcaster}
 }
 
 // Build 主入口，检查 Docker 可用性，有 Docker 则用容器，否则回退到本地 zip
@@ -83,9 +100,30 @@ func (b *Builder) BuildWithResultAndProgress(ctx context.Context, projectDir, ta
 	arch = NormalizeArch(arch)
 	result := &BuildResult{Arch: arch}
 
+	logger.Info("Starting build: project=%s arch=%s target=%s", taskID, arch, target)
+	startTime := time.Now()
+	var buildErr error
+	defer func() {
+		elapsed := time.Since(startTime).Seconds()
+		metrics.BuildDuration.Observe(elapsed)
+		metrics.TotalBuilds.Inc()
+		metrics.BuildsByTarget.WithLabelValues(target).Inc()
+		metrics.BuildsByArch.WithLabelValues(arch).Inc()
+		if buildErr == nil {
+			metrics.BuildSuccesses.Inc()
+			logger.Info("Build completed: project=%s arch=%s duration=%.1fs", taskID, arch, elapsed)
+		} else {
+			metrics.BuildFailures.Inc()
+			logger.Error("Build failed: project=%s error=%v", taskID, buildErr)
+		}
+	}()
+
 	emitProgress := func(phase, detail string) {
 		if onProgress != nil {
 			onProgress(phase, detail)
+		}
+		if b.progBroadcaster != nil {
+			b.progBroadcaster(phase, detail)
 		}
 	}
 
@@ -124,77 +162,58 @@ func (b *Builder) BuildWithResultAndProgress(ctx context.Context, projectDir, ta
 		emitProgress("incremental", "no changes")
 	}
 
-	// Compile Go files with arch support + binary cache
-	// Post-process first to fix truncation issues from free models
+	// ── Compilation Phase ───────────────────────────────────────────────
+	// Go + Rust can compile in parallel; Python → C must stay serial.
+
 	goFiles := b.DetectGoFiles(projectDir)
-	if len(goFiles) > 0 {
-		logFn(fmt.Sprintf("  Detected %d Go file(s), cross-compiling for android/%s...\n", len(goFiles), arch))
-		emitProgress("compile", fmt.Sprintf("Go: %d files", len(goFiles)))
-
-		// Post-process Go files to fix truncation issues
-		PostProcessSourceFiles(projectDir, goFiles, "go", logFn)
-
-		goProgress := func(phase string, current, total int, detail string) {
-			emitProgress(phase, fmt.Sprintf("Go [%d/%d]: %s", current, total, detail))
-		}
-		goResult, err := b.CompileGoFilesArchWithProgress(ctx, projectDir, arch, incr, logFn, goProgress)
-		if err != nil {
-			// Retry with enhanced post-processing
-			logFn("\n🔧 Go compilation failed, applying enhanced post-processing...\n")
-			PostProcessSourceFiles(projectDir, goFiles, "go", logFn)
-			goResult, err = b.CompileGoFilesArchWithProgress(ctx, projectDir, arch, incr, logFn, goProgress)
-			if err != nil {
-				// Multi-pass auto-fix with LLM (up to 3 attempts)
-				for attempt := 1; attempt <= 3; attempt++ {
-					logFn(fmt.Sprintf("\n🤖 Auto-fix attempt %d/3: Attempting LLM-based code repair...\n", attempt))
-					if b.AutoFixCompileErrorsV2(ctx, projectDir, err, logFn) {
-						// Retry compilation after auto-fix
-						PostProcessSourceFiles(projectDir, goFiles, "go", logFn)
-						goResult, err = b.CompileGoFilesArchWithProgress(ctx, projectDir, arch, incr, logFn, goProgress)
-						if err == nil {
-							logFn(fmt.Sprintf("✅ Go compilation succeeded after auto-fix v2 attempt %d!\n", attempt))
-							break
-						}
-						logFn(fmt.Sprintf("  ⚠️  Auto-fix attempt %d failed, trying again...\n", attempt))
-					} else {
-						logFn("  ⚠️  Auto-fix v2 could not parse/fix errors\n")
-						break
-					}
-				}
-				if err != nil {
-					return nil, fmt.Errorf("go compilation failed after 3 auto-fix v2 attempts: %w", err)
-				}
-			} else {
-				logFn("✅ Go compilation succeeded after enhanced post-processing!\n")
-			}
-		}
-		result.RecompiledFiles = append(result.RecompiledFiles, goResult.Recompiled...)
-		result.CacheHits += goResult.CacheHits
-		result.CacheMisses += goResult.CacheMisses
-	}
-
-	// Compile Rust projects with arch support + binary cache
 	rustDirs := b.DetectRustProjects(projectDir)
-	if len(rustDirs) > 0 {
-		logFn(fmt.Sprintf("  Detected %d Rust project(s)...\n", len(rustDirs)))
-		emitProgress("compile", fmt.Sprintf("Rust: %d projects", len(rustDirs)))
-		if err := InstallRustArch(ctx, arch, logFn); err != nil {
-			return nil, fmt.Errorf("rust installation failed: %w", err)
+	hasParallelPhase := len(goFiles) > 0 || len(rustDirs) > 0
+
+	if hasParallelPhase {
+		var gGAcc, gRAcc progressAccumulator
+		g, gctx := errgroup.WithContext(ctx)
+		// errgroup no longer supports SetMaxWorkers; concurrency is controlled by GOMAXPROCS
+
+		// Phase 1a: Go (parallel)
+		if len(goFiles) > 0 {
+			fn := goFiles // capture for closure
+			logFn(fmt.Sprintf("  Detected %d Go file(s), cross-compiling for android/%s...\n", len(fn), arch))
+			emitProgress("compile", fmt.Sprintf("Go: %d files", len(fn)))
+			g.Go(func() error {
+				ctx = context.Background() // errgroup ctx is cancelled after first error — use fresh ctx per lang
+				return b.doGoCompile(gctx, projectDir, arch, incr, fn, logFn, emitProgress, &gGAcc)
+			})
 		}
-		for _, dir := range rustDirs {
-			rustResult, err := CompileRustProjectArch(ctx, projectDir, dir, arch, incr, logFn)
-			if err != nil {
-				return nil, fmt.Errorf("rust compilation failed for %s: %w", dir, err)
-			}
-			result.RecompiledFiles = append(result.RecompiledFiles, rustResult.Recompiled...)
-			result.CacheHits += rustResult.CacheHits
-			result.CacheMisses += rustResult.CacheMisses
+
+		// Phase 1b: Rust (parallel)
+		if len(rustDirs) > 0 {
+			rd := rustDirs // capture for closure
+			logFn(fmt.Sprintf("  Detected %d Rust project(s)...\n", len(rd)))
+			emitProgress("compile", fmt.Sprintf("Rust: %d projects", len(rd)))
+			g.Go(func() error {
+				ctx = context.Background()
+				return b.doRustCompile(gctx, projectDir, rd, arch, incr, logFn, emitProgress, &gRAcc)
+			})
 		}
+
+		if err := g.Wait(); err != nil {
+			return nil, err // propagate first failure
+		}
+		result.RecompiledFiles = append(result.RecompiledFiles, gGAcc.RecompiledFiles...)
+		metrics.CacheHits.Add(float64(gGAcc.CacheHits))
+		metrics.CacheMisses.Add(float64(gGAcc.CacheMisses))
+		result.CacheHits += gGAcc.CacheHits
+		result.CacheMisses += gGAcc.CacheMisses
+		result.RecompiledFiles = append(result.RecompiledFiles, gRAcc.RecompiledFiles...)
+		metrics.CacheHits.Add(float64(gRAcc.CacheHits))
+		metrics.CacheMisses.Add(float64(gRAcc.CacheMisses))
+	} else if len(goFiles) == 0 && len(rustDirs) == 0 {
+		// Still detect for logging even when no sources exist
+		b.DetectGoFiles(projectDir)
+		b.DetectRustProjects(projectDir)
 	}
 
-	// Compile Python scripts to native binaries via C wrapper + NDK
-	// IMPORTANT: Python compilation MUST happen before C compilation
-	// because it generates C files that need to be compiled as separate binaries
+	// Phase 2: Python (serial — generates C files)
 	pyFiles := DetectPythonFiles(projectDir)
 	if len(pyFiles) > 0 {
 		logFn(fmt.Sprintf("  Detected %d Python file(s), compiling to native binaries...\n", len(pyFiles)))
@@ -206,49 +225,27 @@ func (b *Builder) BuildWithResultAndProgress(ctx context.Context, projectDir, ta
 				continue
 			}
 			result.RecompiledFiles = append(result.RecompiledFiles, pyResult.Recompiled...)
+			metrics.CacheHits.Add(float64(pyResult.CacheHits))
+			metrics.CacheMisses.Add(float64(pyResult.CacheMisses))
 			result.CacheHits += pyResult.CacheHits
 			result.CacheMisses += pyResult.CacheMisses
 		}
-		// Python-generated C files are now in python_binaries/ directory
-		// They will be compiled as separate binaries in CompileCFilesArch
 	}
 
-	// Compile C/C++ files with NDK + arch support
-	// Post-process first to fix truncation issues from free models
+	// Phase 3: C/C++ (serial — depends on Python output)
+	var cAcc progressAccumulator
 	cFiles := b.DetectCFiles(projectDir)
 	if len(cFiles) > 0 {
 		logFn(fmt.Sprintf("  Detected %d C/C++ file(s), cross-compiling with NDK...\n", len(cFiles)))
 		emitProgress("compile", fmt.Sprintf("C/C++: %d files", len(cFiles)))
-
-		// Post-process C/C++ files to fix truncation issues
-		PostProcessSourceFiles(projectDir, cFiles, "c", logFn)
-
-		cResult, err := b.CompileCFilesArch(ctx, projectDir, arch, incr, logFn)
-		if err != nil {
-			// Multi-pass auto-fix with LLM (up to 3 attempts)
-			for attempt := 1; attempt <= 3; attempt++ {
-				logFn(fmt.Sprintf("\n🤖 Auto-fix attempt %d/3: Attempting LLM-based C code repair...\n", attempt))
-				if b.AutoFixCompileErrorsV2(ctx, projectDir, err, logFn) {
-					// Retry compilation after auto-fix
-					PostProcessSourceFiles(projectDir, cFiles, "c", logFn)
-					cResult, err = b.CompileCFilesArch(ctx, projectDir, arch, incr, logFn)
-					if err == nil {
-						logFn(fmt.Sprintf("✅ C/C++ compilation succeeded after auto-fix v2 attempt %d!\n", attempt))
-						break
-					}
-					logFn(fmt.Sprintf("  ⚠️  Auto-fix attempt %d failed, trying again...\n", attempt))
-				} else {
-					logFn("  ⚠️  Auto-fix v2 could not parse/fix errors\n")
-					break
-				}
-			}
-			if err != nil {
-				return nil, fmt.Errorf("C/C++ compilation failed after 3 auto-fix v2 attempts: %w", err)
-			}
+		if err := b.doCCCompile(ctx, projectDir, arch, incr, cFiles, logFn, emitProgress, &cAcc); err != nil {
+			return nil, err
 		}
-		result.RecompiledFiles = append(result.RecompiledFiles, cResult.Recompiled...)
-		result.CacheHits += cResult.CacheHits
-		result.CacheMisses += cResult.CacheMisses
+		result.RecompiledFiles = append(result.RecompiledFiles, cAcc.RecompiledFiles...)
+		result.CacheHits += cAcc.CacheHits
+		result.CacheMisses += cAcc.CacheMisses
+		metrics.CacheHits.Add(float64(cAcc.CacheHits))
+		metrics.CacheMisses.Add(float64(cAcc.CacheMisses))
 	}
 
 	// Update build cache after successful compilation
@@ -257,7 +254,24 @@ func (b *Builder) BuildWithResultAndProgress(ctx context.Context, projectDir, ta
 		logFn(fmt.Sprintf("  ⚠️  Failed to update build cache: %v\n", err))
 	}
 
-	// Package
+	// Android APK build: if Android project is detected, build APK and skip normal packaging
+	androidProjects := b.DetectAndroidProjects(projectDir)
+	if len(androidProjects) > 0 {
+		emitProgress("android", "building APK")
+		logFn("  📱 Building Android APK...\n")
+		androidResult, err := b.BuildAndroidAPK(ctx, projectDir, taskID, arch, logFn)
+		if err != nil {
+			logFn(fmt.Sprintf("  ❌ Android APK build failed: %v\n", err))
+			return nil, fmt.Errorf("android APK build failed: %w", err)
+		}
+		result.ArtifactPath = androidResult.ArtifactPath
+		result.Duration = androidResult.Duration
+		logFn(fmt.Sprintf("  ✅ Android APK build complete! (arch=%s)\n", arch))
+		emitProgress("done", fmt.Sprintf("APK: %s", androidResult.ArtifactPath))
+		return result, nil
+	}
+
+	// Package (standard Magisk module packaging)
 	emitProgress("package", "starting")
 	logFn("  📦 Packaging module...\n")
 	var artifactPath string
@@ -458,4 +472,119 @@ func validateBuildOutput(moduleDir string, logFn func(string)) []string {
 		}
 	}
 	return warnings
+}
+
+// ── Parallel compilation helpers ────────────────────────────────────────
+
+func (b *Builder) doGoCompile(ctx context.Context, projectDir, arch string, incr *IncrementalResult, goFiles []string,
+	logFn func(string), emitProgress func(phase, detail string), acc *progressAccumulator) error {
+
+	logFn(fmt.Sprintf("  Detected %d Go file(s), cross-compiling for android/%s...\n", len(goFiles), arch))
+	emitProgress("compile", fmt.Sprintf("Go: %d files", len(goFiles)))
+
+	PostProcessSourceFiles(projectDir, goFiles, "go", logFn)
+
+	goProgress := func(phase string, current, total int, detail string) {
+		emitProgress(phase, fmt.Sprintf("Go [%d/%d]: %s", current, total, detail))
+	}
+
+	var goResult CompileResult
+	var err error
+
+	gr1, err := b.CompileGoFilesArchWithProgress(ctx, projectDir, arch, incr, logFn, goProgress)
+	goResult = *gr1
+	if err != nil {
+		logFn("\n🔧 Go compilation failed, applying enhanced post-processing...\n")
+		PostProcessSourceFiles(projectDir, goFiles, "go", logFn)
+		gr2, err := b.CompileGoFilesArchWithProgress(ctx, projectDir, arch, incr, logFn, goProgress)
+		goResult = *gr2
+		if err != nil {
+			for attempt := 1; attempt <= 3; attempt++ {
+				logFn(fmt.Sprintf("\n🤖 Auto-fix attempt %d/3: Attempting LLM-based code repair...\n", attempt))
+				if b.AutoFixCompileErrorsV2(ctx, projectDir, err, logFn) {
+					PostProcessSourceFiles(projectDir, goFiles, "go", logFn)
+					gr3, err := b.CompileGoFilesArchWithProgress(ctx, projectDir, arch, incr, logFn, goProgress)
+					goResult = *gr3
+					if err == nil {
+						logFn(fmt.Sprintf("✅ Go compilation succeeded after auto-fix v2 attempt %d!\n", attempt))
+						break
+					}
+					logFn(fmt.Sprintf("  ⚠️  Auto-fix attempt %d failed, trying again...\n", attempt))
+				} else {
+					logFn("  ⚠️  Auto-fix v2 could not parse/fix errors\n")
+					break
+				}
+			}
+			if err != nil {
+				return fmt.Errorf("go compilation failed after 3 auto-fix v2 attempts: %w", err)
+			}
+		} else {
+			logFn("✅ Go compilation succeeded after enhanced post-processing!\n")
+		}
+	}
+
+	acc.RecompiledFiles = append(acc.RecompiledFiles, goResult.Recompiled...)
+	acc.CacheHits += goResult.CacheHits
+	acc.CacheMisses += goResult.CacheMisses
+	return nil
+}
+
+func (b *Builder) doRustCompile(ctx context.Context, projectDir string, rustDirs []string, arch string,
+	incr *IncrementalResult, logFn func(string), emitProgress func(phase, detail string), acc *progressAccumulator) error {
+
+	if err := InstallRustArch(ctx, arch, logFn); err != nil {
+		return fmt.Errorf("rust installation failed: %w", err)
+	}
+
+	for _, dir := range rustDirs {
+		rustResult, err := CompileRustProjectArch(ctx, projectDir, dir, arch, incr, logFn)
+		if err != nil {
+			return fmt.Errorf("rust compilation failed for %s: %w", dir, err)
+		}
+		acc.RecompiledFiles = append(acc.RecompiledFiles, rustResult.Recompiled...)
+		acc.CacheHits += rustResult.CacheHits
+		acc.CacheMisses += rustResult.CacheMisses
+	}
+	return nil
+}
+
+func (b *Builder) doCCCompile(ctx context.Context, projectDir, arch string, incr *IncrementalResult,
+	cFiles []string, logFn func(string), emitProgress func(phase, detail string), acc *progressAccumulator) error {
+
+	logFn(fmt.Sprintf("  Detected %d C/C++ file(s), cross-compiling with NDK...\n", len(cFiles)))
+	emitProgress("compile", fmt.Sprintf("C/C++: %d files", len(cFiles)))
+
+	PostProcessSourceFiles(projectDir, cFiles, "c", logFn)
+
+	var cResult CompileResult
+	var err error
+
+	cr1, err := b.CompileCFilesArch(ctx, projectDir, arch, incr, logFn)
+	cResult = *cr1
+	if err != nil {
+		for attempt := 1; attempt <= 3; attempt++ {
+			logFn(fmt.Sprintf("\n🤖 Auto-fix attempt %d/3: Attempting LLM-based C code repair...\n", attempt))
+			if b.AutoFixCompileErrorsV2(ctx, projectDir, err, logFn) {
+				PostProcessSourceFiles(projectDir, cFiles, "c", logFn)
+				cr2, err := b.CompileCFilesArch(ctx, projectDir, arch, incr, logFn)
+				cResult = *cr2
+				if err == nil {
+					logFn(fmt.Sprintf("✅ C/C++ compilation succeeded after auto-fix v2 attempt %d!\n", attempt))
+					break
+				}
+				logFn(fmt.Sprintf("  ⚠️  Auto-fix attempt %d failed, trying again...\n", attempt))
+			} else {
+				logFn("  ⚠️  Auto-fix v2 could not parse/fix errors\n")
+				break
+			}
+		}
+		if err != nil {
+			return fmt.Errorf("C/C++ compilation failed after 3 auto-fix v2 attempts: %w", err)
+		}
+	}
+
+	acc.RecompiledFiles = append(acc.RecompiledFiles, cResult.Recompiled...)
+	acc.CacheHits += cResult.CacheHits
+	acc.CacheMisses += cResult.CacheMisses
+	return nil
 }

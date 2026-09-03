@@ -1,0 +1,10 @@
+<resources>
+    <style name="Theme.{{APP_NAME}}" parent="Theme.MaterialComponents.DayNight.DarkActionBar">
+        <item name="colorPrimary">#6366f1</item>
+        <item name="colorPrimaryVariant">#4f46e5</item>
+        <item name="colorOnPrimary">#ffffff</item>
+        <item name="colorSecondary">#8b5cf6</item>
+        <item name="colorSecondaryVariant">#7c3aed</item>
+        <item name="colorOnSecondary">#ffffff</item>
+    </style>
+</resources>

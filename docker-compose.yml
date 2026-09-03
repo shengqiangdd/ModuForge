@@ -44,6 +44,7 @@ services:
       - LLM_API_KEY=${LLM_API_KEY:-}
       - MODUFORGE_DEV=0
       - TZ=Asia/Shanghai
+      - GOPATH=/tmp/gopath
       # MCP (Model Context Protocol) servers: JSON array passed via env.
       # Example: MCP_SERVERS='[{"name":"github","url":"http://host:8000/mcp","headers":{"Authorization":"Bearer x"}}]'
       # or point to a file with MCP_SERVERS_FILE.

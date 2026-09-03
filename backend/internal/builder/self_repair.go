@@ -92,7 +92,7 @@ func (b *Builder) GenerateAndRepair(
 
 		// Step 4: Build failed — capture error for next iteration
 		errMsg := fmt.Sprintf("stdout:\n%s\nstderr:\n%s\nerror: %v", stdout, stderr, buildErr)
-		logFn(fmt.Sprintf("[SelfRepair] Build failed: %s\n", truncate(errMsg, 500)))
+		logFn(fmt.Sprintf("[SelfRepair] Build failed: %s\n", truncateString(errMsg, 500)))
 		lastErr = fmt.Errorf("%s", errMsg)
 	}
 

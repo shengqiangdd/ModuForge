@@ -1,0 +1,29 @@
+# AndroBoost SmartTune SELinux Policy Rules
+# 兼容 Magisk, KernelSU, APatch
+# 根据官方文档，这些规则会被自动加载
+
+# 允许系统应用访问 sysfs 文件（CPU频率、温度等）
+allow system_app sysfs file { open read write getattr };
+allow system_app sysfs_cpu freq { open read write getattr };
+
+# 允许系统应用访问 proc 文件（CPU信息等）
+allow system_app proc file { open read write getattr };
+
+# 允许 su 域访问 sysfs/proc（模块服务以root运行）
+allow su sysfs file { open read write getattr };
+allow su sysfs_cpu freq { open read write getattr };
+allow su proc file { open read write getattr };
+
+# 允许 magisk 域访问（兼容Magisk环境）
+allow magisk sysfs file { open read write getattr };
+allow magisk proc file { open read write getattr };
+
+# 允许 init 域访问（用于启动服务）
+allow init sysfs file { open read write getattr };
+allow init proc file { open read write getattr };
+
+# 允许内核系统写入（用于CPU热插拔等）
+allow su kernel system write;
+allow magisk kernel system write;
+allow init kernel system write;
+allow system_app kernel system write;

@@ -15,9 +15,10 @@ var templateFS embed.FS
 type TemplateType string
 
 const (
-	TemplateGoDaemon    TemplateType = "go_daemon"
-	TemplateCModule     TemplateType = "c_kernel"
-	TemplateShellModule TemplateType = "shell_module"
+	TemplateGoDaemon      TemplateType = "go_daemon"
+	TemplateCModule       TemplateType = "c_kernel"
+	TemplateShellModule   TemplateType = "shell_module"
+	TemplateAndroidApp    TemplateType = "android_app"
 )
 
 // TemplateInfo contains metadata about a template.
@@ -51,7 +52,14 @@ func GetAvailableTemplates() []TemplateInfo {
 			Name:        "Shell Module",
 			Description: "A Magisk module with install, service, and uninstall scripts",
 			Language:    "shell",
-			Files:       []string{"module.prop", "customize.sh", "service.sh", "uninstall.sh"},
+			Files:       []string{"module.prop", "customize.sh", "service.sh", "uninstall.sh", "sepolicy.rule"},
+		},
+		{
+			Type:        TemplateAndroidApp,
+			Name:        "Android App",
+			Description: "A native Android app with Kotlin, Material Design, and Gradle build system",
+			Language:    "kotlin",
+			Files:       []string{"build.gradle.kts", "settings.gradle.kts", "AndroidManifest.xml", "MainActivity.kt", "activity_main.xml", "strings.xml", "themes.xml", "gradle.properties"},
 		},
 	}
 }
