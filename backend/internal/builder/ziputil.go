@@ -54,6 +54,7 @@ var ModuleExcludePatterns = []string{
 	// Android build cache
 	"*.flat",
 	"*_blame_folder/",
+	"app/build/",
 	// IDE & editor
 	".idea/",
 	".vscode/",
